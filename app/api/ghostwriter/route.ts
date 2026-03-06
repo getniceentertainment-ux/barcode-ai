@@ -57,11 +57,17 @@ ${structureString}
     });
 
     const runData = await runResponse.json();
-    if (!runData.id) throw new Error("Failed to get Job ID from RunPod.");
     
-    const jobId = runData.id;
-    console.log(`[TALON] Job ID received: ${jobId}. Polling for completion...`);
+    // 🚨 DIAGNOSTIC PATCH: Print exactly what RunPod said!
+    console.log("🚨 RUNPOD RAW RESPONSE:", runData);
 
+    if (!runResponse.ok || !runData.id) {
+        console.error("RunPod rejected the request:", runData);
+        // This sends the REAL error directly to your browser!
+        return NextResponse.json({ 
+            error: `RunPod Error: ${JSON.stringify(runData)}` 
+        }, { status: 500 });
+    }
     // 4. POLL THE STATUS (Check every 3 seconds to prevent timeout)
     let jobStatus = "IN_PROGRESS";
     let finalOutput = null;
