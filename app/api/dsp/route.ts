@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-export const maxDuration = 900;
+export const maxDuration = 800;
 
 // Initialize Supabase Admin (God Mode) to bypass RLS and read/write credits securely
 const supabaseAdmin = createClient(
