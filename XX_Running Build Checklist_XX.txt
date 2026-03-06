@@ -1,0 +1,102 @@
+THE MATRIX COMPONENT BUILD SEQUENCE
+PHASE 1: THE INGESTION PIPELINE (Audio & DNA)
+
+[X] frontend/components/matrix/Room01_Lab.tsx
+
+Wire UI for raw audio upload to Supabase audio_raw bucket.
+
+Trigger /api/dsp to ping Worker 2 (Essentia).
+
+Save the returned AudioAnalysis (BPM, Bars, Grid array) into useMatrixStore.
+
+[ ] frontend/components/matrix/Room02_BrainTrain.tsx
+
+Build UI for microphone recording (audio cadence) and text input (lyrical history).
+
+Extract the FlowDNA (tag and reference text).
+
+Save FlowDNA into useMatrixStore.
+
+PHASE 2: THE AI SYNTHESIS (TALON)
+
+[ ] frontend/components/matrix/Room03_Ghostwriter.tsx
+
+Pull AudioAnalysis and FlowDNA from Zustand to configure the TALON Engine.
+
+Build the UI to manipulate the BlueprintSection array (Intro, Hook, Verse lengths).
+
+Trigger /api/ghostwriter to hit Worker 1 (GPU).
+
+Implement the Line-by-Line refinement UI (calling /api/ghostwriter/refine).
+
+Save the final generatedLyrics string to useMatrixStore.
+
+PHASE 3: CAPTURE & AUDIO ENGINEERING
+
+[ ] frontend/components/matrix/Room04_Booth.tsx
+
+Pull generatedLyrics and audioData.url from Zustand.
+
+Build the teleprompter UI to display the lyrics block-by-block.
+
+Implement the MediaRecorder API to capture the user's vocal take.
+
+Crucial: Use the Essentia grid timestamps from audioData to align the recording.
+
+Save the recorded audio blob as a VocalStem into useMatrixStore.
+
+[ ] frontend/components/matrix/Room05_VocalSuite.tsx
+
+Pull the array of vocalStems from Zustand.
+
+Build the summing matrix UI (volume sliders for Lead, Adlibs, Doubles).
+
+[ ] frontend/components/matrix/Room06_Mastering.tsx
+
+Build the LUFS target slider (-14 to -6 LUFS).
+
+Create the "Final Master" processing UI state.
+
+PHASE 4: ECONOMICS & DISTRIBUTION
+
+[ ] frontend/components/matrix/Room07_Distribution.tsx
+
+Build the submission form for the mastered track.
+
+Simulate the A&R Hit Score calculation.
+
+Push the final track data to the Supabase submissions_table.
+
+[ ] frontend/components/matrix/Room08_Bank.tsx
+
+Pull the user's userSession from Zustand to display wallet balance.
+
+Fetch pending tracks from the Supabase submissions_table.
+
+Build the UI to accept Algorithmic Advances (updates Supabase wallets_table).
+
+PHASE 5: CULTURE & OVERSIGHT
+
+[ ] frontend/components/matrix/Room09_Radio.tsx
+
+Fetch globally "Signed" tracks from Supabase public_data to play on the FM stream.
+
+[ ] frontend/components/matrix/Room10_Social.tsx
+
+Build the social feed displaying artist DNA tags and hit scores.
+
+[ ] frontend/app/admin-node/AdminNode.tsx (Note: Separate route)
+
+Build the God Mode dashboard.
+
+Wire the sign_track logic (moves a track to Room 09).
+
+Wire the ban_user logic (freezes user wallets).
+
+PHASE 6: THE MOTHERBOARD INTEGRATION
+
+[ ] frontend/app/page.tsx
+
+Import all 10 Room components.
+
+Replace the temporary [Pending Injection] placeholder <div> tags in the renderActiveRoom switch statement with the actual <Room01_Lab />, <Room02_BrainTrain />, etc. components.

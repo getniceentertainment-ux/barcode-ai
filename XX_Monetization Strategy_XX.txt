@@ -1,0 +1,34 @@
+1. The "GetNice Nation" 24/7 Broadcast (YouTube / Twitch)
+The Play: Just like the famous "Lofi Girl" channel, you run a 24/7 continuous livestream on YouTube and Twitch called GetNice Nation Radio. When a user scores an 80+ in Room 07, their track is automatically injected into the live broadcast queue.
+
+How the Platform Makes Money: You monetize the YouTube/Twitch channels via AdSense, pre-roll video ads, Super Chats, and channel memberships. Because you stream 24/7, the watch hours and ad revenue compound massively.
+
+How the Artist Gets Paid: You set up a "Creator Pool." At the end of the month, 30% of the YouTube AdSense revenue is distributed to the artists via Stripe based on how many times their song was played on the station.
+
+2. The Sync Licensing Vault (Micro-Licensing)
+The Play: Video game developers, YouTubers, and TikTokers desperately need copyright-cleared, high-quality Hip-Hop and Drill beats.
+
+How the Platform Makes Money: Tracks that score a 90+ are placed into the "GetNice Sync Vault." Content creators pay a subscription (e.g., $15/mo) or a one-time fee ($50) to legally use these tracks in their videos without getting copyright striked.
+
+How the Artist Gets Paid: Standard industry Sync split. GetNice Records takes 50% as the broker/publisher, and the artist gets 50% deposited straight into their Matrix Ledger (Stripe).
+
+3. YouTube Content ID & TikTok Sound Monetization
+The Play: When an artist accepts the deal in Room 08, you act as their publisher and register the track's audio footprint with YouTube Content ID and TikTok.
+
+How the Platform Makes Money: If anyone on the internet uses that generated song in a vlog, a gaming montage, or a TikTok dance, YouTube automatically claims the ad revenue from that video and sends it to GetNice Records.
+
+How the Artist Gets Paid: You split the Content ID revenue 80/20 (Artist keeps 80%, Platform keeps 20%). The artist sees a dashboard showing "Your song was used in 400 YouTube videos this month, generating $42.50."
+
+4. The Spotify/Apple DSP Funnel
+The Play: The radio station and YouTube channels act as massive marketing funnels. When viewers hear a crazy track on the GetNice FM stream, they click the link to listen on Spotify.
+
+How the Platform Makes Money: You use a white-label API (like Too Lost, Symphonic, or DistroKid) to automatically push the track to Spotify. You take a 15% backend cut of all streaming royalties.
+
+How the Artist Gets Paid: They keep 85% of the Spotify royalties, which flow back into their Room 08 Bank dashboard to withdraw via Stripe.
+
+How this changes the Matrix UI:
+If we go this route, we need to adjust the narrative in Room 08 (The Bank) and Room 09 (The Radio).
+
+Room 08 becomes the Publishing & Broadcast Deal. Instead of just "Distribution," we tell the user: "Your track scored an 88. You have been selected for the GetNice Nation 24/7 Broadcast and Sync Vault. Accept the 80/20 split to activate your royalty streams."
+
+Room 09 becomes the actual Live Stream Hub, where users can see what track is currently playing globally, chat with other users, and watch their own tracks debut to the world.

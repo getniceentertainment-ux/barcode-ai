@@ -1,0 +1,53 @@
+Created Directory: frontend/app/api/dsp
+Created Directory: frontend/app/api/ghostwriter/refine
+Created Directory: frontend/app/api/webhooks/stripe
+Created Directory: frontend/app/admin-node
+Created Directory: frontend/components/matrix
+Created Directory: frontend/components/shared
+Created Directory: frontend/store
+Created Directory: frontend/lib
+Created Directory: workers/worker1-ghostwriter/model_weights
+Created Directory: workers/worker2-essentia/source
+Created Directory: database/migrations
+
+Created File: frontend/app/layout.tsx
+Created File: frontend/app/page.tsx
+Created File: frontend/app/globals.css
+
+Created File: frontend/app/api/dsp/route.ts
+Created File: frontend/app/api/ghostwriter/route.ts
+Created File: frontend/app/api/ghostwriter/refine/route.ts
+Created File: frontend/app/api/webhooks/stripe/route.ts
+
+Created File: frontend/app/admin-node/page.tsx
+
+Created File: frontend/components/matrix/EntryGateway.tsx
+Created File: frontend/components/matrix/Room01_Lab.tsx
+Created File: frontend/components/matrix/Room02_BrainTrain.tsx
+Created File: frontend/components/matrix/Room03_Ghostwriter.tsx
+Created File: frontend/components/matrix/Room04_Booth.tsx
+Created File: frontend/components/matrix/Room05_VocalSuite.tsx
+Created File: frontend/components/matrix/Room06_Mastering.tsx
+Created File: frontend/components/matrix/Room07_Distribution.tsx
+Created File: frontend/components/matrix/Room08_Bank.tsx
+Created File: frontend/components/matrix/Room09_Radio.tsx
+Created File: frontend/components/matrix/Room10_Social.tsx
+
+Created File: frontend/store/useMatrixStore.ts
+
+Created File: frontend/lib/supabaseClient.ts
+Created File: frontend/lib/types.ts
+
+Created File: workers/worker1-ghostwriter/Dockerfile
+Created File: workers/worker1-ghostwriter/handler.py
+Created File: workers/worker1-ghostwriter/requirements.txt
+
+Created File: workers/worker2-essentia/Dockerfile
+Created File: workers/worker2-essentia/handler.py
+Created File: workers/worker2-essentia/requirements.txt
+Created File: workers/worker2-essentia/build_essentia.sh
+
+Created File: database/barcode_schema.sql
+Created File: .env.local
+Created File: .gitignore
+Created File: README.md

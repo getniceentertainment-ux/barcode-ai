@@ -1,0 +1,132 @@
+BAR-CODE.AI // MASTER BUILD & DEPLOYMENT CHECKLIST
+
+Status: Pre-Alpha to Live Alpha Transition
+Objective: End-to-End Deployment of Matrix UI, Supabase DB, RunPod Workers, and Stripe Tollbooth.
+
+PHASE 1: INFRASTRUCTURE & ACQUISITION (The Land)
+
+[ ] GitHub Repository: Initialize Git, commit the scaffolding, and push to a private repo.
+
+[ ] Supabase Project: Create a new production project. Save the URL and ANON_KEY / SERVICE_ROLE_KEY.
+
+[ ] RunPod Account: Add billing/funds for Serverless endpoints and Network Volumes.
+
+[ ] Vercel Account: Link Vercel to the GitHub repository for continuous deployment.
+
+[ ] Stripe Account: Create a Stripe account and activate developer/test mode.
+
+PHASE 2: DATABASE FOUNDATION (Supabase)
+
+[ ] Execute barcode_schema.sql:
+
+[ ] Create users_table (links to Auth UUID).
+
+[ ] Create wallets_table (tracks balance and transaction history).
+
+[ ] Create submissions_table (A&R tracks, hit scores, and URLs).
+
+[ ] Create admin_logs_table (tracks A&R actions and bans).
+
+[ ] Storage Buckets:
+
+[ ] Create audio_raw bucket (for Room 01 DSP uploads).
+
+[ ] Create public_data bucket (for mastered tracks/radio).
+
+[ ] Security (RLS):
+
+[ ] Enable Row Level Security (RLS) on all tables and buckets.
+
+[ ] Write policies ensuring users can only read/insert their own user_id rows.
+
+PHASE 3: THE HEAVY MACHINERY (RunPod Serverless)
+
+[ ] Network Storage: Create a RunPod Network Volume (e.g., barcode-intel-vol) mounted to /workspace.
+
+[ ] Worker 1: Ghostwriter (TALON / GPU):
+
+[ ] Build Docker image with handler.py, Dictionary.json, and master_index.json.
+
+[ ] Deploy to an RTX GPU Serverless endpoint (e.g., RTX 3090 or 4090).
+
+[ ] Attach the Network Volume (/workspace).
+
+[ ] Save the Endpoint ID and API Key.
+
+[ ] Worker 2: Essentia Engineer (DSP / CPU):
+
+[ ] Build the Ubuntu/ffmpeg-based Docker image for handler.py.
+
+[ ] Deploy to a high-speed CPU Serverless endpoint.
+
+[ ] Save the Endpoint ID and API Key.
+
+[ ] Cron Intel Scraper (CPU):
+
+[ ] Build the Alpine Python Docker image.
+
+[ ] Deploy to a minimal CPU endpoint.
+
+[ ] Attach the Network Volume (/workspace) to allow it to write daily_briefing.txt.
+
+PHASE 4: THE TOLLBOOTH (Stripe Integration)
+
+[ ] Create Products: Create "The Artist" and "The Mogul" subscription tiers in Stripe.
+
+[ ] Save Price IDs: Map the generated Price IDs to the frontend Gateway component.
+
+[ ] Webhook Endpoint:
+
+[ ] Set up a Stripe webhook listener (/api/webhooks/stripe).
+
+[ ] Map webhook events (checkout.session.completed) to update the Supabase users_table tier.
+
+PHASE 5: THE WIRING (Next.js Backend & APIs)
+
+[ ] Environment Variables: Add Supabase, Stripe, and RunPod keys to .env.local.
+
+[ ] Auth Implementation: Integrate NextAuth or Supabase Auth in app/layout.tsx.
+
+[ ] API Bridges:
+
+[ ] Build /api/dsp/route.ts to securely call Worker 2.
+
+[ ] Build /api/ghostwriter/route.ts to securely call Worker 1.
+
+[ ] Build /api/ghostwriter/refine/route.ts for micro-generation fixes.
+
+[ ] Global State: Implement Zustand (useMatrixStore.ts) to pass audio blobs, BPM, flow DNA, and lyrics seamlessly between Rooms 01 - 10 without prop-drilling.
+
+PHASE 6: UI & THE 10 ROOMS (Next.js Frontend)
+
+[ ] Entry Gateway: Lock access behind actual user authentication and Stripe session verification.
+
+[ ] Room 01 (Lab): Wire UI to upload to Supabase bucket and hit /api/dsp.
+
+[ ] Room 03 (Ghostwriter): Wire blueprint logic and TALON configuration to /api/ghostwriter.
+
+[ ] Room 04 (Booth): Integrate precise audio recording mapped to the Essentia DSP grid timestamps for latency compensation.
+
+[ ] Room 08 (Bank): Wire real algorithmic offers to update the Supabase wallets_table.
+
+[ ] Admin Node: Secure /admin-node behind role-based access control (RBAC).
+
+PHASE 7: TESTING & BURN-IN
+
+[ ] End-to-End Inference Test: Upload audio -> Extract BPM -> Extract DNA -> Generate Lyrics -> Record -> Master.
+
+[ ] Database Integrity Test: Ensure no user can access another user's isolated stems/lyrics via API spoofing.
+
+[ ] Cold Start Audit: Test RunPod latency. Ensure Next.js UI shows a "Deep Burn-In / Warming up" loader instead of timing out at 10 seconds.
+
+PHASE 8: CUTTING THE RIBBON (Vercel Production)
+
+[ ] Push final stable commit to the main branch.
+
+[ ] Inject all production API keys, Webhook secrets, and Database URLs into Vercel Environment Variables.
+
+[ ] Switch Stripe from Test Mode to Live Mode.
+
+[ ] Verify custom domain (bar-code.ai) DNS routing.
+
+[ ] DEPLOY.
