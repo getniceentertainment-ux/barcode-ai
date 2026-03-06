@@ -68,6 +68,9 @@ ${structureString}
             error: `RunPod Error: ${JSON.stringify(runData)}` 
         }, { status: 500 });
     }
+
+	const jobId = runData.id;
+
     // 4. POLL THE STATUS (Check every 3 seconds to prevent timeout)
     let jobStatus = "IN_PROGRESS";
     let finalOutput = null;
