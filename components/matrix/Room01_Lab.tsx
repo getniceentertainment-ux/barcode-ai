@@ -80,7 +80,7 @@ export default function Room01_Lab() {
 
       // 1. Save real data to Zustand Global Store
       setAudioData({
-        url: publicUrl,
+        url: cloudUrl,
         fileName: file.name,
         bpm: analysis.bpm,
         totalBars: analysis.total_bars,
