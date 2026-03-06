@@ -120,11 +120,11 @@ export default function Room03_Ghostwriter() {
   return (
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 border border-[#222]">
       
-      {/* LEFT COL: TALON AI SETTINGS */}
+      {/* LEFT COL: GETNICE AI SETTINGS */}
       <div className="w-full md:w-[45%] lg:w-[40%] border-r border-[#222] flex flex-col bg-black overflow-y-auto custom-scrollbar">
         <div className="p-6 border-b border-[#222] sticky top-0 bg-black z-10">
           <h2 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white flex items-center gap-3">
-            <PenTool size={24} className="text-[#E60000]" /> TALON AI
+            <PenTool size={24} className="text-[#E60000]" /> GETNICE AI
           </h2>
         </div>
 
@@ -273,7 +273,7 @@ export default function Room03_Ghostwriter() {
               {isGenerating ? (
                 <div className="text-[#E60000] flex flex-col items-center">
                   <Loader2 size={32} className="animate-spin mb-4" />
-                  <p className="font-mono text-xs uppercase tracking-widest">TALON is writing...</p>
+                  <p className="font-mono text-xs uppercase tracking-widest">GETNICE is writing...</p>
                   <p className="font-mono text-[9px] mt-2 opacity-50">Deep generation active. This may take 3-5 minutes based on track length.</p>
                 </div>
               ) : (

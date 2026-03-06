@@ -43,3 +43,4 @@ model_weights/
 *.safetensors
 *.pt
 *.bin
+.vercel

@@ -92,7 +92,7 @@ def load_cultural_context():
 def init_model():
     """Called once when the RunPod container starts to load weights into VRAM."""
     global model, tokenizer
-    print("Initiating TALON Engine Deep Burn-In...")
+    print("Initiating GETNICE Engine Deep Burn-In...")
     
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -128,7 +128,7 @@ def construct_system_prompt(flow_dna, genre_style):
     banned_words_str = ", ".join(BAN_LIST)
     
     return f"""<|im_start|>system
-You are the TALON Ghostwriter Engine, a highly constrained AI matrix fine-tuned for the music industry.
+You are the GETNICE Ghostwriter Engine, a highly constrained AI matrix fine-tuned for the music industry.
 
 1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}
 2. SUGGESTED LEXICON (Use seamlessly if applicable): {slang_list}
