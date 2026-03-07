@@ -194,6 +194,7 @@ export default function Room03_Ghostwriter() {
                   value={gwStyle} onChange={(e) => setGwStyle(e.target.value)}
                   className="w-full bg-[#111] border border-[#333] p-2 text-[10px] font-mono text-white outline-none focus:border-[#E60000]"
                 >
+                  <option value="getnice_hybrid">GetNice Hybrid (Signature)</option>
                   <option value="drill">NY Drill</option>
                   <option value="trap">Atlanta Trap</option>
                   <option value="boom_bap">Boom Bap</option>

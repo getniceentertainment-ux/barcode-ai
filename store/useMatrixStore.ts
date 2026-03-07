@@ -60,7 +60,7 @@ export const useMatrixStore = create<MatrixState>((set) => ({
   // Room 03 Defaults
   gwTitle: "",
   gwPrompt: "",
-  gwStyle: "drill",
+  gwStyle: "getnice_hybrid",
   gwGender: "male",
   gwUseSlang: true,
   gwUseIntel: true,
