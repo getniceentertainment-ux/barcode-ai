@@ -10,14 +10,19 @@ export default function Room01_Lab() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">("idle");
-  const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([]);
+  
+  // Keep some default fallback beats, and we will append the Supabase ones to this array
+  const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([
+    { name: "GN_Beat_01_Drill_142BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", price: 29.99 },
+    { name: "GN_Beat_02_Trap_120BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", price: 29.99 }
+  ]);
 
   // FETCH REAL BEATS FROM SUPABASE ON MOUNT
   React.useEffect(() => {
     const fetchMarketplaceBeats = async () => {
       try {
-        // Query the audio_raw bucket (or public_data) for uploaded beats
-        const { data, error } = await supabase.storage.from('audio_raw').list();
+        // Look directly in the global 'marketplace_beats' bucket instead of personal audio_raw
+        const { data, error } = await supabase.storage.from('marketplace_beats').list();
         
         if (error) throw error;
 
@@ -25,23 +30,31 @@ export default function Room01_Lab() {
           const fetchedBeats = data
             .filter(file => file.name.endsWith('.mp3') || file.name.endsWith('.wav'))
             .map(file => {
-              const { data: urlData } = supabase.storage.from('audio_raw').getPublicUrl(file.name);
+              // Get the public URL from the marketplace_beats bucket
+              const { data: urlData } = supabase.storage.from('marketplace_beats').getPublicUrl(file.name);
               return {
                 name: file.name,
                 url: urlData.publicUrl,
-                price: 29.99 // Static for now until marketplace table is fully deployed
+                price: 29.99 // Standard lease price for marketplace
               };
             });
           
-          if (fetchedBeats.length > 0) setBeats(fetchedBeats);
+          if (fetchedBeats.length > 0) {
+            setBeats(prev => {
+              // Prevent duplicates from showing up
+              const existingNames = new Set(prev.map(p => p.name));
+              const newBeats = fetchedBeats.filter(fb => !existingNames.has(fb.name));
+              return [...prev, ...newBeats];
+            });
+          }
         }
       } catch (err) {
-        console.error("Failed to load beats from Supabase:", err);
+        console.error("Failed to load beats from Supabase marketplace:", err);
       }
     };
 
     fetchMarketplaceBeats();
-  }, []);
+  }, []); // Removed userSession dependency so it loads instantly for everyone
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -71,7 +84,7 @@ export default function Room01_Lab() {
       // 3. Ping Next.js API (Worker 2 / Essentia) with the cloud URL
       const res = await fetch('/api/dsp', { 
         method: 'POST', 
-        body: JSON.stringify({ file_url: cloudUrl }) 
+        body: JSON.stringify({ file_url: cloudUrl, userId: userSession.id }) 
       });
       
       if (!res.ok) throw new Error("DSP Processing failed");
@@ -81,12 +94,13 @@ export default function Room01_Lab() {
       setAudioData({
         url: cloudUrl,
         fileName: file.name,
-        bpm: analysis.bpm || 120, // Fallback if API is missing fields
+        bpm: analysis.bpm || 120, 
         totalBars: analysis.total_bars || 16,
         grid: analysis.grid || []
       });
 
       setStatus("success");
+      if(addToast) addToast("Beat imported successfully", "success");
       
       setTimeout(() => {
         setActiveRoom("02");
@@ -94,7 +108,7 @@ export default function Room01_Lab() {
 
     } catch (err) {
       console.error("DSP Pipeline Error:", err);
-      alert("Error processing audio. Please try again.");
+      if(addToast) addToast("Error processing audio. Please try again.", "error");
       setStatus("idle");
     }
   };
@@ -128,7 +142,7 @@ export default function Room01_Lab() {
               <UploadCloud size={64} className="mx-auto mb-6 text-[#222] group-hover:text-[#E60000] transition-colors relative z-10" />
               <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold relative z-10 text-white">INJECT RAW AUDIO</h2>
               <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest relative z-10">Secured via Supabase // Routing to Worker 2</p>
-              <input type="file" className="hidden" onChange={handleFileUpload} accept="audio/*" />
+              <input type="file" className="hidden" onChange={handleFileUpload} accept="audio/*" ref={fileInputRef} />
             </>
           )}
 

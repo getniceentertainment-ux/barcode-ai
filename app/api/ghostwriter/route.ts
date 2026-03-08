@@ -19,9 +19,34 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// --- 1. THE MISSING GET ROUTE: Securely handles the frontend polling ---
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const jobId = searchParams.get('jobId');
+    
+    if (!jobId) return NextResponse.json({ error: "Missing jobId" }, { status: 400 });
+
+    const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
+    const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_TALON;
+
+    // Securely check RunPod status from the server
+    const statusRes = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/status/${jobId}`, {
+      headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` }
+    });
+    
+    const statusData = await statusRes.json();
+    return NextResponse.json(statusData);
+
+  } catch (error: any) {
+    console.error("Polling API Error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// --- 2. POST ROUTE: Initiates the TALON RunPod Job ---
 export async function POST(req: Request) {
   try {
-    // 1. JWT SERVER-SIDE VERIFICATION
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) return NextResponse.json({ error: "Access Denied: Missing JWT" }, { status: 401 });
     
@@ -32,7 +57,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Access Denied: Invalid Auth Token" }, { status: 401 });
     }
 
-    // 2. UPSTASH RATE LIMITING
     const { success } = await ratelimit.limit(user.id);
     if (!success) {
       return NextResponse.json({ error: "Rate Limit Exceeded. Please hold." }, { status: 429 });
@@ -41,7 +65,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { prompt, title, bpm, tag, style, gender, useSlang, useIntel, blueprint } = body;
 
-    // 3. CHECK LEDGER CREDITS
     const { data: profile, error: dbError } = await supabaseAdmin
       .from('profiles')
       .select('credits, tier')
@@ -55,10 +78,9 @@ export async function POST(req: Request) {
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_TALON;
-
     const thematicPrompt = title ? `SONG TITLE: "${title}". ${prompt}` : prompt;
 
-    // 4. ASYNCHRONOUS RUNPOD DEPLOYMENT (Using /run to prevent 504 Timeouts)
+    // Trigger Async Job
     const runResponse = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
@@ -70,7 +92,7 @@ export async function POST(req: Request) {
           style: style || "getnice_hybrid",
           useSlang: useSlang,
           useIntel: useIntel,
-          blueprint: blueprint
+          blueprint: blueprint 
         }
       })
     });
@@ -78,10 +100,10 @@ export async function POST(req: Request) {
     const runData = await runResponse.json();
     
     if (runData.id) {
-      // 5. DEDUCT CREDIT (Only charge if successfully queued)
       if (profile.tier !== 'The Mogul') {
         await supabaseAdmin.from('profiles').update({ credits: profile.credits - 1 }).eq('id', user.id);
       }
+      // Instantly return the jobId to the browser
       return NextResponse.json({ jobId: runData.id });
     } else {
       throw new Error(runData.error || "Failed to initialize TALON container.");
