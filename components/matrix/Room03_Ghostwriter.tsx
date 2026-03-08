@@ -91,7 +91,7 @@ export default function Room03_Ghostwriter() {
       const jobId = initData.jobId;
       let attempts = 0;
 
-      // START ASYNC POLLING
+      // START ASYNC POLLING (Hitting our secure Vercel API, not RunPod directly)
       const pollInterval = setInterval(async () => {
         attempts++;
         setPollingAttempts(attempts);
@@ -103,10 +103,8 @@ export default function Room03_Ghostwriter() {
         }
 
         try {
-          const statusRes = await fetch(`https://api.runpod.ai/v2/${process.env.NEXT_PUBLIC_RUNPOD_ENDPOINT}/status/${jobId}`, {
-            headers: { 'Authorization': `Bearer ${process.env.NEXT_PUBLIC_RUNPOD_API_KEY}` }
-          });
-          
+          // PING OUR SECURE BACKEND
+          const statusRes = await fetch(`/api/ghostwriter?jobId=${jobId}`);
           const statusData = await statusRes.json();
 
           if (statusData.status === 'COMPLETED') {

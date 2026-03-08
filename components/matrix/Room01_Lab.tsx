@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useRef } from "react";
-import { UploadCloud, DollarSign, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import React, { useState } from "react";
+import { UploadCloud, DollarSign, Loader2, CheckCircle2 } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -10,33 +10,47 @@ export default function Room01_Lab() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">("idle");
-  
-  const [beats] = useState([
-    { name: "GN_Beat_01_Drill_142BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", price: 29.99 },
-    { name: "GN_Beat_02_Trap_120BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", price: 29.99 }
-  ]);
+  const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([]);
+
+  // FETCH REAL BEATS FROM SUPABASE ON MOUNT
+  React.useEffect(() => {
+    const fetchMarketplaceBeats = async () => {
+      try {
+        // Query the audio_raw bucket (or public_data) for uploaded beats
+        const { data, error } = await supabase.storage.from('audio_raw').list();
+        
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          const fetchedBeats = data
+            .filter(file => file.name.endsWith('.mp3') || file.name.endsWith('.wav'))
+            .map(file => {
+              const { data: urlData } = supabase.storage.from('audio_raw').getPublicUrl(file.name);
+              return {
+                name: file.name,
+                url: urlData.publicUrl,
+                price: 29.99 // Static for now until marketplace table is fully deployed
+              };
+            });
+          
+          if (fetchedBeats.length > 0) setBeats(fetchedBeats);
+        }
+      } catch (err) {
+        console.error("Failed to load beats from Supabase:", err);
+      }
+    };
+
+    fetchMarketplaceBeats();
+  }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !userSession?.id) return;
-
-    // 1. STRICT MIME-TYPE VALIDATION
-    const validTypes = ['audio/mpeg', 'audio/wav', 'audio/mp3'];
-    if (!validTypes.includes(file.type)) {
-      addToast("Security Breach: Only WAV and MP3 formats are permitted.", "error");
-      return;
-    }
-
-    // 2. STRICT 20MB FILE SIZE CAP
-    const MAX_SIZE = 20 * 1024 * 1024; // 20 MB
-    if (file.size > MAX_SIZE) {
-      addToast("Payload Exceeds 20MB Limit. Please compress audio file.", "error");
-      return;
-    }
     
     setStatus("uploading");
     
     try {
+      // 1. Upload to Supabase 'audio_raw' Bucket (organized by user ID)
       const filePath = `${userSession.id}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
       
       const { error: uploadError } = await supabase.storage
@@ -45,6 +59,7 @@ export default function Room01_Lab() {
 
       if (uploadError) throw uploadError;
 
+      // 2. Get the real Public Cloud URL for this file
       const { data: publicUrlData } = supabase.storage
         .from('audio_raw')
         .getPublicUrl(filePath);
@@ -53,48 +68,47 @@ export default function Room01_Lab() {
 
       setStatus("analyzing");
       
+      // 3. Ping Next.js API (Worker 2 / Essentia) with the cloud URL
       const res = await fetch('/api/dsp', { 
         method: 'POST', 
-        body: JSON.stringify({ file_url: cloudUrl, userId: userSession.id }) 
+        body: JSON.stringify({ file_url: cloudUrl }) 
       });
       
       if (!res.ok) throw new Error("DSP Processing failed");
       const analysis = await res.json();
       
+      // 4. Save to Zustand Global Store
       setAudioData({
         url: cloudUrl,
         fileName: file.name,
-        bpm: analysis.bpm || 120,
+        bpm: analysis.bpm || 120, // Fallback if API is missing fields
         totalBars: analysis.total_bars || 16,
         grid: analysis.grid || []
       });
 
       setStatus("success");
-      addToast(`Ingested: ${file.name}. Audio secured in Matrix.`, "success");
       
       setTimeout(() => {
         setActiveRoom("02");
       }, 1500);
 
-    } catch (err: any) {
+    } catch (err) {
       console.error("DSP Pipeline Error:", err);
-      addToast(err.message || "Error processing audio.", "error");
+      alert("Error processing audio. Please try again.");
       setStatus("idle");
     }
   };
 
-  const handleSelectMarketplaceBeat = (beat: { name: string, url: string, price: number }) => {
-    // Phase 1 implementation - Marketplace selection simulation
+  const handleSelectMarketplaceBeat = (beat: { name: string, url: string }) => {
     setStatus("analyzing");
     setTimeout(() => {
       setAudioData({
         url: beat.url,
         fileName: beat.name,
         bpm: parseInt(beat.name.match(/_(\d+)BPM/)?.[1] || "120"),
-        totalBars: 64, // Simulated standard length
+        totalBars: 16,
       });
       setStatus("success");
-      addToast(`Leased Beat Secured: ${beat.name}`, "success");
       setTimeout(() => setActiveRoom("02"), 1000);
     }, 2000);
   };
@@ -114,10 +128,7 @@ export default function Room01_Lab() {
               <UploadCloud size={64} className="mx-auto mb-6 text-[#222] group-hover:text-[#E60000] transition-colors relative z-10" />
               <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold relative z-10 text-white">INJECT RAW AUDIO</h2>
               <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest relative z-10">Secured via Supabase // Routing to Worker 2</p>
-              <div className="mt-6 flex items-center gap-2 text-[9px] text-yellow-600 font-mono uppercase tracking-widest bg-yellow-900/10 py-1 px-3 border border-yellow-900/30">
-                <AlertTriangle size={12} /> Strict Limit: 20MB (WAV/MP3)
-              </div>
-              <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileUpload} accept="audio/mpeg, audio/wav, audio/mp3" />
+              <input type="file" className="hidden" onChange={handleFileUpload} accept="audio/*" />
             </>
           )}
 
@@ -161,7 +172,7 @@ export default function Room01_Lab() {
             <div key={i} className="bg-black p-4 border border-[#111] flex items-center justify-between group hover:border-[#E60000] transition-colors">
               <div className="flex flex-col pr-4 overflow-hidden">
                 <span className="text-[10px] font-mono text-gray-300 uppercase truncate font-bold">{b.name}</span>
-                <span className="text-[8px] font-mono text-green-500 uppercase mt-1">${b.price} Lease</span>
+                <span className="text-[8px] font-mono text-[#555] uppercase mt-1">Ready for matrix</span>
               </div>
               <button 
                 onClick={() => handleSelectMarketplaceBeat(b)}
