@@ -1,10 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { PenTool, Loader2, Sparkles, RefreshCw, ArrowRight, Trash2, Plus, BrainCircuit } from "lucide-react";
+import React, { useState } from "react";
 import { useMatrixStore } from "../../store/useMatrixStore";
+import { PenTool, Loader2, Sparkles, RefreshCw, ArrowRight, Trash2, Plus, BrainCircuit } from "lucide-react";
 import { BlueprintSection } from "../../lib/types";
-import { supabase } from "../../lib/supabase";
 
 export default function Room03_Ghostwriter() {
   const { 
@@ -16,14 +15,12 @@ export default function Room03_Ghostwriter() {
     gwStyle, setGwStyle,
     gwGender, setGwGender, 
     gwUseSlang, setGwUseSlang, 
-    gwUseIntel, setGwUseIntel,
-    addToast
+    gwUseIntel, setGwUseIntel
   } = useMatrixStore();
   
   const [isGenerating, setIsGenerating] = useState(false);
+  // Keep local lyrics synced to global state so it survives navigation
   const [lyrics, setLyrics] = useState(generatedLyrics || "");
-  const [uxState, setUxState] = useState<string>("");
-  const [pollingAttempts, setPollingAttempts] = useState(0);
   
   const [selectedLine, setSelectedLine] = useState<{index: number, text: string} | null>(null);
   const [refineInstruction, setRefineInstruction] = useState("");
@@ -47,32 +44,22 @@ export default function Room03_Ghostwriter() {
     setBlueprint(newBlueprint);
   };
 
-  // --- ASYNC GENERATION LOGIC ---
   const handleGenerate = async () => {
     if (!userSession?.id) {
-      addToast("Authentication error: You must be logged in.", "error");
+      alert("Authentication error: You must be logged in.");
       return;
     }
 
     setIsGenerating(true);
     setLyrics("");
     setGeneratedLyrics(""); 
-    setPollingAttempts(0);
-    setUxState("Initializing Secure API Handshake...");
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error("Authentication JWT missing.");
-
-      setUxState("Compiling Payload & Blueprint...");
-      
-      const initRes = await fetch('/api/ghostwriter', {
+      const res = await fetch('/api/ghostwriter', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
+          userId: userSession.id,
           title: gwTitle,
           prompt: gwPrompt, 
           bpm: audioData?.bpm || 140, 
@@ -85,50 +72,25 @@ export default function Room03_Ghostwriter() {
         })
       });
 
-      const initData = await initRes.json();
-      if (!initRes.ok) throw new Error(initData.error || "Failed to initialize TALON.");
-
-      const jobId = initData.jobId;
-      let attempts = 0;
-
-      // START ASYNC POLLING
-      const pollInterval = setInterval(async () => {
-        attempts++;
-        setPollingAttempts(attempts);
-        
-        if (attempts > 2) {
-          setUxState("Warming up Neural Network (Cold Start)...");
-        } else {
-          setUxState("Synthesizing Bars...");
-        }
-
-        try {
-          const statusRes = await fetch(`https://api.runpod.ai/v2/${process.env.NEXT_PUBLIC_RUNPOD_ENDPOINT}/status/${jobId}`, {
-            headers: { 'Authorization': `Bearer ${process.env.NEXT_PUBLIC_RUNPOD_API_KEY}` }
-          });
-          
-          const statusData = await statusRes.json();
-
-          if (statusData.status === 'COMPLETED') {
-            clearInterval(pollInterval);
-            setIsGenerating(false);
-            setLyrics(statusData.output.lyrics);
-            setGeneratedLyrics(statusData.output.lyrics); // Persist to State
-            addToast("Lyrics Synthesized Successfully.", "success");
-          } else if (statusData.status === 'FAILED') {
-            clearInterval(pollInterval);
-            setIsGenerating(false);
-            addToast("RunPod Execution Failed.", "error");
-          }
-        } catch (pollErr) {
-            console.error("Polling Error", pollErr);
-        }
-      }, 3000); // Check every 3 seconds
-
+      const rawText = await res.text();
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch (e) {
+        throw new Error(`Server Error: ${rawText.substring(0, 60)}...`);
+      }
+      
+      if (res.ok && data.lyrics) {
+        setLyrics(data.lyrics);
+        setGeneratedLyrics(data.lyrics); // Persist to Booth
+      } else {
+        throw new Error(data.error || "Failed to generate lyrics");
+      }
     } catch (err: any) {
       console.error(err);
+      alert("Generation Error: " + err.message);
+    } finally {
       setIsGenerating(false);
-      addToast(err.message, "error");
     }
   };
 
@@ -148,7 +110,9 @@ export default function Room03_Ghostwriter() {
         })
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data;
+      try { data = JSON.parse(rawText); } catch (e) { throw new Error(`Server Error: ${rawText.substring(0, 50)}...`); }
       
       if (res.ok && data.refinedLine) {
         const lyricsArray = lyrics.split('\n');
@@ -156,15 +120,12 @@ export default function Room03_Ghostwriter() {
         const newLyrics = lyricsArray.join('\n');
         
         setLyrics(newLyrics);
-        setGeneratedLyrics(newLyrics); 
+        setGeneratedLyrics(newLyrics); // Update Global
+        
         setSelectedLine(null);
         setRefineInstruction("");
-        addToast("Line refined.", "success");
       } else { throw new Error(data.error || "Failed to refine line"); }
-    } catch (err: any) { 
-        console.error(err); 
-        addToast(err.message, "error"); 
-    } finally { setIsRefining(false); }
+    } catch (err: any) { console.error(err); alert("Refinement Error: " + err.message); } finally { setIsRefining(false); }
   };
 
   return (
@@ -179,6 +140,7 @@ export default function Room03_Ghostwriter() {
         </div>
 
         <div className="p-6 space-y-8">
+          
           {/* Section 1: Core Prompting */}
           <div className="space-y-4">
             <div>
@@ -201,28 +163,50 @@ export default function Room03_Ghostwriter() {
             {/* LIVE INTEL & SLANG TOGGLES */}
             <div className="flex flex-wrap gap-4 pt-2 border-t border-[#222]">
               <label className="flex items-center gap-2 cursor-pointer group">
-                <input type="checkbox" checked={gwUseSlang} onChange={(e) => setGwUseSlang(e.target.checked)} className="w-3 h-3 accent-[#E60000]" />
-                <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest group-hover:text-white transition-colors">Use Street Dictionary</span>
+                <input 
+                  type="checkbox" 
+                  checked={gwUseSlang} 
+                  onChange={(e) => setGwUseSlang(e.target.checked)} 
+                  className="w-3 h-3 accent-[#E60000]"
+                />
+                <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest group-hover:text-white transition-colors">
+                  Use Street Dictionary
+                </span>
               </label>
+              
               <label className="flex items-center gap-2 cursor-pointer group">
-                <input type="checkbox" checked={gwUseIntel} onChange={(e) => setGwUseIntel(e.target.checked)} className="w-3 h-3 accent-[#E60000]" />
-                <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest group-hover:text-white transition-colors">Inject Daily Intel</span>
+                <input 
+                  type="checkbox" 
+                  checked={gwUseIntel} 
+                  onChange={(e) => setGwUseIntel(e.target.checked)} 
+                  className="w-3 h-3 accent-[#E60000]"
+                />
+                <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest group-hover:text-white transition-colors">
+                  Inject Daily Intel
+                </span>
               </label>
             </div>
 
             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[#222]">
               <div>
                 <label className="text-[10px] text-[#888] font-mono uppercase tracking-widest mb-2 block">Flow Style</label>
-                <select value={gwStyle} onChange={(e) => setGwStyle(e.target.value)} className="w-full bg-[#111] border border-[#333] p-2 text-[10px] font-mono text-white outline-none focus:border-[#E60000]">
+                <select 
+                  value={gwStyle} onChange={(e) => setGwStyle(e.target.value)}
+                  className="w-full bg-[#111] border border-[#333] p-2 text-[10px] font-mono text-white outline-none focus:border-[#E60000]"
+                >
                   <option value="getnice_hybrid">GetNice Hybrid (Signature)</option>
                   <option value="drill">NY Drill</option>
                   <option value="trap">Atlanta Trap</option>
                   <option value="boom_bap">Boom Bap</option>
+                  <option value="rnb">R&B Melodic</option>
                 </select>
               </div>
               <div>
                 <label className="text-[10px] text-[#888] font-mono uppercase tracking-widest mb-2 block">Vocal Matrix</label>
-                <select value={gwGender} onChange={(e) => setGwGender(e.target.value)} className="w-full bg-[#111] border border-[#333] p-2 text-[10px] font-mono text-white outline-none focus:border-[#E60000]">
+                <select 
+                  value={gwGender} onChange={(e) => setGwGender(e.target.value)}
+                  className="w-full bg-[#111] border border-[#333] p-2 text-[10px] font-mono text-white outline-none focus:border-[#E60000]"
+                >
                   <option value="male">Male (Gritty)</option>
                   <option value="female">Female (Sharp)</option>
                 </select>
@@ -240,34 +224,59 @@ export default function Room03_Ghostwriter() {
                 {blueprint.reduce((acc, curr) => acc + curr.bars, 0)} Total Bars
               </span>
             </div>
+            
+            <p className="text-[9px] font-mono text-[#888] mb-4 leading-relaxed">
+              * The DSP node automatically constructed this optimal layout based on your beat's length. Modify as needed before generating.
+            </p>
 
             <div className="space-y-2 mb-4">
               {blueprint.map((block, index) => (
                 <div key={block.id} className="flex items-center gap-2 bg-black border border-[#222] p-2 group hover:border-[#E60000]/50 transition-colors">
                   <div className="w-6 text-center text-[9px] text-[#555] font-mono">{index + 1}.</div>
-                  <select value={block.type} onChange={(e) => updateBlock(index, 'type', e.target.value)} className="bg-transparent border-none text-[10px] font-mono text-white p-1 outline-none font-bold">
+                  
+                  <select 
+                    value={block.type}
+                    onChange={(e) => updateBlock(index, 'type', e.target.value)}
+                    className="bg-transparent border-none text-[10px] font-mono text-white p-1 outline-none font-bold"
+                  >
                     <option value="INTRO">INTRO</option>
                     <option value="VERSE">VERSE</option>
                     <option value="HOOK">HOOK</option>
                     <option value="BRIDGE">BRIDGE</option>
                     <option value="OUTRO">OUTRO</option>
                   </select>
+
                   <div className="flex items-center bg-[#111] px-2 ml-auto">
-                    <input type="number" value={block.bars} onChange={(e) => updateBlock(index, 'bars', parseInt(e.target.value) || 0)} className="w-10 bg-transparent text-[10px] font-mono text-white p-1 outline-none text-center" />
+                    <input 
+                      type="number" 
+                      value={block.bars}
+                      onChange={(e) => updateBlock(index, 'bars', parseInt(e.target.value) || 0)}
+                      className="w-10 bg-transparent text-[10px] font-mono text-white p-1 outline-none text-center"
+                    />
                     <span className="text-[9px] text-[#555] font-mono pr-1">Bars</span>
                   </div>
-                  <button onClick={() => removeBlock(index)} className="text-[#444] hover:text-[#E60000] transition-colors p-1"><Trash2 size={12} /></button>
+
+                  <button onClick={() => removeBlock(index)} className="text-[#444] hover:text-[#E60000] transition-colors p-1">
+                    <Trash2 size={12} />
+                  </button>
                 </div>
               ))}
             </div>
 
-            <button onClick={addBlock} className="w-full flex items-center justify-center gap-2 border border-dashed border-[#E60000]/30 text-[#E60000] py-2 text-[10px] uppercase tracking-widest font-bold hover:bg-[#E60000]/10 transition-colors">
+            <button 
+              onClick={addBlock}
+              className="w-full flex items-center justify-center gap-2 border border-dashed border-[#E60000]/30 text-[#E60000] py-2 text-[10px] uppercase tracking-widest font-bold hover:bg-[#E60000]/10 transition-colors"
+            >
               <Plus size={12} /> Add Custom Block
             </button>
           </div>
 
-          <button onClick={handleGenerate} disabled={isGenerating || !gwPrompt || blueprint.length === 0} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-50 flex justify-center items-center gap-2 shadow-[0_0_20px_rgba(230,0,0,0.2)]">
-            {isGenerating ? <><Loader2 size={18} className="animate-spin" /> Transmitting...</> : <><Sparkles size={18} /> Initialize Ghostwriter</>}
+          <button 
+            onClick={handleGenerate}
+            disabled={isGenerating || !gwPrompt || blueprint.length === 0}
+            className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-50 flex justify-center items-center gap-2 shadow-[0_0_20px_rgba(230,0,0,0.2)]"
+          >
+            {isGenerating ? <><Loader2 size={18} className="animate-spin" /> Uplinking to Node...</> : <><Sparkles size={18} /> Initialize Ghostwriter</>}
           </button>
         </div>
       </div>
@@ -303,10 +312,8 @@ export default function Room03_Ghostwriter() {
               {isGenerating ? (
                 <div className="text-[#E60000] flex flex-col items-center">
                   <Loader2 size={32} className="animate-spin mb-4" />
-                  <p className="font-mono text-xs uppercase tracking-widest">{uxState}</p>
-                  {pollingAttempts > 2 && (
-                    <p className="font-mono text-[9px] mt-2 opacity-50 text-yellow-500">Allocating VRAM & Weights... Please hold.</p>
-                  )}
+                  <p className="font-mono text-xs uppercase tracking-widest">TALON is writing...</p>
+                  <p className="font-mono text-[9px] mt-2 opacity-50">Deep generation active. This may take 3-5 minutes based on track length.</p>
                 </div>
               ) : (
                 <p className="font-mono text-xs uppercase tracking-widest text-[#555]">Awaiting instructions...</p>
@@ -325,8 +332,18 @@ export default function Room03_Ghostwriter() {
             <p className="text-xs font-mono text-white mb-3 bg-black p-2 border border-[#333]">"{selectedLine.text}"</p>
             
             <div className="flex gap-2">
-              <input type="text" value={refineInstruction} onChange={(e) => setRefineInstruction(e.target.value)} placeholder="Make it rhyme with 'cash'..." className="flex-1 bg-black border border-[#333] p-2 text-xs font-mono text-white outline-none focus:border-[#E60000]"/>
-              <button onClick={handleRefine} disabled={isRefining || !refineInstruction} className="bg-[#E60000] text-white px-4 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-50 flex items-center gap-2">
+              <input 
+                type="text" 
+                value={refineInstruction}
+                onChange={(e) => setRefineInstruction(e.target.value)}
+                placeholder="Make it rhyme with 'cash'..."
+                className="flex-1 bg-black border border-[#333] p-2 text-xs font-mono text-white outline-none focus:border-[#E60000]"
+              />
+              <button 
+                onClick={handleRefine}
+                disabled={isRefining || !refineInstruction}
+                className="bg-[#E60000] text-white px-4 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-50 flex items-center gap-2"
+              >
                 {isRefining ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Refine
               </button>
             </div>
@@ -334,7 +351,11 @@ export default function Room03_Ghostwriter() {
         )}
 
         <div className="mt-6 flex justify-end">
-          <button onClick={() => setActiveRoom("04")} disabled={!lyrics} className="bg-white text-black px-8 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-gray-200 transition-all disabled:opacity-20 flex justify-center items-center gap-2">
+          <button 
+            onClick={() => setActiveRoom("04")}
+            disabled={!lyrics}
+            className="bg-white text-black px-8 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-gray-200 transition-all disabled:opacity-20 flex justify-center items-center gap-2"
+          >
             Proceed to Booth <ArrowRight size={16} />
           </button>
         </div>

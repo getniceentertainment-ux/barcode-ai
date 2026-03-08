@@ -1,7 +1,18 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 
-export const maxDuration = 800;
+// Initialize Upstash Redis for Rate Limiting (5 requests per minute)
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL || '',
+  token: process.env.UPSTASH_REDIS_REST_TOKEN || '',
+});
+
+const ratelimit = new Ratelimit({
+  redis: redis,
+  limiter: Ratelimit.slidingWindow(5, "1 m"), 
+});
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,108 +21,74 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
   try {
+    // 1. JWT SERVER-SIDE VERIFICATION
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) return NextResponse.json({ error: "Access Denied: Missing JWT" }, { status: 401 });
+    
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (authError || !user) {
+      return NextResponse.json({ error: "Access Denied: Invalid Auth Token" }, { status: 401 });
+    }
+
+    // 2. UPSTASH RATE LIMITING
+    const { success } = await ratelimit.limit(user.id);
+    if (!success) {
+      return NextResponse.json({ error: "Rate Limit Exceeded. Please hold." }, { status: 429 });
+    }
+
     const body = await req.json();
-    // NEW: We added `title` to the incoming payload
-    const { userId, title, prompt, bpm, tag, style, gender, useSlang, blueprint } = body;
+    const { prompt, title, bpm, tag, style, gender, useSlang, useIntel, blueprint } = body;
 
-    if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 401 });
+    // 3. CHECK LEDGER CREDITS
+    const { data: profile, error: dbError } = await supabaseAdmin
+      .from('profiles')
+      .select('credits, tier')
+      .eq('id', user.id)
+      .single();
 
-    // 1. SECURITY CHECK
-    const { data: profile } = await supabaseAdmin.from('profiles').select('credits, tier').eq('id', userId).single();
-    if (!profile || (profile.tier !== 'The Mogul' && profile.credits <= 0)) {
-      return NextResponse.json({ error: "Insufficient Generations." }, { status: 403 });
+    if (dbError || !profile) return NextResponse.json({ error: "Identity not found in Ledger." }, { status: 401 });
+    if (profile.tier !== 'The Mogul' && profile.credits <= 0) {
+      return NextResponse.json({ error: "Insufficient Generations. Upgrade tier." }, { status: 403 });
     }
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_TALON;
 
-    // 2. CONSTRUCT THE "GOD PROMPT"
-    // We physically force the LLM to read the blueprint by injecting it directly into the text prompt.
-    const structureString = blueprint.map((b: any) => `[${b.type}: ${b.bars} Bars]`).join("\n");
-    const strictInstruction = `
-You are a top-tier Ghostwriter. 
-SONG TITLE: "${title || 'Untitled'}"
-THEMATIC INSTRUCTION: "${prompt}"
+    const thematicPrompt = title ? `SONG TITLE: "${title}". ${prompt}` : prompt;
 
-CRITICAL RULE: You MUST strictly write ONLY the exact sections listed below. Do NOT add extra verses or hooks. Adhere to the specified bar counts.
-
-REQUIRED STRUCTURE:
-${structureString}
-    `.trim();
-
-    console.log("[TALON] Submitting Async Job...");
-
-    // 3. START ASYNC JOB (Change from /runsync to /run)
+    // 4. ASYNCHRONOUS RUNPOD DEPLOYMENT (Using /run to prevent 504 Timeouts)
     const runResponse = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
       body: JSON.stringify({
         input: {
           task_type: "generate",
-          prompt: strictInstruction, // Passing the highly strict prompt
-          tag: tag,
-          style: style,
-          blueprint: blueprint // Still passing the array just in case your handler uses it
+          prompt: thematicPrompt,
+          tag: tag || "Standard",
+          style: style || "getnice_hybrid",
+          useSlang: useSlang,
+          useIntel: useIntel,
+          blueprint: blueprint
         }
       })
     });
 
     const runData = await runResponse.json();
     
-    // 🚨 DIAGNOSTIC PATCH: Print exactly what RunPod said!
-    console.log("🚨 RUNPOD RAW RESPONSE:", runData);
-
-    if (!runResponse.ok || !runData.id) {
-        console.error("RunPod rejected the request:", runData);
-        // This sends the REAL error directly to your browser!
-        return NextResponse.json({ 
-            error: `RunPod Error: ${JSON.stringify(runData)}` 
-        }, { status: 500 });
-    }
-
-	const jobId = runData.id;
-
-    // 4. POLL THE STATUS (Check every 3 seconds to prevent timeout)
-    let jobStatus = "IN_PROGRESS";
-    let finalOutput = null;
-    let attempts = 0;
-
-    while (jobStatus === "IN_PROGRESS" || jobStatus === "IN_QUEUE") {
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
-      attempts++;
-      
-      // FIX: Increased from 40 to 120 attempts (6 Minutes)
-      if (attempts > 120) { 
-        throw new Error("RunPod generation timed out after 6 minutes. The model is overloaded or the track is too long.");
-      }
-
-      const statusResponse = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/status/${jobId}`, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` }
-      });
-      
-      const statusData = await statusResponse.json();
-      jobStatus = statusData.status;
-
-      if (jobStatus === "COMPLETED") {
-        finalOutput = statusData.output;
-        break;
-      } else if (jobStatus === "FAILED") {
-        console.error("RunPod Internal Job Failed:", statusData);
-        throw new Error("RunPod Worker failed to generate lyrics.");
-      }
-    }
-
-    // 5. CHARGE CREDIT & RETURN
-    if (finalOutput) {
+    if (runData.id) {
+      // 5. DEDUCT CREDIT (Only charge if successfully queued)
       if (profile.tier !== 'The Mogul') {
-        await supabaseAdmin.from('profiles').update({ credits: profile.credits - 1 }).eq('id', userId);
+        await supabaseAdmin.from('profiles').update({ credits: profile.credits - 1 }).eq('id', user.id);
       }
-      return NextResponse.json(finalOutput);
+      return NextResponse.json({ jobId: runData.id });
+    } else {
+      throw new Error(runData.error || "Failed to initialize TALON container.");
     }
 
   } catch (error: any) {
-    console.error("TALON API Route Error:", error);
+    console.error("API Route Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
