@@ -1,27 +1,26 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { UploadCloud, DollarSign, Loader2, CheckCircle2 } from "lucide-react";
+import { UploadCloud, DollarSign, Loader2, CheckCircle2, Activity } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
 export default function Room01_Lab() {
-  const { setAudioData, setActiveRoom, userSession, addToast } = useMatrixStore();
+  const { audioData, setAudioData, setActiveRoom, userSession, addToast } = useMatrixStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">("idle");
   
-  // Keep some default fallback beats, and we will append the Supabase ones to this array
+  // Keep some default fallback beats with dynamic prices
   const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([
-    { name: "GN_Beat_01_Drill_142BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", price: 29.99 },
-    { name: "GN_Beat_02_Trap_120BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", price: 29.99 }
+    { name: "GN_Beat_01_Drill_142BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", price: 149.99 },
+    { name: "GN_Beat_02_Trap_120BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", price: 49.99 }
   ]);
 
   // FETCH REAL BEATS FROM SUPABASE ON MOUNT
   React.useEffect(() => {
     const fetchMarketplaceBeats = async () => {
       try {
-        // Look directly in the global 'marketplace_beats' bucket instead of personal audio_raw
         const { data, error } = await supabase.storage.from('marketplace_beats').list();
         
         if (error) throw error;
@@ -30,12 +29,21 @@ export default function Room01_Lab() {
           const fetchedBeats = data
             .filter(file => file.name.endsWith('.mp3') || file.name.endsWith('.wav'))
             .map(file => {
-              // Get the public URL from the marketplace_beats bucket
+              // Extract BPM from filename to determine pricing tier
+              const bpmMatch = file.name.match(/_?(\d+)\s*BPM/i);
+              const bpm = bpmMatch ? parseInt(bpmMatch[1]) : 120;
+              
+              // Dynamic Pricing Engine
+              let calculatedPrice = 29.99;
+              if (bpm >= 140) calculatedPrice = 149.99;
+              else if (bpm >= 125) calculatedPrice = 99.99;
+              else if (bpm >= 110) calculatedPrice = 49.99;
+
               const { data: urlData } = supabase.storage.from('marketplace_beats').getPublicUrl(file.name);
               return {
                 name: file.name,
                 url: urlData.publicUrl,
-                price: 29.99 // Standard lease price for marketplace
+                price: calculatedPrice
               };
             });
           
@@ -54,7 +62,7 @@ export default function Room01_Lab() {
     };
 
     fetchMarketplaceBeats();
-  }, []); // Removed userSession dependency so it loads instantly for everyone
+  }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -63,7 +71,7 @@ export default function Room01_Lab() {
     setStatus("uploading");
     
     try {
-      // 1. Upload to Supabase 'audio_raw' Bucket (organized by user ID)
+      // 1. Upload to Supabase 'audio_raw' Bucket
       const filePath = `${userSession.id}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
       
       const { error: uploadError } = await supabase.storage
@@ -72,7 +80,7 @@ export default function Room01_Lab() {
 
       if (uploadError) throw uploadError;
 
-      // 2. Get the real Public Cloud URL for this file
+      // 2. Get the real Public Cloud URL
       const { data: publicUrlData } = supabase.storage
         .from('audio_raw')
         .getPublicUrl(filePath);
@@ -81,7 +89,7 @@ export default function Room01_Lab() {
 
       setStatus("analyzing");
       
-      // 3. Ping Next.js API (Worker 2 / Essentia) with the cloud URL
+      // 3. Ping Next.js API (Worker 2 / Essentia)
       const res = await fetch('/api/dsp', { 
         method: 'POST', 
         body: JSON.stringify({ file_url: cloudUrl, userId: userSession.id }) 
@@ -95,16 +103,13 @@ export default function Room01_Lab() {
         url: cloudUrl,
         fileName: file.name,
         bpm: analysis.bpm || 120, 
-        totalBars: analysis.total_bars || 16,
+        totalBars: analysis.total_bars || 64, // Adjusted realistic default length
         grid: analysis.grid || []
       });
 
+      // Show the Smart Analysis UI instead of auto-advancing
       setStatus("success");
-      if(addToast) addToast("Beat imported successfully", "success");
-      
-      setTimeout(() => {
-        setActiveRoom("02");
-      }, 1500);
+      if(addToast) addToast("Beat imported & analyzed successfully", "success");
 
     } catch (err) {
       console.error("DSP Pipeline Error:", err);
@@ -113,17 +118,19 @@ export default function Room01_Lab() {
     }
   };
 
-  const handleSelectMarketplaceBeat = (beat: { name: string, url: string }) => {
+  const handleSelectMarketplaceBeat = (beat: { name: string, url: string, price: number }) => {
     setStatus("analyzing");
+    
+    // Simulate DSP extraction for marketplace beats
     setTimeout(() => {
       setAudioData({
         url: beat.url,
         fileName: beat.name,
-        bpm: parseInt(beat.name.match(/_(\d+)BPM/)?.[1] || "120"),
-        totalBars: 16,
+        bpm: parseInt(beat.name.match(/_?(\d+)\s*BPM/i)?.[1] || "120"),
+        totalBars: 88, 
       });
       setStatus("success");
-      setTimeout(() => setActiveRoom("02"), 1000);
+      if(addToast) addToast("Marketplace beat secured.", "success");
     }, 2000);
   };
 
@@ -132,22 +139,23 @@ export default function Room01_Lab() {
       
       {/* LEFT COL: INJECTION DROPZONE */}
       <div className="lg:col-span-2 flex flex-col justify-center">
-        <label className={`border-2 border-dashed transition-all cursor-pointer group rounded-lg text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[400px]
-          ${status === 'idle' ? 'border-[#222] bg-[#050505] hover:border-[#E60000]' : 'border-[#E60000] bg-[#110000]'}`}>
+        {/* Changed from <label> to <div> so the button inside doesn't trigger file upload */}
+        <div className={`border-2 transition-all group rounded-lg text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[400px]
+          ${status === 'idle' ? 'border-[#222] bg-[#050505] hover:border-[#E60000] border-dashed' : 'border-[#E60000] bg-[#110000] border-solid'}`}>
           
-          {status === 'analyzing' && <div className="absolute inset-0 bg-[#E60000]/10 animate-pulse" />}
+          {status === 'analyzing' && <div className="absolute inset-0 bg-[#E60000]/10 animate-pulse pointer-events-none" />}
           
           {status === 'idle' && (
-            <>
+            <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer p-10">
               <UploadCloud size={64} className="mx-auto mb-6 text-[#222] group-hover:text-[#E60000] transition-colors relative z-10" />
               <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold relative z-10 text-white">INJECT RAW AUDIO</h2>
               <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest relative z-10">Secured via Supabase // Routing to Worker 2</p>
               <input type="file" className="hidden" onChange={handleFileUpload} accept="audio/*" ref={fileInputRef} />
-            </>
+            </label>
           )}
 
           {status === 'uploading' && (
-            <div className="relative z-10 flex flex-col items-center">
+            <div className="relative z-10 flex flex-col items-center pointer-events-none">
               <UploadCloud size={64} className="mx-auto mb-6 text-[#E60000] animate-bounce" />
               <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">UPLOADING...</h2>
               <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest">Transmitting to Secure Supabase Bucket</p>
@@ -155,21 +163,43 @@ export default function Room01_Lab() {
           )}
 
           {status === 'analyzing' && (
-            <div className="relative z-10 flex flex-col items-center">
+            <div className="relative z-10 flex flex-col items-center pointer-events-none">
               <Loader2 size={64} className="mx-auto mb-6 text-[#E60000] animate-spin" />
               <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">ANALYZING</h2>
               <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest">Extracting Rhythm Grid & BPM Context</p>
             </div>
           )}
 
-          {status === 'success' && (
-            <div className="relative z-10 flex flex-col items-center animate-in zoom-in">
-              <CheckCircle2 size={64} className="mx-auto mb-6 text-green-500" />
-              <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">DSP COMPLETE</h2>
-              <p className="font-mono text-[10px] text-green-500 uppercase tracking-widest">Routing to Brain Train...</p>
+          {/* NEW: Smart Analysis Dashboard */}
+          {status === 'success' && audioData && (
+            <div className="relative z-10 flex flex-col items-center animate-in zoom-in w-full px-8 py-10">
+              <Activity size={48} className="mx-auto mb-4 text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full bg-green-500/10 p-2" />
+              <h2 className="font-oswald text-3xl uppercase tracking-widest mb-6 font-bold text-white">Smart Analysis Complete</h2>
+              
+              <div className="bg-black border border-green-500/30 p-6 w-full max-w-sm mb-8 space-y-4">
+                <div className="flex justify-between items-center border-b border-[#222] pb-2">
+                  <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Detected BPM</span>
+                  <span className="text-lg font-oswald text-green-500 font-bold">{Math.round(audioData.bpm)}</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-[#222] pb-2">
+                  <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Structural Length</span>
+                  <span className="text-lg font-oswald text-green-500 font-bold">{audioData.totalBars} Bars</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Rhythm Grid</span>
+                  <span className="text-[10px] font-mono text-green-500 tracking-widest">SECURED</span>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setActiveRoom("02")}
+                className="w-full max-w-sm bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+              >
+                Advance to Brain Train
+              </button>
             </div>
           )}
-        </label>
+        </div>
       </div>
 
       {/* RIGHT COL: MARKETPLACE */}
@@ -186,7 +216,9 @@ export default function Room01_Lab() {
             <div key={i} className="bg-black p-4 border border-[#111] flex items-center justify-between group hover:border-[#E60000] transition-colors">
               <div className="flex flex-col pr-4 overflow-hidden">
                 <span className="text-[10px] font-mono text-gray-300 uppercase truncate font-bold">{b.name}</span>
-                <span className="text-[8px] font-mono text-[#555] uppercase mt-1">Ready for matrix</span>
+                <span className="text-[9px] font-mono text-green-500 uppercase mt-1 tracking-widest">
+                  Lease: ${b.price.toFixed(2)}
+                </span>
               </div>
               <button 
                 onClick={() => handleSelectMarketplaceBeat(b)}
