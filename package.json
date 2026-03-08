@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.36.3",
     "axios": "^1.6.7",
     "clsx": "^2.1.0",
     "lucide-react": "^0.344.0",
