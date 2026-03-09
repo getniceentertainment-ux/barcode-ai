@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession } from '../lib/types';
+import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession, FinalMaster } from '../lib/types';
 
 interface ToastMessage {
   id: string;
@@ -9,7 +9,6 @@ interface ToastMessage {
 }
 
 interface MatrixState {
-  // --- ACCESS & NAVIGATION ---
   hasAccess: boolean;
   activeRoom: string;
   userSession: UserSession | null;
@@ -17,14 +16,12 @@ interface MatrixState {
   grantAccess: (session: UserSession) => void;
   setActiveRoom: (roomId: string) => void;
 
-  // --- ROOM 01 & 02: THE LAB & BRAIN TRAIN ---
   audioData: AudioAnalysis | null;
   setAudioData: (data: AudioAnalysis) => void;
   
   flowDNA: FlowDNA | null;
   setFlowDNA: (dna: FlowDNA) => void;
 
-  // --- ROOM 03: GHOSTWRITER (Persisted Data) ---
   gwTitle: string;
   gwPrompt: string;
   gwStyle: string;
@@ -45,25 +42,25 @@ interface MatrixState {
   generatedLyrics: string | null;
   setGeneratedLyrics: (lyrics: string) => void;
 
-  // --- ROOM 04 & 05: BOOTH & ENGINEERING ---
   vocalStems: VocalStem[];
   addVocalStem: (stem: VocalStem) => void;
   removeVocalStem: (id: string) => void;
   updateStemVolume: (id: string, volume: number) => void;
 
-  // --- UI SYSTEMS (Toasts) ---
+  // NEW: Room 06 & 07 Master Artifact
+  finalMaster: FinalMaster | null;
+  setFinalMaster: (master: FinalMaster | null) => void;
+
   toasts: ToastMessage[];
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
   removeToast: (id: string) => void;
 
-  // --- RESET MATRIX ---
   clearMatrix: () => void;
 }
 
 export const useMatrixStore = create<MatrixState>()(
   persist(
     (set, get) => ({
-      // Initial State
       hasAccess: false,
       activeRoom: "01",
       userSession: null,
@@ -71,7 +68,6 @@ export const useMatrixStore = create<MatrixState>()(
       audioData: null,
       flowDNA: null,
       
-      // Room 03 Defaults
       gwTitle: "",
       gwPrompt: "",
       gwStyle: "getnice_hybrid",
@@ -87,9 +83,9 @@ export const useMatrixStore = create<MatrixState>()(
       generatedLyrics: null,
       
       vocalStems: [],
+      finalMaster: null, // Initialized
       toasts: [],
 
-      // Actions
       grantAccess: (session) => set({ hasAccess: true, userSession: session }),
       setActiveRoom: (roomId) => set({ activeRoom: roomId }),
       
@@ -112,6 +108,9 @@ export const useMatrixStore = create<MatrixState>()(
         vocalStems: state.vocalStems.map(s => s.id === id ? { ...s, volume } : s)
       })),
 
+      // NEW Action
+      setFinalMaster: (master) => set({ finalMaster: master }),
+
       addToast: (message, type) => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({ toasts: [...state.toasts, { id, message, type }] }));
@@ -123,13 +122,12 @@ export const useMatrixStore = create<MatrixState>()(
 
       clearMatrix: () => set({
         audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
-        gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", gwGender: "male", gwUseSlang: true, gwUseIntel: true
+        gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", gwGender: "male", gwUseSlang: true, gwUseIntel: true, finalMaster: null
       })
     }),
     {
       name: 'barcode-matrix-storage', 
       storage: createJSONStorage(() => localStorage),
-      // Auto-save these specific states so user doesn't lose work on refresh
       partialize: (state) => ({ 
         audioData: state.audioData, 
         flowDNA: state.flowDNA,
@@ -140,6 +138,7 @@ export const useMatrixStore = create<MatrixState>()(
         gwStyle: state.gwStyle,
         gwUseSlang: state.gwUseSlang,
         gwUseIntel: state.gwUseIntel
+        // NOTE: We DO NOT persist finalMaster (Blobs cannot be saved to localStorage)
       }),
     }
   )

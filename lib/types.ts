@@ -1,4 +1,3 @@
-// --- USER & AUTH ---
 export type AccessTier = "Free Loader" | "The Artist" | "The Mogul";
 
 export interface UserSession {
@@ -8,19 +7,18 @@ export interface UserSession {
   creditsRemaining: number | "UNLIMITED";
 }
 
-// --- MATRIX DATA STRUCTURES ---
 export interface AudioAnalysis {
   url: string;
   fileName: string;
   bpm: number;
   totalBars: number;
-  grid?: number[]; // The precise timestamp array from Essentia Worker 2
+  grid?: number[];
 }
 
 export interface FlowDNA {
   tag: string;
   referenceText: string;
-  syllableDensity?: number;
+  syllableDensity: number;
 }
 
 export interface BlueprintSection {
@@ -34,7 +32,7 @@ export interface VocalStem {
   type: "Lead" | "Adlib" | "Double";
   url: string;
   blob?: Blob;
-  volume: number; // -60 to 0 dB
+  volume: number; 
 }
 
 // NEW: Store the final master artifact
