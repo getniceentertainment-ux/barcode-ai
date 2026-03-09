@@ -63,6 +63,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
+    // FIXED: Added 'title' to the destructuring so the thematic prompt compiles correctly
     const { prompt, title, bpm, tag, style, gender, useSlang, useIntel, blueprint } = body;
 
     const { data: profile, error: dbError } = await supabaseAdmin

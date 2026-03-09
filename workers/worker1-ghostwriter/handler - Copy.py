@@ -15,13 +15,11 @@ SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_
 SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
 
-# EXPANDED BAN LIST (Killing the corny poetry)
 BAN_LIST = [
     "plight", "fright", "ignite", "divine", "sublime", "mindstream",
     "whispers", "shadows", "dancing", "embrace", "souls", "abyss",
     "void", "chaos", "destiny", "fate", "temptress", "brave ones",
-    "cowards pledge", "kingdom", "throne", "gravity", "sincere", 
-    "echoing", "laughter", "tears", "sorrow", "melody", "symphony"
+    "cowards pledge", "kingdom", "throne", "gravity"
 ]
 
 model = None
@@ -66,7 +64,7 @@ def load_cultural_context():
                 title = item.get("title", "STREET POLITICS")
                 content = item.get("content", "")[:400] 
                 return f"[CULTURAL ANCHOR: {title}] - {content}..."
-    except Exception:
+    except Exception as e:
         pass
     return "Focus on the struggle, the hustle, and survival."
 
@@ -74,6 +72,30 @@ def init_model():
     global model, tokenizer
     print("Initiating TALON Engine Deep Burn-In...")
     
+    config_path = os.path.join(LORA_WEIGHTS_DIR, "adapter_config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r") as f:
+                config_data = json.load(f)
+            bad_keys = [
+                "alora_invocation_tokens", "arrow_config", "corda_config", 
+                "ensure_weight_tying", "layer_replication", "megatron_config", 
+                "megatron_core", "use_rslora", "use_dora", "inject_mlps", "eva_config",
+                "exclude_modules", "lora_bias", "peft_version", "qalora_group_size",
+                "target_parameters", "trainable_token_indices", "use_qalora", "use_rslora"
+            ]
+            cleaned = False
+            for key in bad_keys:
+                if key in config_data:
+                    del config_data[key]
+                    cleaned = True
+            if cleaned:
+                with open(config_path, "w") as f:
+                    json.dump(config_data, f, indent=2)
+                print("🧹 Auto-Cleaner: Purged incompatible config keys.")
+        except Exception as e:
+            print(f"Auto-Cleaner skipped: {e}")
+
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_compute_dtype=torch.float16,
@@ -97,7 +119,7 @@ def init_model():
     _ = model.generate(**dummy, max_new_tokens=5)
     print("Deep Burn-In Complete. Worker Ready.")
 
-# --- THE ARCHITECTURE ROUTER (RESTORED) ---
+# --- INFERENCE LOGIC WITH NEW ARCHITECTURE ROUTER ---
 
 def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
@@ -105,7 +127,8 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel):
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     banned_words_str = ", ".join(BAN_LIST)
     
-    # STRICT RULES BASED ON GENRE
+    # --- THE FLOW ARCHITECTURE ROUTER ---
+    # We strip out generic logic and strictly enforce rhythm schemes based on the selected style
     if genre_style == "getnice_hybrid":
         flow_architecture = """[FLOW ARCHITECTURE: GETNICE HYBRID (SIGNATURE FLOW)]
 - CADENCE: Mid-bar breath control with aggressive internal rhymes.
@@ -119,22 +142,21 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel):
     elif genre_style == "drill":
         flow_architecture = """[FLOW ARCHITECTURE: NY DRILL]
 - CADENCE: Off-beat, aggressive staccato stops. Sliding 808 pockets.
-- SCHEME: AABB. Keep sentences punchy, sharp, and highly rhythmic.
-- RULE: Use street imagery, gritty tones, and concrete physical objects."""
+- SCHEME: AABB. Keep sentences punchy, sharp, and highly rhythmic."""
     elif genre_style == "trap":
         flow_architecture = """[FLOW ARCHITECTURE: ATLANTA TRAP]
 - CADENCE: Fast triplet flows, drawn out vowels on the end-rhyme.
-- SCHEME: AABB with heavy repetition on the end words. Short, punchy lines."""
+- SCHEME: AABB with heavy repetition on the end words."""
     else:
         flow_architecture = f"[FLOW ARCHITECTURE: {genre_style.upper()}]\n- CADENCE: Standard 4/4 rhythm structure.\n- DNA REF: {flow_dna}"
     
     return f"""<|im_start|>system
-You are the TALON Ghostwriter Engine, a highly constrained AI matrix fine-tuned for the music industry. You write bars, not poetry.
+You are the TALON Ghostwriter Engine, a highly constrained AI matrix fine-tuned for the music industry.
 
-1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}. No abstract poetry (e.g., "love sincere", "tears fall").
+1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}
 2. SUGGESTED LEXICON: {slang_list}
-3. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. DO NOT WRITE ANY HEADERS, BRACKETS, DIFFS, OR CODE BLOCKS. ONE LINE EQUALS ONE BAR.
-4. CONCRETE NOUNS ONLY: Use physical objects (cars, money, cities, clothes, streets). Avoid abstract emotions.
+3. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. DO NOT WRITE ANY HEADERS, BRACKETS, DIFFS, OR CODE BLOCKS. YOU ARE WRITING BARS, NOT CODE.
+4. CONCRETE NOUNS ONLY: Use physical objects. Avoid abstract poetry.
 
 {flow_architecture}
 
@@ -151,12 +173,11 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_
     
     user_prompt = f"""<|im_start|>user
 [STRUCTURAL BLUEPRINT]
-GENERATE A {section_type.upper()}. EXACTLY {bars} LINES (BARS). Topic: '{prompt_topic}'.
+GENERATE A {section_type.upper()}. EXACTLY {bars} LINES. Topic: '{prompt_topic}'.
 DO NOT WRITE THE HEADER (e.g., [Verse]). JUST WRITE THE {bars} LINES OF LYRICS.
-EVERY LINE MUST FOLLOW THE FLOW ARCHITECTURE RULES IN THE SYSTEM PROMPT.
 
-Previous lyrics context (Continue the rhyme scheme):
-{previous_lyrics if previous_lyrics else 'None (Start of track)'}
+Previous lyrics context:
+{previous_lyrics if previous_lyrics else 'None'}
 <|im_end|>
 <|im_start|>assistant
 """
@@ -198,9 +219,8 @@ def handler(event):
     flow_dna = job_input.get("tag", "Standard flow")
     style = job_input.get("style", "getnice_hybrid")
     use_slang = job_input.get("useSlang", True)
-    use_intel = job_input.get("useIntel", True)
     
-    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel)
+    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_slang)
     
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16}])
