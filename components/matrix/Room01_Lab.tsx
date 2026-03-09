@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { UploadCloud, DollarSign, Loader2, CheckCircle2, Activity } from "lucide-react";
+import { UploadCloud, DollarSign, Loader2, CheckCircle2, Activity, Zap } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -9,16 +9,13 @@ export default function Room01_Lab() {
   const { audioData, setAudioData, setActiveRoom, userSession, addToast } = useMatrixStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Initialize status to "success" if audioData already exists in the global store
   const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">(audioData ? "success" : "idle");
   
-  // Keep some default fallback beats with dynamic prices
   const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([
     { name: "GN_Beat_01_Drill_142BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", price: 149.99 },
     { name: "GN_Beat_02_Trap_120BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", price: 49.99 }
   ]);
 
-  // FETCH REAL BEATS FROM SUPABASE ON MOUNT
   React.useEffect(() => {
     const fetchMarketplaceBeats = async () => {
       try {
@@ -30,11 +27,9 @@ export default function Room01_Lab() {
           const fetchedBeats = data
             .filter(file => file.name.endsWith('.mp3') || file.name.endsWith('.wav'))
             .map(file => {
-              // Extract BPM from filename to determine pricing tier
               const bpmMatch = file.name.match(/_?(\d+)\s*BPM/i);
               const bpm = bpmMatch ? parseInt(bpmMatch[1]) : 120;
               
-              // Dynamic Pricing Engine
               let calculatedPrice = 29.99;
               if (bpm >= 140) calculatedPrice = 149.99;
               else if (bpm >= 125) calculatedPrice = 99.99;
@@ -50,7 +45,6 @@ export default function Room01_Lab() {
           
           if (fetchedBeats.length > 0) {
             setBeats(prev => {
-              // Prevent duplicates from showing up
               const existingNames = new Set(prev.map(p => p.name));
               const newBeats = fetchedBeats.filter(fb => !existingNames.has(fb.name));
               return [...prev, ...newBeats];
@@ -69,52 +63,73 @@ export default function Room01_Lab() {
     const file = e.target.files?.[0];
     if (!file || !userSession?.id) return;
     
+    // 1. STRICT MIME-TYPE & SIZE VALIDATION
+    const validTypes = ['audio/mpeg', 'audio/wav', 'audio/mp3'];
+    if (!validTypes.includes(file.type)) {
+      if(addToast) addToast("Security Breach: Only WAV and MP3 formats are permitted.", "error");
+      return;
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+      if(addToast) addToast("Payload Exceeds 20MB Limit. Please compress audio file.", "error");
+      return;
+    }
+
     setStatus("uploading");
     
     try {
-      // 1. Upload to Supabase 'audio_raw' Bucket
+      // 2. SECURE PRE-FLIGHT CREDIT CHECK (Prevents Storage Spam)
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('credits, tier')
+        .eq('id', userSession.id)
+        .single();
+
+      if (profileError || !profile) throw new Error("Could not verify identity in ledger.");
+      if (profile.tier !== 'The Mogul' && profile.credits <= 0) {
+        throw new Error("Insufficient Credits. Upgrade your tier to analyze more tracks.");
+      }
+
+      // 3. Upload to Supabase 'audio_raw' Bucket
       const filePath = `${userSession.id}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('audio_raw')
-        .upload(filePath, file);
+      const { error: uploadError } = await supabase.storage.from('audio_raw').upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
-      // 2. Get the real Public Cloud URL
-      const { data: publicUrlData } = supabase.storage
-        .from('audio_raw')
-        .getPublicUrl(filePath);
-        
+      const { data: publicUrlData } = supabase.storage.from('audio_raw').getPublicUrl(filePath);
       const cloudUrl = publicUrlData.publicUrl;
 
       setStatus("analyzing");
       
-      // 3. Ping Next.js API (Worker 2 / Essentia)
+      // 4. Ping Next.js API (Worker 2 / Essentia)
       const res = await fetch('/api/dsp', { 
         method: 'POST', 
         body: JSON.stringify({ file_url: cloudUrl, userId: userSession.id }) 
       });
       
-      if (!res.ok) throw new Error("DSP Processing failed");
       const analysis = await res.json();
       
-      // 4. Save to Zustand Global Store
+      if (!res.ok) {
+        // 5. GARBAGE COLLECTION (If RunPod fails, delete the audio so we don't pay for dead storage)
+        await supabase.storage.from('audio_raw').remove([filePath]);
+        throw new Error(analysis.error || "DSP Processing failed");
+      }
+      
+      // Save to Zustand Global Store
       setAudioData({
         url: cloudUrl,
         fileName: file.name,
         bpm: analysis.bpm || 120, 
-        totalBars: analysis.total_bars || 64, // Adjusted realistic default length
+        totalBars: analysis.total_bars || 64,
         grid: analysis.grid || []
       });
 
-      // Show the Smart Analysis UI instead of auto-advancing
       setStatus("success");
       if(addToast) addToast("Beat imported & analyzed successfully", "success");
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("DSP Pipeline Error:", err);
-      if(addToast) addToast("Error processing audio. Please try again.", "error");
+      if(addToast) addToast(err.message || "Error processing audio.", "error");
       setStatus("idle");
     }
   };
@@ -122,7 +137,6 @@ export default function Room01_Lab() {
   const handleSelectMarketplaceBeat = (beat: { name: string, url: string, price: number }) => {
     setStatus("analyzing");
     
-    // Simulate DSP extraction for marketplace beats
     setTimeout(() => {
       setAudioData({
         url: beat.url,
@@ -140,14 +154,19 @@ export default function Room01_Lab() {
       
       {/* LEFT COL: INJECTION DROPZONE */}
       <div className="lg:col-span-2 flex flex-col justify-center">
-        {/* Changed from <label> to <div> so the button inside doesn't trigger file upload */}
         <div className={`border-2 transition-all group rounded-lg text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[400px]
           ${status === 'idle' ? 'border-[#222] bg-[#050505] hover:border-[#E60000] border-dashed' : 'border-[#E60000] bg-[#110000] border-solid'}`}>
           
           {status === 'analyzing' && <div className="absolute inset-0 bg-[#E60000]/10 animate-pulse pointer-events-none" />}
           
           {status === 'idle' && (
-            <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer p-10">
+            <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer p-10 relative">
+              {/* Cost Indicator Badge */}
+              <div className="absolute top-4 right-4 bg-[#111] border border-[#333] px-3 py-1 flex items-center gap-2 rounded-full">
+                <Zap size={12} className="text-[#E60000]" />
+                <span className="text-[9px] font-mono uppercase tracking-widest text-[#888]">Cost: 1 Credit</span>
+              </div>
+
               <UploadCloud size={64} className="mx-auto mb-6 text-[#222] group-hover:text-[#E60000] transition-colors relative z-10" />
               <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold relative z-10 text-white">INJECT RAW AUDIO</h2>
               <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest relative z-10">Secured via Supabase // Routing to Worker 2</p>
@@ -171,7 +190,6 @@ export default function Room01_Lab() {
             </div>
           )}
 
-          {/* NEW: Smart Analysis Dashboard */}
           {status === 'success' && audioData && (
             <div className="relative z-10 flex flex-col items-center animate-in zoom-in w-full px-8 py-10">
               <Activity size={48} className="mx-auto mb-4 text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full bg-green-500/10 p-2" />
