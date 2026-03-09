@@ -24,7 +24,8 @@ export async function POST(req: Request) {
         n: 1,
         size: "1024x1024",
       });
-      coverUrl = imageRes.data[0].url || "";
+      // FIXED: Added optional chaining (?.) to satisfy TypeScript strict mode
+      coverUrl = imageRes.data?.[0]?.url || "";
     } catch (imgErr) {
       console.error("DALL-E Generation Failed:", imgErr);
       coverUrl = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1024&auto=format&fit=crop"; // Fallback aesthetic image
