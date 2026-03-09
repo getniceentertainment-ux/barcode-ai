@@ -1,11 +1,11 @@
 "use client";
 
-import CreditHustle from '../components/matrix/CreditHustle';
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { 
   UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, 
-  Send, Wallet, Radio, Users, ShieldAlert, LogOut
+  Send, Wallet, Radio, Users, ShieldAlert, LogOut,
+  Play, Pause, SkipBack, SkipForward, Volume2
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 
@@ -25,9 +25,67 @@ import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
 
 export default function MatrixController() {
-  const { hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix } = useMatrixStore();
+  const { hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix, audioData } = useMatrixStore();
 
-  // If the user hasn't selected a tier or authenticated, lock the mainframe.
+  // Global Player State
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.8);
+
+  // --- GLOBAL EVENT BUS (Allows Rooms to control the player) ---
+  useEffect(() => {
+    const handleGlobalPlay = () => {
+      audioRef.current?.play();
+      setIsPlaying(true);
+    };
+    const handleGlobalPause = () => {
+      audioRef.current?.pause();
+      setIsPlaying(false);
+    };
+    const handleGlobalSeek = (e: any) => {
+      if (audioRef.current && e.detail !== undefined) {
+        audioRef.current.currentTime = e.detail;
+      }
+    };
+
+    window.addEventListener('matrix-global-play', handleGlobalPlay);
+    window.addEventListener('matrix-global-pause', handleGlobalPause);
+    window.addEventListener('matrix-global-seek', handleGlobalSeek);
+
+    return () => {
+      window.removeEventListener('matrix-global-play', handleGlobalPlay);
+      window.removeEventListener('matrix-global-pause', handleGlobalPause);
+      window.removeEventListener('matrix-global-seek', handleGlobalSeek);
+    };
+  }, []);
+
+  const togglePlay = () => {
+    if (!audioRef.current || !audioData?.url) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+      // Emit time to any listening Rooms (like Room 04 Teleprompter)
+      window.dispatchEvent(new CustomEvent('matrix-global-timeupdate', { detail: audioRef.current.currentTime }));
+    }
+  };
+
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return "00:00";
+    const m = Math.floor(time / 60).toString().padStart(2, '0');
+    const s = Math.floor(time % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
   if (!hasAccess) {
     return <EntryGateway />;
   }
@@ -67,7 +125,8 @@ export default function MatrixController() {
   };
 
   return (
-    <div className="flex h-screen bg-[#050505] text-white overflow-hidden selection:bg-[#E60000]">
+    // Added pb-24 to leave room for the fixed Global Player at the bottom
+    <div className="flex h-screen bg-[#050505] text-white overflow-hidden selection:bg-[#E60000] pb-24">
       
       {/* SIDEBAR NAVIGATION */}
       <aside className="w-72 bg-black border-r border-[#111] flex flex-col z-20 shadow-2xl shrink-0">
@@ -105,7 +164,6 @@ export default function MatrixController() {
             ))}
           </div>
           
-          {/* ADMIN OVERRIDE LINK */}
           <div className="pt-4 border-t border-[#111]">
             <Link 
               href="/admin-node"
@@ -119,10 +177,8 @@ export default function MatrixController() {
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 relative flex flex-col bg-black overflow-hidden">
-        {/* Subtle Background Grid Pattern */}
         <div className="absolute inset-0 pointer-events-none opacity-10" style={{ backgroundImage: 'linear-gradient(#111 1px, transparent 1px), linear-gradient(90deg, #111 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
         
-        {/* Top Breadcrumb Bar */}
         <div className="h-14 border-b border-[#111] bg-black/80 backdrop-blur-md flex items-center justify-between px-10 z-10 shrink-0">
            <span className="font-mono text-[9px] text-[#444] uppercase tracking-[0.4em]">
              Facility // Room {activeRoom} // {rooms.find(r => r.id === activeRoom)?.name.toUpperCase()}
@@ -135,7 +191,6 @@ export default function MatrixController() {
            </div>
         </div>
         
-        {/* Active Room Viewport */}
         <div className="flex-1 overflow-hidden relative z-10">
           <div className="h-full w-full overflow-y-auto custom-scrollbar p-6 lg:p-10">
             {renderActiveRoom()}
@@ -143,6 +198,84 @@ export default function MatrixController() {
         </div>
       </main>
 
+      {/* 🚀 THE PERSISTENT GLOBAL AUDIO PLAYER 🚀 */}
+      <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-6 lg:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
+        
+        {/* Hidden Audio Element */}
+        {audioData?.url && (
+          <audio 
+            ref={audioRef} 
+            src={audioData.url} 
+            onTimeUpdate={handleTimeUpdate}
+            onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+            onEnded={() => setIsPlaying(false)}
+            className="hidden" 
+          />
+        )}
+
+        {/* Track Info */}
+        <div className="w-1/4 flex items-center gap-4">
+          <div className={`w-12 h-12 bg-black border border-[#333] flex items-center justify-center ${isPlaying ? 'border-[#E60000] shadow-[0_0_15px_rgba(230,0,0,0.2)]' : ''}`}>
+            <Radio size={20} className={isPlaying ? "text-[#E60000] animate-pulse" : "text-[#555]"} />
+          </div>
+          <div className="overflow-hidden">
+            <p className="font-oswald text-sm uppercase tracking-widest font-bold text-white truncate">
+              {audioData?.fileName || "NO TRACK LOADED"}
+            </p>
+            <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest">
+              {audioData?.bpm ? `${Math.round(audioData.bpm)} BPM` : 'AWAITING DSP'}
+            </p>
+          </div>
+        </div>
+
+        {/* Playback Controls & Scrubber */}
+        <div className="flex-1 max-w-2xl flex flex-col items-center justify-center px-8">
+          <div className="flex items-center gap-6 mb-2">
+            <button onClick={() => { if(audioRef.current) audioRef.current.currentTime = 0; }} className="text-[#888] hover:text-white transition-colors"><SkipBack size={18} /></button>
+            <button 
+              onClick={togglePlay} 
+              disabled={!audioData?.url}
+              className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-20"
+            >
+              {isPlaying ? <Pause size={18} /> : <Play size={18} className="ml-1" />}
+            </button>
+            <button className="text-[#888] hover:text-white transition-colors"><SkipForward size={18} /></button>
+          </div>
+          
+          <div className="w-full flex items-center gap-3">
+            <span className="text-[10px] font-mono text-[#888]">{formatTime(currentTime)}</span>
+            <div className="flex-1 h-1.5 bg-[#222] rounded-full overflow-hidden relative cursor-pointer"
+                 onClick={(e) => {
+                   if (!audioRef.current) return;
+                   const bounds = e.currentTarget.getBoundingClientRect();
+                   const percent = (e.clientX - bounds.left) / bounds.width;
+                   audioRef.current.currentTime = percent * duration;
+                 }}>
+              <div 
+                className="absolute top-0 left-0 h-full bg-[#E60000]"
+                style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}
+              ></div>
+            </div>
+            <span className="text-[10px] font-mono text-[#888]">{formatTime(duration)}</span>
+          </div>
+        </div>
+
+        {/* Volume Control */}
+        <div className="w-1/4 flex justify-end items-center gap-3">
+          <Volume2 size={16} className="text-[#888]" />
+          <input 
+            type="range" min="0" max="1" step="0.01" 
+            value={volume}
+            onChange={(e) => {
+              const val = parseFloat(e.target.value);
+              setVolume(val);
+              if (audioRef.current) audioRef.current.volume = val;
+            }}
+            className="w-24 h-1.5 bg-[#222] appearance-none cursor-pointer rounded-full accent-[#E60000] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-[#E60000] [&::-webkit-slider-thumb]:rounded-full"
+          />
+        </div>
+
+      </div>
     </div>
   );
 }
