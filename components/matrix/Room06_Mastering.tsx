@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Sliders, CheckCircle2, Activity, ArrowRight, AudioWaveform, Disc3, Download, RefreshCw, FileArchive } from "lucide-react";
+import { Sliders, CheckCircle2, Activity, ArrowRight, AudioWaveform, Disc3, Download, RefreshCw, FileArchive, Loader2 } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
