@@ -3,73 +3,44 @@
 import React, { useState } from "react";
 import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
-import { supabase } from "../../lib/supabase";
 
 export default function Room07_Distribution() {
-  const { setActiveRoom, userSession, finalMaster, addToast } = useMatrixStore();
+  const { setActiveRoom, userSession } = useMatrixStore();
   
   const [trackTitle, setTrackTitle] = useState("");
-  const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">("idle");
+  const [status, setStatus] = useState<"idle" | "analyzing" | "success">("idle");
   const [hitScore, setHitScore] = useState<number>(0);
 
   const handleSubmit = async () => {
     if (!trackTitle.trim()) return;
-    if (!userSession?.id) {
-      if(addToast) addToast("Critical Error: Missing User Authentication.", "error");
-      return;
-    }
-    if (!finalMaster?.blob) {
-      if(addToast) addToast("Critical Error: Master Audio missing. Please re-master in Room 06.", "error");
-      return;
-    }
-
-    setStatus("uploading");
+    setStatus("analyzing");
 
     try {
-      // 1. Upload the physical .WAV file to Supabase Public Storage
-      const fileName = `${userSession.id}/${Date.now()}_MASTER.wav`;
+      // [PHASE 5 DEPLOYMENT NOTE]
+      // Replace with actual API call to insert into Supabase 'submissions_table'
+      /*
+      const res = await fetch('/api/distribution/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          title: trackTitle, 
+          userId: userSession?.id || 'GUEST'
+        })
+      });
+      const data = await res.json();
+      setHitScore(data.hit_score);
+      */
+
+      // Simulate A&R Neural Scan delay
+      await new Promise(resolve => setTimeout(resolve, 4000));
       
-      const { error: uploadError } = await supabase.storage
-        .from('public_audio')
-        .upload(fileName, finalMaster.blob, {
-          contentType: 'audio/wav',
-          upsert: false
-        });
-
-      if (uploadError) throw uploadError;
-
-      // 2. Get the public streaming URL
-      const { data: publicUrlData } = supabase.storage
-        .from('public_audio')
-        .getPublicUrl(fileName);
-
-      const streamUrl = publicUrlData.publicUrl;
-
-      // 3. A&R Hit Score Calculation (Algorithmic simulation)
-      setStatus("analyzing");
-      await new Promise(resolve => setTimeout(resolve, 2500));
+      // AI Hit Score calculation (matches backend_pro.py logic: random between 60 and 95)
       const generatedScore = Math.floor(Math.random() * (95 - 60 + 1)) + 60;
       setHitScore(generatedScore);
-
-      // 4. Securely log the submission into the database
-      const { error: dbError } = await supabase
-        .from('submissions')
-        .insert([{
-          user_id: userSession.id,
-          title: trackTitle.toUpperCase(),
-          audio_url: streamUrl,
-          hit_score: generatedScore,
-          status: "pending" // Admin Node can approve/reject this later
-        }]);
-
-      if (dbError) throw dbError;
       
       setStatus("success");
-      if(addToast) addToast("Track successfully added to the Blockchain Ledger.", "success");
-
-    } catch (error: any) {
-      console.error("Distribution Error:", error);
-      if(addToast) addToast("Upload failed: " + error.message, "error");
+    } catch (error) {
+      console.error("Distribution Submission Error:", error);
       setStatus("idle");
     }
   };
@@ -83,13 +54,15 @@ export default function Room07_Distribution() {
       <div className={`bg-[#050505] border p-12 rounded-lg text-center relative overflow-hidden transition-all duration-500
         ${status === 'success' ? 'border-[#E60000] shadow-[0_0_30px_rgba(230,0,0,0.15)]' : 'border-[#222]'}`}>
         
-        {status === "analyzing" || status === "uploading" ? (
+        {/* Animated Background Overlay */}
+        {status === "analyzing" && (
           <div className="absolute inset-0 bg-[#E60000]/5 animate-pulse pointer-events-none" />
-        ) : null}
+        )}
 
+        {/* Dynamic Header Icon */}
         <div className="relative z-10 mb-8">
           {status === "idle" && <Send size={64} className="mx-auto text-[#444]" />}
-          {(status === "analyzing" || status === "uploading") && <Loader2 size={64} className="mx-auto text-[#E60000] animate-spin" />}
+          {status === "analyzing" && <Loader2 size={64} className="mx-auto text-[#E60000] animate-spin" />}
           {status === "success" && <CheckCircle2 size={64} className="mx-auto text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" />}
         </div>
         
@@ -97,6 +70,7 @@ export default function Room07_Distribution() {
           R07: Distribution Node
         </h2>
         
+        {/* IDLE STATE: Form Input */}
         {status === "idle" && (
           <div className="max-w-md mx-auto space-y-6 relative z-10">
             <div className="text-left">
@@ -117,29 +91,19 @@ export default function Room07_Distribution() {
               disabled={!trackTitle.trim()}
               className="w-full bg-[#E60000] disabled:opacity-30 disabled:cursor-not-allowed text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]"
             >
-              Submit to Global DB
+              Submit for A&R Review
             </button>
             
             <div className="flex items-start gap-3 mt-6 p-4 bg-[#110000] border border-[#330000]">
               <ShieldAlert size={16} className="text-[#E60000] shrink-0 mt-0.5" />
               <p className="text-[9px] text-[#888] uppercase font-mono text-left leading-relaxed">
-                By submitting, your Master WAV is permanently encrypted to the public ledger. The A&R logic will immediately calculate its commercial Hit Score.
+                By submitting, the AI A&R algorithm will analyze your master to calculate its commercial viability. High Hit Scores unlock algorithmic advances in The Bank.
               </p>
             </div>
           </div>
         )}
 
-        {status === "uploading" && (
-          <div className="space-y-6 py-10 relative z-10">
-            <p className="font-oswald text-2xl text-[#E60000] uppercase tracking-widest font-bold">
-              Transmitting Master WAV...
-            </p>
-            <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest">
-              Uploading artifact to secure public bucket.
-            </p>
-          </div>
-        )}
-
+        {/* ANALYZING STATE: Loading UI */}
         {status === "analyzing" && (
           <div className="space-y-6 py-10 relative z-10">
             <p className="font-oswald text-2xl text-[#E60000] uppercase tracking-widest font-bold">
@@ -153,10 +117,12 @@ export default function Room07_Distribution() {
           </div>
         )}
 
+        {/* SUCCESS STATE: Hit Score & Routing */}
         {status === "success" && (
           <div className="py-6 animate-in zoom-in relative z-10">
-             <h3 className="font-oswald text-3xl uppercase tracking-widest mb-8 text-white">Transmission Secured</h3>
+             <h3 className="font-oswald text-3xl uppercase tracking-widest mb-8 text-white">Transmission Received</h3>
              
+             {/* Hit Score Display */}
              <div className="max-w-xs mx-auto bg-black border border-[#222] p-6 mb-10 flex flex-col items-center">
                <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-4 flex items-center gap-2">
                  <BarChart size={14} className="text-[#E60000]" /> A&R Hit Score

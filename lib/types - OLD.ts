@@ -1,5 +1,5 @@
 // --- USER & AUTH ---
-export type AccessTier = "Free Loader" | "The Artist" | "The Mogul";
+export type AccessTier = "Free Node" | "The Artist" | "The Mogul";
 
 export interface UserSession {
   id: string;
@@ -35,10 +35,4 @@ export interface VocalStem {
   url: string;
   blob?: Blob;
   volume: number; // -60 to 0 dB
-}
-
-// NEW: Store the final master artifact
-export interface FinalMaster {
-  url: string;
-  blob: Blob;
 }
