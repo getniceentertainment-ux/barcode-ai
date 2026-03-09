@@ -76,7 +76,7 @@ export default function EntryGateway() {
   };
 
   const tiers: { name: AccessTier; price: string; features: string[]; isPro?: boolean }[] = [
-    { name: "Free Loader", price: "0", features: ["5 Generations / Mo", "Standard Queue", "Watermarked Audio"] },
+    { name: "Free Node", price: "0", features: ["5 Generations / Mo", "Standard Queue", "Watermarked Audio"] },
     { name: "The Artist", price: "10", features: ["100 Generations / Mo", "Priority GPU Access", "Commercial Rights"] },
     { name: "The Mogul", price: "25", isPro: true, features: ["Unlimited Generations", "Instant Inference", "A&R Fast-Track", "Live Radio Submissions"] }
   ];
@@ -150,7 +150,7 @@ export default function EntryGateway() {
                   onClick={() => handleTierSelection(tier.name)}
                   className={`w-full py-4 text-[10px] uppercase font-bold tracking-widest transition-all ${tier.isPro ? 'bg-[#E60000] text-white hover:bg-red-700' : 'bg-black border border-[#333] hover:border-white'}`}
                 >
-                  {tier.price === "0" ? "Initialize Free Loader" : "Select Tier"}
+                  {tier.price === "0" ? "Initialize Free Node" : "Select Tier"}
                 </button>
               </div>
             ))}
