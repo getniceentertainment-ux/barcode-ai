@@ -70,9 +70,44 @@ def load_cultural_context():
         pass
     return "Focus on the struggle, the hustle, and survival."
 
+def sanitize_lora_config():
+    """THE AUTO-CLEANER: Safely strips experimental parameters that crash standard PEFT environments."""
+    config_path = os.path.join(LORA_WEIGHTS_DIR, "adapter_config.json")
+    if not os.path.exists(config_path):
+        return
+
+    try:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+
+        # List of experimental keys known to crash production PEFT
+        keys_to_remove = [
+            "alora_invocation_tokens",
+            "use_qalora",
+            "ensure_weight_tying",
+            "layer_replication",
+            "alora_alpha"
+        ]
+
+        modified = False
+        for key in keys_to_remove:
+            if key in config:
+                del config[key]
+                modified = True
+
+        if modified:
+            with open(config_path, "w") as f:
+                json.dump(config, f, indent=2)
+            print("Auto-Cleaner executed: Sanitized adapter_config.json for stable fusion.")
+    except Exception as e:
+        print(f"Auto-Cleaner Error: {e}")
+
 def init_model():
     global model, tokenizer
     print("Initiating TALON Engine Deep Burn-In...")
+    
+    # 1. Run the Auto-Cleaner BEFORE touching the models
+    sanitize_lora_config()
     
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -88,7 +123,7 @@ def init_model():
     
     try:
         model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
-        print("GetNice Adapter fused.")
+        print("GetNice Adapter fused successfully.")
     except Exception as e:
         print(f"🚨 LORA FUSION FAILED! EXACT ERROR: {e}")
         model = base_model
@@ -97,7 +132,7 @@ def init_model():
     _ = model.generate(**dummy, max_new_tokens=5)
     print("Deep Burn-In Complete. Worker Ready.")
 
-# --- THE ARCHITECTURE ROUTER (RESTORED) ---
+# --- THE ARCHITECTURE ROUTER ---
 
 def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
@@ -105,7 +140,6 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel):
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     banned_words_str = ", ".join(BAN_LIST)
     
-    # STRICT RULES BASED ON GENRE
     if genre_style == "getnice_hybrid":
         flow_architecture = """[FLOW ARCHITECTURE: GETNICE HYBRID (SIGNATURE FLOW)]
 - CADENCE: Mid-bar breath control with aggressive internal rhymes.
