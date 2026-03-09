@@ -27,27 +27,18 @@ import Room10_Social from "../components/matrix/Room10_Social";
 export default function MatrixController() {
   const { hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix, audioData } = useMatrixStore();
 
-  // Global Player State
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
 
-  // --- GLOBAL EVENT BUS (Allows Rooms to control the player) ---
+  // --- GLOBAL EVENT BUS ---
   useEffect(() => {
-    const handleGlobalPlay = () => {
-      audioRef.current?.play();
-      setIsPlaying(true);
-    };
-    const handleGlobalPause = () => {
-      audioRef.current?.pause();
-      setIsPlaying(false);
-    };
+    const handleGlobalPlay = () => audioRef.current?.play();
+    const handleGlobalPause = () => audioRef.current?.pause();
     const handleGlobalSeek = (e: any) => {
-      if (audioRef.current && e.detail !== undefined) {
-        audioRef.current.currentTime = e.detail;
-      }
+      if (audioRef.current && e.detail !== undefined) audioRef.current.currentTime = e.detail;
     };
 
     window.addEventListener('matrix-global-play', handleGlobalPlay);
@@ -63,18 +54,13 @@ export default function MatrixController() {
 
   const togglePlay = () => {
     if (!audioRef.current || !audioData?.url) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play();
-    }
-    setIsPlaying(!isPlaying);
+    if (isPlaying) audioRef.current.pause();
+    else audioRef.current.play();
   };
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
-      // Emit time to any listening Rooms (like Room 04 Teleprompter)
       window.dispatchEvent(new CustomEvent('matrix-global-timeupdate', { detail: audioRef.current.currentTime }));
     }
   };
@@ -86,9 +72,7 @@ export default function MatrixController() {
     return `${m}:${s}`;
   };
 
-  if (!hasAccess) {
-    return <EntryGateway />;
-  }
+  if (!hasAccess) return <EntryGateway />;
 
   const rooms = [
     { id: "01", name: "The Lab", icon: <UploadCloud size={16} /> },
@@ -103,32 +87,9 @@ export default function MatrixController() {
     { id: "10", name: "Social Syndicate", icon: <Users size={16} /> },
   ];
 
-  const renderActiveRoom = () => {
-    switch (activeRoom) {
-      case "01": return <Room01_Lab />;
-      case "02": return <Room02_BrainTrain />;
-      case "03": return <Room03_Ghostwriter />;
-      case "04": return <Room04_Booth />;
-      case "05": return <Room05_VocalSuite />;
-      case "06": return <Room06_Mastering />;
-      case "07": return <Room07_Distribution />;
-      case "08": return <Room08_Bank />;
-      case "09": return <Room09_Radio />;
-      case "10": return <Room10_Social />;
-      default: return <div className="text-white p-10 font-mono text-xs opacity-50 uppercase">[Room {activeRoom} - Offline]</div>;
-    }
-  };
-
-  const handleLogout = () => {
-    clearMatrix();
-    window.location.reload();
-  };
-
   return (
-    // Added pb-24 to leave room for the fixed Global Player at the bottom
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden selection:bg-[#E60000] pb-24">
       
-      {/* SIDEBAR NAVIGATION */}
       <aside className="w-72 bg-black border-r border-[#111] flex flex-col z-20 shadow-2xl shrink-0">
         <div className="p-8 border-b border-[#111]">
           <h1 className="font-oswald text-2xl uppercase tracking-[0.2em] font-bold text-[#E60000]">Bar-Code.ai</h1>
@@ -138,7 +99,7 @@ export default function MatrixController() {
               <p className="font-mono text-[10px] text-green-500 truncate">{userSession.id}</p>
               <div className="flex justify-between items-end mt-1">
                 <p className="font-mono text-[10px] text-[#E60000] uppercase font-bold tracking-widest">{userSession.tier}</p>
-                <button onClick={handleLogout} className="text-[#555] hover:text-white transition-colors" title="Disconnect">
+                <button onClick={() => { clearMatrix(); window.location.reload(); }} className="text-[#555] hover:text-white transition-colors" title="Disconnect">
                   <LogOut size={12} />
                 </button>
               </div>
@@ -165,17 +126,13 @@ export default function MatrixController() {
           </div>
           
           <div className="pt-4 border-t border-[#111]">
-            <Link 
-              href="/admin-node"
-              className="w-full flex items-center gap-3 px-5 py-4 text-left text-yellow-600 hover:text-yellow-500 hover:bg-[#111] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold"
-            >
+            <Link href="/admin-node" className="w-full flex items-center gap-3 px-5 py-4 text-left text-yellow-600 hover:text-yellow-500 hover:bg-[#111] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold">
               <ShieldAlert size={16} /> Admin Node
             </Link>
           </div>
         </nav>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
       <main className="flex-1 relative flex flex-col bg-black overflow-hidden">
         <div className="absolute inset-0 pointer-events-none opacity-10" style={{ backgroundImage: 'linear-gradient(#111 1px, transparent 1px), linear-gradient(90deg, #111 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
         
@@ -198,22 +155,23 @@ export default function MatrixController() {
         </div>
       </main>
 
-      {/* 🚀 THE PERSISTENT GLOBAL AUDIO PLAYER 🚀 */}
+      {/* THE PERSISTENT GLOBAL AUDIO PLAYER WITH NEW SYS-EMITTERS */}
       <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-6 lg:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
         
-        {/* Hidden Audio Element */}
         {audioData?.url && (
           <audio 
             ref={audioRef} 
             src={audioData.url} 
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-            onEnded={() => setIsPlaying(false)}
+            onEnded={() => { setIsPlaying(false); window.dispatchEvent(new Event('matrix-global-sys-pause')); }}
+            onPlay={() => { setIsPlaying(true); window.dispatchEvent(new Event('matrix-global-sys-play')); }}
+            onPause={() => { setIsPlaying(false); window.dispatchEvent(new Event('matrix-global-sys-pause')); }}
+            onSeeked={() => window.dispatchEvent(new CustomEvent('matrix-global-sys-seek', { detail: audioRef.current?.currentTime }))}
             className="hidden" 
           />
         )}
 
-        {/* Track Info */}
         <div className="w-1/4 flex items-center gap-4">
           <div className={`w-12 h-12 bg-black border border-[#333] flex items-center justify-center ${isPlaying ? 'border-[#E60000] shadow-[0_0_15px_rgba(230,0,0,0.2)]' : ''}`}>
             <Radio size={20} className={isPlaying ? "text-[#E60000] animate-pulse" : "text-[#555]"} />
@@ -228,7 +186,6 @@ export default function MatrixController() {
           </div>
         </div>
 
-        {/* Playback Controls & Scrubber */}
         <div className="flex-1 max-w-2xl flex flex-col items-center justify-center px-8">
           <div className="flex items-center gap-6 mb-2">
             <button onClick={() => { if(audioRef.current) audioRef.current.currentTime = 0; }} className="text-[#888] hover:text-white transition-colors"><SkipBack size={18} /></button>
@@ -251,21 +208,16 @@ export default function MatrixController() {
                    const percent = (e.clientX - bounds.left) / bounds.width;
                    audioRef.current.currentTime = percent * duration;
                  }}>
-              <div 
-                className="absolute top-0 left-0 h-full bg-[#E60000]"
-                style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}
-              ></div>
+              <div className="absolute top-0 left-0 h-full bg-[#E60000]" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}></div>
             </div>
             <span className="text-[10px] font-mono text-[#888]">{formatTime(duration)}</span>
           </div>
         </div>
 
-        {/* Volume Control */}
         <div className="w-1/4 flex justify-end items-center gap-3">
           <Volume2 size={16} className="text-[#888]" />
           <input 
-            type="range" min="0" max="1" step="0.01" 
-            value={volume}
+            type="range" min="0" max="1" step="0.01" value={volume}
             onChange={(e) => {
               const val = parseFloat(e.target.value);
               setVolume(val);
@@ -274,7 +226,6 @@ export default function MatrixController() {
             className="w-24 h-1.5 bg-[#222] appearance-none cursor-pointer rounded-full accent-[#E60000] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-[#E60000] [&::-webkit-slider-thumb]:rounded-full"
           />
         </div>
-
       </div>
     </div>
   );
