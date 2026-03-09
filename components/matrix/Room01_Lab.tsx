@@ -9,7 +9,8 @@ export default function Room01_Lab() {
   const { audioData, setAudioData, setActiveRoom, userSession, addToast } = useMatrixStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">("idle");
+  // Initialize status to "success" if audioData already exists in the global store
+  const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">(audioData ? "success" : "idle");
   
   // Keep some default fallback beats with dynamic prices
   const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([
@@ -191,12 +192,21 @@ export default function Room01_Lab() {
                 </div>
               </div>
 
-              <button 
-                onClick={() => setActiveRoom("02")}
-                className="w-full max-w-sm bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-              >
-                Advance to Brain Train
-              </button>
+              <div className="w-full max-w-sm flex flex-col gap-3">
+                <button 
+                  onClick={() => setActiveRoom("02")}
+                  className="w-full bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+                >
+                  Advance to Brain Train
+                </button>
+                
+                <button 
+                  onClick={() => setStatus("idle")}
+                  className="w-full border border-[#333] text-[#888] py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#111] hover:text-white transition-all"
+                >
+                  Analyze New Track
+                </button>
+              </div>
             </div>
           )}
         </div>
