@@ -87,6 +87,23 @@ export default function MatrixController() {
     { id: "10", name: "Social Syndicate", icon: <Users size={16} /> },
   ];
 
+  // --- RESTORED: THE ROOM RENDERER ---
+  const renderActiveRoom = () => {
+    switch (activeRoom) {
+      case "01": return <Room01_Lab />;
+      case "02": return <Room02_BrainTrain />;
+      case "03": return <Room03_Ghostwriter />;
+      case "04": return <Room04_Booth />;
+      case "05": return <Room05_VocalSuite />;
+      case "06": return <Room06_Mastering />;
+      case "07": return <Room07_Distribution />;
+      case "08": return <Room08_Bank />;
+      case "09": return <Room09_Radio />;
+      case "10": return <Room10_Social />;
+      default: return <div className="text-white p-10 font-mono text-xs opacity-50 uppercase">[Room {activeRoom} - Offline]</div>;
+    }
+  };
+
   return (
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden selection:bg-[#E60000] pb-24">
       
