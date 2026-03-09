@@ -137,7 +137,8 @@ export default function Room05_VocalSuite() {
   useEffect(() => {
     const handleSysPlay = () => {
       if (audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume();
-      vocalStems.forEach(stem => document.getElementById(`audio-stem-${stem.id}`)?.play());
+      // ADDED 'as HTMLAudioElement' here to satisfy TypeScript
+      vocalStems.forEach(stem => (document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement)?.play());
     };
     const handleSysPause = () => vocalStems.forEach(stem => (document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement)?.pause());
     const handleSysSeek = (e: any) => vocalStems.forEach(stem => {

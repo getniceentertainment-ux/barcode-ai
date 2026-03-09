@@ -43,7 +43,8 @@ export default function Room04_Booth() {
   useEffect(() => {
     const handleSysPlay = () => {
       setIsPlaying(true);
-      vocalStems.forEach(stem => document.getElementById(`stem-player-${stem.id}`)?.play());
+      // ADDED 'as HTMLAudioElement' here to satisfy TypeScript
+      vocalStems.forEach(stem => (document.getElementById(`stem-player-${stem.id}`) as HTMLAudioElement)?.play());
     };
     
     const handleSysPause = () => {
