@@ -62,17 +62,16 @@ export default function Room03_Ghostwriter() {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error("Authentication JWT missing.");
+	const token = session?.access_token;
 
-      setUxState("Compiling Payload & Blueprint...");
-      
-      const initRes = await fetch('/api/ghostwriter', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({ 
+	const res = await fetch('/api/ghostwriter', { 
+  	method: 'POST',
+ 	 headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}` 
+  	},
+ 	 body: JSON.stringify({ /* payload */ })
+	});({ 
           title: gwTitle,
           prompt: gwPrompt, 
           bpm: audioData?.bpm || 140, 

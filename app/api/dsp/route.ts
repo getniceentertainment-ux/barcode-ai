@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-export const maxDuration = 800;
-
-// Initialize Supabase Admin (God Mode) to bypass RLS and read/write credits securely
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -11,14 +8,31 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { file_url, userId } = body;
-
-    if (!file_url || !userId) {
-      return NextResponse.json({ error: "Missing file_url or userId" }, { status: 400 });
+    // 1. FORTRESS LOCKDOWN: CRYPTOGRAPHIC JWT VERIFICATION
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: "Security Exception: Missing or invalid Auth Token." }, { status: 401 });
+    }
+    
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (authError || !user) {
+      return NextResponse.json({ error: "Security Exception: Forged or Expired Token." }, { status: 401 });
     }
 
-    // 1. SECURITY: Check database for valid tier and credits
+    // STRICT OVERRIDE: We extract the ID directly from the verified token. 
+    // We no longer trust any userId passed in the JSON payload.
+    const userId = user.id;
+
+    const body = await req.json();
+    const { file_url } = body;
+
+    if (!file_url) {
+      return NextResponse.json({ error: "Missing file_url" }, { status: 400 });
+    }
+
+    // 2. CHECK LEDGER CREDITS
     const { data: profile, error: dbError } = await supabaseAdmin
       .from('profiles')
       .select('credits, tier')
@@ -36,7 +50,11 @@ export async function POST(req: Request) {
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP;
 
-    // 2. Call Worker 2 (Essentia CPU Node)
+    if (!RUNPOD_API_KEY || !ENDPOINT_ID) {
+      return NextResponse.json({ error: "Server missing RunPod DSP configuration." }, { status: 500 });
+    }
+
+    // 3. CALL WORKER 2
     const response = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/runsync`, {
       method: 'POST',
       headers: {
@@ -54,14 +72,10 @@ export async function POST(req: Request) {
     const data = await response.json();
 
     if (data.status === "COMPLETED") {
-      // 3. BILLING: Deduct 1 credit if they are not on the Unlimited tier
+      // 4. BILLING
       if (profile.tier !== 'The Mogul') {
-        await supabaseAdmin
-          .from('profiles')
-          .update({ credits: profile.credits - 1 })
-          .eq('id', userId);
+        await supabaseAdmin.from('profiles').update({ credits: profile.credits - 1 }).eq('id', userId);
       }
-
       return NextResponse.json(data.output);
     } else {
       throw new Error(data.error || "DSP processing failed");

@@ -101,16 +101,24 @@ export default function Room01_Lab() {
 
       setStatus("analyzing");
       
-      // 4. Ping Next.js API (Worker 2 / Essentia)
+      // 4. GET SECURE JWT TOKEN FOR THE API
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      // 5. Ping Next.js API with Bearer Token!
       const res = await fetch('/api/dsp', { 
-        method: 'POST', 
-        body: JSON.stringify({ file_url: cloudUrl, userId: userSession.id }) 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // THE SECURITY LOCKDOWN
+        },
+        body: JSON.stringify({ file_url: cloudUrl }) // Notice: We no longer send the userId!
       });
       
       const analysis = await res.json();
       
       if (!res.ok) {
-        // 5. GARBAGE COLLECTION (If RunPod fails, delete the audio so we don't pay for dead storage)
+        // GARBAGE COLLECTION (If RunPod fails, delete the audio so we don't pay for dead storage)
         await supabase.storage.from('audio_raw').remove([filePath]);
         throw new Error(analysis.error || "DSP Processing failed");
       }
