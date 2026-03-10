@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { UploadCloud, DollarSign, Loader2, CheckCircle2, Activity, Zap } from "lucide-react";
+import { UploadCloud, DollarSign, Loader2, CheckCircle2, Activity, Zap, AlertTriangle } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -86,11 +86,11 @@ export default function Room01_Lab() {
       const { data: publicUrlData } = supabase.storage.from('audio_raw').getPublicUrl(filePath);
       let currentCloudUrl = publicUrlData.publicUrl;
 
-      // GET SECURE JWT TOKEN FOR API CALLS
+      // SECURE JWT TOKEN FOR API CALLS (Security Fortress)
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      // NEW: MDX NEURAL SEPARATION
+      // --- THE MDX NEURAL SEPARATION LOGIC ---
       if (useDemucs) {
         setStatus("separating");
         const mdxRes = await fetch('/api/demucs', {
@@ -112,7 +112,7 @@ export default function Room01_Lab() {
 
       setStatus("analyzing");
       
-      // FIXED: Passed the JWT Bearer Token to DSP
+      // Ping DSP with Bearer Token
       const res = await fetch('/api/dsp', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -176,15 +176,18 @@ export default function Room01_Lab() {
                 <span className="text-[9px] font-mono uppercase tracking-widest text-[#888]">Cost: {useDemucs ? '2 Credits' : '1 Credit'}</span>
               </div>
 
-              <label className="cursor-pointer flex flex-col items-center mb-8">
+              <label className="cursor-pointer flex flex-col items-center mb-6">
                 <UploadCloud size={64} className="mx-auto mb-6 text-[#222] group-hover:text-[#E60000] transition-colors relative z-10" />
                 <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold relative z-10 text-white group-hover:text-[#E60000] transition-colors">INJECT RAW AUDIO</h2>
-                <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest relative z-10">Secured via Supabase // Routing to Worker 2</p>
+                <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest relative z-10 mb-4">Secured via Supabase // Routing to Worker 2</p>
+                <div className="flex items-center gap-2 text-[9px] text-yellow-600 font-mono uppercase tracking-widest bg-yellow-900/10 py-1 px-3 border border-yellow-900/30">
+                  <AlertTriangle size={12} /> Strict Limit: 20MB (WAV/MP3)
+                </div>
                 <input type="file" className="hidden" onChange={handleFileUpload} accept="audio/*" ref={fileInputRef} />
               </label>
 
               {/* MDX Separation Toggle */}
-              <div className="flex items-center gap-3 border border-[#222] bg-[#0a0a0a] px-4 py-3 rounded group hover:border-[#E60000] transition-colors">
+              <div className="flex items-center gap-3 border border-[#222] bg-[#0a0a0a] px-4 py-3 rounded group hover:border-[#E60000] transition-colors relative z-20 mt-4">
                 <input
                   type="checkbox"
                   id="mdx-toggle"
