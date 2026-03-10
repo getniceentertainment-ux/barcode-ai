@@ -51,6 +51,12 @@ interface MatrixState {
   finalMaster: FinalMaster | null;
   setFinalMaster: (master: FinalMaster | null) => void;
 
+  // NEW: Background MDX Tracking
+  mdxJobId: string | null;
+  setMdxJobId: (id: string | null) => void;
+  mdxStatus: "idle" | "processing" | "success" | "failed";
+  setMdxStatus: (status: "idle" | "processing" | "success" | "failed") => void;
+
   toasts: ToastMessage[];
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
   removeToast: (id: string) => void;
@@ -84,6 +90,10 @@ export const useMatrixStore = create<MatrixState>()(
       
       vocalStems: [],
       finalMaster: null, // Initialized
+      
+      mdxJobId: null,
+      mdxStatus: "idle",
+      
       toasts: [],
 
       grantAccess: (session) => set({ hasAccess: true, userSession: session }),
@@ -108,8 +118,10 @@ export const useMatrixStore = create<MatrixState>()(
         vocalStems: state.vocalStems.map(s => s.id === id ? { ...s, volume } : s)
       })),
 
-      // NEW Action
+      // NEW Actions
       setFinalMaster: (master) => set({ finalMaster: master }),
+      setMdxJobId: (id) => set({ mdxJobId: id }),
+      setMdxStatus: (status) => set({ mdxStatus: status }),
 
       addToast: (message, type) => {
         const id = Math.random().toString(36).substring(7);
@@ -122,7 +134,7 @@ export const useMatrixStore = create<MatrixState>()(
 
       clearMatrix: () => set({
         audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
-        gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", gwGender: "male", gwUseSlang: true, gwUseIntel: true, finalMaster: null
+        gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", gwGender: "male", gwUseSlang: true, gwUseIntel: true, finalMaster: null, mdxJobId: null, mdxStatus: "idle"
       })
     }),
     {
@@ -137,8 +149,9 @@ export const useMatrixStore = create<MatrixState>()(
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
         gwUseSlang: state.gwUseSlang,
-        gwUseIntel: state.gwUseIntel
-        // NOTE: We DO NOT persist finalMaster (Blobs cannot be saved to localStorage)
+        gwUseIntel: state.gwUseIntel,
+        mdxJobId: state.mdxJobId,
+        mdxStatus: state.mdxStatus
       }),
     }
   )
