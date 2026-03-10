@@ -58,6 +58,16 @@ export default function Room04_Booth() {
     return () => wavesurferRef.current?.destroy();
   }, [audioData]);
 
+  // HARDWARE CLEANUP: Guarantee microphone is released if they change rooms while recording
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+         audioCtxRef.current.close();
+      }
+      mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+    };
+  }, []);
+
   useEffect(() => {
     if (!generatedLyrics) return;
     const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5; 
@@ -85,7 +95,7 @@ export default function Room04_Booth() {
       wavesurferRef.current.seekTo(0);
     }
     
-    // Stop Zero-Latency Hardware Recording
+    // Stop Zero-Latency Hardware Recording & Perform Memory Sweep
     if (isRecording && workletNodeRef.current && audioCtxRef.current) {
       workletNodeRef.current.disconnect();
       mediaStreamRef.current?.getTracks().forEach(t => t.stop());
@@ -107,6 +117,12 @@ export default function Room04_Booth() {
         blob: wavBlob,
         volume: 0 
       });
+
+      // THE FIX: Explicitly murder the AudioContext so it doesn't corrupt Take 2
+      audioCtxRef.current.close();
+      audioCtxRef.current = null;
+      workletNodeRef.current = null;
+      mediaStreamRef.current = null;
     }
 
     setIsPlaying(false);
@@ -116,13 +132,19 @@ export default function Room04_Booth() {
 
   const startHardwareRecording = async () => {
     try {
+      // Guarantee previous contexts are dead before initiating a new one
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        await audioCtxRef.current.close();
+      }
+
       recordedChunksRef.current = [];
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
       });
       mediaStreamRef.current = stream;
 
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // THE FIX: Explicitly lock the sample rate to 44.1kHz to prevent pitch shifting
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
       audioCtxRef.current = audioCtx;
 
       // Inline AudioWorklet (Bypasses Main Thread for Zero Latency)
