@@ -48,6 +48,8 @@ export default function Room04_Booth() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Float32Array[]>([]);
 
+  // 1. THE DISAPPEARING WAVEFORM FIX
+  // Removed `vocalStems` from the dependency array so WaveSurfer is NOT destroyed after a take!
   useEffect(() => {
     if (waveformRef.current && audioData?.url && !wavesurferRef.current) {
       wavesurferRef.current = WaveSurfer.create({
@@ -57,7 +59,6 @@ export default function Room04_Booth() {
       
       wavesurferRef.current.load(audioData.url);
       
-      // PRO-DAW: Removed the jittery anti-drift here to ensure smooth playback
       wavesurferRef.current.on('audioprocess', (time) => {
         setCurrentTime(time);
       });
@@ -66,16 +67,41 @@ export default function Room04_Booth() {
         const duration = wavesurferRef.current?.getDuration() || 0;
         const time = progress * duration;
         setCurrentTime(time);
-        vocalStems.forEach(stem => {
-          const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
-          if (el) el.currentTime = time; // Hard sync stems to playhead on click
-        });
+        window.dispatchEvent(new CustomEvent('booth-seek', { detail: time }));
       });
 
-      wavesurferRef.current.on('finish', stopEverything);
+      wavesurferRef.current.on('finish', () => {
+        window.dispatchEvent(new Event('booth-finish'));
+      });
     }
-    return () => wavesurferRef.current?.destroy();
-  }, [audioData, vocalStems]);
+    
+    return () => {
+      if (wavesurferRef.current) {
+        wavesurferRef.current.destroy();
+        wavesurferRef.current = null;
+      }
+    };
+  }, [audioData]);
+
+  // 2. THE STALE CLOSURE & SYNC FIX
+  // This runs on every render to ensure `stopEverything` and `vocalStems` are perfectly up to date
+  useEffect(() => {
+    const handleSeek = (e: any) => {
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) el.currentTime = e.detail;
+      });
+    };
+    const handleFinish = () => stopEverything();
+    
+    window.addEventListener('booth-seek', handleSeek);
+    window.addEventListener('booth-finish', handleFinish);
+    
+    return () => {
+      window.removeEventListener('booth-seek', handleSeek);
+      window.removeEventListener('booth-finish', handleFinish);
+    };
+  }); 
 
   // HARDWARE CLEANUP: Guarantee microphone is released if they change rooms
   useEffect(() => {
@@ -189,9 +215,13 @@ export default function Room04_Booth() {
       const sampleRate = 44100;
       const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
 
-      // PUNCH-IN FIX: Mathematically inject absolute silence to push the vocal recording 
-      // back exactly to the current playhead, forcing all stems to align to 0:00!
-      const silentSamplesCount = Math.floor(currentWS_Time * sampleRate);
+      // 3. THE LATENCY FIX
+      // Mathematically shift the vocal recording left by 150ms to compensate for hardware buffer delay
+      const LATENCY_OFFSET = 0.15; 
+      let padTime = currentWS_Time - LATENCY_OFFSET;
+      if (padTime < 0) padTime = 0;
+
+      const silentSamplesCount = Math.floor(padTime * sampleRate);
       const silenceChunk = new Float32Array(silentSamplesCount); 
       recordedChunksRef.current = [silenceChunk]; 
 
