@@ -80,13 +80,13 @@ def sanitize_lora_config():
         with open(config_path, "r") as f:
             config = json.load(f)
 
-        # List of experimental keys known to crash production PEFT
+        # The ultimate hit-list of modern PEFT keys that break stable environments
         keys_to_remove = [
-            "alora_invocation_tokens",
-            "use_qalora",
-            "ensure_weight_tying",
-            "layer_replication",
-            "alora_alpha"
+            "alora_invocation_tokens", "arrow_config", "corda_config", 
+            "ensure_weight_tying", "layer_replication", "megatron_config", 
+            "megatron_core", "use_rslora", "use_dora", "inject_mlps", "eva_config",
+            "exclude_modules", "lora_bias", "peft_version", "qalora_group_size",
+            "target_parameters", "trainable_token_indices", "use_qalora", "alora_alpha"
         ]
 
         modified = False

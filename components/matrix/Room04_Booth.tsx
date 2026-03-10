@@ -5,6 +5,29 @@ import { Mic, Square, Play, Pause, ArrowRight, Activity, Save, Trash2, ListMusic
 import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 
+// Helper to convert raw Float32 Worklet PCM to a standard WAV Blob
+function encodeWAV(samples: Float32Array, sampleRate: number) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  
+  const writeString = (view: DataView, offset: number, string: string) => {
+    for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+  };
+
+  writeString(view, 0, 'RIFF'); view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(view, 8, 'WAVE'); writeString(view, 12, 'fmt '); view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  writeString(view, 36, 'data'); view.setUint32(40, samples.length * 2, true);
+
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++, offset += 2) {
+    let s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
 export default function Room04_Booth() {
   const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, setActiveRoom } = useMatrixStore();
 
@@ -13,51 +36,28 @@ export default function Room04_Booth() {
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean}[]>([]);
   
-  // Audio & Hardware Refs
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  
+  // Hardware Audio Refs
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordedChunksRef = useRef<Float32Array[]>([]);
 
-  // 1. Initialize WaveSurfer
   useEffect(() => {
     if (waveformRef.current && audioData?.url && !wavesurferRef.current) {
       wavesurferRef.current = WaveSurfer.create({
-        container: waveformRef.current,
-        waveColor: '#333333',
-        progressColor: '#E60000',
-        cursorColor: '#ffffff',
-        barWidth: 2,
-        barGap: 1,
-        barRadius: 2,
-        height: 80,
-        normalize: true,
+        container: waveformRef.current, waveColor: '#333333', progressColor: '#E60000',
+        cursorColor: '#ffffff', barWidth: 2, barGap: 1, barRadius: 2, height: 80, normalize: true,
       });
-
       wavesurferRef.current.load(audioData.url);
-
-      wavesurferRef.current.on('audioprocess', (time) => {
-        setCurrentTime(time);
-      });
-
-      wavesurferRef.current.on('finish', () => {
-        setIsPlaying(false);
-        setIsRecording(false);
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-          mediaRecorderRef.current.stop();
-        }
-      });
+      wavesurferRef.current.on('audioprocess', setCurrentTime);
+      wavesurferRef.current.on('finish', stopEverything);
     }
-
-    return () => {
-      if (wavesurferRef.current) {
-        wavesurferRef.current.destroy();
-        wavesurferRef.current = null;
-      }
-    };
+    return () => wavesurferRef.current?.destroy();
   }, [audioData]);
 
-  // 2. Teleprompter Math
   useEffect(() => {
     if (!generatedLyrics) return;
     const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5; 
@@ -66,18 +66,13 @@ export default function Room04_Booth() {
     let barCounter = 0; 
     for (let i = 0; i < lines.length; i++) {
       const text = lines[i].trim();
-      if (text === "") continue;
-      if (text.startsWith('[')) {
-         parsed.push({ text, startTime: 0, isHeader: true });
-      } else {
-         parsed.push({ text, startTime: barCounter * secondsPerBar, isHeader: false });
-         barCounter++; 
-      }
+      if (!text) continue;
+      if (text.startsWith('[')) parsed.push({ text, startTime: 0, isHeader: true });
+      else { parsed.push({ text, startTime: barCounter * secondsPerBar, isHeader: false }); barCounter++; }
     }
     setLyricLines(parsed);
   }, [generatedLyrics, audioData]);
 
-  // 3. Playback Controls
   const togglePlayback = () => {
     if (!wavesurferRef.current) return;
     wavesurferRef.current.playPause();
@@ -89,40 +84,74 @@ export default function Room04_Booth() {
       wavesurferRef.current.pause();
       wavesurferRef.current.seekTo(0);
     }
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
+    
+    // Stop Zero-Latency Hardware Recording
+    if (isRecording && workletNodeRef.current && audioCtxRef.current) {
+      workletNodeRef.current.disconnect();
+      mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+      
+      // Merge PCM Chunks
+      const totalLength = recordedChunksRef.current.reduce((acc, val) => acc + val.length, 0);
+      const merged = new Float32Array(totalLength);
+      let offset = 0;
+      for (let chunk of recordedChunksRef.current) {
+        merged.set(chunk, offset);
+        offset += chunk.length;
+      }
+      
+      const wavBlob = encodeWAV(merged, audioCtxRef.current.sampleRate);
+      addVocalStem({
+        id: `TAKE_${Date.now()}`,
+        type: vocalStems.length === 0 ? "Lead" : "Adlib", 
+        url: URL.createObjectURL(wavBlob),
+        blob: wavBlob,
+        volume: 0 
+      });
     }
+
     setIsPlaying(false);
     setIsRecording(false);
     setCurrentTime(0);
   };
 
-  const startRecording = async () => {
+  const startHardwareRecording = async () => {
     try {
-      audioChunksRef.current = [];
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false } });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
+      recordedChunksRef.current = [];
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+      });
+      mediaStreamRef.current = stream;
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioCtxRef.current = audioCtx;
+
+      // Inline AudioWorklet (Bypasses Main Thread for Zero Latency)
+      const workletCode = `
+        class RecorderWorklet extends AudioWorkletProcessor {
+          process(inputs, outputs, parameters) {
+            if (inputs[0] && inputs[0].length > 0) {
+              const channelData = inputs[0][0]; // Float32Array
+              this.port.postMessage(channelData);
+            }
+            return true;
+          }
+        }
+        registerProcessor('recorder-worklet', RecorderWorklet);
+      `;
+      const blob = new Blob([workletCode], { type: 'application/javascript' });
+      await audioCtx.audioWorklet.addModule(URL.createObjectURL(blob));
+
+      const source = audioCtx.createMediaStreamSource(stream);
+      const workletNode = new AudioWorkletNode(audioCtx, 'recorder-worklet');
+      workletNodeRef.current = workletNode;
+
+      workletNode.port.onmessage = (e) => {
+        recordedChunksRef.current.push(new Float32Array(e.data));
       };
 
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const stemUrl = URL.createObjectURL(audioBlob);
-        
-        addVocalStem({
-          id: `TAKE_${Date.now()}`,
-          type: vocalStems.length === 0 ? "Lead" : "Adlib", 
-          url: stemUrl,
-          blob: audioBlob,
-          volume: 0 
-        });
-        stream.getTracks().forEach(track => track.stop());
-      };
+      source.connect(workletNode);
+      workletNode.connect(audioCtx.destination); // Required to keep worklet alive
 
-      mediaRecorder.start();
       if (wavesurferRef.current) {
         wavesurferRef.current.seekTo(0);
         wavesurferRef.current.play();
@@ -132,8 +161,8 @@ export default function Room04_Booth() {
       setIsPlaying(true);
       
     } catch (err) {
-      console.error("Microphone Access Denied:", err);
-      alert("Microphone access is required to use The Booth.");
+      console.error("Hardware Mic Access Denied:", err);
+      alert("Hardware microphone access is required for zero-latency tracking.");
     }
   };
 
@@ -186,7 +215,7 @@ export default function Room04_Booth() {
               </button>
             </div>
             <div className="w-px h-10 bg-[#222]"></div>
-            <button onClick={isRecording ? stopEverything : startRecording} disabled={!audioData?.url} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse shadow-[0_0_20px_rgba(230,0,0,0.4)]' : 'bg-[#111] border border-[#333] text-white hover:text-[#E60000] hover:border-[#E60000]'} disabled:opacity-30`}>
+            <button onClick={isRecording ? stopEverything : startHardwareRecording} disabled={!audioData?.url} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse shadow-[0_0_20px_rgba(230,0,0,0.4)]' : 'bg-[#111] border border-[#333] text-white hover:text-[#E60000] hover:border-[#E60000]'} disabled:opacity-30`}>
               <Mic size={24} />
             </button>
           </div>
@@ -196,9 +225,11 @@ export default function Room04_Booth() {
           </div>
         </div>
 
-        {/* WAVESURFER VISUALIZER AREA */}
         <div className="bg-[#050505] p-6 border-b border-[#222]">
-           <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest mb-4">Instrumental Waveform</p>
+           <div className="flex justify-between items-center mb-4">
+             <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest">Instrumental Waveform</p>
+             {isRecording && <p className="text-[10px] text-green-500 font-mono uppercase tracking-widest animate-pulse border border-green-500/30 px-2 py-0.5 bg-green-500/10">AudioWorklet Bypass Active</p>}
+           </div>
            <div ref={waveformRef} className="w-full bg-black border border-[#111] rounded-lg overflow-hidden"></div>
         </div>
 
@@ -207,12 +238,11 @@ export default function Room04_Booth() {
           {isRecording && (
             <div className="text-center z-10">
               <Activity size={80} className="text-[#E60000] animate-bounce mx-auto mb-4" />
-              <h3 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-2">Recording</h3>
+              <h3 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-2">Recording (Zero Latency)</h3>
             </div>
           )}
         </div>
 
-        {/* TAKES TRAY */}
         <div className="h-48 bg-[#050505] border-t border-[#222] p-6 overflow-y-auto custom-scrollbar flex flex-col relative z-20">
           <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2">
             <ListMusic size={14} /> Recorded Vocal Stems ({vocalStems.length})
