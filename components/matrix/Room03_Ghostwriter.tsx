@@ -61,23 +61,23 @@ export default function Room03_Ghostwriter() {
     setUxState("Initializing Secure API Handshake...");
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-	const token = session?.access_token;
+	const { data: { session } } = await supabase.auth.getSession();
+     	const token = session?.access_token;
 
-	const res = await fetch('/api/ghostwriter', { 
-  	method: 'POST',
- 	 headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}` 
-  	},
- 	 body: JSON.stringify({ /* payload */ })
-	});({ 
+      // PING NEXT.JS API WITH BEARER TOKEN
+      const initRes = await fetch('/api/ghostwriter', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          prompt: gwPrompt,
           title: gwTitle,
-          prompt: gwPrompt, 
-          bpm: audioData?.bpm || 140, 
-          tag: flowDNA?.tag || "Trap", 
-          style: gwStyle, 
-          gender: gwGender, 
+          bpm: audioData?.bpm,
+          tag: flowDNA?.tag,
+          style: gwStyle,
+          gender: gwGender,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
           blueprint: blueprint.map(b => ({ type: b.type, bars: b.bars }))
