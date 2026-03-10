@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { UploadCloud, DollarSign, Loader2, CheckCircle2, Activity, Zap, AlertTriangle } from "lucide-react";
+import { UploadCloud, DollarSign, Loader2, CheckCircle2, Activity, Zap, AlertTriangle, ShieldX } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -9,9 +9,7 @@ export default function Room01_Lab() {
   const { audioData, setAudioData, setActiveRoom, userSession, addToast } = useMatrixStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // NEW: Added the 'separating' status for the MDX stage
-  const [status, setStatus] = useState<"idle" | "uploading" | "separating" | "analyzing" | "success">(audioData ? "success" : "idle");
-  const [useDemucs, setUseDemucs] = useState(false);
+  const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">(audioData ? "success" : "idle");
   
   const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([
     { name: "GN_Beat_01_Drill_142BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", price: 149.99 },
@@ -74,8 +72,7 @@ export default function Room01_Lab() {
       const { data: profile, error: profileError } = await supabase.from('profiles').select('credits, tier').eq('id', userSession.id).single();
       if (profileError || !profile) throw new Error("Could not verify identity in ledger.");
       
-      const requiredCredits = useDemucs ? 2 : 1; // 2 credits if splitting stems
-      if (profile.tier !== 'The Mogul' && profile.credits < requiredCredits) {
+      if (profile.tier !== 'The Mogul' && profile.credits < 1) {
         throw new Error("Insufficient Credits. Upgrade your tier to execute this operation.");
       }
 
@@ -84,31 +81,11 @@ export default function Room01_Lab() {
       if (uploadError) throw uploadError;
 
       const { data: publicUrlData } = supabase.storage.from('audio_raw').getPublicUrl(filePath);
-      let currentCloudUrl = publicUrlData.publicUrl;
+      const currentCloudUrl = publicUrlData.publicUrl;
 
-      // SECURE JWT TOKEN FOR API CALLS (Security Fortress)
+      // SECURE JWT TOKEN FOR API CALLS
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-
-      // --- THE MDX NEURAL SEPARATION LOGIC ---
-      if (useDemucs) {
-        setStatus("separating");
-        const mdxRes = await fetch('/api/demucs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ file_url: currentCloudUrl })
-        });
-        
-        const mdxData = await mdxRes.json();
-        if (!mdxRes.ok) {
-           await supabase.storage.from('audio_raw').remove([filePath]);
-           throw new Error(mdxData.error || "MDX Separation Failed");
-        }
-        
-        // Override the file URL with the clean instrumental so DSP doesn't get confused by vocals!
-        currentCloudUrl = mdxData.instrumental_url || currentCloudUrl;
-        if(addToast) addToast("MDX Separation Complete. Acapella isolated.", "success");
-      }
 
       setStatus("analyzing");
       
@@ -135,10 +112,10 @@ export default function Room01_Lab() {
       });
 
       setStatus("success");
-      if(addToast) addToast("Audio imported & analyzed successfully", "success");
+      if(addToast) addToast("Instrumental imported & analyzed successfully", "success");
 
     } catch (err: any) {
-      console.error("DSP/MDX Pipeline Error:", err);
+      console.error("DSP Pipeline Error:", err);
       if(addToast) addToast(err.message || "Error processing audio.", "error");
       setStatus("idle");
     }
@@ -173,32 +150,25 @@ export default function Room01_Lab() {
               
               <div className="absolute top-4 right-4 bg-[#111] border border-[#333] px-3 py-1 flex items-center gap-2 rounded-full">
                 <Zap size={12} className="text-[#E60000]" />
-                <span className="text-[9px] font-mono uppercase tracking-widest text-[#888]">Cost: {useDemucs ? '2 Credits' : '1 Credit'}</span>
+                <span className="text-[9px] font-mono uppercase tracking-widest text-[#888]">Cost: 1 Credit</span>
               </div>
 
               <label className="cursor-pointer flex flex-col items-center mb-6">
                 <UploadCloud size={64} className="mx-auto mb-6 text-[#222] group-hover:text-[#E60000] transition-colors relative z-10" />
-                <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold relative z-10 text-white group-hover:text-[#E60000] transition-colors">INJECT RAW AUDIO</h2>
-                <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest relative z-10 mb-4">Secured via Supabase // Routing to Worker 2</p>
-                <div className="flex items-center gap-2 text-[9px] text-yellow-600 font-mono uppercase tracking-widest bg-yellow-900/10 py-1 px-3 border border-yellow-900/30">
-                  <AlertTriangle size={12} /> Strict Limit: 20MB (WAV/MP3)
+                <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold relative z-10 text-white group-hover:text-[#E60000] transition-colors">INJECT RAW INSTRUMENTAL</h2>
+                <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest relative z-10 mb-6">Must be a Beat. Vocals will corrupt DSP tracking.</p>
+                
+                <div className="flex gap-4">
+                  <div className="flex items-center gap-2 text-[9px] text-yellow-600 font-mono uppercase tracking-widest bg-yellow-900/10 py-1 px-3 border border-yellow-900/30">
+                    <AlertTriangle size={12} /> Limit: 20MB (WAV/MP3)
+                  </div>
+                  <div className="flex items-center gap-2 text-[9px] text-red-500 font-mono uppercase tracking-widest bg-red-950/30 py-1 px-3 border border-red-900/50">
+                    <ShieldX size={12} /> No Copyrighted Songs
+                  </div>
                 </div>
+                
                 <input type="file" className="hidden" onChange={handleFileUpload} accept="audio/*" ref={fileInputRef} />
               </label>
-
-              {/* MDX Separation Toggle */}
-              <div className="flex items-center gap-3 border border-[#222] bg-[#0a0a0a] px-4 py-3 rounded group hover:border-[#E60000] transition-colors relative z-20 mt-4">
-                <input
-                  type="checkbox"
-                  id="mdx-toggle"
-                  checked={useDemucs}
-                  onChange={(e) => setUseDemucs(e.target.checked)}
-                  className="accent-[#E60000] w-4 h-4 cursor-pointer"
-                />
-                <label htmlFor="mdx-toggle" className="text-[10px] text-[#888] font-mono uppercase tracking-widest cursor-pointer select-none group-hover:text-white transition-colors">
-                  Enable MDX Stem Split (Acapella Extraction)
-                </label>
-              </div>
             </div>
           )}
 
@@ -210,18 +180,10 @@ export default function Room01_Lab() {
             </div>
           )}
 
-          {status === 'separating' && (
-            <div className="relative z-10 flex flex-col items-center pointer-events-none">
-              <Activity size={64} className="mx-auto mb-6 text-[#E60000] animate-pulse" />
-              <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">MDX NEURAL SPLIT</h2>
-              <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest">Deconstructing Audio into Master Stems...</p>
-            </div>
-          )}
-
           {status === 'analyzing' && (
             <div className="relative z-10 flex flex-col items-center pointer-events-none">
               <Loader2 size={64} className="mx-auto mb-6 text-[#E60000] animate-spin" />
-              <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">ANALYZING</h2>
+              <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">ANALYZING BEAT</h2>
               <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest">Extracting Rhythm Grid & BPM Context</p>
             </div>
           )}
@@ -272,7 +234,7 @@ export default function Room01_Lab() {
           <DollarSign size={16} /> Marketplace // Beats
         </h3>
         <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mb-6 leading-relaxed">
-          Select a pre-analyzed track to bypass the DSP processing queue.
+          Select a pre-analyzed instrumental to bypass the DSP processing queue.
         </p>
 
         <div className="space-y-3 flex-1">
