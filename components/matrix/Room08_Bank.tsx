@@ -1,196 +1,214 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Wallet, TrendingUp, FileText, CheckCircle2, AlertTriangle, ArrowRight, Lock, CreditCard, Loader2 } from "lucide-react";
+import { Wallet, TrendingUp, FileText, CheckCircle2, AlertTriangle, ArrowRight, Lock, CreditCard, Loader2, Coins, Database, Download, ExternalLink, History } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
+import { supabase } from "../../lib/supabase";
+
+interface MasteredArtifact {
+  id: string;
+  title: string;
+  audio_url: string;
+  hit_score: number;
+  created_at: string;
+  status: string;
+}
 
 export default function Room08_Bank() {
-  const { userSession, setActiveRoom } = useMatrixStore();
+  const { userSession, setActiveRoom, addToast } = useMatrixStore();
   
-  const [status, setStatus] = useState<"evaluating" | "deal_ready" | "distributed">("evaluating");
-  const [platformSplit, setPlatformSplit] = useState(15);
-  
-  // Mocking a generated balance to demonstrate the Stripe withdrawal feature
-  const [royaltyBalance, setRoyaltyBalance] = useState(userSession?.walletBalance || 142.50);
-  const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [view, setView] = useState<"bank" | "vault">("bank");
+  const [status, setStatus] = useState<"evaluating" | "deal_ready" | "distributed" | "no_deal">("evaluating");
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [artifacts, setArtifacts] = useState<MasteredArtifact[]>([]);
+  const [isLoadingVault, setIsLoadingVault] = useState(false);
+  const [stripeConnectId, setStripeConnectId] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
-    // Simulate the Bank evaluating the Hit Score to determine their Distribution Deal terms
-    const timer = setTimeout(() => {
-      // Platform takes a smaller split for higher-tier users
-      const split = userSession?.tier === "The Mogul" ? 5 : userSession?.tier === "The Artist" ? 10 : 20;
-      setPlatformSplit(split);
-      setStatus("deal_ready");
-    }, 3000);
-    
-    return () => clearTimeout(timer);
+    if (userSession?.id) {
+      syncLedger();
+      fetchVault();
+    }
   }, [userSession]);
 
-  const handleAcceptDeal = () => {
-    // Simulate accepting the distribution contract
+  const syncLedger = async () => {
+    try {
+      const { data: profile } = await supabase.from('profiles').select('wallet_balance, stripe_connect_id').eq('id', userSession?.id).single();
+      if (profile) {
+        setWalletBalance(Number(profile.wallet_balance));
+        setStripeConnectId(profile.stripe_connect_id);
+      }
+
+      const { data: submissions } = await supabase.from('submissions').select('hit_score').eq('user_id', userSession?.id).order('created_at', { ascending: false }).limit(1);
+      if (submissions && submissions.length > 0 && submissions[0].hit_score >= 80) {
+        setStatus("deal_ready");
+      } else {
+        setStatus("no_deal");
+      }
+    } catch (err) { console.error(err); }
+  };
+
+  const handleBankAction = async () => {
+    if (!userSession) return;
+    setIsProcessing(true);
+
+    try {
+      if (!stripeConnectId) {
+        // Route to Stripe Onboarding
+        const res = await fetch('/api/stripe/connect', { method: 'POST', body: JSON.stringify({ userId: userSession.id }) });
+        const data = await res.json();
+        if (data.url) window.location.href = data.url;
+        else throw new Error(data.error);
+      } else {
+        // Trigger Real Payout
+        if (walletBalance <= 0) {
+           if(addToast) addToast("Wallet is empty.", "error");
+           setIsProcessing(false);
+           return;
+        }
+        const res = await fetch('/api/stripe/transfer', { method: 'POST', body: JSON.stringify({ userId: userSession.id, amount: walletBalance }) });
+        const data = await res.json();
+        if (data.success) {
+           setWalletBalance(0);
+           if(addToast) addToast("Funds securely routed to your connected bank account.", "success");
+        } else {
+           throw new Error(data.error);
+        }
+      }
+    } catch (err: any) {
+      if(addToast) addToast(err.message || "Financial transaction failed.", "error");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleAcceptDeal = async () => {
+    // Add advance to wallet balance
+    const newBalance = walletBalance + 1000;
+    setWalletBalance(newBalance);
+    
+    // Update Ledger silently
+    if (userSession?.id) {
+       await supabase.from('profiles').update({ wallet_balance: newBalance }).eq('id', userSession.id);
+    }
+    
     setStatus("distributed");
   };
 
-  const handleWithdraw = async () => {
-    if (royaltyBalance <= 0) return;
-    setIsWithdrawing(true);
-    
-    // Simulate Stripe Connect payout API call
-    setTimeout(() => {
-      setRoyaltyBalance(0);
-      setIsWithdrawing(false);
-      alert("Funds successfully routed to your connected Stripe bank account.");
-    }, 2000);
-  };
-
-  const handleProceed = () => {
-    setActiveRoom("09");
+  const fetchVault = async () => {
+    setIsLoadingVault(true);
+    try {
+      const { data, error } = await supabase
+        .from('submissions')
+        .select('*')
+        .eq('user_id', userSession?.id)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setArtifacts(data || []);
+    } catch (err) { console.error("Vault Error:", err); }
+    finally { setIsLoadingVault(false); }
   };
 
   return (
-    <div className="h-full flex flex-col p-8 lg:p-12 animate-in fade-in duration-500 overflow-y-auto custom-scrollbar">
+    <div className="h-full flex flex-col animate-in fade-in duration-500 overflow-hidden">
       
-      {/* HEADER & STRIPE DASHBOARD */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-[#222] pb-6 mb-10 gap-6">
-        <div>
-          <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-[#E60000] flex items-center gap-4">
-            <Wallet size={36} /> The Bank
-          </h2>
-          <p className="text-[10px] text-[#555] uppercase tracking-[0.3em] mt-2 font-mono">
-            Royalty Ledger // Stripe Connect Gateway
-          </p>
-        </div>
-        
-        <div className="bg-[#050505] border border-[#222] p-4 flex items-center gap-6 rounded">
-          <div className="text-right">
-            <p className="text-[10px] text-[#888] uppercase tracking-widest font-bold mb-1">Available Royalties</p>
-            <p className="font-oswald text-3xl font-bold text-white tracking-widest">
-              ${royaltyBalance.toFixed(2)} <span className="text-sm text-green-500 font-mono">USD</span>
-            </p>
-          </div>
-          <button 
-            onClick={handleWithdraw}
-            disabled={royaltyBalance <= 0 || isWithdrawing}
-            className="bg-white text-black px-4 py-3 font-bold uppercase tracking-widest text-[10px] hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {isWithdrawing ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />}
-            Withdraw
-          </button>
-        </div>
-      </div>
-
-      <div className="max-w-4xl mx-auto w-full">
-        
-        {/* EVALUATING STATE */}
-        {status === "evaluating" && (
-          <div className="bg-[#050505] border border-[#222] p-16 flex flex-col items-center justify-center text-center rounded-lg h-[400px]">
-            <TrendingUp size={64} className="text-[#E60000] animate-pulse mb-8" />
-            <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-4">
-              Auditing Track Value
-            </h3>
-            <p className="font-mono text-xs text-[#888] uppercase tracking-widest">
-              Calculating distribution tier and royalty splits based on A&R Hit Score...
-            </p>
+      {/* TABS HEADER */}
+      <div className="flex gap-4 mb-8 border-b border-[#222] pb-6 px-8 lg:px-12 mt-8">
+        <button 
+          onClick={() => setView("bank")}
+          className={`flex items-center gap-3 px-6 py-3 font-oswald uppercase tracking-widest text-sm font-bold border transition-all
+            ${view === 'bank' ? 'bg-[#E60000] border-[#E60000] text-white shadow-[0_0_20px_rgba(230,0,0,0.2)]' : 'bg-black border-[#222] text-[#555] hover:border-white hover:text-white'}`}
+        >
+          <Wallet size={18} /> The Bank
+        </button>
+        <button 
+          onClick={() => setView("vault")}
+          className={`flex items-center gap-3 px-6 py-3 font-oswald uppercase tracking-widest text-sm font-bold border transition-all
+            ${view === 'vault' ? 'bg-[#E60000] border-[#E60000] text-white shadow-[0_0_20px_rgba(230,0,0,0.2)]' : 'bg-black border-[#222] text-[#555] hover:border-white hover:text-white'}`}
+        >
+             {/* THE BANK TAB FIX */}
+             <div className="bg-[#050505] border border-[#222] p-8 flex items-center justify-between rounded shadow-lg">
+                <div>
+                  <p className="text-[10px] text-[#888] uppercase tracking-widest font-bold mb-1">Available Royalties (Fiat)</p>
+                  <p className="font-oswald text-4xl font-bold text-white tracking-widest">${walletBalance.toFixed(2)}</p>
+                </div>
+                <button 
+                  onClick={handleBankAction}
+                  disabled={isProcessing}
+                  className="bg-white text-black px-8 py-4 font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isProcessing && <Loader2 size={16} className="animate-spin" />}
+                  {!stripeConnectId ? "Link Bank Account" : "Request Payout"}
+                </button>
+             </div>
+                <button className="bg-white text-black px-8 py-4 font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all">Request Payout</button>
+             </div>
+             
+             {status === "deal_ready" && (
+                <div className="bg-black border-2 border-[#E60000] p-8 relative animate-in slide-in-from-bottom-4">
+                   <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-2 underline decoration-[#E60000]">Upstream Offer Detected</h3>
+                   <p className="font-mono text-xs text-[#888] mb-6">Your latest Hit Score qualified you for a $1,000 marketing advance.</p>
+                   <button className="bg-[#E60000] text-white px-10 py-4 font-oswald font-bold uppercase tracking-widest hover:bg-red-700 transition-all">Execute Contract</button>
+                </div>
+             )}
           </div>
         )}
 
-        {/* DEAL READY STATE */}
-        {status === "deal_ready" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in slide-in-from-bottom-8 duration-700">
-            
-            {/* THE DISTRIBUTION TICKET */}
-            <div className="bg-black border-2 border-[#E60000] p-8 flex flex-col relative shadow-[0_0_30px_rgba(230,0,0,0.15)] group">
-              <div className="absolute top-0 right-0 bg-[#E60000] text-white text-[9px] uppercase font-bold tracking-widest px-3 py-1">
-                Action Required
-              </div>
-              
-              <FileText size={32} className="text-[#E60000] mb-6" />
-              <h3 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-2">
-                360 Media & Broadcast Deal
-              </h3>
-              <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest mb-8 border-b border-[#222] pb-6">
-                Sync Licensing // 24/7 FM Broadcast // Content ID
-              </p>
-              
-              <div className="my-auto space-y-6 mb-10">
-                <div className="flex justify-between items-center border border-[#111] bg-[#050505] p-4">
-                  <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest">Upfront Fee</span>
-                  <span className="text-xl font-oswald text-green-500 font-bold">$0.00</span>
-                </div>
-                <div className="flex justify-between items-center border border-[#111] bg-[#050505] p-4">
-                  <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest">Your Royalty Keep</span>
-                  <span className="text-xl font-oswald text-white font-bold">{100 - platformSplit}%</span>
-                </div>
-                <div className="flex justify-between items-center border border-[#111] bg-[#110000] p-4">
-                  <span className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold">Platform Split</span>
-                  <span className="text-xl font-oswald text-[#E60000] font-bold">{platformSplit}%</span>
-                </div>
-              </div>
-
-              <button 
-                onClick={handleAcceptDeal}
-                className="w-full bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-[0.2em] hover:bg-red-700 transition-all flex items-center justify-center gap-3"
-              >
-                Sign 360 Deal & Broadcast <Lock size={18} />
-              </button>
+        {view === "vault" && (
+          <div className="max-w-6xl mx-auto w-full animate-in slide-in-from-right-4">
+            <div className="flex justify-between items-center mb-8">
+               <h3 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white flex items-center gap-3">
+                 <History size={24} className="text-[#E60000]" /> Master Artifacts
+               </h3>
+               <span className="text-[10px] font-mono text-[#555] uppercase tracking-widest">{artifacts.length} Total Masters Secured</span>
             </div>
 
-            {/* LEGAL / LORE DISCLAIMER */}
-            <div className="bg-[#050505] border border-[#222] p-8 flex flex-col justify-between">
-              <div>
-                <h4 className="font-oswald text-lg uppercase tracking-widest font-bold text-[#555] mb-6 flex items-center gap-2">
-                  <AlertTriangle size={18} className="text-yellow-600" /> Media & Sync Terms
-                </h4>
-                
-                <div className="space-y-4 font-mono text-[10px] text-[#888] uppercase leading-relaxed tracking-widest">
-                  <p className="flex gap-3">
-                    <span className="text-[#E60000] shrink-0">[SEC. 1]</span> 
-                    BROADCAST: Your track will be immediately queued on the GetNice Nation 24/7 global FM stream (YouTube/Twitch).
-                  </p>
-                  <p className="flex gap-3">
-                    <span className="text-[#E60000] shrink-0">[SEC. 2]</span> 
-                    SYNC VAULT: Your track is added to our micro-licensing vault. Content creators pay to use it, generating direct revenue.
-                  </p>
-                  <p className="flex gap-3">
-                    <span className="text-[#E60000] shrink-0">[SEC. 3]</span> 
-                    CONTENT ID: We register the audio footprint. Any unauthorized use on TikTok or YouTube automatically redirects ad revenue to you.
-                  </p>
-                  <p className="flex gap-3">
-                    <span className="text-[#E60000] shrink-0">[SEC. 4]</span> 
-                    The algorithm retains a {platformSplit}% publishing split. All fiat revenue (USD) accrued is deposited to your ledger for Stripe withdrawal.
-                  </p>
-                </div>
+            {isLoadingVault ? (
+              <div className="flex flex-col items-center justify-center py-20 opacity-30">
+                <Loader2 size={48} className="animate-spin text-[#E60000] mb-4" />
+                <p className="font-mono text-xs uppercase tracking-widest">Accessing Secure Archive...</p>
               </div>
-              
-              <div className="mt-8 pt-6 border-t border-[#111]">
-                 <p className="text-[9px] font-mono text-[#444] uppercase tracking-widest text-center">
-                   Legally binding media publishing agreement.
-                 </p>
+            ) : artifacts.length === 0 ? (
+              <div className="border border-dashed border-[#222] py-20 text-center bg-[#050505]">
+                <FileText size={48} className="mx-auto text-[#222] mb-4" />
+                <p className="font-oswald text-xl text-[#444] uppercase tracking-widest">Vault is Empty</p>
+                <p className="text-[10px] font-mono text-[#333] uppercase mt-2">Master your first track in Room 06 to see it here.</p>
               </div>
-            </div>
-
-          </div>
-        )}
-
-        {/* DISTRIBUTED STATE */}
-        {status === "distributed" && (
-          <div className="bg-[#050505] border border-green-500/30 p-16 flex flex-col items-center justify-center text-center rounded-lg relative overflow-hidden animate-in zoom-in duration-500">
-            <div className="absolute inset-0 bg-green-500/5 pointer-events-none"></div>
-            
-            <CheckCircle2 size={80} className="text-green-500 mb-8 shadow-[0_0_30px_rgba(34,197,94,0.3)] rounded-full relative z-10" />
-            <h3 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-4 relative z-10">
-              Contract Executed
-            </h3>
-            <p className="font-mono text-xs text-green-500 uppercase tracking-widest mb-10 relative z-10">
-              Track secured in the Sync Vault & registered to Content ID.
-            </p>
-
-            <button 
-              onClick={handleProceed}
-              className="relative z-10 flex items-center gap-3 bg-white text-black px-12 py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-            >
-              Enter Live Radio Broadcast <ArrowRight size={20} />
-            </button>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {artifacts.map((art) => (
+                  <div key={art.id} className="bg-black border border-[#222] p-6 flex flex-col md:flex-row items-center justify-between gap-6 group hover:border-[#E60000]/50 transition-all">
+                    <div className="flex items-center gap-6">
+                      <div className={`w-12 h-12 flex items-center justify-center font-oswald text-xl font-bold rounded-sm
+                        ${art.hit_score >= 80 ? 'bg-green-500/10 text-green-500 border border-green-500/30' : 'bg-[#111] text-[#888] border border-[#222]'}`}>
+                        {art.hit_score}
+                      </div>
+                      <div>
+                        <h4 className="font-oswald text-xl uppercase tracking-widest text-white">{art.title}</h4>
+                        <p className="text-[9px] font-mono text-[#555] uppercase mt-1">Secured: {new Date(art.created_at).toLocaleDateString()} // Status: <span className="text-white">{art.status}</span></p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                       <a 
+                         href={art.audio_url} target="_blank" rel="noreferrer"
+                         className="p-3 bg-[#111] border border-[#333] text-[#888] hover:text-white hover:border-white transition-all rounded"
+                         title="Stream Master"
+                       >
+                         <ExternalLink size={18} />
+                       </a>
+                       <button 
+                         className="flex items-center gap-2 bg-white text-black px-6 py-3 font-oswald text-[10px] font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all"
+                       >
+                         <Download size={14} /> Download WAV
+                       </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
