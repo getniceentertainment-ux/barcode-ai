@@ -107,7 +107,8 @@ export default function Room06_Mastering() {
             .setFrame('USLT', { description: 'TALON Engine Lyrics', lyrics: generatedLyrics || 'Instrumental' });
       writer.addTag();
       
-      const taggedMp3Blob = new Blob([writer.arrayBuffer], { type: 'audio/mp3' });
+      // FIXED: Cast writer to 'any' to bypass strict TypeScript definitions missing 'arrayBuffer'
+      const taggedMp3Blob = new Blob([(writer as any).arrayBuffer], { type: 'audio/mp3' });
       const finalUrl = URL.createObjectURL(taggedMp3Blob);
 
       setFinalMaster({ url: finalUrl, blob: taggedMp3Blob }); 
