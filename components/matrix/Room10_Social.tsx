@@ -134,7 +134,7 @@ export default function Room10_Social() {
               <div className="inline-flex items-center gap-2 bg-[#110000] text-[#E60000] border border-[#330000] px-3 py-1 text-[9px] uppercase font-bold tracking-widest mb-4">
                 <ShieldCheck size={12} /> Syndicate Artist
               </div>
-              <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white">NODE_{selectedNode.user_id.substring(0, 8)}</h2>
+              <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white">NODE_{selectedNode.id.substring(0, 8)}</h2>
             </div>
 
             <div className="flex gap-2 mb-8 border-b border-[#222] pb-6">
