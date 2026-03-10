@@ -36,6 +36,9 @@ export default function Room04_Booth() {
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean}[]>([]);
   
+  // PRO-DAW: Stem Muting State
+  const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
+
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   
@@ -51,14 +54,35 @@ export default function Room04_Booth() {
         container: waveformRef.current, waveColor: '#333333', progressColor: '#E60000',
         cursorColor: '#ffffff', barWidth: 2, barGap: 1, barRadius: 2, height: 80, normalize: true,
       });
+      
       wavesurferRef.current.load(audioData.url);
-      wavesurferRef.current.on('audioprocess', setCurrentTime);
+      
+      // PRO-DAW: Hard-sync all stems when the beat plays, pauses, or seeks
+      wavesurferRef.current.on('audioprocess', (time) => {
+        setCurrentTime(time);
+        vocalStems.forEach(stem => {
+          const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+          // Anti-Drift: Only force update if it falls out of sync by more than 150ms
+          if (el && Math.abs(el.currentTime - time) > 0.15) el.currentTime = time;
+        });
+      });
+
+      wavesurferRef.current.on('seek', (progress) => {
+        const duration = wavesurferRef.current?.getDuration() || 0;
+        const time = progress * duration;
+        setCurrentTime(time);
+        vocalStems.forEach(stem => {
+          const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+          if (el) el.currentTime = time;
+        });
+      });
+
       wavesurferRef.current.on('finish', stopEverything);
     }
     return () => wavesurferRef.current?.destroy();
-  }, [audioData]);
+  }, [audioData, vocalStems]);
 
-  // HARDWARE CLEANUP: Guarantee microphone is released if they change rooms while recording
+  // HARDWARE CLEANUP: Guarantee microphone is released if they change rooms
   useEffect(() => {
     return () => {
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
@@ -83,10 +107,26 @@ export default function Room04_Booth() {
     setLyricLines(parsed);
   }, [generatedLyrics, audioData]);
 
+  // PRO-DAW: Master Playback Controller
   const togglePlayback = () => {
     if (!wavesurferRef.current) return;
-    wavesurferRef.current.playPause();
-    setIsPlaying(wavesurferRef.current.isPlaying());
+    
+    const willPlay = !isPlaying;
+    setIsPlaying(willPlay);
+
+    if (willPlay) {
+      wavesurferRef.current.play();
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) el.play().catch(e => console.error("Stem play error:", e));
+      });
+    } else {
+      wavesurferRef.current.pause();
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) el.pause();
+      });
+    }
   };
 
   const stopEverything = () => {
@@ -95,6 +135,15 @@ export default function Room04_Booth() {
       wavesurferRef.current.seekTo(0);
     }
     
+    // Pause and rewind all stems
+    vocalStems.forEach(stem => {
+      const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+      if (el) {
+        el.pause();
+        el.currentTime = 0;
+      }
+    });
+
     // Stop Zero-Latency Hardware Recording & Perform Memory Sweep
     if (isRecording && workletNodeRef.current && audioCtxRef.current) {
       workletNodeRef.current.disconnect();
@@ -118,7 +167,7 @@ export default function Room04_Booth() {
         volume: 0 
       });
 
-      // THE FIX: Explicitly murder the AudioContext so it doesn't corrupt Take 2
+      // Explicitly murder the AudioContext so it doesn't corrupt Take 2
       audioCtxRef.current.close();
       audioCtxRef.current = null;
       workletNodeRef.current = null;
@@ -132,7 +181,6 @@ export default function Room04_Booth() {
 
   const startHardwareRecording = async () => {
     try {
-      // Guarantee previous contexts are dead before initiating a new one
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
         await audioCtxRef.current.close();
       }
@@ -143,16 +191,14 @@ export default function Room04_Booth() {
       });
       mediaStreamRef.current = stream;
 
-      // THE FIX: Explicitly lock the sample rate to 44.1kHz to prevent pitch shifting
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
       audioCtxRef.current = audioCtx;
 
-      // Inline AudioWorklet (Bypasses Main Thread for Zero Latency)
       const workletCode = `
         class RecorderWorklet extends AudioWorkletProcessor {
           process(inputs, outputs, parameters) {
             if (inputs[0] && inputs[0].length > 0) {
-              const channelData = inputs[0][0]; // Float32Array
+              const channelData = inputs[0][0]; 
               this.port.postMessage(channelData);
             }
             return true;
@@ -172,12 +218,21 @@ export default function Room04_Booth() {
       };
 
       source.connect(workletNode);
-      workletNode.connect(audioCtx.destination); // Required to keep worklet alive
+      workletNode.connect(audioCtx.destination); 
 
+      // PRO-DAW: Sync playback of Beat + Existing Stems
       if (wavesurferRef.current) {
         wavesurferRef.current.seekTo(0);
         wavesurferRef.current.play();
       }
+      
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) {
+          el.currentTime = 0;
+          el.play().catch(e => console.error("Stem play error:", e));
+        }
+      });
       
       setIsRecording(true);
       setIsPlaying(true);
@@ -188,9 +243,29 @@ export default function Room04_Booth() {
     }
   };
 
+  const toggleMute = (id: string) => {
+    setMutedStems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500">
       
+      {/* HIDDEN AUDIO ENGINES */}
+      {vocalStems.map(stem => (
+        <audio 
+          key={`audio-${stem.id}`} 
+          id={`booth-stem-${stem.id}`} 
+          src={stem.url} 
+          muted={mutedStems.has(stem.id)} 
+          className="hidden" 
+        />
+      ))}
+
       {/* LEFT COL: TELEPROMPTER */}
       <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
         <div className="p-8 pb-4">
@@ -271,14 +346,23 @@ export default function Room04_Booth() {
           </h4>
           <div className="space-y-2">
             {vocalStems.map(stem => (
-              <div key={stem.id} className="flex justify-between items-center bg-[#111] p-3 border border-[#333] group hover:border-[#E60000]/50 transition-colors">
+              <div key={stem.id} className={`flex justify-between items-center bg-[#111] p-3 border group hover:border-[#E60000]/50 transition-colors ${mutedStems.has(stem.id) ? 'border-[#330000] opacity-60' : 'border-[#333]'}`}>
                 <div className="flex items-center gap-3">
                    <span className={`text-[9px] uppercase font-bold tracking-widest px-2 py-1 ${stem.type === 'Lead' ? 'bg-[#E60000] text-white' : 'bg-[#222] text-[#888]'}`}>{stem.type}</span>
                    <span className="font-mono text-[10px] text-white uppercase">{stem.id.substring(5, 15)}</span>
                 </div>
                 <div className="flex items-center gap-4">
-                   <audio src={stem.url} controls className="h-6 w-48 opacity-70 group-hover:opacity-100 transition-opacity" />
-                   <button onClick={() => removeVocalStem(stem.id)} className="text-[#555] hover:text-[#E60000] transition-colors"><Trash2 size={16}/></button>
+                   {/* MUTE BUTTON REPLACES DEFAULT AUDIO CONTROLS */}
+                   <button 
+                     onClick={() => toggleMute(stem.id)} 
+                     className={`w-8 h-8 flex items-center justify-center rounded-sm text-[10px] font-bold transition-all ${mutedStems.has(stem.id) ? 'bg-red-950 text-red-500 border border-red-500' : 'bg-[#111] text-[#555] hover:text-white border border-[#333]'}`}
+                     title="Mute Stem"
+                   >
+                     M
+                   </button>
+                   <button onClick={() => removeVocalStem(stem.id)} className="text-[#555] hover:text-[#E60000] transition-colors" title="Delete Take">
+                     <Trash2 size={16} />
+                   </button>
                 </div>
               </div>
             ))}
