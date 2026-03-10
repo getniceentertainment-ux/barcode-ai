@@ -57,24 +57,18 @@ export default function Room04_Booth() {
       
       wavesurferRef.current.load(audioData.url);
       
-      // PRO-DAW: Hard-sync all stems when the beat plays, pauses, or seeks
+      // PRO-DAW: Removed the jittery anti-drift here to ensure smooth playback
       wavesurferRef.current.on('audioprocess', (time) => {
         setCurrentTime(time);
-        vocalStems.forEach(stem => {
-          const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
-          // Anti-Drift: Only force update if it falls out of sync by more than 150ms
-          if (el && Math.abs(el.currentTime - time) > 0.15) el.currentTime = time;
-        });
       });
 
-      // FIXED: Cast 'seek' to any to bypass strict WaveSurfer TypeScript definitions
       wavesurferRef.current.on('seek' as any, (progress: any) => {
         const duration = wavesurferRef.current?.getDuration() || 0;
         const time = progress * duration;
         setCurrentTime(time);
         vocalStems.forEach(stem => {
           const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
-          if (el) el.currentTime = time;
+          if (el) el.currentTime = time; // Hard sync stems to playhead on click
         });
       });
 
@@ -115,11 +109,17 @@ export default function Room04_Booth() {
     const willPlay = !isPlaying;
     setIsPlaying(willPlay);
 
+    // Hard Sync to current playhead to prevent drift
+    const currentWS_Time = wavesurferRef.current.getCurrentTime();
+
     if (willPlay) {
       wavesurferRef.current.play();
       vocalStems.forEach(stem => {
         const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
-        if (el) el.play().catch(e => console.error("Stem play error:", e));
+        if (el) {
+          el.currentTime = currentWS_Time; 
+          el.play().catch(e => console.error("Stem play error:", e));
+        }
       });
     } else {
       wavesurferRef.current.pause();
@@ -136,7 +136,7 @@ export default function Room04_Booth() {
       wavesurferRef.current.seekTo(0);
     }
     
-    // Pause and rewind all stems
+    // Pause and rewind all stems to 0 (Standard DAW behavior for Stop)
     vocalStems.forEach(stem => {
       const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
       if (el) {
@@ -150,7 +150,7 @@ export default function Room04_Booth() {
       workletNodeRef.current.disconnect();
       mediaStreamRef.current?.getTracks().forEach(t => t.stop());
       
-      // Merge PCM Chunks
+      // Merge PCM Chunks (Now includes the mathematical silence block at the start)
       const totalLength = recordedChunksRef.current.reduce((acc, val) => acc + val.length, 0);
       const merged = new Float32Array(totalLength);
       let offset = 0;
@@ -186,13 +186,21 @@ export default function Room04_Booth() {
         await audioCtxRef.current.close();
       }
 
-      recordedChunksRef.current = [];
+      const sampleRate = 44100;
+      const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
+
+      // PUNCH-IN FIX: Mathematically inject absolute silence to push the vocal recording 
+      // back exactly to the current playhead, forcing all stems to align to 0:00!
+      const silentSamplesCount = Math.floor(currentWS_Time * sampleRate);
+      const silenceChunk = new Float32Array(silentSamplesCount); 
+      recordedChunksRef.current = [silenceChunk]; 
+
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
       });
       mediaStreamRef.current = stream;
 
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate });
       audioCtxRef.current = audioCtx;
 
       const workletCode = `
@@ -221,16 +229,15 @@ export default function Room04_Booth() {
       source.connect(workletNode);
       workletNode.connect(audioCtx.destination); 
 
-      // PRO-DAW: Sync playback of Beat + Existing Stems
+      // PUNCH-IN PLAYBACK FIX: Ensure we play from the punch-in marker, NOT rewinding to 0
       if (wavesurferRef.current) {
-        wavesurferRef.current.seekTo(0);
         wavesurferRef.current.play();
       }
       
       vocalStems.forEach(stem => {
         const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
         if (el) {
-          el.currentTime = 0;
+          el.currentTime = currentWS_Time; // Sync to punch-in time
           el.play().catch(e => console.error("Stem play error:", e));
         }
       });
@@ -328,7 +335,7 @@ export default function Room04_Booth() {
              <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest">Instrumental Waveform</p>
              {isRecording && <p className="text-[10px] text-green-500 font-mono uppercase tracking-widest animate-pulse border border-green-500/30 px-2 py-0.5 bg-green-500/10">AudioWorklet Bypass Active</p>}
            </div>
-           <div ref={waveformRef} className="w-full bg-black border border-[#111] rounded-lg overflow-hidden"></div>
+           <div ref={waveformRef} className="w-full bg-black border border-[#111] rounded-lg overflow-hidden cursor-pointer"></div>
         </div>
 
         <div className="flex-1 bg-black flex flex-col items-center justify-center relative overflow-hidden">
@@ -353,7 +360,6 @@ export default function Room04_Booth() {
                    <span className="font-mono text-[10px] text-white uppercase">{stem.id.substring(5, 15)}</span>
                 </div>
                 <div className="flex items-center gap-4">
-                   {/* MUTE BUTTON REPLACES DEFAULT AUDIO CONTROLS */}
                    <button 
                      onClick={() => toggleMute(stem.id)} 
                      className={`w-8 h-8 flex items-center justify-center rounded-sm text-[10px] font-bold transition-all ${mutedStems.has(stem.id) ? 'bg-red-950 text-red-500 border border-red-500' : 'bg-[#111] text-[#555] hover:text-white border border-[#333]'}`}
