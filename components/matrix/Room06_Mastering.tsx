@@ -8,7 +8,7 @@ import jsPDF from 'jspdf';
 // @ts-ignore
 import lamejs from 'lamejs';
 // @ts-ignore
-import ID3Writer from 'browser-id3-writer';
+import { ID3Writer } from 'browser-id3-writer';
 
 function encodeMP3AndTag(buffer: AudioBuffer, title: string, artistId: string, bpm: number, lyrics: string): Blob {
   const sampleRate = buffer.sampleRate;
