@@ -9,7 +9,9 @@ export default function Room01_Lab() {
   const { audioData, setAudioData, setActiveRoom, userSession, addToast } = useMatrixStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">(audioData ? "success" : "idle");
+  // NEW: Added the 'separating' status for the MDX stage
+  const [status, setStatus] = useState<"idle" | "uploading" | "separating" | "analyzing" | "success">(audioData ? "success" : "idle");
+  const [useDemucs, setUseDemucs] = useState(false);
   
   const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([
     { name: "GN_Beat_01_Drill_142BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", price: 149.99 },
@@ -20,27 +22,20 @@ export default function Room01_Lab() {
     const fetchMarketplaceBeats = async () => {
       try {
         const { data, error } = await supabase.storage.from('marketplace_beats').list();
-        
         if (error) throw error;
-
         if (data && data.length > 0) {
           const fetchedBeats = data
             .filter(file => file.name.endsWith('.mp3') || file.name.endsWith('.wav'))
             .map(file => {
               const bpmMatch = file.name.match(/_?(\d+)\s*BPM/i);
               const bpm = bpmMatch ? parseInt(bpmMatch[1]) : 120;
-              
               let calculatedPrice = 29.99;
               if (bpm >= 140) calculatedPrice = 149.99;
               else if (bpm >= 125) calculatedPrice = 99.99;
               else if (bpm >= 110) calculatedPrice = 49.99;
 
               const { data: urlData } = supabase.storage.from('marketplace_beats').getPublicUrl(file.name);
-              return {
-                name: file.name,
-                url: urlData.publicUrl,
-                price: calculatedPrice
-              };
+              return { name: file.name, url: urlData.publicUrl, price: calculatedPrice };
             });
           
           if (fetchedBeats.length > 0) {
@@ -55,7 +50,6 @@ export default function Room01_Lab() {
         console.error("Failed to load beats from Supabase marketplace:", err);
       }
     };
-
     fetchMarketplaceBeats();
   }, []);
 
@@ -63,7 +57,6 @@ export default function Room01_Lab() {
     const file = e.target.files?.[0];
     if (!file || !userSession?.id) return;
     
-    // 1. STRICT MIME-TYPE & SIZE VALIDATION
     const validTypes = ['audio/mpeg', 'audio/wav', 'audio/mp3'];
     if (!validTypes.includes(file.type)) {
       if(addToast) addToast("Security Breach: Only WAV and MP3 formats are permitted.", "error");
@@ -78,54 +71,63 @@ export default function Room01_Lab() {
     setStatus("uploading");
     
     try {
-      // 2. SECURE PRE-FLIGHT CREDIT CHECK (Prevents Storage Spam)
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('credits, tier')
-        .eq('id', userSession.id)
-        .single();
-
+      const { data: profile, error: profileError } = await supabase.from('profiles').select('credits, tier').eq('id', userSession.id).single();
       if (profileError || !profile) throw new Error("Could not verify identity in ledger.");
-      if (profile.tier !== 'The Mogul' && profile.credits <= 0) {
-        throw new Error("Insufficient Credits. Upgrade your tier to analyze more tracks.");
+      
+      const requiredCredits = useDemucs ? 2 : 1; // 2 credits if splitting stems
+      if (profile.tier !== 'The Mogul' && profile.credits < requiredCredits) {
+        throw new Error("Insufficient Credits. Upgrade your tier to execute this operation.");
       }
 
-      // 3. Upload to Supabase 'audio_raw' Bucket
       const filePath = `${userSession.id}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
       const { error: uploadError } = await supabase.storage.from('audio_raw').upload(filePath, file);
-
       if (uploadError) throw uploadError;
 
       const { data: publicUrlData } = supabase.storage.from('audio_raw').getPublicUrl(filePath);
-      const cloudUrl = publicUrlData.publicUrl;
+      let currentCloudUrl = publicUrlData.publicUrl;
 
-      setStatus("analyzing");
-      
-      // 4. GET SECURE JWT TOKEN FOR THE API
+      // GET SECURE JWT TOKEN FOR API CALLS
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      // 5. Ping Next.js API with Bearer Token!
+      // NEW: MDX NEURAL SEPARATION
+      if (useDemucs) {
+        setStatus("separating");
+        const mdxRes = await fetch('/api/demucs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ file_url: currentCloudUrl })
+        });
+        
+        const mdxData = await mdxRes.json();
+        if (!mdxRes.ok) {
+           await supabase.storage.from('audio_raw').remove([filePath]);
+           throw new Error(mdxData.error || "MDX Separation Failed");
+        }
+        
+        // Override the file URL with the clean instrumental so DSP doesn't get confused by vocals!
+        currentCloudUrl = mdxData.instrumental_url || currentCloudUrl;
+        if(addToast) addToast("MDX Separation Complete. Acapella isolated.", "success");
+      }
+
+      setStatus("analyzing");
+      
+      // FIXED: Passed the JWT Bearer Token to DSP
       const res = await fetch('/api/dsp', { 
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // THE SECURITY LOCKDOWN
-        },
-        body: JSON.stringify({ file_url: cloudUrl }) // Notice: We no longer send the userId!
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ file_url: currentCloudUrl }) 
       });
       
       const analysis = await res.json();
       
       if (!res.ok) {
-        // GARBAGE COLLECTION (If RunPod fails, delete the audio so we don't pay for dead storage)
         await supabase.storage.from('audio_raw').remove([filePath]);
         throw new Error(analysis.error || "DSP Processing failed");
       }
       
-      // Save to Zustand Global Store
       setAudioData({
-        url: cloudUrl,
+        url: currentCloudUrl,
         fileName: file.name,
         bpm: analysis.bpm || 120, 
         totalBars: analysis.total_bars || 64,
@@ -133,10 +135,10 @@ export default function Room01_Lab() {
       });
 
       setStatus("success");
-      if(addToast) addToast("Beat imported & analyzed successfully", "success");
+      if(addToast) addToast("Audio imported & analyzed successfully", "success");
 
     } catch (err: any) {
-      console.error("DSP Pipeline Error:", err);
+      console.error("DSP/MDX Pipeline Error:", err);
       if(addToast) addToast(err.message || "Error processing audio.", "error");
       setStatus("idle");
     }
@@ -144,7 +146,6 @@ export default function Room01_Lab() {
 
   const handleSelectMarketplaceBeat = (beat: { name: string, url: string, price: number }) => {
     setStatus("analyzing");
-    
     setTimeout(() => {
       setAudioData({
         url: beat.url,
@@ -168,18 +169,34 @@ export default function Room01_Lab() {
           {status === 'analyzing' && <div className="absolute inset-0 bg-[#E60000]/10 animate-pulse pointer-events-none" />}
           
           {status === 'idle' && (
-            <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer p-10 relative">
-              {/* Cost Indicator Badge */}
+            <div className="w-full h-full flex flex-col items-center justify-center p-10 relative">
+              
               <div className="absolute top-4 right-4 bg-[#111] border border-[#333] px-3 py-1 flex items-center gap-2 rounded-full">
                 <Zap size={12} className="text-[#E60000]" />
-                <span className="text-[9px] font-mono uppercase tracking-widest text-[#888]">Cost: 1 Credit</span>
+                <span className="text-[9px] font-mono uppercase tracking-widest text-[#888]">Cost: {useDemucs ? '2 Credits' : '1 Credit'}</span>
               </div>
 
-              <UploadCloud size={64} className="mx-auto mb-6 text-[#222] group-hover:text-[#E60000] transition-colors relative z-10" />
-              <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold relative z-10 text-white">INJECT RAW AUDIO</h2>
-              <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest relative z-10">Secured via Supabase // Routing to Worker 2</p>
-              <input type="file" className="hidden" onChange={handleFileUpload} accept="audio/*" ref={fileInputRef} />
-            </label>
+              <label className="cursor-pointer flex flex-col items-center mb-8">
+                <UploadCloud size={64} className="mx-auto mb-6 text-[#222] group-hover:text-[#E60000] transition-colors relative z-10" />
+                <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold relative z-10 text-white group-hover:text-[#E60000] transition-colors">INJECT RAW AUDIO</h2>
+                <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest relative z-10">Secured via Supabase // Routing to Worker 2</p>
+                <input type="file" className="hidden" onChange={handleFileUpload} accept="audio/*" ref={fileInputRef} />
+              </label>
+
+              {/* MDX Separation Toggle */}
+              <div className="flex items-center gap-3 border border-[#222] bg-[#0a0a0a] px-4 py-3 rounded group hover:border-[#E60000] transition-colors">
+                <input
+                  type="checkbox"
+                  id="mdx-toggle"
+                  checked={useDemucs}
+                  onChange={(e) => setUseDemucs(e.target.checked)}
+                  className="accent-[#E60000] w-4 h-4 cursor-pointer"
+                />
+                <label htmlFor="mdx-toggle" className="text-[10px] text-[#888] font-mono uppercase tracking-widest cursor-pointer select-none group-hover:text-white transition-colors">
+                  Enable MDX Stem Split (Acapella Extraction)
+                </label>
+              </div>
+            </div>
           )}
 
           {status === 'uploading' && (
@@ -187,6 +204,14 @@ export default function Room01_Lab() {
               <UploadCloud size={64} className="mx-auto mb-6 text-[#E60000] animate-bounce" />
               <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">UPLOADING...</h2>
               <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest">Transmitting to Secure Supabase Bucket</p>
+            </div>
+          )}
+
+          {status === 'separating' && (
+            <div className="relative z-10 flex flex-col items-center pointer-events-none">
+              <Activity size={64} className="mx-auto mb-6 text-[#E60000] animate-pulse" />
+              <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">MDX NEURAL SPLIT</h2>
+              <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest">Deconstructing Audio into Master Stems...</p>
             </div>
           )}
 
