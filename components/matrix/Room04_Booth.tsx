@@ -29,64 +29,127 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
 }
 
 export default function Room04_Booth() {
-  const { 
-    generatedLyrics, audioData, setAudioData, vocalStems, addVocalStem, removeVocalStem, setActiveRoom, 
-    mdxJobId, mdxStatus, setMdxStatus, addToast 
-  } = useMatrixStore();
+  const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, setActiveRoom } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
-  // ... existing states ...
+  const [isRecording, setIsRecording] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean}[]>([]);
+  
+  // PRO-DAW: Stem Muting State
+  const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
 
-  // --- BACKGROUND MDX POLLER ---
+  const waveformRef = useRef<HTMLDivElement>(null);
+  const wavesurferRef = useRef<WaveSurfer | null>(null);
+  
+  // Hardware Audio Refs
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordedChunksRef = useRef<Float32Array[]>([]);
+
+  // 1. WAVEFORM INIT (Stable)
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (mdxJobId && mdxStatus === "processing") {
-      interval = setInterval(async () => {
-        try {
-          const res = await fetch(`/api/demucs?jobId=${mdxJobId}`);
-          const data = await res.json();
-          
-          if (data.status === "COMPLETED") {
-            // 1. Swap the global beat to the clean instrumental
-            if (audioData) {
-              setAudioData({ ...audioData, url: data.output.stems.instrumental });
-            }
-            
-            // 2. Inject the extracted original vocals as a muted stem layer!
-            if (data.output.stems.vocals) {
-              addVocalStem({
-                id: `MDX_ACAPELLA_${Date.now()}`,
-                type: "Lead",
-                url: data.output.stems.vocals,
-                volume: 0
-              });
-            }
-            
-            setMdxStatus("success");
-            if(addToast) addToast("Background MDX Finished! Clean Instrumental Ready.", "success");
-            clearInterval(interval);
-          } else if (data.status === "FAILED") {
-            setMdxStatus("failed");
-            if(addToast) addToast("Background MDX Separation Failed.", "error");
-            clearInterval(interval);
-          }
-        } catch (e) {
-          console.error("MDX Polling Error:", e);
-        }
-      }, 5000); // Check every 5 seconds while they are in the booth
-    }
-    return () => clearInterval(interval);
-  }, [mdxJobId, mdxStatus, audioData]);
+    if (waveformRef.current && audioData?.url && !wavesurferRef.current) {
+      wavesurferRef.current = WaveSurfer.create({
+        container: waveformRef.current, waveColor: '#333333', progressColor: '#E60000',
+        cursorColor: '#ffffff', barWidth: 2, barGap: 1, barRadius: 2, height: 80, normalize: true,
+      });
+      
+      wavesurferRef.current.load(audioData.url);
+      
+      wavesurferRef.current.on('audioprocess', (time) => {
+        setCurrentTime(time);
+      });
 
-  // 1. Initialize WaveSurfer
+      wavesurferRef.current.on('seek' as any, (progress: any) => {
+        const duration = wavesurferRef.current?.getDuration() || 0;
+        const time = progress * duration;
+        setCurrentTime(time);
+        window.dispatchEvent(new CustomEvent('booth-seek', { detail: time }));
+      });
+
+      wavesurferRef.current.on('finish', () => {
+        window.dispatchEvent(new Event('booth-finish'));
+      });
+    }
+    
+    return () => {
+      if (wavesurferRef.current) {
+        wavesurferRef.current.destroy();
+        wavesurferRef.current = null;
+      }
+    };
+  }, [audioData]);
+
+  // 2. HARD-SYNC STEMS
+  useEffect(() => {
+    const handleSeek = (e: any) => {
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) el.currentTime = e.detail;
+      });
+    };
+    const handleFinish = () => stopEverything();
+    
+    window.addEventListener('booth-seek', handleSeek);
+    window.addEventListener('booth-finish', handleFinish);
+    
+    return () => {
+      window.removeEventListener('booth-seek', handleSeek);
+      window.removeEventListener('booth-finish', handleFinish);
+    };
+  }, [vocalStems]); 
+
+  // 3. HARDWARE CLEANUP
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+         audioCtxRef.current.close();
+      }
+      mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+    };
+  }, []);
+
+  // 4. TELEPROMPTER MATH
+  useEffect(() => {
+    if (!generatedLyrics) return;
+    const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5; 
+    const parsed = [];
+    const lines = generatedLyrics.split('\n');
+    let barCounter = 0; 
+    for (let i = 0; i < lines.length; i++) {
+      const text = lines[i].trim();
+      if (!text) continue;
+      if (text.startsWith('[')) parsed.push({ text, startTime: 0, isHeader: true });
+      else { parsed.push({ text, startTime: barCounter * secondsPerBar, isHeader: false }); barCounter++; }
     }
     setLyricLines(parsed);
   }, [generatedLyrics, audioData]);
 
+  // 5. MASTER PLAYBACK
   const togglePlayback = () => {
     if (!wavesurferRef.current) return;
-    wavesurferRef.current.playPause();
-    setIsPlaying(wavesurferRef.current.isPlaying());
+    const willPlay = !isPlaying;
+    setIsPlaying(willPlay);
+    const currentWS_Time = wavesurferRef.current.getCurrentTime();
+
+    if (willPlay) {
+      wavesurferRef.current.play();
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) {
+          el.currentTime = currentWS_Time; 
+          el.play().catch(e => console.error("Stem play error:", e));
+        }
+      });
+    } else {
+      wavesurferRef.current.pause();
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) el.pause();
+      });
+    }
   };
 
   const stopEverything = () => {
@@ -95,12 +158,18 @@ export default function Room04_Booth() {
       wavesurferRef.current.seekTo(0);
     }
     
-    // Stop Zero-Latency Hardware Recording & Perform Memory Sweep
+    vocalStems.forEach(stem => {
+      const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+      if (el) {
+        el.pause();
+        el.currentTime = 0;
+      }
+    });
+
     if (isRecording && workletNodeRef.current && audioCtxRef.current) {
       workletNodeRef.current.disconnect();
       mediaStreamRef.current?.getTracks().forEach(t => t.stop());
       
-      // Merge PCM Chunks
       const totalLength = recordedChunksRef.current.reduce((acc, val) => acc + val.length, 0);
       const merged = new Float32Array(totalLength);
       let offset = 0;
@@ -118,7 +187,6 @@ export default function Room04_Booth() {
         volume: 0 
       });
 
-      // THE FIX: Explicitly murder the AudioContext so it doesn't corrupt Take 2
       audioCtxRef.current.close();
       audioCtxRef.current = null;
       workletNodeRef.current = null;
@@ -132,27 +200,34 @@ export default function Room04_Booth() {
 
   const startHardwareRecording = async () => {
     try {
-      // Guarantee previous contexts are dead before initiating a new one
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
         await audioCtxRef.current.close();
       }
 
-      recordedChunksRef.current = [];
+      const sampleRate = 44100;
+      const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
+
+      const LATENCY_OFFSET = 0.15; 
+      let padTime = currentWS_Time - LATENCY_OFFSET;
+      if (padTime < 0) padTime = 0;
+
+      const silentSamplesCount = Math.floor(padTime * sampleRate);
+      const silenceChunk = new Float32Array(silentSamplesCount); 
+      recordedChunksRef.current = [silenceChunk]; 
+
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
       });
       mediaStreamRef.current = stream;
 
-      // THE FIX: Explicitly lock the sample rate to 44.1kHz to prevent pitch shifting
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate });
       audioCtxRef.current = audioCtx;
 
-      // Inline AudioWorklet (Bypasses Main Thread for Zero Latency)
       const workletCode = `
         class RecorderWorklet extends AudioWorkletProcessor {
           process(inputs, outputs, parameters) {
             if (inputs[0] && inputs[0].length > 0) {
-              const channelData = inputs[0][0]; // Float32Array
+              const channelData = inputs[0][0]; 
               this.port.postMessage(channelData);
             }
             return true;
@@ -172,12 +247,19 @@ export default function Room04_Booth() {
       };
 
       source.connect(workletNode);
-      workletNode.connect(audioCtx.destination); // Required to keep worklet alive
+      workletNode.connect(audioCtx.destination); 
 
       if (wavesurferRef.current) {
-        wavesurferRef.current.seekTo(0);
         wavesurferRef.current.play();
       }
+      
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) {
+          el.currentTime = currentWS_Time;
+          el.play().catch(e => console.error("Stem play error:", e));
+        }
+      });
       
       setIsRecording(true);
       setIsPlaying(true);
@@ -188,10 +270,28 @@ export default function Room04_Booth() {
     }
   };
 
+  const toggleMute = (id: string) => {
+    setMutedStems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500">
       
-      {/* LEFT COL: TELEPROMPTER */}
+      {vocalStems.map(stem => (
+        <audio 
+          key={`audio-${stem.id}`} 
+          id={`booth-stem-${stem.id}`} 
+          src={stem.url} 
+          muted={mutedStems.has(stem.id)} 
+          className="hidden" 
+        />
+      ))}
+
       <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
         <div className="p-8 pb-4">
            <h2 className="font-oswald text-xl uppercase tracking-widest mb-2 font-bold text-[#555] border-b border-[#111] pb-4 flex items-center justify-between">
@@ -224,7 +324,6 @@ export default function Room04_Booth() {
         <div className="absolute bottom-0 left-0 w-full h-12 bg-gradient-to-t from-[#020202] to-transparent pointer-events-none"></div>
       </div>
 
-      {/* RIGHT COL: HARDWARE DAW */}
       <div className="flex-1 flex flex-col relative">
         <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10">
           <div className="flex items-center gap-8">
@@ -237,22 +336,22 @@ export default function Room04_Booth() {
               </button>
             </div>
             <div className="w-px h-10 bg-[#222]"></div>
-        {/* WAVESURFER VISUALIZER AREA */}
+            <button onClick={isRecording ? stopEverything : startHardwareRecording} disabled={!audioData?.url} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse shadow-[0_0_20px_rgba(230,0,0,0.4)]' : 'bg-[#111] border border-[#333] text-white hover:text-[#E60000] hover:border-[#E60000]'} disabled:opacity-30`}>
+              <Mic size={24} />
+            </button>
+          </div>
+          <div className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
+            {Math.floor(currentTime / 60).toString().padStart(2, '0')}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
+            <span className="text-sm text-[#555]">.{(currentTime % 1).toFixed(2).substring(2)}</span>
+          </div>
+        </div>
+
         <div className="bg-[#050505] p-6 border-b border-[#222]">
            <div className="flex justify-between items-center mb-4">
              <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest">Instrumental Waveform</p>
-             {mdxStatus === "processing" && (
-               <div className="text-[10px] text-yellow-500 font-mono uppercase tracking-widest animate-pulse border border-yellow-500/30 px-2 py-0.5 bg-yellow-500/10">
-                 Neural Separation Running in Background...
-               </div>
-             )}
-             {mdxStatus === "success" && (
-               <div className="text-[10px] text-green-500 font-mono uppercase tracking-widest border border-green-500/30 px-2 py-0.5 bg-green-500/10">
-                 Clean Instrumental Loaded
-               </div>
-             )}
+             {isRecording && <p className="text-[10px] text-green-500 font-mono uppercase tracking-widest animate-pulse border border-green-500/30 px-2 py-0.5 bg-green-500/10">AudioWorklet Bypass Active</p>}
            </div>
-           <div ref={waveformRef} className="w-full bg-black border border-[#111] rounded-lg overflow-hidden"></div>
+           <div ref={waveformRef} className="w-full bg-black border border-[#111] rounded-lg overflow-hidden cursor-pointer"></div>
         </div>
 
         <div className="flex-1 bg-black flex flex-col items-center justify-center relative overflow-hidden">
@@ -271,14 +370,18 @@ export default function Room04_Booth() {
           </h4>
           <div className="space-y-2">
             {vocalStems.map(stem => (
-              <div key={stem.id} className="flex justify-between items-center bg-[#111] p-3 border border-[#333] group hover:border-[#E60000]/50 transition-colors">
+              <div key={stem.id} className={`flex justify-between items-center bg-[#111] p-3 border group hover:border-[#E60000]/50 transition-colors ${mutedStems.has(stem.id) ? 'border-[#330000] opacity-60' : 'border-[#333]'}`}>
                 <div className="flex items-center gap-3">
                    <span className={`text-[9px] uppercase font-bold tracking-widest px-2 py-1 ${stem.type === 'Lead' ? 'bg-[#E60000] text-white' : 'bg-[#222] text-[#888]'}`}>{stem.type}</span>
                    <span className="font-mono text-[10px] text-white uppercase">{stem.id.substring(5, 15)}</span>
                 </div>
                 <div className="flex items-center gap-4">
-                   <audio src={stem.url} controls className="h-6 w-48 opacity-70 group-hover:opacity-100 transition-opacity" />
-                   <button onClick={() => removeVocalStem(stem.id)} className="text-[#555] hover:text-[#E60000] transition-colors"><Trash2 size={16}/></button>
+                   <button onClick={() => toggleMute(stem.id)} className={`w-8 h-8 flex items-center justify-center rounded-sm text-[10px] font-bold transition-all ${mutedStems.has(stem.id) ? 'bg-red-950 text-red-500 border border-red-500' : 'bg-[#111] text-[#555] hover:text-white border border-[#333]'}`} title="Mute Stem">
+                     M
+                   </button>
+                   <button onClick={() => removeVocalStem(stem.id)} className="text-[#555] hover:text-[#E60000] transition-colors" title="Delete Take">
+                     <Trash2 size={16} />
+                   </button>
                 </div>
               </div>
             ))}
