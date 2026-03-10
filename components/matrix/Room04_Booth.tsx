@@ -67,7 +67,8 @@ export default function Room04_Booth() {
         });
       });
 
-      wavesurferRef.current.on('seek', (progress) => {
+      // FIXED: Cast 'seek' to any to bypass strict WaveSurfer TypeScript definitions
+      wavesurferRef.current.on('seek' as any, (progress: any) => {
         const duration = wavesurferRef.current?.getDuration() || 0;
         const time = progress * duration;
         setCurrentTime(time);
