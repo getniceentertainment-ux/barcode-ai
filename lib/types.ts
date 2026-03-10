@@ -2,6 +2,7 @@ export type AccessTier = "Free Loader" | "The Artist" | "The Mogul";
 
 export interface UserSession {
   id: string;
+  stageName: string; // NEW: The artist's alias
   tier: AccessTier;
   walletBalance: number;
   creditsRemaining: number | "UNLIMITED";
@@ -35,8 +36,15 @@ export interface VocalStem {
   volume: number; 
 }
 
-// NEW: Store the final master artifact
 export interface FinalMaster {
   url: string;
   blob: Blob;
+}
+
+// NEW: Project Data Structure
+export interface MatrixProject {
+  id: string;
+  name: string;
+  is_finalized: boolean;
+  created_at: string;
 }

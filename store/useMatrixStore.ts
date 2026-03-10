@@ -13,8 +13,13 @@ interface MatrixState {
   activeRoom: string;
   userSession: UserSession | null;
   
+  // NEW: Project Architecture
+  activeProjectId: string | null;
+  isProjectFinalized: boolean;
+  
   grantAccess: (session: UserSession) => void;
   setActiveRoom: (roomId: string) => void;
+  setActiveProject: (id: string | null, isFinalized: boolean) => void;
 
   audioData: AudioAnalysis | null;
   setAudioData: (data: AudioAnalysis) => void;
@@ -47,15 +52,8 @@ interface MatrixState {
   removeVocalStem: (id: string) => void;
   updateStemVolume: (id: string, volume: number) => void;
 
-  // NEW: Room 06 & 07 Master Artifact
   finalMaster: FinalMaster | null;
   setFinalMaster: (master: FinalMaster | null) => void;
-
-  // NEW: Background MDX Tracking
-  mdxJobId: string | null;
-  setMdxJobId: (id: string | null) => void;
-  mdxStatus: "idle" | "processing" | "success" | "failed";
-  setMdxStatus: (status: "idle" | "processing" | "success" | "failed") => void;
 
   toasts: ToastMessage[];
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
@@ -70,6 +68,9 @@ export const useMatrixStore = create<MatrixState>()(
       hasAccess: false,
       activeRoom: "01",
       userSession: null,
+      
+      activeProjectId: null,
+      isProjectFinalized: false,
       
       audioData: null,
       flowDNA: null,
@@ -89,15 +90,12 @@ export const useMatrixStore = create<MatrixState>()(
       generatedLyrics: null,
       
       vocalStems: [],
-      finalMaster: null, // Initialized
-      
-      mdxJobId: null,
-      mdxStatus: "idle",
-      
+      finalMaster: null,
       toasts: [],
 
       grantAccess: (session) => set({ hasAccess: true, userSession: session }),
       setActiveRoom: (roomId) => set({ activeRoom: roomId }),
+      setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
       
       setAudioData: (data) => set({ audioData: data }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
@@ -118,10 +116,7 @@ export const useMatrixStore = create<MatrixState>()(
         vocalStems: state.vocalStems.map(s => s.id === id ? { ...s, volume } : s)
       })),
 
-      // NEW Actions
       setFinalMaster: (master) => set({ finalMaster: master }),
-      setMdxJobId: (id) => set({ mdxJobId: id }),
-      setMdxStatus: (status) => set({ mdxStatus: status }),
 
       addToast: (message, type) => {
         const id = Math.random().toString(36).substring(7);
@@ -134,7 +129,7 @@ export const useMatrixStore = create<MatrixState>()(
 
       clearMatrix: () => set({
         audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
-        gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", gwGender: "male", gwUseSlang: true, gwUseIntel: true, finalMaster: null, mdxJobId: null, mdxStatus: "idle"
+        gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null
       })
     }),
     {
@@ -148,10 +143,8 @@ export const useMatrixStore = create<MatrixState>()(
         gwTitle: state.gwTitle,
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
-        gwUseSlang: state.gwUseSlang,
-        gwUseIntel: state.gwUseIntel,
-        mdxJobId: state.mdxJobId,
-        mdxStatus: state.mdxStatus
+        activeProjectId: state.activeProjectId,
+        isProjectFinalized: state.isProjectFinalized
       }),
     }
   )
