@@ -15,12 +15,43 @@ export default function Room01_Lab() {
   // NEW: Anti-Piracy Legal Screener
   const [legalConsent, setLegalConsent] = useState(false);
   
-  const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([
-    { name: "GN_Beat_01_Drill_142BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", price: 149.99 },
-    { name: "GN_Beat_02_Trap_120BPM.mp3", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", price: 49.99 }
-  ]);
+  // Start with an empty array, we will populate this from Supabase
+  const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([]);
 
   useEffect(() => {
+    // 1. DYNAMICALLY FETCH MARKETPLACE BEATS
+    const fetchMarketplaceBeats = async () => {
+      try {
+        const { data, error } = await supabase.storage.from('marketplace_beats').list();
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          const fetchedBeats = data
+            .filter(file => file.name.endsWith('.mp3') || file.name.endsWith('.wav'))
+            .map(file => {
+              // Algorithmic Pricing: Extracts BPM from filename (e.g., Beat_140BPM.mp3)
+              const bpmMatch = file.name.match(/_?(\d+)\s*BPM/i);
+              const bpm = bpmMatch ? parseInt(bpmMatch[1]) : 120;
+              
+              let calculatedPrice = 29.99;
+              if (bpm >= 140) calculatedPrice = 149.99; // Premium Drill
+              else if (bpm >= 125) calculatedPrice = 99.99; // Premium Trap
+              else if (bpm >= 110) calculatedPrice = 49.99; // Standard
+
+              const { data: urlData } = supabase.storage.from('marketplace_beats').getPublicUrl(file.name);
+              return { name: file.name, url: urlData.publicUrl, price: calculatedPrice };
+            });
+          
+          if (fetchedBeats.length > 0) setBeats(fetchedBeats);
+        }
+      } catch (err) {
+        console.error("Failed to load beats from Supabase marketplace:", err);
+      }
+    };
+    
+    fetchMarketplaceBeats();
+
+    // 2. CHECK FOR COMPLETED STRIPE PURCHASES
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('beat_purchased') === 'true') {
