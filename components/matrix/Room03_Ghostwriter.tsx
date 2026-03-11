@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-// FIXED: Added 'Activity' back to the import list
 import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Activity } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
+// 🚨 NEW: Import Supabase to grab the secure session token
+import { supabase } from "../../lib/supabase";
 
 export default function Room03_Ghostwriter() {
   const { 
@@ -17,12 +18,11 @@ export default function Room03_Ghostwriter() {
   const [pollingAttempts, setPollingAttempts] = useState(0);
   const [uxState, setUxState] = useState("Initializing Secure API Handshake...");
   
-  // NEW: Micro-Refinement State
+  // Micro-Refinement State
   const [isRefining, setIsRefining] = useState(false);
   const [refineInstruction, setRefineInstruction] = useState("");
   const [selectedLine, setSelectedLine] = useState("");
 
-  // SPRINT 2: Exact CEO Flow Mapping
   const styles = [
     { id: "getnice_hybrid", name: "GetNice Hybrid Triplet" },
     { id: "drill", name: "NY Drill" },
@@ -34,19 +34,29 @@ export default function Room03_Ghostwriter() {
   const handleGenerate = async () => {
     setIsGenerating(true);
     setPollingAttempts(0);
-    setUxState("Initializing Secure API Handshake...");
+    setUxState("Verifying Authentication...");
 
     try {
+      // 1. STRICT SECURITY: Grab the JWT token from the active session
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Security Exception: Missing Session Token. Please log in.");
+
+      setUxState("Initializing Secure API Handshake...");
+
+      // 2. Pass the token in the Authorization Header
       const initRes = await fetch('/api/ghostwriter', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
         body: JSON.stringify({
-          userId: userSession?.id,
           prompt: gwPrompt,
           title: gwTitle,
           bpm: audioData?.bpm,
-          key: audioData?.key, // Pass the musical key
-          stageName: userSession?.stageName, // Pass their stage name
+          key: audioData?.key, 
+          stageName: userSession?.stageName,
           tag: flowDNA?.tag,
           style: gwStyle,
           gender: gwGender,
@@ -62,19 +72,14 @@ export default function Room03_Ghostwriter() {
       const jobId = initData.jobId;
       let attempts = 0;
 
-      // START ASYNC POLLING (Hitting our secure Vercel API, not RunPod directly)
       const pollInterval = setInterval(async () => {
         attempts++;
         setPollingAttempts(attempts);
-        
-        if (attempts > 2) {
-          setUxState("Warming up Neural Network (Cold Start)...");
-        } else {
-          setUxState("Synthesizing Bars...");
-        }
+        if (attempts > 2) setUxState("Warming up Neural Network (Cold Start)...");
+        else setUxState("Synthesizing Bars...");
 
         try {
-          // PING OUR SECURE BACKEND
+          // Poll the status endpoint
           const statusRes = await fetch(`/api/ghostwriter?jobId=${jobId}`);
           const statusData = await statusRes.json();
 
@@ -82,7 +87,7 @@ export default function Room03_Ghostwriter() {
             clearInterval(pollInterval);
             setIsGenerating(false);
             setLyrics(statusData.output.lyrics);
-            setGeneratedLyrics(statusData.output.lyrics); // Persist to State
+            setGeneratedLyrics(statusData.output.lyrics);
             if(addToast) addToast("Lyrics Synthesized Successfully.", "success");
           } else if (statusData.status === 'FAILED') {
             clearInterval(pollInterval);
@@ -92,7 +97,7 @@ export default function Room03_Ghostwriter() {
         } catch (pollErr) {
             console.error("Polling Error", pollErr);
         }
-      }, 3000); // Check every 3 seconds
+      }, 3000);
 
     } catch (err: any) {
       console.error(err);
@@ -106,11 +111,19 @@ export default function Room03_Ghostwriter() {
     setIsRefining(true);
     
     try {
+      // 1. STRICT SECURITY: Grab the JWT token for Refinements too
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Security Exception: Missing Session Token.");
+
+      // 2. Pass the token in the Authorization Header
       const res = await fetch('/api/ghostwriter/refine', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
         body: JSON.stringify({ 
-          userId: userSession?.id,
           originalLine: selectedLine, 
           instruction: refineInstruction,
           style: gwStyle 
@@ -128,7 +141,7 @@ export default function Room03_Ghostwriter() {
       if(addToast) addToast("Micro-refinement applied.", "success");
       
     } catch (err: any) {
-      if(addToast) addToast("Failed to refine line.", "error");
+      if(addToast) addToast(err.message || "Failed to refine line.", "error");
     } finally {
       setIsRefining(false);
     }
