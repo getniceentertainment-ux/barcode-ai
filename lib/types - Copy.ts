@@ -2,7 +2,7 @@ export type AccessTier = "Free Loader" | "The Artist" | "The Mogul";
 
 export interface UserSession {
   id: string;
-  stageName: string;
+  stageName: string; // NEW: The artist's alias
   tier: AccessTier;
   walletBalance: number;
   creditsRemaining: number | "UNLIMITED";
@@ -13,7 +13,6 @@ export interface AudioAnalysis {
   fileName: string;
   bpm: number;
   totalBars: number;
-  key?: string; // NEW: The extracted musical key
   grid?: number[];
 }
 
@@ -42,6 +41,7 @@ export interface FinalMaster {
   blob: Blob;
 }
 
+// NEW: Project Data Structure
 export interface MatrixProject {
   id: string;
   name: string;
