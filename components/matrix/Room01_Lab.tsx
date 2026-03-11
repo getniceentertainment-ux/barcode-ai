@@ -211,10 +211,10 @@ export default function Room01_Lab() {
                 />
                 <label htmlFor="legal-consent" className="cursor-pointer">
                   <span className="flex items-center gap-2 text-[10px] font-bold text-[#E60000] uppercase tracking-widest mb-1">
-                    <Scale size={12} /> DMCA Liability Waiver
+                    <Scale size={12} /> Audio Clearance & Liability Waiver
                   </span>
                   <span className="text-[9px] font-mono text-[#888] uppercase leading-relaxed block">
-                    By checking this box, I certify that I hold the commercial rights to this audio or it is a royalty-free instrumental. GetNice Records is not liable for copyright infringement.
+                    By checking this box, I confirm this audio is either an authorized GetNice Marketplace lease or an independently cleared instrumental. I assume full legal and financial liability for any unauthorized copyright material.
                   </span>
                 </label>
               </div>
