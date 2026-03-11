@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
-// 🚨 VERCEL CACHE KILLER: STRICTLY FORBIDS CACHING. ENSURES NEW SECURITY LOGIC RUNS EVERY TIME.
+// 🚨 VERCELS CACHE KILLER: STRICTLY FORBIDS CACHING. ENSURES NEW SECURITY LOGIC RUNS EVERY TIME.
 export const dynamic = 'force-dynamic';
 
 const redis = new Redis({
