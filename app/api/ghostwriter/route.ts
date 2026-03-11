@@ -47,11 +47,11 @@ export async function POST(req: Request) {
     
     if (authError || !user) return NextResponse.json({ error: "Access Denied: Invalid Auth Token" }, { status: 401 });
 
+    // Ensure Upstash rate limits are active
     const { success } = await ratelimit.limit(user.id);
     if (!success) return NextResponse.json({ error: "Rate Limit Exceeded. Please hold." }, { status: 429 });
 
     const body = await req.json();
-    // NEW SPRINT 2 VARIABLES: stageName and key
     const { prompt, title, bpm, key, stageName, tag, style, gender, useSlang, useIntel, blueprint } = body;
 
     const { data: profile } = await supabaseAdmin.from('profiles').select('credits, tier').eq('id', user.id).single();
@@ -72,8 +72,8 @@ export async function POST(req: Request) {
           prompt: thematicPrompt,
           tag: tag || "Standard",
           style: style || "getnice_hybrid",
-          stageName: stageName || "The Artist", # Passes into system prompt!
-          key: key || "Unknown Key", # Forces vowel resonance match
+          stageName: stageName || "The Artist", // FIXED: Changed # to //
+          key: key || "Unknown Key",            // FIXED: Changed # to //
           useSlang: useSlang,
           useIntel: useIntel,
           blueprint: blueprint 
