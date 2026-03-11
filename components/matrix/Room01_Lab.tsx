@@ -71,6 +71,13 @@ export default function Room01_Lab() {
 
       setStatus("success");
       if(addToast) addToast(`Purchase Verified: ${fileName} Secured.`, "success");
+      
+      // Force Global Player to Sync
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('matrix-global-seek', { detail: 0 }));
+        window.dispatchEvent(new Event('matrix-global-play'));
+      }, 500);
+
     } catch (err: any) {
       console.error("DSP Pipeline Error:", err);
       if(addToast) addToast(err.message, "error");
@@ -173,6 +180,12 @@ export default function Room01_Lab() {
 
       setStatus("success");
       if(addToast) addToast("Audio imported & analyzed successfully", "success");
+
+      // Force Global Player to Sync and Play
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('matrix-global-seek', { detail: 0 }));
+        window.dispatchEvent(new Event('matrix-global-play'));
+      }, 500);
 
     } catch (err: any) {
       console.error("DSP/MDX Pipeline Error:", err);
@@ -293,7 +306,7 @@ export default function Room01_Lab() {
                   Advance to Brain Train
                 </button>
                 <button onClick={() => { 
-                    setAudioData({ url: "", fileName: "", bpm: 0, totalBars: 0 }); // Pass an empty object to satisfy TypeScript, but effectively clear it. 
+                    setAudioData(null as any); // Safely forces the clear without TypeScript failing
                     setStatus("idle"); 
                 }} className="w-full border border-[#333] text-[#888] py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#111] hover:text-white transition-all">
                   Analyze New Track
