@@ -1,14 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Activity } from "lucide-react";
+import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Activity, Plus, Minus } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
-// 🚨 NEW: Import Supabase to grab the secure session token
 import { supabase } from "../../lib/supabase";
 
 export default function Room03_Ghostwriter() {
   const { 
-    audioData, flowDNA, blueprint, generatedLyrics, setGeneratedLyrics, setActiveRoom, addToast,
+    audioData, flowDNA, blueprint, setBlueprint, generatedLyrics, setGeneratedLyrics, setActiveRoom, addToast,
     gwTitle, setGwTitle, gwPrompt, setGwPrompt, gwStyle, setGwStyle, gwGender, setGwGender, 
     gwUseSlang, setGwUseSlang, gwUseIntel, setGwUseIntel, userSession
   } = useMatrixStore();
@@ -31,20 +30,31 @@ export default function Room03_Ghostwriter() {
     { id: "chopper", name: "Chopper (Fast)" }
   ];
 
+  // BLUEPRINT EDITOR LOGIC
+  const updateBlueprintBar = (index: number, delta: number) => {
+    const newBp = [...blueprint];
+    newBp[index].bars = Math.max(1, newBp[index].bars + delta);
+    setBlueprint(newBp);
+  };
+
+  const updateBlueprintType = (index: number, newType: any) => {
+    const newBp = [...blueprint];
+    newBp[index].type = newType;
+    setBlueprint(newBp);
+  };
+
   const handleGenerate = async () => {
     setIsGenerating(true);
     setPollingAttempts(0);
     setUxState("Verifying Authentication...");
 
     try {
-      // 1. STRICT SECURITY: Grab the JWT token from the active session
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (!token) throw new Error("Security Exception: Missing Session Token. Please log in.");
 
       setUxState("Initializing Secure API Handshake...");
 
-      // 2. Pass the token in the Authorization Header
       const initRes = await fetch('/api/ghostwriter', {
         method: 'POST',
         headers: { 
@@ -59,7 +69,7 @@ export default function Room03_Ghostwriter() {
           stageName: userSession?.stageName,
           tag: flowDNA?.tag,
           style: gwStyle,
-          gender: gwGender,
+          gender: gwGender, // Passed for AI persona context
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
           blueprint: blueprint.map(b => ({ type: b.type, bars: b.bars }))
@@ -79,7 +89,6 @@ export default function Room03_Ghostwriter() {
         else setUxState("Synthesizing Bars...");
 
         try {
-          // Poll the status endpoint
           const statusRes = await fetch(`/api/ghostwriter?jobId=${jobId}`);
           const statusData = await statusRes.json();
 
@@ -111,12 +120,10 @@ export default function Room03_Ghostwriter() {
     setIsRefining(true);
     
     try {
-      // 1. STRICT SECURITY: Grab the JWT token for Refinements too
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (!token) throw new Error("Security Exception: Missing Session Token.");
 
-      // 2. Pass the token in the Authorization Header
       const res = await fetch('/api/ghostwriter/refine', {
         method: 'POST',
         headers: { 
@@ -149,7 +156,9 @@ export default function Room03_Ghostwriter() {
 
   return (
     <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500">
-      <div className="w-1/3 border-r border-[#222] flex flex-col relative overflow-y-auto custom-scrollbar">
+      
+      {/* LEFT COL: TALON PARAMETERS */}
+      <div className="w-1/3 border-r border-[#222] flex flex-col relative overflow-y-auto custom-scrollbar bg-[#020202]">
         <div className="p-6 border-b border-[#222] bg-black sticky top-0 z-10">
           <h2 className="font-oswald text-2xl uppercase tracking-widest font-bold text-[#E60000] flex items-center gap-3">
             <PenTool size={24} /> TALON Engine
@@ -160,6 +169,30 @@ export default function Room03_Ghostwriter() {
         </div>
 
         <div className="p-6 space-y-6 flex-1">
+          
+          {/* VOCALIST PROFILE (Stage Name & Gender) */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-[9px] font-mono text-[#888] uppercase tracking-widest mb-2 block">Stage Name</label>
+              <input 
+                type="text" readOnly value={userSession?.stageName || "Unknown"} 
+                className="w-full bg-[#111] border border-[#333] p-3 text-[10px] text-gray-500 font-mono outline-none cursor-not-allowed uppercase truncate" 
+                title={userSession?.stageName}
+              />
+            </div>
+            <div>
+              <label className="text-[9px] font-mono text-[#888] uppercase tracking-widest mb-2 block">Vocal Gender</label>
+              <select 
+                value={gwGender} onChange={(e) => setGwGender(e.target.value)} 
+                className="w-full bg-black border border-[#333] p-3 text-[10px] text-white font-oswald uppercase tracking-widest outline-none focus:border-[#E60000] transition-colors cursor-pointer"
+              >
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="neutral">Neutral</option>
+              </select>
+            </div>
+          </div>
+
           <div>
             <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block">Track Title</label>
             <input type="text" value={gwTitle} onChange={(e) => setGwTitle(e.target.value)} placeholder="NEON BLOOD..." className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" />
@@ -172,9 +205,52 @@ export default function Room03_Ghostwriter() {
 
           <div>
             <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block">Flow Architecture</label>
-            <select value={gwStyle} onChange={(e) => setGwStyle(e.target.value)} className="w-full bg-black border border-[#333] p-3 text-xs text-white font-oswald uppercase tracking-widest outline-none focus:border-[#E60000] transition-colors">
+            <select value={gwStyle} onChange={(e) => setGwStyle(e.target.value)} className="w-full bg-black border border-[#333] p-3 text-xs text-white font-oswald uppercase tracking-widest outline-none focus:border-[#E60000] transition-colors cursor-pointer">
               {styles.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
+          </div>
+
+          {/* DYNAMIC STRUCTURAL BLUEPRINT */}
+          <div className="pt-4 border-t border-[#222]">
+            <div className="flex justify-between items-end mb-3">
+              <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest block">Structural Blueprint</label>
+              <span className="text-[9px] font-mono text-[#E60000] uppercase tracking-widest">{blueprint.reduce((a, b) => a + b.bars, 0)} Bars Total</span>
+            </div>
+
+            {/* The Visual Bar (DAW Timeline style) */}
+            <div className="flex w-full h-1.5 mb-4 rounded-sm overflow-hidden gap-[2px] bg-[#111]">
+              {blueprint.map((block, i) => (
+                <div
+                  key={block.id || i}
+                  style={{ flex: block.bars }}
+                  className={`h-full ${block.type === 'HOOK' ? 'bg-[#E60000]' : block.type === 'VERSE' ? 'bg-white' : block.type === 'INTRO' || block.type === 'OUTRO' ? 'bg-[#333]' : 'bg-[#777]'}`}
+                  title={`${block.type} (${block.bars} Bars)`}
+                />
+              ))}
+            </div>
+
+            {/* The Blueprint Editor */}
+            <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">
+              {blueprint.map((block, index) => (
+                <div key={block.id || index} className="flex items-center justify-between bg-[#111] border border-[#333] p-2 hover:border-[#E60000] transition-colors group">
+                  <select
+                    value={block.type} onChange={(e) => updateBlueprintType(index, e.target.value)}
+                    className="bg-transparent text-white font-oswald uppercase tracking-widest text-[10px] outline-none cursor-pointer"
+                  >
+                    <option value="INTRO">Intro</option>
+                    <option value="HOOK">Hook</option>
+                    <option value="VERSE">Verse</option>
+                    <option value="BRIDGE">Bridge</option>
+                    <option value="OUTRO">Outro</option>
+                  </select>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => updateBlueprintBar(index, -1)} className="text-[#555] hover:text-[#E60000] transition-colors"><Minus size={12} /></button>
+                    <span className="font-mono text-[10px] w-4 text-center text-white">{block.bars}</span>
+                    <button onClick={() => updateBlueprintBar(index, 1)} className="text-[#555] hover:text-green-500 transition-colors"><Plus size={12} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="space-y-3 pt-4 border-t border-[#222]">
@@ -196,7 +272,8 @@ export default function Room03_Ghostwriter() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col relative bg-[#020202]">
+      {/* RIGHT COL: OUTPUT MATRIX */}
+      <div className="flex-1 flex flex-col relative bg-[#050505]">
         <div className="h-16 border-b border-[#222] bg-black flex items-center justify-between px-8 shrink-0">
           <div className="flex items-center gap-3 text-[#555] font-mono text-[10px] uppercase tracking-widest">
             <AlignLeft size={16} /> Output Matrix 
