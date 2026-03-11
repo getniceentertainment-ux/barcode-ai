@@ -4,11 +4,42 @@ import React, { useState, useEffect, useRef } from "react";
 import { Sliders, PlayCircle, Loader2, CheckCircle2, Waves, Settings2, ArrowRight, Volume2, ListMusic } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 
+// ====================================================================================
+// GETNICE RECORDS - PROPRIETARY DSP BLUEPRINTS (Extracted from Internal Master EQ PDF)
+// ====================================================================================
+const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
 const VOCAL_CHAINS = [
-  { id: "chain_01", name: "Atlanta Trap", desc: "Heavy Pitch Correction + Crisp Highs", color: "text-[#E60000]", pitch: 90, reverb: 40 },
-  { id: "chain_02", name: "NY Drill", desc: "Dry, Aggressive Compression", color: "text-blue-500", pitch: 20, reverb: 15 },
-  { id: "chain_03", name: "R&B Melodic", desc: "Lush Reverb + Stereo Delay", color: "text-purple-500", pitch: 60, reverb: 85 },
-  { id: "chain_04", name: "Raw Podcast", desc: "Noise Gate + Vocal Leveler", color: "text-green-500", pitch: 0, reverb: 5 },
+  { 
+    id: "getnice_eq", name: "GetNice EQ", desc: "Signature Introspective, Vocal-Forward", color: "text-[#E60000]",
+    comp: { ratio: 2, attack: 0.030, release: 0.125, knee: 40, threshold: -24 },
+    eq: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5], // Precise mapping to PDF
+    pitch: 50, reverb: 25 
+  },
+  { 
+    id: "foundation_eq", name: "Foundation EQ", desc: "Boom Bap / Golden Age Gritty Punch", color: "text-yellow-500",
+    comp: { ratio: 4, attack: 0.012, release: 0.045, knee: 0, threshold: -28 },
+    eq: [3, 3, 0, 0, 0, 0, 0, -1, -2, -4],
+    pitch: 10, reverb: 15 
+  },
+  { 
+    id: "gangsta_eq", name: "Gangsta EQ", desc: "Trap / Southern 808 Heavy", color: "text-purple-500",
+    comp: { ratio: 3, attack: 0.035, release: 0.100, knee: 0, threshold: -26 },
+    eq: [4, 0, 0, -3, 0, 0, 0, 0, 1.5, 3],
+    pitch: 80, reverb: 30 
+  },
+  { 
+    id: "modern_eq", name: "Modern EQ", desc: "Drill / Hyper-Controlled & Scooped", color: "text-blue-500",
+    comp: { ratio: 5, attack: 0.003, release: 0.050, knee: 0, threshold: -30 },
+    eq: [0, 2, 0, 0, -2, 0, 0, 2, 0, 0],
+    pitch: 90, reverb: 45 
+  },
+  { 
+    id: "fusion_eq", name: "Fusion EQ", desc: "Latin / Grime Wall of Sound", color: "text-green-500",
+    comp: { ratio: 2, attack: 0.030, release: 0.250, knee: 40, threshold: -22 },
+    eq: [0, 0, 2, 0, 1, 2, 2, 0, 0, 0],
+    pitch: 40, reverb: 20 
+  },
 ];
 
 function createReverb(audioCtx: BaseAudioContext, duration: number, decay: number) {
@@ -25,20 +56,15 @@ function createReverb(audioCtx: BaseAudioContext, duration: number, decay: numbe
 }
 
 function audioBufferToWav(buffer: AudioBuffer) {
-  let numOfChan = buffer.numberOfChannels,
-      length = buffer.length * numOfChan * 2 + 44,
-      bufferArray = new ArrayBuffer(length),
-      view = new DataView(bufferArray),
+  let numOfChan = buffer.numberOfChannels, length = buffer.length * numOfChan * 2 + 44,
+      bufferArray = new ArrayBuffer(length), view = new DataView(bufferArray),
       channels = [], i, sample, offset = 0, pos = 0;
-
   function setUint16(data: number) { view.setUint16(pos, data, true); pos += 2; }
   function setUint32(data: number) { view.setUint32(pos, data, true); pos += 4; }
-
   setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157);
   setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan);
   setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan);
   setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
-
   for(i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
   while(offset < buffer.length) {
       for(i = 0; i < numOfChan; i++) {
@@ -60,14 +86,14 @@ export default function Room05_VocalSuite() {
   const [status, setStatus] = useState<"idle" | "processing" | "success">("idle");
   const [audioReady, setAudioReady] = useState(false);
 
-  // MUTE & SOLO LOGIC
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [soloStems, setSoloStems] = useState<Set<string>>(new Set());
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const wetGainRef = useRef<GainNode | null>(null);
   const dryGainRef = useRef<GainNode | null>(null);
-  const eqRef = useRef<BiquadFilterNode | null>(null);
+  const eqBandsRef = useRef<BiquadFilterNode[]>([]);
+  const compRef = useRef<DynamicsCompressorNode | null>(null);
 
   const handleSelectChain = (chain: typeof VOCAL_CHAINS[0]) => {
     setActiveChain(chain.id);
@@ -75,6 +101,7 @@ export default function Room05_VocalSuite() {
     setReverbMix(chain.reverb);
   };
 
+  // 1. HARDWARE AUDIO GRAPH INITIALIZATION
   useEffect(() => {
     if (!vocalStems.length) return;
     const initGraph = () => {
@@ -90,12 +117,32 @@ export default function Room05_VocalSuite() {
       const dryGain = ctx.createGain();
       wetGainRef.current = wetGain; dryGainRef.current = dryGain;
 
-      const eq = ctx.createBiquadFilter();
-      eq.type = "peaking"; eq.frequency.value = 2500;
-      eqRef.current = eq;
+      // Build the 10-Band DSP Matrix
+      eqBandsRef.current = FREQUENCIES.map((freq, i) => {
+        const band = ctx.createBiquadFilter();
+        band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking";
+        band.frequency.value = freq;
+        return band;
+      });
 
-      masterGain.connect(dryGain); masterGain.connect(convolver); convolver.connect(wetGain);
-      dryGain.connect(eq); wetGain.connect(eq); eq.connect(ctx.destination);
+      // Build the GetNice Glue Compressor
+      const compressor = ctx.createDynamicsCompressor();
+      compRef.current = compressor;
+
+      // ROUTING: Master -> Dry -> [10-Band EQ] -> Compressor -> Destination
+      masterGain.connect(dryGain);
+      let prevNode: AudioNode = dryGain;
+      eqBandsRef.current.forEach(band => {
+        prevNode.connect(band);
+        prevNode = band;
+      });
+      prevNode.connect(compressor);
+      compressor.connect(ctx.destination);
+
+      // ROUTING: Master -> Reverb -> Wet -> Destination (Parallel Processing)
+      masterGain.connect(convolver); 
+      convolver.connect(wetGain);
+      wetGain.connect(ctx.destination);
 
       vocalStems.forEach(stem => {
         const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
@@ -111,33 +158,47 @@ export default function Room05_VocalSuite() {
     return () => { if (audioCtxRef.current?.state !== 'closed') { audioCtxRef.current?.close(); audioCtxRef.current = null; }};
   }, [vocalStems]);
 
+  // 2. LIVE PARAMETER UPDATES (Fires when Preset Changes)
   useEffect(() => {
     if (wetGainRef.current && dryGainRef.current) {
       wetGainRef.current.gain.value = reverbMix / 100;
       dryGainRef.current.gain.value = 1 - (reverbMix / 100);
     }
-    if (eqRef.current) {
-      eqRef.current.Q.value = pitchIntensity / 10;
-      eqRef.current.gain.value = pitchIntensity / 5; 
-    }
-  }, [reverbMix, pitchIntensity]);
+    
+    const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
 
-  // --- PRO-DAW STEM MUTE/SOLO ENFORCEMENT ---
+    // Update 10-Band EQ
+    if (eqBandsRef.current.length === 10) {
+      eqBandsRef.current.forEach((band, i) => {
+        band.gain.value = preset.eq[i];
+      });
+    }
+
+    // Update Glue Compressor
+    if (compRef.current) {
+      compRef.current.ratio.value = preset.comp.ratio;
+      compRef.current.attack.value = preset.comp.attack;
+      compRef.current.release.value = preset.comp.release;
+      compRef.current.knee.value = preset.comp.knee;
+      compRef.current.threshold.value = preset.comp.threshold;
+    }
+  }, [reverbMix, pitchIntensity, activeChain]);
+
+  // 3. PRO-DAW STEM MUTE/SOLO ENFORCEMENT
   useEffect(() => {
     vocalStems.forEach(stem => {
       const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
       if (el) {
         const isMuted = mutedStems.has(stem.id) || (soloStems.size > 0 && !soloStems.has(stem.id));
-        el.muted = isMuted; // Completely silences the MediaElementSource feeding the DSP graph
+        el.muted = isMuted; 
       }
     });
   }, [mutedStems, soloStems, vocalStems]);
 
-  // --- PRO-DAW SYNC ENGINE ---
+  // 4. PRO-DAW SYNC ENGINE
   useEffect(() => {
     const handleSysPlay = () => {
       if (audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume();
-      // ADDED 'as HTMLAudioElement' here to satisfy TypeScript
       vocalStems.forEach(stem => (document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement)?.play());
     };
     const handleSysPause = () => vocalStems.forEach(stem => (document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement)?.pause());
@@ -148,7 +209,7 @@ export default function Room05_VocalSuite() {
     const handleSysTimeUpdate = (e: any) => {
       vocalStems.forEach(stem => {
         const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
-        if (el && Math.abs(el.currentTime - e.detail) > 0.15) el.currentTime = e.detail; // Anti-Drift
+        if (el && Math.abs(el.currentTime - e.detail) > 0.15) el.currentTime = e.detail;
       });
     };
 
@@ -165,12 +226,8 @@ export default function Room05_VocalSuite() {
     };
   }, [vocalStems]);
 
-  const toggleMute = (id: string) => {
-    setMutedStems(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-  };
-  const toggleSolo = (id: string) => {
-    setSoloStems(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-  };
+  const toggleMute = (id: string) => setMutedStems(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const toggleSolo = (id: string) => setSoloStems(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
 
   const handleApplyEngineering = async () => {
     setStatus("processing");
@@ -179,11 +236,10 @@ export default function Room05_VocalSuite() {
 
       const tmpCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const decodedBuffers: AudioBuffer[] = [];
-      const activeStemIds: string[] = []; // Keep track of which ones are actually playing
+      const activeStemIds: string[] = []; 
       let maxDuration = 0;
 
       for (const stem of vocalStems) {
-        // AI DSP LOGIC: Do not decode or bake Muted tracks!
         const isMuted = mutedStems.has(stem.id) || (soloStems.size > 0 && !soloStems.has(stem.id));
         if (!isMuted) {
           const resp = await fetch(stem.url);
@@ -206,11 +262,32 @@ export default function Room05_VocalSuite() {
       const wetGain = offlineCtx.createGain(); const dryGain = offlineCtx.createGain();
       wetGain.gain.value = reverbMix / 100; dryGain.gain.value = 1 - (reverbMix / 100);
 
-      const eq = offlineCtx.createBiquadFilter();
-      eq.type = "peaking"; eq.frequency.value = 2500; eq.Q.value = pitchIntensity / 10; eq.gain.value = pitchIntensity / 5;
+      const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
 
-      masterGain.connect(dryGain); masterGain.connect(convolver); convolver.connect(wetGain);
-      dryGain.connect(eq); wetGain.connect(eq); eq.connect(offlineCtx.destination);
+      // Mirror the 10-Band EQ & Compressor for the Offline Bake
+      const offlineComp = offlineCtx.createDynamicsCompressor();
+      offlineComp.ratio.value = preset.comp.ratio;
+      offlineComp.attack.value = preset.comp.attack;
+      offlineComp.release.value = preset.comp.release;
+      offlineComp.knee.value = preset.comp.knee;
+      offlineComp.threshold.value = preset.comp.threshold;
+
+      masterGain.connect(dryGain);
+      let prevOfflineNode: AudioNode = dryGain;
+      
+      FREQUENCIES.forEach((freq, i) => {
+        const band = offlineCtx.createBiquadFilter();
+        band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking";
+        band.frequency.value = freq;
+        band.gain.value = preset.eq[i];
+        prevOfflineNode.connect(band);
+        prevOfflineNode = band;
+      });
+
+      prevOfflineNode.connect(offlineComp);
+      offlineComp.connect(offlineCtx.destination);
+
+      masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(offlineCtx.destination);
 
       decodedBuffers.forEach(buf => {
         const source = offlineCtx.createBufferSource();
@@ -223,7 +300,6 @@ export default function Room05_VocalSuite() {
       const wavBlob = audioBufferToWav(renderedBuffer);
       const wavUrl = URL.createObjectURL(wavBlob);
 
-      // Clear ONLY the stems we baked (allows you to keep muted adlibs safely on the side)
       activeStemIds.forEach(id => removeVocalStem(id));
       
       addVocalStem({
@@ -234,7 +310,7 @@ export default function Room05_VocalSuite() {
         volume: 0
       });
 
-      if(addToast) addToast("Vocal Chain encoded successfully. Ready for mastering.", "success");
+      if(addToast) addToast("Proprietary DSP applied successfully.", "success");
       setStatus("success");
 
     } catch (err: any) {
@@ -258,7 +334,7 @@ export default function Room05_VocalSuite() {
             <Settings2 size={24} className="text-[#E60000]" /> Engineering
           </h2>
           <p className="font-mono text-[10px] text-[#555] uppercase mt-2 tracking-widest">
-            Real-Time Web Audio DSP Mix Bus
+            Proprietary DSP Blueprint Matrix
           </p>
         </div>
 
@@ -348,7 +424,8 @@ export default function Room05_VocalSuite() {
             {status === "processing" && (
               <div className="bg-[#110000] border border-[#E60000] p-6 flex flex-col items-center text-center animate-pulse">
                 <Loader2 size={32} className="text-[#E60000] animate-spin mb-4" />
-                <p className="font-oswald text-xl uppercase tracking-widest font-bold text-white">Baking WAV Engine...</p>
+                <p className="font-oswald text-xl uppercase tracking-widest font-bold text-white">Baking OfflineAudioContext...</p>
+                <p className="text-[10px] font-mono text-[#E60000] mt-2 tracking-widest">Applying Proprietary DSP Arrays</p>
               </div>
             )}
             {status === "success" && (

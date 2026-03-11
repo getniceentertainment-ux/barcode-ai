@@ -3,6 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
+// 🚨 VERCEL CACHE KILLER: STRICTLY FORBIDS CACHING. ENSURES NEW SECURITY LOGIC RUNS EVERY TIME.
+export const dynamic = 'force-dynamic';
+
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL || '',
   token: process.env.UPSTASH_REDIS_REST_TOKEN || '',
@@ -39,6 +42,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    // 1. FORTRESS LOCKDOWN: CRYPTOGRAPHIC JWT VERIFICATION
     const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
     if (!authHeader) return NextResponse.json({ error: "Access Denied: Missing JWT" }, { status: 401 });
     
@@ -47,13 +51,15 @@ export async function POST(req: Request) {
     
     if (authError || !user) return NextResponse.json({ error: "Access Denied: Invalid Auth Token" }, { status: 401 });
 
-    // Ensure Upstash rate limits are active
+    // 2. UPSTASH RATE LIMITING (Prevents GPU Credit Draining)
     const { success } = await ratelimit.limit(user.id);
     if (!success) return NextResponse.json({ error: "Rate Limit Exceeded. Please hold." }, { status: 429 });
 
+    // 3. PARSE FULL PAYLOAD (Including stageName & key)
     const body = await req.json();
     const { prompt, title, bpm, key, stageName, tag, style, gender, useSlang, useIntel, blueprint } = body;
 
+    // 4. CHECK LEDGER
     const { data: profile } = await supabaseAdmin.from('profiles').select('credits, tier').eq('id', user.id).single();
     if (!profile || (profile.tier !== 'The Mogul' && profile.credits <= 0)) {
       return NextResponse.json({ error: "Insufficient Generations." }, { status: 403 });
@@ -63,6 +69,7 @@ export async function POST(req: Request) {
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_TALON;
     const thematicPrompt = title ? `SONG TITLE: "${title}". ${prompt}` : prompt;
 
+    // 5. PING GPU WORKER
     const runResponse = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
@@ -72,8 +79,8 @@ export async function POST(req: Request) {
           prompt: thematicPrompt,
           tag: tag || "Standard",
           style: style || "getnice_hybrid",
-          stageName: stageName || "The Artist", // FIXED: Changed # to //
-          key: key || "Unknown Key",            // FIXED: Changed # to //
+          stageName: stageName || "The Artist", 
+          key: key || "Unknown Key",            
           useSlang: useSlang,
           useIntel: useIntel,
           blueprint: blueprint 
@@ -84,6 +91,7 @@ export async function POST(req: Request) {
     const runData = await runResponse.json();
     
     if (runData.id) {
+      // 6. DEDUCT CREDIT
       if (profile.tier !== 'The Mogul') {
         await supabaseAdmin.from('profiles').update({ credits: profile.credits - 1 }).eq('id', user.id);
       }
