@@ -53,7 +53,7 @@ def load_street_slang():
                     words = [item.get("word", "") for item in data if "word" in item]
                     if words: return random.sample(words, min(8, len(words)))
             except Exception as json_err:
-                print(f"[TALON] Dictionary.json syntax error detected: {json_err}. Switching to .txt fallback...", flush=True)
+                print(f"[GETNICE] Dictionary.json syntax error detected: {json_err}. Switching to .txt fallback...", flush=True)
         
         # Fallback to TXT if JSON isn't there or had a syntax error
         res_txt = requests.get(f"{INTEL_BUCKET_PATH}/dictionary.txt?t={int(time.time())}", timeout=3)
@@ -113,10 +113,10 @@ def init_model():
         model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
         # FIXED: Added flush=True and distinct formatting so it pierces through the logs
         print("\n" + "="*50)
-        print("🚀 [TALON ENGINE] GETNICE STYLE ADAPTER FUSED SUCCESSFULLY!")
+        print("🚀 [GETNICE ENGINE] GETNICE STYLE ADAPTER FUSED SUCCESSFULLY!")
         print("="*50 + "\n", flush=True)
     except Exception as e:
-        print(f"\n[TALON WARNING] LoRA Failed to load: {e}. Running Base Model.\n", flush=True)
+        print(f"\n[GETNICE WARNING] LoRA Failed to load: {e}. Running Base Model.\n", flush=True)
         model = base_model
         
     dummy = tokenizer("Test", return_tensors="pt").to("cuda")
@@ -142,15 +142,19 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, stage_n
         flow_architecture = "- CADENCE: Standard 4/4 rhythm structure."
     
     return f"""<|im_start|>system
-You are a platinum-selling street lyricist known as '{stage_name}'. You write raw, authentic, aggressive bars. NO POETRY.
+You are '{stage_name}', a platinum-selling street lyricist. You write raw, authentic, aggressive bars. YOU DO NOT WRITE POETRY. YOU DO NOT USE FLOWERY LANGUAGE.
 
-1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}. No abstract poetry (e.g., "tears fall").
+1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}. No abstract poetry (e.g., "tears fall", "shadows dance").
 2. SUGGESTED LEXICON: {slang_list}
 3. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. DO NOT WRITE ANY HEADERS. ONE LINE EQUALS ONE BAR.
 4. MUSICAL KEY: The beat is in {track_key}. Write with vowels that resonate well in this pitch.
+5. THEMATIC ANCHOR: Keep it gritty, focused on survival, money, and power. 
 
 [FLOW ARCHITECTURE]
 {flow_architecture}
+
+[FLOW DNA INJECTION]
+{flow_dna}
 
 [LIVE INTEL & CULTURE]
 {rag_context}
@@ -161,12 +165,30 @@ You are a platinum-selling street lyricist known as '{stage_name}'. You write ra
 def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic):
     delivery = "Melodic, longer vowels" if section_type.upper() == "HOOK" else "Complex, internal rhymes"
     
-    user_prompt = f"""<|im_start|>user
+    # THE CEO'S MASSIVE PROMPT HACK (Zero-Compute Warmup)
+    # If this is the start of the song, we trick the LLM into thinking it just spit 
+    # a gritty 4-bar warmup verse. This instantly kills the "AI Poetry" vibe 
+    # without using any extra GPU generation time.
+    synthetic_warmup = ""
+    if not previous_lyrics:
+        synthetic_warmup = f"""<|im_start|>user
+Perform a mic check. Spit 4 bars of aggressive street rap. No poetry, no soft words.
+<|im_end|>
+<|im_start|>assistant
+Yeah, look | I stepped out the trench with a vision
+Calculated risks | I'm making precision decisions
+They thought I was starving | I'm running the kitchen
+I speak to the streets | and the whole city listen
+<|im_end|>
+"""
+    
+    user_prompt = f"""{synthetic_warmup}<|im_start|>user
 GENERATE A {section_type.upper()}. EXACTLY {bars} LINES (BARS). Topic: '{prompt_topic}'.
 DO NOT WRITE THE HEADER. JUST WRITE THE LYRICS. Follow Flow Architecture rules.
+Delivery: {delivery}.
 
 Previous context:
-{previous_lyrics if previous_lyrics else 'None'}
+{previous_lyrics if previous_lyrics else 'None (Start of track)'}
 <|im_end|>
 <|im_start|>assistant
 """
