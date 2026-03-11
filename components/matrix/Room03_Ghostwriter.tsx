@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2 } from "lucide-react";
+// FIXED: Added 'Activity' back to the import list
+import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Activity } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 
 export default function Room03_Ghostwriter() {
@@ -61,13 +62,19 @@ export default function Room03_Ghostwriter() {
       const jobId = initData.jobId;
       let attempts = 0;
 
+      // START ASYNC POLLING (Hitting our secure Vercel API, not RunPod directly)
       const pollInterval = setInterval(async () => {
         attempts++;
         setPollingAttempts(attempts);
-        if (attempts > 2) setUxState("Warming up Neural Network (Cold Start)...");
-        else setUxState("Synthesizing Bars...");
+        
+        if (attempts > 2) {
+          setUxState("Warming up Neural Network (Cold Start)...");
+        } else {
+          setUxState("Synthesizing Bars...");
+        }
 
         try {
+          // PING OUR SECURE BACKEND
           const statusRes = await fetch(`/api/ghostwriter?jobId=${jobId}`);
           const statusData = await statusRes.json();
 
@@ -75,7 +82,7 @@ export default function Room03_Ghostwriter() {
             clearInterval(pollInterval);
             setIsGenerating(false);
             setLyrics(statusData.output.lyrics);
-            setGeneratedLyrics(statusData.output.lyrics);
+            setGeneratedLyrics(statusData.output.lyrics); // Persist to State
             if(addToast) addToast("Lyrics Synthesized Successfully.", "success");
           } else if (statusData.status === 'FAILED') {
             clearInterval(pollInterval);
@@ -85,7 +92,7 @@ export default function Room03_Ghostwriter() {
         } catch (pollErr) {
             console.error("Polling Error", pollErr);
         }
-      }, 3000);
+      }, 3000); // Check every 3 seconds
 
     } catch (err: any) {
       console.error(err);

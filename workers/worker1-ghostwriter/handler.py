@@ -33,26 +33,29 @@ def load_rag_intel():
     """Reads the daily briefing. Uses a timestamp cache-buster to bypass Cloudflare."""
     if not SUPABASE_URL: return "No live intel available."
     try:
-        # The ?t= timestamp forces Supabase to give the AI the newest file, ignoring the cache
         res = requests.get(f"{INTEL_BUCKET_PATH}/daily_briefing.txt?t={int(time.time())}", timeout=3)
         if res.status_code == 200: return res.text
-    except Exception as e: print(f"Intel fetch error: {e}")
+    except Exception as e: print(f"Intel fetch error: {e}", flush=True)
     return "No live intel available."
 
 def load_street_slang():
-    """Reads the Slang Dictionary from Supabase."""
+    """Reads the Slang Dictionary from Supabase with resilient fallbacks."""
     fallback_words = ["bando", "racks", "opp", "gas", "bag"]
     if not SUPABASE_URL: return fallback_words
 
     try:
+        # Try JSON first
         res = requests.get(f"{INTEL_BUCKET_PATH}/Dictionary.json?t={int(time.time())}", timeout=3)
         if res.status_code == 200:
-            data = res.json()
-            if isinstance(data, list):
-                words = [item.get("word", "") for item in data if "word" in item]
-                if words: return random.sample(words, min(8, len(words)))
+            try:
+                data = res.json()
+                if isinstance(data, list):
+                    words = [item.get("word", "") for item in data if "word" in item]
+                    if words: return random.sample(words, min(8, len(words)))
+            except Exception as json_err:
+                print(f"[TALON] Dictionary.json syntax error detected: {json_err}. Switching to .txt fallback...", flush=True)
         
-        # Fallback to TXT if JSON isn't there
+        # Fallback to TXT if JSON isn't there or had a syntax error
         res_txt = requests.get(f"{INTEL_BUCKET_PATH}/dictionary.txt?t={int(time.time())}", timeout=3)
         if res_txt.status_code == 200:
             words = []
@@ -64,7 +67,7 @@ def load_street_slang():
                     if word and 1 < len(word) < 20: words.append(word)
             if words: return random.sample(words, min(8, len(words)))
             
-    except Exception as e: print(f"Slang fetch error: {e}")
+    except Exception as e: print(f"Slang fetch error: {e}", flush=True)
     return fallback_words
 
 def load_cultural_context():
@@ -81,7 +84,7 @@ def load_cultural_context():
                 title = item.get('title', 'STREET')
                 content = item.get('content', '')[:400]
                 return f"[CULTURAL ANCHOR: {title}] - {content}..."
-    except Exception as e: print(f"Culture fetch error: {e}")
+    except Exception as e: print(f"Culture fetch error: {e}", flush=True)
     return fallback_culture
 
 def sanitize_lora_config():
@@ -105,10 +108,17 @@ def init_model():
     bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4")
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
     base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL_NAME, quantization_config=bnb_config, device_map="auto", torch_dtype=torch.float16)
+    
     try:
         model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
-    except Exception:
+        # FIXED: Added flush=True and distinct formatting so it pierces through the logs
+        print("\n" + "="*50)
+        print("🚀 [TALON ENGINE] GETNICE STYLE ADAPTER FUSED SUCCESSFULLY!")
+        print("="*50 + "\n", flush=True)
+    except Exception as e:
+        print(f"\n[TALON WARNING] LoRA Failed to load: {e}. Running Base Model.\n", flush=True)
         model = base_model
+        
     dummy = tokenizer("Test", return_tensors="pt").to("cuda")
     _ = model.generate(**dummy, max_new_tokens=5)
 
