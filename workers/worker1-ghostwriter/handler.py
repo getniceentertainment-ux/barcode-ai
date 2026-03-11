@@ -9,19 +9,19 @@ from peft import PeftModel
 
 # --- CONFIGURATION & CONSTANTS ---
 BASE_MODEL_NAME = "NousResearch/Hermes-2-Pro-Llama-3-8B"
-LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
-
-# File Paths
+# File Paths (Using the smart fallback for the Network Volume)
 SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_briefing.txt")
 SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
 
-# THE LEXICAL BAN LIST
+# THE LEXICAL BAN LIST (Negative Constraint) - EXPANDED WITH CEO CATCHES
 BAN_LIST = [
     "plight", "fright", "ignite", "divine", "sublime", "mindstream",
     "whispers", "shadows", "dancing", "embrace", "souls", "abyss",
     "void", "chaos", "destiny", "fate", "temptress", "brave ones",
-    "cowards pledge", "kingdom", "throne", "gravity"
+    "cowards pledge", "kingdom", "throne", "gravity", "fray", "solitaire", 
+    "treasure", "warrior", "tenacity", "conqueror", "meatier", "harsh bars", 
+    "victory tastes", "forged in fire", "scars", "battle"
 ]
 
 # GLOBALS FOR WARM CACHE
@@ -41,20 +41,44 @@ def load_street_slang():
     if not os.path.exists(SLANG_FILE):
         return ["bando", "racks", "opp", "gas", "bag"]
 
-    with open(SLANG_FILE, "r", encoding="utf-8") as f:
+    with open(SLANG_FILE, "r", encoding="utf-8", errors="ignore") as f:
         content = f.read()
-    
-    # SELF-HEALING MATRIX: Automatically strip trailing commas that cause JSON syntax errors
-    content = re.sub(r',\s*([\]}])', r'\1', content)
     
     words = []
     try:
-        data = json.loads(content)
-        if isinstance(data, list):
-            words = [item.get("word", "") for item in data if "word" in item]
-    except json.JSONDecodeError as e:
-        print(f"[GETNICE WARNING] Dictionary still unreadable after auto-clean: {e}")
-        pass
+        # 1. Try strict JSON parsing first
+        clean_content = re.sub(r',\s*([\]}])', r'\1', content)
+        data = json.loads(clean_content)
+        
+        # CEOS FORMAT: If the JSON is a dictionary where the keys are the slang words
+        if isinstance(data, dict):
+            words = list(data.keys())
+        # LEGACY FORMAT: If the JSON is a list of objects [{"word": "bando"}]
+        elif isinstance(data, list):
+            words = [item.get("word", "") for item in data if isinstance(item, dict) and "word" in item]
+            
+    except Exception as e:
+        print(f"[GETNICE MATRIX] Bypassing strict JSON rules ({e}). Extracting raw lexical data...")
+        
+        # 2. BULLETPROOF FALLBACK 1: Regex hunt for CEO's format -> "slang_word": {
+        words = re.findall(r'"([^"]+)"\s*:\s*\{', content)
+        
+        # 3. BULLETPROOF FALLBACK 2: Regex hunt for Legacy format -> "word": "slang"
+        if not words:
+            words = re.findall(r'"word"\s*:\s*"([^"]+)"', content, re.IGNORECASE)
+            
+        # 4. BULLETPROOF FALLBACK 3: Raw text parsing
+        if not words:
+            lines = content.split('\n')
+            for i, line in enumerate(lines):
+                clean_line = line.strip().lower()
+                if clean_line in ['noun', 'verb', 'adj.', 'adjective', 'phrase'] and i > 0:
+                    word = lines[i-1].strip().replace('"', '').replace(',', '')
+                    if word and 1 < len(word) < 20:
+                        words.append(word)
+    
+    # Clean up the extracted words (Remove JSON artifacts if any snuck in)
+    words = [w for w in words if w.strip() and len(w) < 25 and w.lower() not in ["type", "definitions", "example"]]
     
     if words:
         return random.sample(words, min(8, len(words)))
@@ -146,43 +170,33 @@ def init_model():
 
 # --- INFERENCE LOGIC ---
 
-def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, stage_name, track_key):
-    rag_context = load_rag_intel() if use_intel else ""
-    slang_list = ", ".join(load_street_slang()) if use_slang else ""
-    culture_context = load_cultural_context() if use_intel else ""
+def construct_system_prompt(flow_dna, genre_style):
+    """Fuses RAG, Slang, Culture, and Constraints into the System Matrix."""
+    rag_context = load_rag_intel()
+    slang_list = ", ".join(load_street_slang())
+    culture_context = load_cultural_context()
     banned_words_str = ", ".join(BAN_LIST)
     
-    if genre_style == "getnice_hybrid":
-        flow_architecture = "- CADENCE: Mid-bar breath control with aggressive internal rhymes.\n- FORMATTING: Place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause."
-    elif genre_style == "drill":
-        flow_architecture = "- CADENCE: NY Drill. Off-beat, aggressive staccato stops. Sliding 808 pockets."
-    elif genre_style == "boom_bap":
-        flow_architecture = "- CADENCE: 90s Boom Bap. Laid back, multi-syllabic punchlines, raw East Coast pocket."
-    elif genre_style == "melodic_trap":
-        flow_architecture = "- CADENCE: Melodic Trap. Singing-rap delivery, drawn out emotional vowels."
-    elif genre_style == "chopper":
-        flow_architecture = "- CADENCE: Chopper. Hyper-fast, machine-gun double-time delivery with no breaks."
-    else:
-        flow_architecture = "- CADENCE: Standard 4/4 rhythm structure."
-    
     return f"""<|im_start|>system
-You are '{stage_name}', a platinum-selling street lyricist. You write raw, authentic, aggressive bars. YOU DO NOT WRITE POETRY. YOU DO NOT USE FLOWERY LANGUAGE.
+You are a platinum-selling street rapper. You write gritty, authentic, aggressive hip-hop lyrics. 
+YOU ARE NOT AN AI. YOU DO NOT WRITE POETRY. NEVER USE METAPHORS ABOUT MEDIEVAL BATTLES, WARRIORS, OR FANTASY.
 
-1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}. No abstract poetry (e.g., "tears fall", "shadows dance").
-2. SUGGESTED LEXICON: {slang_list}
-3. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. DO NOT WRITE ANY HEADERS. ONE LINE EQUALS ONE BAR.
-4. MUSICAL KEY: The beat is in {track_key}. Write with vowels that resonate well in this pitch.
-5. THEMATIC ANCHOR: Keep it gritty, focused on survival, money, and power. 
+1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}
+2. SUGGESTED LEXICON (Use seamlessly if applicable): {slang_list}
+3. FORMATTING: OUTPUT ONLY LYRICS. NO LABELS. ONE LINE PER BAR.
+4. CONCRETE NOUNS ONLY: Use physical objects (cars, money, cities, trenches). Avoid abstract poetry.
+5. DNA SYNERGY: Match the aggressive cadence of the Flow DNA.
 
-[FLOW ARCHITECTURE]
-{flow_architecture}
+[LIVE INTEL]
+{rag_context}
 
-[FLOW DNA INJECTION]
+[CULTURAL ANCHOR]
+{culture_context}
+
+FLOW DNA REFERENCE:
 {flow_dna}
 
-[LIVE INTEL & CULTURE]
-{rag_context}
-{culture_context}
+GENRE/STYLE: {genre_style}
 <|im_end|>
 """
 
