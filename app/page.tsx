@@ -5,7 +5,7 @@ import Link from "next/link";
 import { 
   UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, 
   Send, Wallet, Radio, Users, ShieldAlert, LogOut,
-  Play, Pause, SkipBack, SkipForward, Volume2
+  Play, Pause, SkipBack, SkipForward, Volume2, Lock
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 
@@ -25,7 +25,7 @@ import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
 
 export default function MatrixController() {
-  const { hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix, audioData } = useMatrixStore();
+  const { hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix, audioData, isFinalized } = useMatrixStore();
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -33,7 +33,6 @@ export default function MatrixController() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
 
-  // --- GLOBAL EVENT BUS ---
   useEffect(() => {
     const handleGlobalPlay = () => audioRef.current?.play();
     const handleGlobalPause = () => audioRef.current?.pause();
@@ -82,13 +81,36 @@ export default function MatrixController() {
     { id: "05", name: "Engineering", icon: <Layers size={16} /> },
     { id: "06", name: "Mastering", icon: <Sliders size={16} /> },
     { id: "07", name: "Distribution", icon: <Send size={16} /> },
-    { id: "08", name: "The Bank", icon: <Wallet size={16} /> },
+    { id: "08", name: "The Bank & Vault", icon: <Wallet size={16} /> },
     { id: "09", name: "The Radio", icon: <Radio size={16} /> },
     { id: "10", name: "Social Syndicate", icon: <Users size={16} /> },
   ];
 
-  // --- RESTORED: THE ROOM RENDERER ---
   const renderActiveRoom = () => {
+    // SECURITY LOCK: If the project is finalized, lock out the creation rooms (01-06)
+    const lockedRooms = ["01", "02", "03", "04", "05", "06"];
+    if (isFinalized && lockedRooms.includes(activeRoom)) {
+      return (
+        <div className="h-full flex flex-col items-center justify-center text-center animate-in zoom-in duration-500">
+          <div className="bg-[#110000] border border-[#E60000]/30 p-12 rounded-lg flex flex-col items-center max-w-xl">
+            <Lock size={64} className="text-[#E60000] mb-6 shadow-[0_0_30px_rgba(230,0,0,0.5)] rounded-full" />
+            <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-4">ARTIFACT LOCKED</h2>
+            <p className="font-mono text-xs text-[#888] uppercase tracking-widest mb-8 leading-relaxed">
+              This track has been submitted to the A&R ledger and permanently locked to prevent desyncing. Prior structural rooms can no longer be edited.
+            </p>
+            <div className="flex gap-4 w-full">
+              <button onClick={() => setActiveRoom("08")} className="flex-1 bg-black border border-[#333] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:bg-[#111] hover:border-white transition-colors">
+                View in Vault
+              </button>
+              <button onClick={() => { clearMatrix(); setActiveRoom("01"); }} className="flex-1 bg-[#E60000] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:bg-red-700 transition-colors shadow-[0_0_15px_rgba(230,0,0,0.3)]">
+                Initialize New Track
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     switch (activeRoom) {
       case "01": return <Room01_Lab />;
       case "02": return <Room02_BrainTrain />;
@@ -126,20 +148,28 @@ export default function MatrixController() {
         
         <nav className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar">
           <div className="space-y-1 mb-8">
-            {rooms.map((room) => (
-              <button
-                key={room.id}
-                onClick={() => setActiveRoom(room.id)}
-                className={`w-full flex flex-col px-5 py-4 text-left transition-all rounded-lg group ${
-                  activeRoom === room.id ? "bg-[#E60000] text-white shadow-[0_4px_15px_rgba(230,0,0,0.2)]" : "text-[#444] hover:bg-[#0a0a0a] hover:text-white"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <span className={activeRoom === room.id ? 'text-white' : 'text-[#888] group-hover:text-[#E60000]'}>{room.icon}</span>
-                  <span className="font-oswald text-sm uppercase tracking-widest font-bold">R{room.id} - {room.name}</span>
-                </div>
-              </button>
-            ))}
+            {rooms.map((room) => {
+              const isLocked = isFinalized && ["01", "02", "03", "04", "05", "06"].includes(room.id);
+              return (
+                <button
+                  key={room.id}
+                  onClick={() => setActiveRoom(room.id)}
+                  className={`w-full flex flex-col px-5 py-4 text-left transition-all rounded-lg group relative ${
+                    activeRoom === room.id ? "bg-[#E60000] text-white shadow-[0_4px_15px_rgba(230,0,0,0.2)]" : "text-[#444] hover:bg-[#0a0a0a] hover:text-white"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`${activeRoom === room.id ? 'text-white' : 'text-[#888] group-hover:text-[#E60000]'} ${isLocked ? 'opacity-30' : ''}`}>
+                      {room.icon}
+                    </span>
+                    <span className={`font-oswald text-sm uppercase tracking-widest font-bold ${isLocked ? 'opacity-30 line-through' : ''}`}>
+                      R{room.id} - {room.name}
+                    </span>
+                    {isLocked && <Lock size={10} className="absolute right-4 text-[#E60000]" />}
+                  </div>
+                </button>
+              );
+            })}
           </div>
           
           <div className="pt-4 border-t border-[#111]">
@@ -159,8 +189,10 @@ export default function MatrixController() {
            </span>
            <div className="flex items-center gap-6">
              <div className="flex items-center gap-2">
-               <div className="w-1.5 h-1.5 bg-[#E60000] rounded-full animate-pulse" />
-               <span className="text-[8px] text-[#E60000] uppercase font-bold tracking-widest">Active Matrix</span>
+               <div className={`w-1.5 h-1.5 rounded-full ${isFinalized ? 'bg-yellow-500' : 'bg-[#E60000] animate-pulse'}`} />
+               <span className={`text-[8px] uppercase font-bold tracking-widest ${isFinalized ? 'text-yellow-500' : 'text-[#E60000]'}`}>
+                 {isFinalized ? 'Matrix Locked' : 'Active Matrix'}
+               </span>
              </div>
            </div>
         </div>
@@ -172,7 +204,7 @@ export default function MatrixController() {
         </div>
       </main>
 
-      {/* THE PERSISTENT GLOBAL AUDIO PLAYER WITH NEW SYS-EMITTERS */}
+      {/* GLOBAL AUDIO PLAYER */}
       <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-6 lg:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
         
         {audioData?.url && (

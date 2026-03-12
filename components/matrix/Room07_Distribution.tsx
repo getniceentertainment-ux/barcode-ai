@@ -6,7 +6,7 @@ import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
 export default function Room07_Distribution() {
-  const { setActiveRoom, userSession, finalMaster, generatedLyrics, addToast } = useMatrixStore();
+  const { setActiveRoom, userSession, finalMaster, generatedLyrics, addToast, setIsFinalized } = useMatrixStore();
   const [trackTitle, setTrackTitle] = useState("");
   const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">("idle");
   const [hitScore, setHitScore] = useState<number>(0);
@@ -17,7 +17,6 @@ export default function Room07_Distribution() {
     if (!trackTitle.trim()) return;
     if (!userSession?.id) return addToast("Security Exception: User Session not found.", "error");
     
-    // Safety check: Prevents the user from submitting a dead local Blob URL.
     if (!finalMaster?.url || finalMaster.url.startsWith('blob:')) {
       return addToast("Artifact Missing: Please return to Room 06 and re-bake your Master to the Cloud.", "error");
     }
@@ -38,7 +37,6 @@ export default function Room07_Distribution() {
       setTiktokSnippet(analyzeData.tiktokSnippet);
       setHitScore(analyzeData.hitScore);
 
-      // EXACT CEO LOGIC: 95+ instantly hits the Global Radio. <95 is sent to Admin Queue.
       const calculatedStatus = analyzeData.hitScore >= 95 ? "approved" : "pending";
 
       const { error: dbError } = await supabase
@@ -46,7 +44,7 @@ export default function Room07_Distribution() {
         .insert([{
           user_id: userSession.id,
           title: trackTitle.toUpperCase(),
-          audio_url: finalMaster.url, // This is now a secure HTTPS Supabase URL!
+          audio_url: finalMaster.url, 
           hit_score: analyzeData.hitScore,
           cover_url: analyzeData.coverUrl,
           tiktok_snippet: analyzeData.tiktokSnippet,
@@ -55,6 +53,9 @@ export default function Room07_Distribution() {
 
       if (dbError) throw dbError;
       
+      // PULL THE MATRIX KILLSWITCH: Lock all previous rooms from being edited
+      setIsFinalized(true);
+
       setStatus("success");
       if(addToast) {
         addToast(calculatedStatus === "approved" ? "Track auto-approved to Global Radio." : "Track queued for A&R Admin Review.", "success");
@@ -152,7 +153,7 @@ export default function Room07_Distribution() {
             </div>
 
             <button onClick={() => setActiveRoom("08")} className="flex items-center justify-center w-full md:w-auto md:ml-auto gap-3 bg-white text-black px-12 py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-gray-200 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">
-              Proceed to The Bank <ArrowRight size={20} />
+              Proceed to The Bank & Vault <ArrowRight size={20} />
             </button>
           </div>
         )}

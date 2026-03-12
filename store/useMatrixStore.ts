@@ -13,13 +13,8 @@ interface MatrixState {
   activeRoom: string;
   userSession: UserSession | null;
   
-  // NEW: Project Architecture
-  activeProjectId: string | null;
-  isProjectFinalized: boolean;
-  
   grantAccess: (session: UserSession) => void;
   setActiveRoom: (roomId: string) => void;
-  setActiveProject: (id: string | null, isFinalized: boolean) => void;
 
   audioData: AudioAnalysis | null;
   setAudioData: (data: AudioAnalysis) => void;
@@ -55,6 +50,15 @@ interface MatrixState {
   finalMaster: FinalMaster | null;
   setFinalMaster: (master: FinalMaster | null) => void;
 
+  mdxJobId: string | null;
+  setMdxJobId: (id: string | null) => void;
+  mdxStatus: "idle" | "processing" | "success" | "failed";
+  setMdxStatus: (status: "idle" | "processing" | "success" | "failed") => void;
+
+  // NEW: Project Lock State
+  isFinalized: boolean;
+  setIsFinalized: (val: boolean) => void;
+
   toasts: ToastMessage[];
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
   removeToast: (id: string) => void;
@@ -68,9 +72,6 @@ export const useMatrixStore = create<MatrixState>()(
       hasAccess: false,
       activeRoom: "01",
       userSession: null,
-      
-      activeProjectId: null,
-      isProjectFinalized: false,
       
       audioData: null,
       flowDNA: null,
@@ -91,11 +92,16 @@ export const useMatrixStore = create<MatrixState>()(
       
       vocalStems: [],
       finalMaster: null,
+      
+      mdxJobId: null,
+      mdxStatus: "idle",
+      
+      isFinalized: false,
+
       toasts: [],
 
       grantAccess: (session) => set({ hasAccess: true, userSession: session }),
       setActiveRoom: (roomId) => set({ activeRoom: roomId }),
-      setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
       
       setAudioData: (data) => set({ audioData: data }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
@@ -117,6 +123,10 @@ export const useMatrixStore = create<MatrixState>()(
       })),
 
       setFinalMaster: (master) => set({ finalMaster: master }),
+      setMdxJobId: (id) => set({ mdxJobId: id }),
+      setMdxStatus: (status) => set({ mdxStatus: status }),
+      
+      setIsFinalized: (val) => set({ isFinalized: val }),
 
       addToast: (message, type) => {
         const id = Math.random().toString(36).substring(7);
@@ -129,7 +139,8 @@ export const useMatrixStore = create<MatrixState>()(
 
       clearMatrix: () => set({
         audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
-        gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null
+        gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", gwGender: "male", gwUseSlang: true, gwUseIntel: true, 
+        finalMaster: null, mdxJobId: null, mdxStatus: "idle", isFinalized: false
       })
     }),
     {
@@ -143,8 +154,12 @@ export const useMatrixStore = create<MatrixState>()(
         gwTitle: state.gwTitle,
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
-        activeProjectId: state.activeProjectId,
-        isProjectFinalized: state.isProjectFinalized
+        gwUseSlang: state.gwUseSlang,
+        gwUseIntel: state.gwUseIntel,
+        mdxJobId: state.mdxJobId,
+        mdxStatus: state.mdxStatus,
+        isFinalized: state.isFinalized,
+        finalMaster: state.finalMaster ? { url: state.finalMaster.url, blob: "" as any } : null // Only save URL to avoid local storage quota limits
       }),
     }
   )
