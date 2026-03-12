@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3 } from "lucide-react";
+import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import CreditHustle from "./CreditHustle";
@@ -29,7 +29,6 @@ export default function Room10_Social() {
 
   const fetchLeaderboard = async () => {
     try {
-      // Pull real top-tier users ordered by Mogul Score
       const { data, error } = await supabase
         .from('profiles')
         .select('id, email, mogul_score, total_referrals')
@@ -101,9 +100,7 @@ export default function Room10_Social() {
                 </div>
                 <div className="flex flex-col items-end">
                   <span className="text-[8px] font-mono text-[#E60000] uppercase tracking-widest mb-1">Mogul Score</span>
-                  <div className="text-2xl font-oswald font-bold text-white tracking-tighter">
-                    {node.mogul_score}
-                  </div>
+                  <div className="text-2xl font-oswald font-bold text-white tracking-tighter">{node.mogul_score}</div>
                 </div>
               </div>
               <div className="flex gap-4 mt-2 pt-4 border-t border-[#111]">
@@ -138,11 +135,11 @@ export default function Room10_Social() {
             </div>
 
             <div className="flex gap-2 mb-8 border-b border-[#222] pb-6">
-              <button onClick={() => setInteractionType("feature")} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'feature' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555]'}`}>Request Verse</button>
-              <button onClick={() => setInteractionType("booking")} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'booking' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555]'}`}>Live Booking</button>
+              <button onClick={() => setInteractionType("feature")} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'feature' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555] hover:text-white hover:border-white'}`}>Request Verse</button>
+              <button onClick={() => setInteractionType("booking")} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'booking' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555] hover:text-white hover:border-white'}`}>Live Booking</button>
             </div>
 
-            <div className="flex-1">
+            <div className="flex-1 flex flex-col">
               {escrowStatus === "idle" && (
                 <div className="bg-black border border-[#222] p-6 mb-auto group hover:border-[#E60000]/50 transition-all">
                   <h3 className="font-oswald text-lg uppercase tracking-widest text-[#E60000] mb-6 border-b border-[#222] pb-3 flex items-center gap-2">
@@ -161,20 +158,38 @@ export default function Room10_Social() {
               )}
 
               {escrowStatus === "processing" && (
-                <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
+                <div className="flex-1 flex flex-col items-center justify-center text-center">
                   <Zap size={48} className="text-[#E60000] animate-pulse mb-6" />
-                  <p className="font-oswald text-2xl uppercase tracking-widest font-bold text-white">Generating Contract...</p>
+                  <p className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-2">Generating Contract...</p>
+                  <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest">Awaiting Stripe Handshake</p>
                 </div>
               )}
 
               {escrowStatus === "locked" && (
-                <div className="flex-1 flex flex-col items-center justify-center text-center animate-in zoom-in py-10">
+                <div className="flex-1 flex flex-col items-center justify-center text-center animate-in zoom-in">
                   <ShieldCheck size={64} className="text-green-500 mb-6 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" />
-                  <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-2">Request Transmitted</h3>
-                  <p className="font-mono text-xs text-green-500 uppercase tracking-widest mb-6">Funds locked in secure escrow.</p>
+                  <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-2">Funds Secured</h3>
+                  <p className="font-mono text-xs text-green-500 uppercase tracking-widest mb-6">Request sent to NODE_{selectedNode.id.substring(0,6)}.</p>
+                  
+                  <p className="font-mono text-[9px] text-[#888] uppercase leading-relaxed max-w-xs mx-auto border border-[#222] bg-[#111] p-4 mb-6">
+                    If the artist fails to deliver the verse/performance within 14 days, the contract voids and funds return to your wallet.
+                  </p>
+
+                  <button onClick={() => { setSelectedNode(null); setEscrowStatus("idle"); }} className="border border-[#333] text-white px-6 py-3 font-oswald text-sm uppercase tracking-widest hover:bg-white hover:text-black transition-colors flex items-center gap-2">
+                    <RefreshCw size={14} /> Return to Network
+                  </button>
                 </div>
               )}
             </div>
+            
+            {/* Legal / Lore Footer */}
+            <div className="mt-6 pt-4 border-t border-[#111] flex items-start gap-3">
+              <DollarSign size={14} className="text-[#555] shrink-0 mt-0.5" />
+              <p className="text-[8px] font-mono uppercase tracking-widest text-[#555] leading-relaxed">
+                GetNice Records acts strictly as the broker and escrow agent. The 15% agency fee is deducted at the time of contract execution to maintain platform infrastructure.
+              </p>
+            </div>
+
           </div>
         )}
       </div>

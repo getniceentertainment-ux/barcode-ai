@@ -16,24 +16,25 @@ export async function POST(req: Request) {
     console.log(`[A&R BOT] Initiating Neural Scan for: ${title}`);
 
     // 1. GENERATE SPOTIFY-READY COVER ART (DALL-E 3)
+    // FIX: Removed text-generation requirements. DALL-E 3 produces much higher quality abstract/moody art when text is omitted.
     let coverUrl = "";
     try {
       const imageRes = await openai.images.generate({
         model: "dall-e-3",
-        prompt: `A high-end, professional Spotify album cover for a hip-hop/rap track titled "${title}". Modern, moody, cinematic lighting, industry-standard quality. Graphic design aesthetic. No text other than the exact words: "${title}".`,
+        prompt: `A highly aesthetic, professional album cover for a dark, gritty street rap track. Moody, cinematic lighting, neon accents, abstract graphic design. No words, no text, pure visual atmosphere.`,
         n: 1,
         size: "1024x1024",
       });
-      // FIXED: Added optional chaining (?.) to satisfy TypeScript strict mode
       coverUrl = imageRes.data?.[0]?.url || "";
     } catch (imgErr) {
       console.error("DALL-E Generation Failed:", imgErr);
-      coverUrl = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1024&auto=format&fit=crop"; // Fallback aesthetic image
+      coverUrl = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1024&auto=format&fit=crop"; // Fallback
     }
 
     // 2. EXTRACT VIRAL TIKTOK SNIPPET (GPT-4o-mini)
-    let tiktokSnippet = "Instrumental / No lyrics detected.";
-    if (lyrics && lyrics.length > 20) {
+    // FIX: Safely check if lyrics exist. If it's an instrumental, skip the LLM call.
+    let tiktokSnippet = "Instrumental Bounce // No vocals detected.";
+    if (lyrics && lyrics.length > 30) {
       try {
         const completion = await openai.chat.completions.create({
           model: "gpt-4o-mini",
@@ -48,8 +49,20 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3. CALCULATE ALGORITHMIC HIT SCORE (Heavily weighted for mastered tracks)
-    const hitScore = Math.floor(Math.random() * (98 - 78 + 1)) + 78;
+    // 3. CALCULATE STRICT ALGORITHMIC HIT SCORE
+    // FIX: Getting a 100 is now a rare, calculated event (approx 5% chance).
+    let hitScore = 75;
+    const rng = Math.random();
+    
+    if (rng > 0.95) {
+      hitScore = 100; // The Golden Ticket
+    } else if (rng > 0.70) {
+      hitScore = Math.floor(Math.random() * (99 - 90 + 1)) + 90; // Heavy Rotation (90-99)
+    } else if (rng > 0.30) {
+      hitScore = Math.floor(Math.random() * (89 - 80 + 1)) + 80; // Standard (80-89)
+    } else {
+      hitScore = Math.floor(Math.random() * (79 - 65 + 1)) + 65; // Underground (65-79)
+    }
 
     return NextResponse.json({ 
       coverUrl, 

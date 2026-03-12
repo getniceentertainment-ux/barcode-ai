@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, AlertCircle, Undo2, Image as ImageIcon, Smartphone } from "lucide-react";
+import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, AlertCircle, Undo2, Image as ImageIcon, Smartphone } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -16,18 +16,15 @@ export default function Room07_Distribution() {
   const handleSubmit = async () => {
     if (!trackTitle.trim()) return;
     if (!userSession?.id) return addToast("Security Exception: User Session not found.", "error");
-    
-    // THE FIX: We now check for finalMaster.url, because Room 06 uploaded it to the cloud!
     if (!finalMaster?.url) return addToast("Artifact Missing: Please complete Room 06 Mastering first.", "error");
 
     setStatus("analyzing");
 
     try {
-      // Send the Cloud URL to A&R API
       const analyzeRes = await fetch('/api/distribution/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: trackTitle, lyrics: generatedLyrics })
+        body: JSON.stringify({ title: trackTitle, lyrics: generatedLyrics || "No lyrics provided" })
       });
       
       const analyzeData = await analyzeRes.json();
@@ -37,23 +34,25 @@ export default function Room07_Distribution() {
       setTiktokSnippet(analyzeData.tiktokSnippet);
       setHitScore(analyzeData.hitScore);
 
-      // Encrypt to Database Ledger 
+      // NEW LOGIC: 95-100 Auto Approves to Radio. < 95 goes to Pending for Admin.
+      const calculatedStatus = analyzeData.hitScore >= 95 ? "approved" : "pending";
+
       const { error: dbError } = await supabase
         .from('submissions')
         .insert([{
           user_id: userSession.id,
           title: trackTitle.toUpperCase(),
-          audio_url: finalMaster.url, // Using the permanent cloud URL from Room 06!
+          audio_url: finalMaster.url, 
           hit_score: analyzeData.hitScore,
           cover_url: analyzeData.coverUrl,
           tiktok_snippet: analyzeData.tiktokSnippet,
-          status: "pending" 
+          status: calculatedStatus 
         }]);
 
       if (dbError) throw dbError;
       
       setStatus("success");
-      if(addToast) addToast("Transmission Secured. Track added to A&R Queue.", "success");
+      if(addToast) addToast(calculatedStatus === "approved" ? "Track auto-approved to Global Radio." : "Track queued for A&R Admin Review.", "success");
 
     } catch (error: any) {
       if(addToast) addToast(error.message || "Network Error during transmission.", "error");
@@ -64,7 +63,8 @@ export default function Room07_Distribution() {
   return (
     <div className="h-full flex flex-col justify-center max-w-5xl mx-auto animate-in fade-in duration-500">
       <div className={`bg-[#050505] border p-8 md:p-12 rounded-lg text-center relative overflow-y-auto custom-scrollbar transition-all duration-500
-        ${status === 'success' ? 'border-[#E60000] shadow-[0_0_30px_rgba(230,0,0,0.15)]' : 'border-[#222]'}`}>
+        ${status === 'success' && hitScore === 100 ? 'border-yellow-500 shadow-[0_0_40px_rgba(234,179,8,0.2)]' : 
+          status === 'success' ? 'border-[#E60000] shadow-[0_0_30px_rgba(230,0,0,0.15)]' : 'border-[#222]'}`}>
         
         {status === "analyzing" && <div className="absolute inset-0 bg-[#E60000]/5 animate-pulse pointer-events-none" />}
 
@@ -115,8 +115,13 @@ export default function Room07_Distribution() {
         {status === "success" && (
           <div className="animate-in zoom-in relative z-10 w-full text-left">
             <div className="flex items-center gap-4 border-b border-[#222] pb-6 mb-8">
-              <CheckCircle2 size={40} className="text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.3)] rounded-full" />
-              <div><h3 className="font-oswald text-3xl uppercase tracking-widest text-white">Transmission Secured</h3><p className="font-mono text-[10px] text-green-500 uppercase tracking-widest mt-1">A&R Dossier Generated</p></div>
+              <CheckCircle2 size={40} className={hitScore === 100 ? "text-yellow-500" : "text-green-500"} />
+              <div>
+                <h3 className="font-oswald text-3xl uppercase tracking-widest text-white">Transmission Secured</h3>
+                <p className={`font-mono text-[10px] uppercase tracking-widest mt-1 ${hitScore >= 95 ? "text-green-500 font-bold" : "text-yellow-500"}`}>
+                  {hitScore === 100 ? "Perfect Score Achieved // Auto-Approved" : hitScore >= 95 ? "A&R Dossier Generated // Auto-Approved" : "A&R Dossier Generated // Pending Admin Review"}
+                </p>
+              </div>
             </div>
              
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
@@ -128,9 +133,9 @@ export default function Room07_Distribution() {
               </div>
 
               <div className="flex flex-col gap-6">
-                <div className="bg-black border border-[#222] p-6 flex flex-col items-center justify-center h-48 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
-                  <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 flex items-center gap-2"><BarChart size={14} className="text-[#E60000]" /> A&R Hit Score</span>
-                  <div className={`text-6xl font-oswald font-bold tracking-tighter ${hitScore >= 85 ? 'text-green-500' : hitScore >= 70 ? 'text-yellow-500' : 'text-[#E60000]'}`}>{hitScore}<span className="text-2xl text-[#555]">/100</span></div>
+                <div className={`bg-black border p-6 flex flex-col items-center justify-center h-48 shadow-[0_0_30px_rgba(0,0,0,0.5)] ${hitScore === 100 ? 'border-yellow-500 bg-yellow-900/10' : 'border-[#222]'}`}>
+                  <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 flex items-center gap-2"><BarChart size={14} className={hitScore === 100 ? "text-yellow-500" : "text-[#E60000]"} /> A&R Hit Score</span>
+                  <div className={`text-6xl font-oswald font-bold tracking-tighter ${hitScore === 100 ? 'text-yellow-500 drop-shadow-[0_0_15px_rgba(234,179,8,0.8)]' : hitScore >= 85 ? 'text-green-500' : hitScore >= 70 ? 'text-white' : 'text-[#E60000]'}`}>{hitScore}<span className="text-2xl text-[#555]">/100</span></div>
                 </div>
 
                 <div className="bg-black border border-[#222] p-6 flex-1 flex flex-col">
