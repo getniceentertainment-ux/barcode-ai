@@ -538,15 +538,7 @@
     "word up": {
       "type": "adjective/interjection",
       "definitions": ["interjectional statement of the affirmative; shows enthusiastic agreement"],
-      "example": "Thug changes, and love changes/and best friends become strangers, word up"
-    },
-    "ya played yaself": {
-      "type": "verb",
-      "definitions": [
-        "To overstep one’s bounds, unintentionally embarrassing one’s self",
-        "to misjudge or underestimate an opponent based on delusions of grandeur."
-      ],
-      "example": "So put a quarter in your ass, ’cause ya played yaself"
+      "example": "Thug changes, and love changes/and best friends become strangers, word up"    
     }
   }
 }

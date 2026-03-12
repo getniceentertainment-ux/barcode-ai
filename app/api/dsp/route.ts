@@ -1,5 +1,21 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+
+// 🚨 1. VERCEL CACHE KILLER & TIMEOUT OVERRIDE
+export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // Allows Vercel to wait up to 5 minutes (Requires Vercel Pro)
+
+// 🚨 2. UPSTASH RATE LIMITER (Protects Worker 2 Compute)
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL || '',
+  token: process.env.UPSTASH_REDIS_REST_TOKEN || '',
+});
+const ratelimit = new Ratelimit({
+  redis: redis,
+  limiter: Ratelimit.slidingWindow(10, "1 m"), // Max 10 DSP scans per minute per user
+});
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,71 +24,42 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
   try {
-    // 1. FORTRESS LOCKDOWN: CRYPTOGRAPHIC JWT VERIFICATION
     const authHeader = req.headers.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: "Security Exception: Missing or invalid Auth Token." }, { status: 401 });
+      return NextResponse.json({ error: "Security Exception: Missing Auth Token." }, { status: 401 });
     }
     
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    
-    if (authError || !user) {
-      return NextResponse.json({ error: "Security Exception: Forged or Expired Token." }, { status: 401 });
-    }
+    if (authError || !user) return NextResponse.json({ error: "Security Exception: Invalid Token." }, { status: 401 });
 
-    // STRICT OVERRIDE: We extract the ID directly from the verified token. 
-    // We no longer trust any userId passed in the JSON payload.
     const userId = user.id;
+
+    // Rate Limit Check
+    const { success } = await ratelimit.limit(userId);
+    if (!success) return NextResponse.json({ error: "Rate Limit Exceeded. Cooling down matrix." }, { status: 429 });
 
     const body = await req.json();
     const { file_url } = body;
+    if (!file_url) return NextResponse.json({ error: "Missing file_url" }, { status: 400 });
 
-    if (!file_url) {
-      return NextResponse.json({ error: "Missing file_url" }, { status: 400 });
-    }
-
-    // 2. CHECK LEDGER CREDITS
-    const { data: profile, error: dbError } = await supabaseAdmin
-      .from('profiles')
-      .select('credits, tier')
-      .eq('id', userId)
-      .single();
-
-    if (dbError || !profile) {
-      return NextResponse.json({ error: "Security Exception: Identity not found in Ledger." }, { status: 401 });
-    }
-
-    if (profile.tier !== 'The Mogul' && profile.credits <= 0) {
-      return NextResponse.json({ error: "Insufficient Generations. Please upgrade your tier." }, { status: 403 });
+    const { data: profile } = await supabaseAdmin.from('profiles').select('credits, tier').eq('id', userId).single();
+    if (!profile || (profile.tier !== 'The Mogul' && profile.credits <= 0)) {
+      return NextResponse.json({ error: "Insufficient Generations." }, { status: 403 });
     }
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP;
 
-    if (!RUNPOD_API_KEY || !ENDPOINT_ID) {
-      return NextResponse.json({ error: "Server missing RunPod DSP configuration." }, { status: 500 });
-    }
-
-    // 3. CALL WORKER 2
     const response = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/runsync`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${RUNPOD_API_KEY}`
-      },
-      body: JSON.stringify({
-        input: {
-          task_type: "analyze",
-          file_url: file_url
-        }
-      })
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
+      body: JSON.stringify({ input: { task_type: "analyze", file_url: file_url } })
     });
 
     const data = await response.json();
 
     if (data.status === "COMPLETED") {
-      // 4. BILLING
       if (profile.tier !== 'The Mogul') {
         await supabaseAdmin.from('profiles').update({ credits: profile.credits - 1 }).eq('id', userId);
       }
@@ -80,9 +67,7 @@ export async function POST(req: Request) {
     } else {
       throw new Error(data.error || "DSP processing failed");
     }
-
   } catch (error: any) {
-    console.error("DSP API Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
