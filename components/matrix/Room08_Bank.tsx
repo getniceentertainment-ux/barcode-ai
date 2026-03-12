@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Wallet, TrendingUp, FileText, CheckCircle2, AlertTriangle, ArrowRight, Lock, CreditCard, Loader2, Link as LinkIcon, Radio } from "lucide-react";
+import { Wallet, TrendingUp, FileText, CheckCircle2, AlertTriangle, ArrowRight, Lock, CreditCard, Loader2, Link as LinkIcon, Radio, Clock } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -12,6 +12,9 @@ export default function Room08_Bank() {
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [royaltyBalance, setRoyaltyBalance] = useState(userSession?.walletBalance || 0);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  
+  // NEW: Store the actual score so the UI tells the truth
+  const [trackScore, setTrackScore] = useState<number>(0);
 
   const artistSplit = 60;
   const labelSplit = 40;
@@ -21,7 +24,6 @@ export default function Room08_Bank() {
     const evaluateLedger = async () => {
       if (!userSession?.id) return;
       try {
-        // Query the database for the user's most recent submission
         const { data, error } = await supabase
           .from('submissions')
           .select('hit_score')
@@ -32,7 +34,8 @@ export default function Room08_Bank() {
 
         if (error) throw error;
 
-        // THE FIX: Strict 100 score required for the Advance.
+        setTrackScore(data.hit_score);
+
         setTimeout(() => {
           if (data.hit_score === 100) {
             setStatus("deal_ready");
@@ -139,11 +142,25 @@ export default function Room08_Bank() {
 
         {status === "standard_payout" && (
           <div className="bg-[#050505] border border-[#222] p-16 flex flex-col items-center justify-center text-center rounded-lg h-[400px] animate-in zoom-in">
-            <Radio size={64} className="text-white mb-8" />
-            <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-2">Standard Distribution</h3>
-            <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest mb-8 max-w-sm">
-              Track routed to Global Streaming Radio. Royalties will accrue natively in your ledger.
-            </p>
+            {/* THE FIX: Dynamic UI based on score */}
+            {trackScore >= 95 ? (
+              <>
+                <Radio size={64} className="text-green-500 mb-8 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" />
+                <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-2">Standard Distribution</h3>
+                <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest mb-8 max-w-sm text-center">
+                  Track <span className="text-green-500 font-bold">Auto-Approved</span> to Global Streaming Radio. Royalties will accrue natively in your ledger.
+                </p>
+              </>
+            ) : (
+              <>
+                <Clock size={64} className="text-[#888] mb-8" />
+                <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-2">A&R Review Queued</h3>
+                <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest mb-8 max-w-sm text-center">
+                  Track scored under 95 and is pending Admin Node clearance. Royalties will activate upon approval.
+                </p>
+              </>
+            )}
+            
             <button onClick={() => setActiveRoom("09")} className="bg-white text-black py-4 px-8 font-oswald text-sm font-bold uppercase tracking-[0.2em] hover:bg-[#E60000] hover:text-white transition-all flex items-center justify-center gap-3">
               Enter Live Radio Broadcast <ArrowRight size={16} />
             </button>
