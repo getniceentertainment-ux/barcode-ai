@@ -16,14 +16,16 @@ SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_
 SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
 
-# THE LEXICAL BAN LIST (Negative Constraint) - EXPANDED WITH CEO CATCHES
+# THE LEXICAL BAN LIST - EXPANDED WITH YOUR EXACT POETRY CATCHES
 BAN_LIST = [
     "plight", "fright", "ignite", "divine", "sublime", "mindstream",
     "whispers", "shadows", "dancing", "embrace", "souls", "abyss",
     "void", "chaos", "destiny", "fate", "temptress", "brave ones",
     "cowards pledge", "kingdom", "throne", "gravity", "fray", "solitaire", 
     "treasure", "warrior", "tenacity", "conqueror", "meatier", "harsh bars", 
-    "victory tastes", "forged in fire", "scars", "battle"
+    "victory tastes", "forged in fire", "scars", "battle", "maze", "haze", 
+    "spiral staircase", "amends", "turbulent tides", "tranquility", "adversity", 
+    "guidance", "redemption", "slippery slope", "despair", "resilience", "victors"
 ]
 
 # GLOBALS FOR WARM CACHE
@@ -48,34 +50,26 @@ def load_street_slang():
     
     words = []
     try:
-        # Try strict JSON parsing first
         clean_content = re.sub(r',\s*([\]}])', r'\1', content)
         data = json.loads(clean_content)
         
-        # CEO's FORMAT: If the JSON is a dictionary where keys are the slang words
         if isinstance(data, dict):
-            words = list(data.keys())
-        # LEGACY FORMAT
+            if "slang_terms" in data and isinstance(data["slang_terms"], dict):
+                words = list(data["slang_terms"].keys())
+            else:
+                words = list(data.keys()) 
         elif isinstance(data, list):
             words = [item.get("word", "") for item in data if isinstance(item, dict) and "word" in item]
             
     except Exception as e:
         print(f"[GETNICE MATRIX] Bypassing strict JSON rules ({e}). Extracting raw lexical data...")
-        # Regex hunt for CEO's format -> "slang_word": {
-        words = re.findall(r'"([^"]+)"\s*:\s*\{', content)
+        raw_keys = re.findall(r'"([^"]+)"\s*:\s*\{', content)
+        words = [w for w in raw_keys if w.lower() != "slang_terms"]
+        
         if not words:
             words = re.findall(r'"word"\s*:\s*"([^"]+)"', content, re.IGNORECASE)
-        if not words:
-            lines = content.split('\n')
-            for i, line in enumerate(lines):
-                clean_line = line.strip().lower()
-                if clean_line in ['noun', 'verb', 'adj.', 'adjective', 'phrase'] and i > 0:
-                    word = lines[i-1].strip().replace('"', '').replace(',', '')
-                    if word and 1 < len(word) < 20:
-                        words.append(word)
     
-    # Clean up the extracted words (Remove JSON artifacts if any snuck in)
-    words = [w for w in words if w.strip() and len(w) < 25 and w.lower() not in ["type", "definitions", "example"]]
+    words = [w for w in words if w.strip() and len(w) < 25 and w.lower() not in ["type", "definitions", "example", "slang_terms"]]
     
     if words:
         return random.sample(words, min(8, len(words)))
@@ -84,7 +78,6 @@ def load_street_slang():
 def load_cultural_context():
     if not os.path.exists(CULTURE_FILE):
         return "Focus on the struggle, the hustle, and survival."
-
     try:
         with open(CULTURE_FILE, "r", encoding="utf-8") as f:
             content = f.read()
@@ -95,9 +88,8 @@ def load_cultural_context():
                 item = random.choice(data)
                 title = item.get("title", "STREET POLITICS")
                 content = item.get("content", "")[:400]
-                return f"[CULTURAL ANCHOR: {title}] - {content}..."
+                return f"CULTURAL ANCHOR: {title} - {content}..."
     except Exception as e:
-        print(f"Culture load error: {e}")
         pass
     
     return "Focus on the struggle, the hustle, and survival."
@@ -105,14 +97,12 @@ def load_cultural_context():
 # --- MODEL INITIALIZATION ---
 
 def clean_lora_config():
-    """PROPRIETARY AUTO-CLEANER: Safely purges incompatible HuggingFace variables."""
     config_path = os.path.join(LORA_WEIGHTS_DIR, "adapter_config.json")
     if os.path.exists(config_path):
         try:
             with open(config_path, 'r') as f:
                 adapter_config = json.load(f)
             
-            # The CEO's Hit-List of modern PEFT keys that break stable environments
             keys_to_remove = [
                 "alora_invocation_tokens", "arrow_config", "corda_config", 
                 "ensure_weight_tying", "layer_replication", "megatron_config", 
@@ -121,7 +111,6 @@ def clean_lora_config():
                 "target_parameters", "trainable_token_indices", "use_qalora"
             ]
             cleaned = False
-            
             for k in keys_to_remove:
                 if k in adapter_config:
                     del adapter_config[k]
@@ -132,13 +121,12 @@ def clean_lora_config():
                     json.dump(adapter_config, f, indent=2)
                 print("[GETNICE SECURITY] Auto-Cleaner purged incompatible PEFT keys. Adapter secure.")
         except Exception as e:
-            print(f"[GETNICE WARNING] Auto-cleaner bypassed: {e}")
+            pass
 
 def init_model():
     global model, tokenizer
     print("Initiating TALON Engine Deep Burn-In...")
     
-    # Run the Auto-Cleaner before touching the weights
     clean_lora_config()
     
     bnb_config = BitsAndBytesConfig(
@@ -166,71 +154,58 @@ def init_model():
 
 # --- INFERENCE LOGIC ---
 
-def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, stage_name, track_key):
+def construct_system_prompt(clean_flow, genre_style, use_slang, use_intel, stage_name, track_key):
     rag_context = load_rag_intel() if use_intel else ""
     slang_list = ", ".join(load_street_slang()) if use_slang else ""
     culture_context = load_cultural_context() if use_intel else ""
     banned_words_str = ", ".join(BAN_LIST)
     
-    if genre_style == "getnice_hybrid":
-        flow_architecture = "- CADENCE: Mid-bar breath control with aggressive internal rhymes.\n- FORMATTING: Place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause."
-    elif genre_style == "drill":
-        flow_architecture = "- CADENCE: NY Drill. Off-beat, aggressive staccato stops. Sliding 808 pockets."
-    elif genre_style == "boom_bap":
-        flow_architecture = "- CADENCE: 90s Boom Bap. Laid back, multi-syllabic punchlines, raw East Coast pocket."
-    elif genre_style == "melodic_trap":
-        flow_architecture = "- CADENCE: Melodic Trap. Singing-rap delivery, drawn out emotional vowels."
-    elif genre_style == "chopper":
-        flow_architecture = "- CADENCE: Chopper. Hyper-fast, machine-gun double-time delivery with no breaks."
-    else:
-        flow_architecture = "- CADENCE: Standard 4/4 rhythm structure."
-    
     return f"""<|im_start|>system
-You are '{stage_name}', a platinum-selling street lyricist. You write raw, authentic, aggressive bars. YOU DO NOT WRITE POETRY. NEVER USE METAPHORS ABOUT MEDIEVAL BATTLES, WARRIORS, OR FANTASY.
+You are '{stage_name}', a platinum-selling street lyricist. You write raw, authentic, aggressive bars.
+CRITICAL: YOU DO NOT WRITE POETRY. NEVER use abstract metaphors about mazes, labyrinths, or battles.
 
-1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}. No abstract poetry.
-2. SUGGESTED LEXICON (Use seamlessly if applicable): {slang_list}
-3. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. DO NOT WRITE ANY HEADERS. ONE LINE EQUALS ONE BAR.
+=== CONSTRAINTS ===
+1. BANNED WORDS: DO NOT USE {banned_words_str}.
+2. SUGGESTED LEXICON: Use these seamlessly if applicable: {slang_list}
+3. UNIVERSAL FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY single line to mark the rhythmic breath pause. This applies to ALL styles.
 4. MUSICAL KEY: The beat is in {track_key}. Write with vowels that resonate well in this pitch.
-5. THEMATIC ANCHOR: Keep it gritty, focused on survival, money, and power. 
+5. NO HEADERS: Output ONLY the raw lyrics. Do not write section names, brackets, or meta-commentary.
+6. CADENCE: Match the aggressive rhythm of {clean_flow}. 
 
-[FLOW ARCHITECTURE]
-{flow_architecture}
-
-[FLOW DNA INJECTION]
-{flow_dna}
-
-[LIVE INTEL & CULTURE]
+=== CONTEXT ===
 {rag_context}
 {culture_context}
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic):
+def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, clean_flow):
     delivery = "Melodic, longer vowels" if section_type.upper() == "HOOK" else "Complex, internal rhymes"
     
-    synthetic_warmup = ""
-    if not previous_lyrics:
-        synthetic_warmup = f"""<|im_start|>user
-Perform a mic check. Spit 4 bars of aggressive street rap. No poetry, no soft words.
+    # We teach the AI what the prefill looks like in the synthetic warmup
+    synthetic_warmup = f"""<|im_start|>user
+Spit 4 bars of aggressive street rap. Use the pipe (|) marker on every line. No poetry.
 <|im_end|>
 <|im_start|>assistant
+[ENGAGING {clean_flow.upper()} CADENCE]
 Yeah, look | I stepped out the trench with a vision
 Calculated risks | I'm making precision decisions
 They thought I was starving | I'm running the kitchen
-I speak to the streets | and the whole city listen
-<|im_end|>
+I speak to the streets | and the whole city listen<|im_end|>
 """
     
+    # THE CEO'S PREFILL HACK: We forcibly append the "[ENGAGING...]" text to the prompt.
+    # The AI believes it has already written this, skipping the poetic warmup completely!
     user_prompt = f"""{synthetic_warmup}<|im_start|>user
-GENERATE A {section_type.upper()}. EXACTLY {bars} LINES (BARS). Topic: '{prompt_topic}'.
-DO NOT WRITE THE HEADER. JUST WRITE THE LYRICS. Follow Flow Architecture rules.
+Write EXACTLY {bars} lines for a {section_type.upper()}. Topic: '{prompt_topic}'.
 Delivery: {delivery}.
 
-Previous context:
+Previous context (Continue the exact rhyme scheme):
 {previous_lyrics if previous_lyrics else 'None (Start of track)'}
+
+OUTPUT ONLY THE RAW LYRICS. ONE LINE EQUALS ONE BAR. INCLUDE THE PIPE (|) ON EVERY LINE.
 <|im_end|>
 <|im_start|>assistant
+[ENGAGING {clean_flow.upper()} CADENCE]
 """
     
     full_prompt = system_prompt + user_prompt
@@ -238,15 +213,35 @@ Previous context:
     
     outputs = model.generate(
         **inputs, 
-        max_new_tokens=45 * bars, 
+        max_new_tokens=40 * bars, 
         temperature=0.75, 
         top_p=0.9, 
         repetition_penalty=1.15, 
         pad_token_id=tokenizer.eos_token_id, 
         eos_token_id=tokenizer.eos_token_id
     )
-    response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
-    return response.strip()
+    
+    # Decode only the NEWLY GENERATED tokens. 
+    # Because [ENGAGING...] is part of the input prompt, it is mathematically sliced off!
+    response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=False)
+    
+    # Stop the AI dead in its tracks if it tries to ramble past the <|im_end|> marker
+    clean_response = response.split("<|im_end|>")[0].strip()
+    clean_response = clean_response.replace("<|im_start|>", "").replace("<|im_start|>assistant", "").strip()
+
+    # Destroy any hallucinated headers just to be absolutely safe
+    clean_response = re.sub(r'\[.*?\]', '', clean_response)
+    clean_response = re.sub(r'\(.*?\)', '', clean_response)
+    
+    clean_lines = []
+    for line in clean_response.split('\n'):
+        line = line.strip()
+        if not line: continue
+        if line.lower().startswith(('hook', 'verse', 'intro', 'outro', 'bridge')) and line.endswith(':'):
+            continue
+        clean_lines.append(line)
+        
+    return "\n".join(clean_lines)
 
 def handler(event):
     job_input = event.get("input", {})
@@ -260,7 +255,10 @@ def handler(event):
     use_slang = job_input.get("useSlang", True)
     use_intel = job_input.get("useIntel", True)
     
-    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel, stage_name, track_key)
+    # Clean the Flow DNA tag here so we can pass it down to the Prefill Hack
+    clean_flow = flow_dna.split("[")[1].replace("]", "") if "[" in flow_dna else flow_dna
+    
+    system_prompt = construct_system_prompt(clean_flow, style, use_slang, use_intel, stage_name, track_key)
     
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16}])
@@ -272,9 +270,11 @@ def handler(event):
             bars = section.get("bars", 16)
             
             final_lyrics += f"\n[{sec_type} - {bars} BARS]\n"
-            section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic)
-            final_lyrics += section_text + "\n"
             
+            # We pass clean_flow down to the generator
+            section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, clean_flow)
+            
+            final_lyrics += section_text + "\n"
             context_lyrics = "\n".join((context_lyrics + "\n" + section_text).strip().split("\n")[-8:])
             
         return {"lyrics": final_lyrics.strip()}
