@@ -46,7 +46,7 @@ export default function Room03_Ghostwriter() {
         key: audioData.key || "Unknown",
         bpm: audioData.bpm,
         syllable_target: targetSyllables, 
-        user_reference: flowDNA?.parsedText || "None", 
+        user_reference: flowDNA?.referenceText || "None", // FIXED: Changed parsedText to referenceText
         useSlang: gwUseSlang,
         useIntel: gwUseIntel,
         blueprint: blueprint.map(b => ({ type: b.type, bars: b.bars }))
