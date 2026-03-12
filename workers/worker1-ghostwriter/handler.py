@@ -11,12 +11,10 @@ from peft import PeftModel
 BASE_MODEL_NAME = "NousResearch/Hermes-2-Pro-Llama-3-8B"
 LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
 
-# File Paths
 SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_briefing.txt")
 SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
 
-# THE LEXICAL BAN LIST - EXPANDED WITH YOUR EXACT POETRY CATCHES
 BAN_LIST = [
     "plight", "fright", "ignite", "divine", "sublime", "mindstream",
     "whispers", "shadows", "dancing", "embrace", "souls", "abyss",
@@ -28,149 +26,120 @@ BAN_LIST = [
     "guidance", "redemption", "slippery slope", "despair", "resilience", "victors"
 ]
 
-# GLOBALS FOR WARM CACHE
 model = None
 tokenizer = None
 
-# --- DATA INGESTION PIPELINES ---
-
 def load_rag_intel():
     if os.path.exists(SHARED_VOLUME_PATH):
-        with open(SHARED_VOLUME_PATH, "r") as f:
-            return f.read()
-    else:
-        return "No live intel available."
+        with open(SHARED_VOLUME_PATH, "r") as f: return f.read()
+    return "No live intel available."
 
 def load_street_slang():
-    if not os.path.exists(SLANG_FILE):
-        return ["bando", "racks", "opp", "gas", "bag"]
-
-    with open(SLANG_FILE, "r", encoding="utf-8", errors="ignore") as f:
-        content = f.read()
-    
-    words = []
+    if not os.path.exists(SLANG_FILE): return ["bando", "racks", "opp", "gas", "bag"]
     try:
+        with open(SLANG_FILE, "r", encoding="utf-8", errors="ignore") as f: content = f.read()
         clean_content = re.sub(r',\s*([\]}])', r'\1', content)
         data = json.loads(clean_content)
-        
         if isinstance(data, dict):
-            if "slang_terms" in data and isinstance(data["slang_terms"], dict):
-                words = list(data["slang_terms"].keys())
-            else:
-                words = list(data.keys()) 
+            words = list(data.get("slang_terms", data).keys())
         elif isinstance(data, list):
             words = [item.get("word", "") for item in data if isinstance(item, dict) and "word" in item]
-            
-    except Exception as e:
-        print(f"[GETNICE MATRIX] Bypassing strict JSON rules ({e}). Extracting raw lexical data...")
+    except Exception:
         raw_keys = re.findall(r'"([^"]+)"\s*:\s*\{', content)
         words = [w for w in raw_keys if w.lower() != "slang_terms"]
-        
-        if not words:
-            words = re.findall(r'"word"\s*:\s*"([^"]+)"', content, re.IGNORECASE)
     
     words = [w for w in words if w.strip() and len(w) < 25 and w.lower() not in ["type", "definitions", "example", "slang_terms"]]
-    
-    if words:
-        return random.sample(words, min(8, len(words)))
+    if words: return random.sample(words, min(8, len(words)))
     return ["bando", "racks", "opp", "gas", "bag"]
 
 def load_cultural_context():
-    if not os.path.exists(CULTURE_FILE):
-        return "Focus on the struggle, the hustle, and survival."
+    if not os.path.exists(CULTURE_FILE): return "Focus on the struggle, the hustle, and survival."
     try:
         with open(CULTURE_FILE, "r", encoding="utf-8") as f:
-            content = f.read()
-            content = re.sub(r',\s*([\]}])', r'\1', content)
-            data = json.loads(content)
-            
+            data = json.loads(re.sub(r',\s*([\]}])', r'\1', f.read()))
             if isinstance(data, list) and len(data) > 0:
                 item = random.choice(data)
-                title = item.get("title", "STREET POLITICS")
-                content = item.get("content", "")[:400]
-                return f"CULTURAL ANCHOR: {title} - {content}..."
-    except Exception as e:
-        pass
-    
+                return f"CULTURAL ANCHOR: {item.get('title', 'STREET POLITICS')} - {item.get('content', '')[:400]}..."
+    except Exception: pass
     return "Focus on the struggle, the hustle, and survival."
-
-# --- MODEL INITIALIZATION ---
 
 def clean_lora_config():
     config_path = os.path.join(LORA_WEIGHTS_DIR, "adapter_config.json")
     if os.path.exists(config_path):
         try:
-            with open(config_path, 'r') as f:
-                adapter_config = json.load(f)
-            
-            keys_to_remove = [
-                "alora_invocation_tokens", "arrow_config", "corda_config", 
-                "ensure_weight_tying", "layer_replication", "megatron_config", 
-                "megatron_core", "use_rslora", "use_dora", "inject_mlps", "eva_config",
-                "exclude_modules", "lora_bias", "peft_version", "qalora_group_size",
-                "target_parameters", "trainable_token_indices", "use_qalora"
-            ]
+            with open(config_path, 'r') as f: adapter_config = json.load(f)
+            keys_to_remove = ["alora_invocation_tokens", "arrow_config", "corda_config", "ensure_weight_tying", "layer_replication", "megatron_config", "megatron_core", "use_rslora", "use_dora", "inject_mlps", "eva_config", "exclude_modules", "lora_bias", "peft_version", "qalora_group_size", "target_parameters", "trainable_token_indices", "use_qalora"]
             cleaned = False
             for k in keys_to_remove:
                 if k in adapter_config:
                     del adapter_config[k]
                     cleaned = True
-            
             if cleaned:
-                with open(config_path, 'w') as f:
-                    json.dump(adapter_config, f, indent=2)
-                print("[GETNICE SECURITY] Auto-Cleaner purged incompatible PEFT keys. Adapter secure.")
-        except Exception as e:
-            pass
+                with open(config_path, 'w') as f: json.dump(adapter_config, f, indent=2)
+        except Exception: pass
 
 def init_model():
     global model, tokenizer
     print("Initiating TALON Engine Deep Burn-In...")
-    
     clean_lora_config()
-    
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4"
-    )
-    
+    bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4")
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
-    base_model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL_NAME, quantization_config=bnb_config, device_map="auto", torch_dtype=torch.float16
-    )
-    
+    base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL_NAME, quantization_config=bnb_config, device_map="auto", torch_dtype=torch.float16)
     try:
         model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
         print("GetNice Adapter fused successfully.")
-    except Exception as e:
-        print(f"CRITICAL WARNING: LoRA weights failed to mount: {e}")
+    except Exception:
         model = base_model
-
     dummy = tokenizer("Test", return_tensors="pt").to("cuda")
     _ = model.generate(**dummy, max_new_tokens=5)
-    print("Deep Burn-In Complete. Worker Ready.")
 
-# --- INFERENCE LOGIC ---
+# THE ULTIMATE LINE SLICER
+def enforce_bar_limit(text, expected_bars):
+    clean_lines = []
+    for line in text.split('\n'):
+        line = line.strip()
+        if not line: continue
+        # Kill hallucinated headers
+        if re.match(r'^\[.*\]$', line) or re.match(r'^\(.*\)$', line): continue
+        if line.lower().startswith(('hook', 'verse', 'intro', 'outro', 'bridge')) and line.endswith(':'): continue
+        clean_lines.append(line)
+    
+    # Strictly enforce exact physical line count
+    if len(clean_lines) > expected_bars:
+        clean_lines = clean_lines[:expected_bars]
+        
+    return "\n".join(clean_lines)
 
-def construct_system_prompt(clean_flow, genre_style, use_slang, use_intel, stage_name, track_key):
-    rag_context = load_rag_intel() if use_intel else ""
-    slang_list = ", ".join(load_street_slang()) if use_slang else ""
-    culture_context = load_cultural_context() if use_intel else ""
+def construct_system_prompt(style, stage_name, track_key, syllable_target, user_reference):
+    rag_context = load_rag_intel()
+    slang_list = ", ".join(load_street_slang())
+    culture_context = load_cultural_context()
     banned_words_str = ", ".join(BAN_LIST)
     
+    # STRICT SEPARATION OF FLOW LOGIC
+    if style == "user_flow":
+        flow_guide = f"""=== THE USER FLOW ===
+Match the exact rhythm, syllable count, and cadence of the user's reference flow:
+"{user_reference}"
+CRITICAL: Maintain roughly {syllable_target} syllables per line to perfectly sync with the instrumental's BPM.
+CRITICAL: You MUST place a pipe symbol (|) in the middle of EVERY single line to dictate physical breath control."""
+    else:
+        flow_guide = f"""=== THE GETNICE FLOW ===
+CRITICAL: You MUST write exactly {syllable_target} syllables per line to perfectly sync with the instrumental's BPM.
+CRITICAL: You MUST place a pipe symbol (|) in the middle of EVERY single line to dictate physical breath control."""
+
     return f"""<|im_start|>system
 You are '{stage_name}', a platinum-selling street lyricist. You write raw, authentic, aggressive bars.
-CRITICAL: YOU DO NOT WRITE POETRY. NEVER use abstract metaphors about mazes, labyrinths, or battles.
+CRITICAL: YOU DO NOT WRITE POETRY. NEVER use abstract metaphors.
 
 === CONSTRAINTS ===
 1. BANNED WORDS: DO NOT USE {banned_words_str}.
-2. SUGGESTED LEXICON: Use these seamlessly if applicable: {slang_list}
-3. UNIVERSAL FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY single line to mark the rhythmic breath pause. This applies to ALL styles.
+2. SUGGESTED LEXICON: {slang_list}
+3. CONCRETE NOUNS ONLY: Use physical objects. Cars, Money, Guns, Buildings, Clothes. ONE LINE PER BAR WITH | AS BREATH CONTROL OR BREAK.
 4. MUSICAL KEY: The beat is in {track_key}. Write with vowels that resonate well in this pitch.
-5. NO HEADERS: Output ONLY the raw lyrics. Do not write section names, brackets, or meta-commentary.
-6. CADENCE: Match the aggressive rhythm of {clean_flow}. 
+5. NO HEADERS: Output ONLY the raw lyrics. Do not write section names.
+
+{flow_guide}
 
 === CONTEXT ===
 {rag_context}
@@ -178,34 +147,25 @@ CRITICAL: YOU DO NOT WRITE POETRY. NEVER use abstract metaphors about mazes, lab
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, clean_flow):
-    delivery = "Melodic, longer vowels" if section_type.upper() == "HOOK" else "Complex, internal rhymes"
-    
-    # We teach the AI what the prefill looks like in the synthetic warmup
-    synthetic_warmup = f"""<|im_start|>user
-Spit 4 bars of aggressive street rap. Use the pipe (|) marker on every line. No poetry.
-<|im_end|>
-<|im_start|>assistant
-[ENGAGING {clean_flow.upper()} CADENCE]
-Yeah, look | I stepped out the trench with a vision
-Calculated risks | I'm making precision decisions
-They thought I was starving | I'm running the kitchen
-I speak to the streets | and the whole city listen<|im_end|>
-"""
-    
-    # THE CEO'S PREFILL HACK: We forcibly append the "[ENGAGING...]" text to the prompt.
-    # The AI believes it has already written this, skipping the poetic warmup completely!
-    user_prompt = f"""{synthetic_warmup}<|im_start|>user
-Write EXACTLY {bars} lines for a {section_type.upper()}. Topic: '{prompt_topic}'.
-Delivery: {delivery}.
+def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic):
+    if "INTRO" in section_type.upper():
+        prompt_instruction = f"Write an INTRO ({bars} bars). Conversational, hype speech."
+    elif "OUTRO" in section_type.upper():
+        prompt_instruction = f"Write an OUTRO ({bars} bars). Fading out speech, reflecting."
+    elif "HOOK" in section_type.upper():
+        prompt_instruction = f"Write a HOOK ({bars} bars). Make it repetitive, melodic, and catchy."
+    else:
+        prompt_instruction = f"Write a {section_type.upper()} ({bars} bars). Tell a gritty story about {prompt_topic}. Use Concrete Nouns."
 
+    user_prompt = f"""<|im_start|>user
+TASK: {prompt_instruction}
+Topic: '{prompt_topic}'.
 Previous context (Continue the exact rhyme scheme):
 {previous_lyrics if previous_lyrics else 'None (Start of track)'}
 
-OUTPUT ONLY THE RAW LYRICS. ONE LINE EQUALS ONE BAR. INCLUDE THE PIPE (|) ON EVERY LINE.
+OUTPUT ONLY THE RAW LYRICS. EXACTLY {bars} LINES. DO NOT EXCEED {bars} LINES. EVERY LINE MUST HAVE A PIPE (|).
 <|im_end|>
 <|im_start|>assistant
-[ENGAGING {clean_flow.upper()} CADENCE]
 """
     
     full_prompt = system_prompt + user_prompt
@@ -213,72 +173,60 @@ OUTPUT ONLY THE RAW LYRICS. ONE LINE EQUALS ONE BAR. INCLUDE THE PIPE (|) ON EVE
     
     outputs = model.generate(
         **inputs, 
-        max_new_tokens=40 * bars, 
-        temperature=0.75, 
+        max_new_tokens=30 * bars, # Restrict tokens to prevent runaway generation
+        temperature=0.85, # INCREASED TEMPERATURE FOR MORE GRIT & CREATIVITY
         top_p=0.9, 
         repetition_penalty=1.15, 
         pad_token_id=tokenizer.eos_token_id, 
         eos_token_id=tokenizer.eos_token_id
     )
     
-    # Decode only the NEWLY GENERATED tokens. 
-    # Because [ENGAGING...] is part of the input prompt, it is mathematically sliced off!
     response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=False)
+    clean_response = response.split("<|im_end|>")[0].strip().replace("<|im_start|>", "").replace("<|im_start|>assistant", "").strip()
     
-    # Stop the AI dead in its tracks if it tries to ramble past the <|im_end|> marker
-    clean_response = response.split("<|im_end|>")[0].strip()
-    clean_response = clean_response.replace("<|im_start|>", "").replace("<|im_start|>assistant", "").strip()
-
-    # Destroy any hallucinated headers just to be absolutely safe
-    clean_response = re.sub(r'\[.*?\]', '', clean_response)
-    clean_response = re.sub(r'\(.*?\)', '', clean_response)
-    
-    clean_lines = []
-    for line in clean_response.split('\n'):
-        line = line.strip()
-        if not line: continue
-        if line.lower().startswith(('hook', 'verse', 'intro', 'outro', 'bridge')) and line.endswith(':'):
-            continue
-        clean_lines.append(line)
+    # PASS THROUGH THE ULTIMATE SLICER
+    final_cut = enforce_bar_limit(clean_response, bars)
         
-    return "\n".join(clean_lines)
+    return final_cut
 
 def handler(event):
     job_input = event.get("input", {})
-    
     task_type = job_input.get("task_type", "generate")
     topic = job_input.get("prompt", "Matrix infiltration")
-    flow_dna = job_input.get("tag", "Standard flow")
-    style = job_input.get("style", "getnice_hybrid")
+    style = job_input.get("style", "getnice_flow")
     stage_name = job_input.get("stageName", "The Artist")
     track_key = job_input.get("key", "Unknown Key")
-    use_slang = job_input.get("useSlang", True)
-    use_intel = job_input.get("useIntel", True)
     
-    # Clean the Flow DNA tag here so we can pass it down to the Prefill Hack
-    clean_flow = flow_dna.split("[")[1].replace("]", "") if "[" in flow_dna else flow_dna
+    # NEW VARS FOR SYLLABLE MATH
+    syllable_target = job_input.get("syllable_target", 11)
+    user_reference = job_input.get("user_reference", "")
     
-    system_prompt = construct_system_prompt(clean_flow, style, use_slang, use_intel, stage_name, track_key)
+    system_prompt = construct_system_prompt(style, stage_name, track_key, syllable_target, user_reference)
     
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16}])
         final_lyrics = ""
         context_lyrics = ""
+        generated_hook = None # THE HOOK MEMORY BANK
         
         for section in blueprint:
             sec_type = section.get("type", "VERSE")
             bars = section.get("bars", 16)
-            
             final_lyrics += f"\n[{sec_type} - {bars} BARS]\n"
             
-            # We pass clean_flow down to the generator
-            section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, clean_flow)
+            # Check if this is a hook and we already generated one
+            if "HOOK" in sec_type.upper() and generated_hook is not None:
+                section_text = generated_hook
+            else:
+                section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic)
+                # Cache the hook if this is the first time it was generated
+                if "HOOK" in sec_type.upper() and generated_hook is None:
+                    generated_hook = section_text
             
             final_lyrics += section_text + "\n"
             context_lyrics = "\n".join((context_lyrics + "\n" + section_text).strip().split("\n")[-8:])
             
         return {"lyrics": final_lyrics.strip()}
-        
     return {"error": "Invalid task_type."}
 
 init_model()
