@@ -4,42 +4,14 @@ import React, { useState, useEffect, useRef } from "react";
 import { Sliders, PlayCircle, Loader2, CheckCircle2, Waves, Settings2, ArrowRight, Volume2, ListMusic } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 
-// ====================================================================================
-// GETNICE RECORDS - PROPRIETARY DSP BLUEPRINTS (Extracted from Internal Master EQ PDF)
-// ====================================================================================
 const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
 const VOCAL_CHAINS = [
-  { 
-    id: "getnice_eq", name: "GetNice EQ", desc: "Signature Introspective, Vocal-Forward", color: "text-[#E60000]",
-    comp: { ratio: 2, attack: 0.030, release: 0.125, knee: 40, threshold: -24 },
-    eq: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5], // Precise mapping to PDF
-    pitch: 50, reverb: 25 
-  },
-  { 
-    id: "foundation_eq", name: "Foundation EQ", desc: "Boom Bap / Golden Age Gritty Punch", color: "text-yellow-500",
-    comp: { ratio: 4, attack: 0.012, release: 0.045, knee: 0, threshold: -28 },
-    eq: [3, 3, 0, 0, 0, 0, 0, -1, -2, -4],
-    pitch: 10, reverb: 15 
-  },
-  { 
-    id: "gangsta_eq", name: "Gangsta EQ", desc: "Trap / Southern 808 Heavy", color: "text-purple-500",
-    comp: { ratio: 3, attack: 0.035, release: 0.100, knee: 0, threshold: -26 },
-    eq: [4, 0, 0, -3, 0, 0, 0, 0, 1.5, 3],
-    pitch: 80, reverb: 30 
-  },
-  { 
-    id: "modern_eq", name: "Modern EQ", desc: "Drill / Hyper-Controlled & Scooped", color: "text-blue-500",
-    comp: { ratio: 5, attack: 0.003, release: 0.050, knee: 0, threshold: -30 },
-    eq: [0, 2, 0, 0, -2, 0, 0, 2, 0, 0],
-    pitch: 90, reverb: 45 
-  },
-  { 
-    id: "fusion_eq", name: "Fusion EQ", desc: "Latin / Grime Wall of Sound", color: "text-green-500",
-    comp: { ratio: 2, attack: 0.030, release: 0.250, knee: 40, threshold: -22 },
-    eq: [0, 0, 2, 0, 1, 2, 2, 0, 0, 0],
-    pitch: 40, reverb: 20 
-  },
+  { id: "getnice_eq", name: "GetNice EQ", desc: "Signature Introspective, Vocal-Forward", color: "text-[#E60000]", comp: { ratio: 2, attack: 0.030, release: 0.125, knee: 40, threshold: -24 }, eq: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5], pitch: 50, reverb: 25 },
+  { id: "foundation_eq", name: "Foundation EQ", desc: "Boom Bap / Golden Age Gritty Punch", color: "text-yellow-500", comp: { ratio: 4, attack: 0.012, release: 0.045, knee: 0, threshold: -28 }, eq: [3, 3, 0, 0, 0, 0, 0, -1, -2, -4], pitch: 10, reverb: 15 },
+  { id: "gangsta_eq", name: "Gangsta EQ", desc: "Trap / Southern 808 Heavy", color: "text-purple-500", comp: { ratio: 3, attack: 0.035, release: 0.100, knee: 0, threshold: -26 }, eq: [4, 0, 0, -3, 0, 0, 0, 0, 1.5, 3], pitch: 80, reverb: 30 },
+  { id: "modern_eq", name: "Modern EQ", desc: "Drill / Hyper-Controlled & Scooped", color: "text-blue-500", comp: { ratio: 5, attack: 0.003, release: 0.050, knee: 0, threshold: -30 }, eq: [0, 2, 0, 0, -2, 0, 0, 2, 0, 0], pitch: 90, reverb: 45 },
+  { id: "fusion_eq", name: "Fusion EQ", desc: "Latin / Grime Wall of Sound", color: "text-green-500", comp: { ratio: 2, attack: 0.030, release: 0.250, knee: 40, threshold: -22 }, eq: [0, 0, 2, 0, 1, 2, 2, 0, 0, 0], pitch: 40, reverb: 20 },
 ];
 
 function createReverb(audioCtx: BaseAudioContext, duration: number, decay: number) {
@@ -71,8 +43,7 @@ function audioBufferToWav(buffer: AudioBuffer) {
           sample = Math.max(-1, Math.min(1, channels[i][offset]));
           sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
           view.setInt16(pos, sample, true); pos += 2;
-      }
-      offset++;
+      } offset++;
   }
   return new Blob([bufferArray], {type: "audio/wav"});
 }
@@ -101,7 +72,6 @@ export default function Room05_VocalSuite() {
     setReverbMix(chain.reverb);
   };
 
-  // 1. HARDWARE AUDIO GRAPH INITIALIZATION
   useEffect(() => {
     if (!vocalStems.length) return;
     const initGraph = () => {
@@ -117,7 +87,6 @@ export default function Room05_VocalSuite() {
       const dryGain = ctx.createGain();
       wetGainRef.current = wetGain; dryGainRef.current = dryGain;
 
-      // Build the 10-Band DSP Matrix
       eqBandsRef.current = FREQUENCIES.map((freq, i) => {
         const band = ctx.createBiquadFilter();
         band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking";
@@ -125,31 +94,26 @@ export default function Room05_VocalSuite() {
         return band;
       });
 
-      // Build the GetNice Glue Compressor
       const compressor = ctx.createDynamicsCompressor();
       compRef.current = compressor;
 
-      // ROUTING: Master -> Dry -> [10-Band EQ] -> Compressor -> Destination
       masterGain.connect(dryGain);
       let prevNode: AudioNode = dryGain;
-      eqBandsRef.current.forEach(band => {
-        prevNode.connect(band);
-        prevNode = band;
-      });
+      eqBandsRef.current.forEach(band => { prevNode.connect(band); prevNode = band; });
       prevNode.connect(compressor);
       compressor.connect(ctx.destination);
 
-      // ROUTING: Master -> Reverb -> Wet -> Destination (Parallel Processing)
-      masterGain.connect(convolver); 
-      convolver.connect(wetGain);
-      wetGain.connect(ctx.destination);
+      masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(ctx.destination);
 
       vocalStems.forEach(stem => {
         const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
-        if (el && !el.dataset.connected) {
-          const source = ctx.createMediaElementSource(el);
-          source.connect(masterGain);
-          el.dataset.connected = "true";
+        // FIX: strict check to prevent React double-render crash on media element routing
+        if (el && !(el as any)._routed) {
+          try {
+            const source = ctx.createMediaElementSource(el);
+            source.connect(masterGain);
+            (el as any)._routed = true;
+          } catch(e) { console.warn("Stem already routed"); }
         }
       });
       setAudioReady(true);
@@ -158,23 +122,15 @@ export default function Room05_VocalSuite() {
     return () => { if (audioCtxRef.current?.state !== 'closed') { audioCtxRef.current?.close(); audioCtxRef.current = null; }};
   }, [vocalStems]);
 
-  // 2. LIVE PARAMETER UPDATES (Fires when Preset Changes)
   useEffect(() => {
     if (wetGainRef.current && dryGainRef.current) {
       wetGainRef.current.gain.value = reverbMix / 100;
       dryGainRef.current.gain.value = 1 - (reverbMix / 100);
     }
-    
     const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
-
-    // Update 10-Band EQ
     if (eqBandsRef.current.length === 10) {
-      eqBandsRef.current.forEach((band, i) => {
-        band.gain.value = preset.eq[i];
-      });
+      eqBandsRef.current.forEach((band, i) => { band.gain.value = preset.eq[i]; });
     }
-
-    // Update Glue Compressor
     if (compRef.current) {
       compRef.current.ratio.value = preset.comp.ratio;
       compRef.current.attack.value = preset.comp.attack;
@@ -184,18 +140,13 @@ export default function Room05_VocalSuite() {
     }
   }, [reverbMix, pitchIntensity, activeChain]);
 
-  // 3. PRO-DAW STEM MUTE/SOLO ENFORCEMENT
   useEffect(() => {
     vocalStems.forEach(stem => {
       const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
-      if (el) {
-        const isMuted = mutedStems.has(stem.id) || (soloStems.size > 0 && !soloStems.has(stem.id));
-        el.muted = isMuted; 
-      }
+      if (el) el.muted = mutedStems.has(stem.id) || (soloStems.size > 0 && !soloStems.has(stem.id));
     });
   }, [mutedStems, soloStems, vocalStems]);
 
-  // 4. PRO-DAW SYNC ENGINE
   useEffect(() => {
     const handleSysPlay = () => {
       if (audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume();
@@ -233,7 +184,6 @@ export default function Room05_VocalSuite() {
     setStatus("processing");
     try {
       if (!vocalStems.length) throw new Error("No vocal stems detected.");
-
       const tmpCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const decodedBuffers: AudioBuffer[] = [];
       const activeStemIds: string[] = []; 
@@ -264,7 +214,6 @@ export default function Room05_VocalSuite() {
 
       const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
 
-      // Mirror the 10-Band EQ & Compressor for the Offline Bake
       const offlineComp = offlineCtx.createDynamicsCompressor();
       offlineComp.ratio.value = preset.comp.ratio;
       offlineComp.attack.value = preset.comp.attack;
@@ -286,7 +235,6 @@ export default function Room05_VocalSuite() {
 
       prevOfflineNode.connect(offlineComp);
       offlineComp.connect(offlineCtx.destination);
-
       masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(offlineCtx.destination);
 
       decodedBuffers.forEach(buf => {
@@ -302,14 +250,7 @@ export default function Room05_VocalSuite() {
 
       activeStemIds.forEach(id => removeVocalStem(id));
       
-      addVocalStem({
-        id: `MIXED_STEM_${Date.now()}`,
-        type: "Lead",
-        url: wavUrl,
-        blob: wavBlob,
-        volume: 0
-      });
-
+      addVocalStem({ id: `MIXED_STEM_${Date.now()}`, type: "Lead", url: wavUrl, blob: wavBlob, volume: 0 });
       if(addToast) addToast("Proprietary DSP applied successfully.", "success");
       setStatus("success");
 
@@ -322,29 +263,22 @@ export default function Room05_VocalSuite() {
 
   return (
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 border border-[#222]">
-      
       {vocalStems.map(stem => (
         <audio key={stem.id} id={`audio-stem-${stem.id}`} src={stem.url} crossOrigin="anonymous" preload="auto" className="hidden" />
       ))}
-
-      {/* LEFT COL: AI VOCAL CHAINS */}
       <div className="w-full md:w-1/3 border-r border-[#222] flex flex-col bg-black z-10">
         <div className="p-6 border-b border-[#222]">
           <h2 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white flex items-center gap-3">
             <Settings2 size={24} className="text-[#E60000]" /> Engineering
           </h2>
-          <p className="font-mono text-[10px] text-[#555] uppercase mt-2 tracking-widest">
-            Proprietary DSP Blueprint Matrix
-          </p>
+          <p className="font-mono text-[10px] text-[#555] uppercase mt-2 tracking-widest">Proprietary DSP Blueprint Matrix</p>
         </div>
-
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           <p className="text-[10px] text-[#888] font-mono uppercase tracking-widest mb-4 ml-2">Select Mix Preset</p>
           {VOCAL_CHAINS.map(chain => (
             <button
               key={chain.id} onClick={() => handleSelectChain(chain)} disabled={status !== "idle"}
-              className={`w-full text-left p-4 border transition-all flex flex-col gap-2 disabled:opacity-30
-                ${activeChain === chain.id ? 'border-[#E60000] bg-[#110000]' : 'border-[#222] bg-[#0a0a0a] hover:border-[#555]'}`}
+              className={`w-full text-left p-4 border transition-all flex flex-col gap-2 disabled:opacity-30 ${activeChain === chain.id ? 'border-[#E60000] bg-[#110000]' : 'border-[#222] bg-[#0a0a0a] hover:border-[#555]'}`}
             >
               <span className={`font-oswald text-lg uppercase tracking-widest font-bold ${activeChain === chain.id ? 'text-white' : 'text-gray-400'}`}>{chain.name}</span>
               <span className="font-mono text-[9px] text-[#888] uppercase tracking-widest">{chain.desc}</span>
@@ -353,7 +287,6 @@ export default function Room05_VocalSuite() {
         </div>
       </div>
 
-      {/* RIGHT COL: MACRO CONTROLS & PROCESSING */}
       <div className="flex-1 flex flex-col p-8 md:p-12 relative overflow-hidden">
         <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none"><Waves size={400} /></div>
 
@@ -364,7 +297,6 @@ export default function Room05_VocalSuite() {
              </div>
           )}
 
-          {/* STEM CONTROL MATRIX */}
           {vocalStems.length > 0 && status === "idle" && (
             <div className="bg-black border border-[#222] p-6 mb-8 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
               <h3 className="font-oswald text-lg uppercase tracking-widest text-[#E60000] mb-4 border-b border-[#222] pb-3 flex items-center gap-2">
@@ -395,7 +327,6 @@ export default function Room05_VocalSuite() {
             <h3 className="font-oswald text-lg uppercase tracking-widest text-[#E60000] mb-6 border-b border-[#222] pb-3 flex items-center gap-2">
               <Sliders size={16} /> Macro Adjustments
             </h3>
-            
             <div className="space-y-8">
               <div>
                 <div className="flex justify-between items-center mb-3">
@@ -414,7 +345,6 @@ export default function Room05_VocalSuite() {
             </div>
           </div>
 
-          {/* ACTION AREA */}
           <div className="mt-auto">
             {status === "idle" && (
               <button onClick={handleApplyEngineering} className="w-full bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)] flex justify-center items-center gap-3">

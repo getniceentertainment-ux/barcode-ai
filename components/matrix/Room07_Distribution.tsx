@@ -16,7 +16,11 @@ export default function Room07_Distribution() {
   const handleSubmit = async () => {
     if (!trackTitle.trim()) return;
     if (!userSession?.id) return addToast("Security Exception: User Session not found.", "error");
-    if (!finalMaster?.url) return addToast("Artifact Missing: Please complete Room 06 Mastering first.", "error");
+    
+    // Safety check: Prevents the user from submitting a dead local Blob URL.
+    if (!finalMaster?.url || finalMaster.url.startsWith('blob:')) {
+      return addToast("Artifact Missing: Please return to Room 06 and re-bake your Master to the Cloud.", "error");
+    }
 
     setStatus("analyzing");
 
@@ -34,7 +38,7 @@ export default function Room07_Distribution() {
       setTiktokSnippet(analyzeData.tiktokSnippet);
       setHitScore(analyzeData.hitScore);
 
-      // NEW LOGIC: 95-100 Auto Approves to Radio. < 95 goes to Pending for Admin.
+      // EXACT CEO LOGIC: 95+ instantly hits the Global Radio. <95 is sent to Admin Queue.
       const calculatedStatus = analyzeData.hitScore >= 95 ? "approved" : "pending";
 
       const { error: dbError } = await supabase
@@ -42,7 +46,7 @@ export default function Room07_Distribution() {
         .insert([{
           user_id: userSession.id,
           title: trackTitle.toUpperCase(),
-          audio_url: finalMaster.url, 
+          audio_url: finalMaster.url, // This is now a secure HTTPS Supabase URL!
           hit_score: analyzeData.hitScore,
           cover_url: analyzeData.coverUrl,
           tiktok_snippet: analyzeData.tiktokSnippet,
@@ -52,7 +56,9 @@ export default function Room07_Distribution() {
       if (dbError) throw dbError;
       
       setStatus("success");
-      if(addToast) addToast(calculatedStatus === "approved" ? "Track auto-approved to Global Radio." : "Track queued for A&R Admin Review.", "success");
+      if(addToast) {
+        addToast(calculatedStatus === "approved" ? "Track auto-approved to Global Radio." : "Track queued for A&R Admin Review.", "success");
+      }
 
     } catch (error: any) {
       if(addToast) addToast(error.message || "Network Error during transmission.", "error");
@@ -81,10 +87,10 @@ export default function Room07_Distribution() {
         
         {status === "idle" && (
           <div className="max-w-md mx-auto space-y-6 relative z-10">
-            {!finalMaster?.url && (
+            {(!finalMaster?.url || finalMaster.url.startsWith('blob:')) && (
               <div className="bg-[#110000] border border-[#E60000]/30 p-4 mb-6 animate-in slide-in-from-top-2">
                 <div className="flex items-center gap-3 text-[#E60000] mb-2"><AlertCircle size={18} /><span className="font-oswald text-sm uppercase font-bold tracking-widest">Master Artifact Missing</span></div>
-                <p className="text-[10px] text-[#888] font-mono uppercase tracking-widest leading-relaxed mb-4 text-left">The Matrix cannot distribute a track without a finalized Master WAV. Please return to Room 06 to bake your audio.</p>
+                <p className="text-[10px] text-[#888] font-mono uppercase tracking-widest leading-relaxed mb-4 text-left">The Matrix cannot distribute a track without a finalized Master WAV. Please return to Room 06 to bake your audio to the Cloud.</p>
                 <button onClick={() => setActiveRoom("06")} className="w-full bg-[#111] border border-[#333] text-white py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-all flex items-center justify-center gap-2">
                   <Undo2 size={12} /> Return to Mastering
                 </button>
@@ -96,8 +102,8 @@ export default function Room07_Distribution() {
               <input type="text" value={trackTitle} onChange={(e) => setTrackTitle(e.target.value)} className="w-full bg-black border border-[#222] p-4 font-mono text-xs uppercase text-white outline-none focus:border-[#E60000] transition-colors" placeholder="E.g., MATRIX INFILTRATION..." />
             </div>
             
-            <button onClick={handleSubmit} disabled={!trackTitle.trim() || !finalMaster?.url} className="w-full bg-[#E60000] disabled:opacity-10 disabled:grayscale text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">
-              {!finalMaster?.url ? "Awaiting Master File" : "Initiate A&R Scan"}
+            <button onClick={handleSubmit} disabled={!trackTitle.trim() || !finalMaster?.url || finalMaster.url.startsWith('blob:')} className="w-full bg-[#E60000] disabled:opacity-10 disabled:grayscale text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">
+              {(!finalMaster?.url || finalMaster.url.startsWith('blob:')) ? "Awaiting Master File" : "Initiate A&R Scan"}
             </button>
           </div>
         )}
@@ -115,11 +121,11 @@ export default function Room07_Distribution() {
         {status === "success" && (
           <div className="animate-in zoom-in relative z-10 w-full text-left">
             <div className="flex items-center gap-4 border-b border-[#222] pb-6 mb-8">
-              <CheckCircle2 size={40} className={hitScore === 100 ? "text-yellow-500" : "text-green-500"} />
+              <CheckCircle2 size={40} className={hitScore === 100 ? "text-yellow-500" : hitScore >= 95 ? "text-green-500" : "text-white"} />
               <div>
                 <h3 className="font-oswald text-3xl uppercase tracking-widest text-white">Transmission Secured</h3>
-                <p className={`font-mono text-[10px] uppercase tracking-widest mt-1 ${hitScore >= 95 ? "text-green-500 font-bold" : "text-yellow-500"}`}>
-                  {hitScore === 100 ? "Perfect Score Achieved // Auto-Approved" : hitScore >= 95 ? "A&R Dossier Generated // Auto-Approved" : "A&R Dossier Generated // Pending Admin Review"}
+                <p className={`font-mono text-[10px] uppercase tracking-widest mt-1 ${hitScore === 100 ? "text-yellow-500 font-bold" : hitScore >= 95 ? "text-green-500 font-bold" : "text-[#888]"}`}>
+                  {hitScore === 100 ? "Golden Ticket: Auto-Approved to Radio" : hitScore >= 95 ? "Hit Detected: Auto-Approved to Radio" : "Standard Review: Queued for Admin Node"}
                 </p>
               </div>
             </div>
