@@ -9,7 +9,9 @@ from peft import PeftModel
 
 # --- CONFIGURATION & CONSTANTS ---
 BASE_MODEL_NAME = "NousResearch/Hermes-2-Pro-Llama-3-8B"
-# File Paths (Using the smart fallback for the Network Volume)
+LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
+
+# File Paths
 SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_briefing.txt")
 SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
@@ -46,28 +48,23 @@ def load_street_slang():
     
     words = []
     try:
-        # 1. Try strict JSON parsing first
+        # Try strict JSON parsing first
         clean_content = re.sub(r',\s*([\]}])', r'\1', content)
         data = json.loads(clean_content)
         
-        # CEOS FORMAT: If the JSON is a dictionary where the keys are the slang words
+        # CEO's FORMAT: If the JSON is a dictionary where keys are the slang words
         if isinstance(data, dict):
             words = list(data.keys())
-        # LEGACY FORMAT: If the JSON is a list of objects [{"word": "bando"}]
+        # LEGACY FORMAT
         elif isinstance(data, list):
             words = [item.get("word", "") for item in data if isinstance(item, dict) and "word" in item]
             
     except Exception as e:
         print(f"[GETNICE MATRIX] Bypassing strict JSON rules ({e}). Extracting raw lexical data...")
-        
-        # 2. BULLETPROOF FALLBACK 1: Regex hunt for CEO's format -> "slang_word": {
+        # Regex hunt for CEO's format -> "slang_word": {
         words = re.findall(r'"([^"]+)"\s*:\s*\{', content)
-        
-        # 3. BULLETPROOF FALLBACK 2: Regex hunt for Legacy format -> "word": "slang"
         if not words:
             words = re.findall(r'"word"\s*:\s*"([^"]+)"', content, re.IGNORECASE)
-            
-        # 4. BULLETPROOF FALLBACK 3: Raw text parsing
         if not words:
             lines = content.split('\n')
             for i, line in enumerate(lines):
@@ -91,7 +88,6 @@ def load_cultural_context():
     try:
         with open(CULTURE_FILE, "r", encoding="utf-8") as f:
             content = f.read()
-            # Self-heal potential JSON errors here too
             content = re.sub(r',\s*([\]}])', r'\1', content)
             data = json.loads(content)
             
@@ -142,7 +138,7 @@ def init_model():
     global model, tokenizer
     print("Initiating TALON Engine Deep Burn-In...")
     
-    # 1. Run the Auto-Cleaner before touching the weights
+    # Run the Auto-Cleaner before touching the weights
     clean_lora_config()
     
     bnb_config = BitsAndBytesConfig(
@@ -170,33 +166,43 @@ def init_model():
 
 # --- INFERENCE LOGIC ---
 
-def construct_system_prompt(flow_dna, genre_style):
-    """Fuses RAG, Slang, Culture, and Constraints into the System Matrix."""
-    rag_context = load_rag_intel()
-    slang_list = ", ".join(load_street_slang())
-    culture_context = load_cultural_context()
+def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, stage_name, track_key):
+    rag_context = load_rag_intel() if use_intel else ""
+    slang_list = ", ".join(load_street_slang()) if use_slang else ""
+    culture_context = load_cultural_context() if use_intel else ""
     banned_words_str = ", ".join(BAN_LIST)
     
+    if genre_style == "getnice_hybrid":
+        flow_architecture = "- CADENCE: Mid-bar breath control with aggressive internal rhymes.\n- FORMATTING: Place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause."
+    elif genre_style == "drill":
+        flow_architecture = "- CADENCE: NY Drill. Off-beat, aggressive staccato stops. Sliding 808 pockets."
+    elif genre_style == "boom_bap":
+        flow_architecture = "- CADENCE: 90s Boom Bap. Laid back, multi-syllabic punchlines, raw East Coast pocket."
+    elif genre_style == "melodic_trap":
+        flow_architecture = "- CADENCE: Melodic Trap. Singing-rap delivery, drawn out emotional vowels."
+    elif genre_style == "chopper":
+        flow_architecture = "- CADENCE: Chopper. Hyper-fast, machine-gun double-time delivery with no breaks."
+    else:
+        flow_architecture = "- CADENCE: Standard 4/4 rhythm structure."
+    
     return f"""<|im_start|>system
-You are a platinum-selling street rapper. You write gritty, authentic, aggressive hip-hop lyrics. 
-YOU ARE NOT AN AI. YOU DO NOT WRITE POETRY. NEVER USE METAPHORS ABOUT MEDIEVAL BATTLES, WARRIORS, OR FANTASY.
+You are '{stage_name}', a platinum-selling street lyricist. You write raw, authentic, aggressive bars. YOU DO NOT WRITE POETRY. NEVER USE METAPHORS ABOUT MEDIEVAL BATTLES, WARRIORS, OR FANTASY.
 
-1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}
+1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}. No abstract poetry.
 2. SUGGESTED LEXICON (Use seamlessly if applicable): {slang_list}
-3. FORMATTING: OUTPUT ONLY LYRICS. NO LABELS. ONE LINE PER BAR.
-4. CONCRETE NOUNS ONLY: Use physical objects (cars, money, cities, trenches). Avoid abstract poetry.
-5. DNA SYNERGY: Match the aggressive cadence of the Flow DNA.
+3. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. DO NOT WRITE ANY HEADERS. ONE LINE EQUALS ONE BAR.
+4. MUSICAL KEY: The beat is in {track_key}. Write with vowels that resonate well in this pitch.
+5. THEMATIC ANCHOR: Keep it gritty, focused on survival, money, and power. 
 
-[LIVE INTEL]
-{rag_context}
+[FLOW ARCHITECTURE]
+{flow_architecture}
 
-[CULTURAL ANCHOR]
-{culture_context}
-
-FLOW DNA REFERENCE:
+[FLOW DNA INJECTION]
 {flow_dna}
 
-GENRE/STYLE: {genre_style}
+[LIVE INTEL & CULTURE]
+{rag_context}
+{culture_context}
 <|im_end|>
 """
 
