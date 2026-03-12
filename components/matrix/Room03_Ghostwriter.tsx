@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { PenTool, Activity, ShieldCheck, Zap, ArrowRight, Save, Layout, RefreshCw, Cpu } from "lucide-react";
+import { PenTool, Activity, ShieldCheck, Zap, ArrowRight, Layout, RefreshCw, Cpu } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 
 export default function Room03_Ghostwriter() {
@@ -18,7 +18,8 @@ export default function Room03_Ghostwriter() {
 
   const calculateTotalBars = () => blueprint.reduce((acc, section) => acc + section.bars, 0);
 
-  const addSection = (type: string, bars: number) => {
+  // THE FIX: Locked the string type to match the strict union array in your types.ts
+  const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
     setBlueprint([...blueprint, { id: Math.random().toString(), type, bars }]);
   };
   
@@ -35,8 +36,6 @@ export default function Room03_Ghostwriter() {
     setProgress(15);
 
     try {
-      // THE FIX: Exact mathematical syllable targeting based on the track BPM
-      // Standard rap is approx 0.12 syllables per BPM per bar. (e.g. 90 BPM = ~11 syllables, 140 BPM = ~17 syllables)
       const targetSyllables = Math.floor(audioData.bpm * 0.12);
 
       const payload = {
@@ -46,8 +45,8 @@ export default function Room03_Ghostwriter() {
         stageName: "The Artist",
         key: audioData.key || "Unknown",
         bpm: audioData.bpm,
-        syllable_target: targetSyllables, // Pass to GPU
-        user_reference: flowDNA?.parsedText || "None", // Pass to GPU
+        syllable_target: targetSyllables, 
+        user_reference: flowDNA?.parsedText || "None", 
         useSlang: gwUseSlang,
         useIntel: gwUseIntel,
         blueprint: blueprint.map(b => ({ type: b.type, bars: b.bars }))
