@@ -8,7 +8,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
 
 # --- CONFIGURATION & CONSTANTS ---
-BASE_MODEL_NAME = "NousResearch/Hermes-2-Pro-Llama-3-8B"
+# REVERTED TO MISTRAL: This ensures your CKPT-50 LoRA mounts perfectly without a tensor shape mismatch.
+BASE_MODEL_NAME = "NousResearch/Hermes-2-Pro-Mistral-7B"
 LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
 
 SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_briefing.txt")
@@ -116,54 +117,67 @@ def construct_system_prompt(style, stage_name, track_key, syllable_target, user_
     culture_context = load_cultural_context()
     banned_words_str = ", ".join(BAN_LIST)
     
+    # RHYTHMIC INSTRUCTION FROM backend_pro.py
+    rhythmic_instruction = """[STRICT FORMATTING GUIDE]
+1. OUTPUT EXACTLY ONE LINE OF LYRICS PER BAR.
+2. DO NOT write paragraph blocks.
+3. Use '|' ONLY to separate beats within a line, NOT to start lines.
+4. DO NOT include section headers like "Verse 1:" or "Hook:"."""
+    
     # STRICT SEPARATION OF FLOW LOGIC
     if style == "user_flow":
         flow_guide = f"""=== THE USER FLOW ===
 Match the exact rhythm, syllable count, and cadence of the user's reference flow:
 "{user_reference}"
-CRITICAL: Maintain roughly {syllable_target} syllables per line to perfectly sync with the instrumental's BPM.
-CRITICAL: You MUST place a pipe symbol (|) in the middle of EVERY single line to dictate physical breath control."""
+CRITICAL: Maintain roughly {syllable_target} syllables per line to perfectly sync with the instrumental's BPM."""
     else:
         flow_guide = f"""=== THE GETNICE FLOW ===
-CRITICAL: You MUST write exactly {syllable_target} syllables per line to perfectly sync with the instrumental's BPM.
-CRITICAL: You MUST place a pipe symbol (|) in the middle of EVERY single line to dictate physical breath control."""
+CRITICAL: You MUST write exactly {syllable_target} syllables per line to perfectly sync with the instrumental's BPM."""
 
     return f"""<|im_start|>system
-You are '{stage_name}', a platinum-selling street lyricist. You write raw, authentic, aggressive bars.
+You are TALON, writing for "{stage_name.upper()}".
 CRITICAL: YOU DO NOT WRITE POETRY. NEVER use abstract metaphors.
 
-=== CONSTRAINTS ===
-1. BANNED WORDS: DO NOT USE {banned_words_str}.
-2. SUGGESTED LEXICON: {slang_list}
-3. CONCRETE NOUNS ONLY: Use physical objects. Cars, Money, Guns, Buildings, Clothes. ONE LINE PER BAR WITH | AS BREATH CONTROL OR BREAK.
-4. MUSICAL KEY: The beat is in {track_key}. Write with vowels that resonate well in this pitch.
-5. NO HEADERS: Output ONLY the raw lyrics. Do not write section names.
+INJECTED DATA:
+{rhythmic_instruction}
+[LIVE INTEL]
+{rag_context}
+[CULTURAL ANCHOR]
+{culture_context}
+[SUGGESTED LEXICON]
+{slang_list}
+
+MANDATORY STYLE GUIDE:
+1. **VOCABULARY BAN LIST**: {banned_words_str}
+2. **FORMATTING**: OUTPUT ONLY LYRICS. NO LABELS. CONCRETE NOUNS ONLY ONE LINE PER BAR WITH | AS BREATH CONTROL OR BREAK.
+3. **CONCRETE NOUNS ONLY**: Use physical objects. Cars, Money, Guns, Buildings, Clothes. 
+4. **MUSICAL KEY**: The beat is in {track_key}. Write with vowels that resonate well in this pitch.
 
 {flow_guide}
-
-=== CONTEXT ===
-{rag_context}
-{culture_context}
 <|im_end|>
 """
 
 def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic):
+    bars_to_generate = bars
+
+    # EXACT INSTRUCTIONS FROM backend_pro.py
     if "INTRO" in section_type.upper():
-        prompt_instruction = f"Write an INTRO ({bars} bars). Conversational, hype speech."
+        prompt_instruction = f"Write INTRO ({bars} bars). Conversational, hype speech. ONE LINE PER BAR."
     elif "OUTRO" in section_type.upper():
-        prompt_instruction = f"Write an OUTRO ({bars} bars). Fading out speech, reflecting."
+        bars_to_generate = min(bars, 8) 
+        prompt_instruction = f"Write OUTRO ({bars_to_generate} bars). Fading out speech. ONE LINE PER BAR."
     elif "HOOK" in section_type.upper():
-        prompt_instruction = f"Write a HOOK ({bars} bars). Make it repetitive, melodic, and catchy."
+        prompt_instruction = f"Write HOOK ({bars} bars). Repetitive, catchy. EXACTLY {bars} LINES."
+    elif "BRIDGE" in section_type.upper():
+        prompt_instruction = f"Write BRIDGE ({bars} bars). Change flow. EXACTLY {bars} LINES."
     else:
-        prompt_instruction = f"Write a {section_type.upper()} ({bars} bars). Tell a gritty story about {prompt_topic}. Use Concrete Nouns."
+        prompt_instruction = f"Write {section_type.upper()} ({bars} bars). Story about {prompt_topic}. EXACTLY {bars} LINES. CONCRETE NOUNS ONLY."
 
     user_prompt = f"""<|im_start|>user
-TASK: {prompt_instruction}
-Topic: '{prompt_topic}'.
-Previous context (Continue the exact rhyme scheme):
-{previous_lyrics if previous_lyrics else 'None (Start of track)'}
+PREVIOUS LYRICS:
+"{previous_lyrics[-500:] if previous_lyrics else 'None (Start of track)'}"
 
-OUTPUT ONLY THE RAW LYRICS. EXACTLY {bars} LINES. DO NOT EXCEED {bars} LINES. EVERY LINE MUST HAVE A PIPE (|).
+TASK: {prompt_instruction} STRICTLY FOLLOW BAR COUNT ({bars_to_generate}). DO NOT WRITE '{section_type.upper()}:' IN THE OUTPUT. EVERY LINE MUST HAVE A PIPE (|).
 <|im_end|>
 <|im_start|>assistant
 """
@@ -173,10 +187,10 @@ OUTPUT ONLY THE RAW LYRICS. EXACTLY {bars} LINES. DO NOT EXCEED {bars} LINES. EV
     
     outputs = model.generate(
         **inputs, 
-        max_new_tokens=30 * bars, # Restrict tokens to prevent runaway generation
+        max_new_tokens=40 * bars_to_generate, 
         temperature=0.85, # INCREASED TEMPERATURE FOR MORE GRIT & CREATIVITY
         top_p=0.9, 
-        repetition_penalty=1.15, 
+        repetition_penalty=1.15, # STRICT PENALTY TO PREVENT LOOPING
         pad_token_id=tokenizer.eos_token_id, 
         eos_token_id=tokenizer.eos_token_id
     )
@@ -185,7 +199,7 @@ OUTPUT ONLY THE RAW LYRICS. EXACTLY {bars} LINES. DO NOT EXCEED {bars} LINES. EV
     clean_response = response.split("<|im_end|>")[0].strip().replace("<|im_start|>", "").replace("<|im_start|>assistant", "").strip()
     
     # PASS THROUGH THE ULTIMATE SLICER
-    final_cut = enforce_bar_limit(clean_response, bars)
+    final_cut = enforce_bar_limit(clean_response, bars_to_generate)
         
     return final_cut
 
@@ -197,7 +211,7 @@ def handler(event):
     stage_name = job_input.get("stageName", "The Artist")
     track_key = job_input.get("key", "Unknown Key")
     
-    # NEW VARS FOR SYLLABLE MATH
+    # SYLLABLE MATH VARIABLES
     syllable_target = job_input.get("syllable_target", 11)
     user_reference = job_input.get("user_reference", "")
     
@@ -219,7 +233,7 @@ def handler(event):
                 section_text = generated_hook
             else:
                 section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic)
-                # Cache the hook if this is the first time it was generated
+                # Cache the exact hook text if this is the first time it was generated
                 if "HOOK" in sec_type.upper() and generated_hook is None:
                     generated_hook = section_text
             
