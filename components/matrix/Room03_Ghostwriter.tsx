@@ -50,8 +50,9 @@ export default function Room03_Ghostwriter() {
       const token = session?.access_token;
       if (!token) throw new Error("Security Exception: Missing Session Token.");
 
-      // 2. CALCULATE SYLLABLE MATH
-      const targetSyllables = Math.floor(audioData.bpm * 0.12);
+      // 2. CALCULATE SYLLABLE MATH (Strict 3.5 Syllables Per Second)
+      const barDurationSeconds = (60 / audioData.bpm) * 4;
+      const targetSyllables = Math.floor(barDurationSeconds * 3.5);
 
       const payload = {
         prompt: gwPrompt,

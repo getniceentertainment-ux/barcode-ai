@@ -55,7 +55,6 @@ interface MatrixState {
   mdxStatus: "idle" | "processing" | "success" | "failed";
   setMdxStatus: (status: "idle" | "processing" | "success" | "failed") => void;
 
-  // NEW: Project Lock State
   isFinalized: boolean;
   setIsFinalized: (val: boolean) => void;
 
@@ -78,7 +77,7 @@ export const useMatrixStore = create<MatrixState>()(
       
       gwTitle: "",
       gwPrompt: "",
-      gwStyle: "getnice_hybrid",
+      gwStyle: "getnice_flow", // FIX: Replaced Hybrid with strict GetNice Flow
       gwGender: "male",
       gwUseSlang: true,
       gwUseIntel: true,
@@ -139,7 +138,7 @@ export const useMatrixStore = create<MatrixState>()(
 
       clearMatrix: () => set({
         audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
-        gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", gwGender: "male", gwUseSlang: true, gwUseIntel: true, 
+        gwTitle: "", gwPrompt: "", gwStyle: "getnice_flow", gwGender: "male", gwUseSlang: true, gwUseIntel: true, 
         finalMaster: null, mdxJobId: null, mdxStatus: "idle", isFinalized: false
       })
     }),
@@ -159,7 +158,7 @@ export const useMatrixStore = create<MatrixState>()(
         mdxJobId: state.mdxJobId,
         mdxStatus: state.mdxStatus,
         isFinalized: state.isFinalized,
-        finalMaster: state.finalMaster ? { url: state.finalMaster.url, blob: "" as any } : null // Only save URL to avoid local storage quota limits
+        finalMaster: state.finalMaster ? { url: state.finalMaster.url, blob: "" as any } : null
       }),
     }
   )
