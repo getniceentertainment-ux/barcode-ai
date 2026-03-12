@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { PenTool, Activity, ShieldCheck, Zap, ArrowRight, Layout, RefreshCw, Cpu } from "lucide-react";
+import { PenTool, Activity, ShieldCheck, Zap, ArrowRight, Layout, RefreshCw, Cpu, AlignLeft, Edit3, Loader2 } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
+import { supabase } from "../../lib/supabase";
 
 export default function Room03_Ghostwriter() {
   const { 
@@ -15,10 +16,16 @@ export default function Room03_Ghostwriter() {
 
   const [status, setStatus] = useState<"idle" | "generating" | "success">("idle");
   const [progress, setProgress] = useState(0);
+  const [pollingAttempts, setPollingAttempts] = useState(0);
+  const [uxState, setUxState] = useState("Initializing Secure API Handshake...");
+
+  // Micro-Refinement State
+  const [isRefining, setIsRefining] = useState(false);
+  const [refineInstruction, setRefineInstruction] = useState("");
+  const [selectedLine, setSelectedLine] = useState("");
 
   const calculateTotalBars = () => blueprint.reduce((acc, section) => acc + section.bars, 0);
 
-  // THE FIX: Locked the string type to match the strict union array in your types.ts
   const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
     setBlueprint([...blueprint, { id: Math.random().toString(), type, bars }]);
   };
@@ -34,48 +41,125 @@ export default function Room03_Ghostwriter() {
     
     setStatus("generating");
     setProgress(15);
+    setPollingAttempts(0);
+    setUxState("Securing JWT Token...");
 
     try {
+      // 1. FETCH SECURE JWT TOKEN
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Security Exception: Missing Session Token.");
+
+      // 2. CALCULATE SYLLABLE MATH
       const targetSyllables = Math.floor(audioData.bpm * 0.12);
 
       const payload = {
-        task_type: "generate",
         prompt: gwPrompt,
+        title: gwTitle,
         style: gwStyle,
-        stageName: "The Artist",
+        stageName: userSession.stageName || "The Artist",
         key: audioData.key || "Unknown",
         bpm: audioData.bpm,
         syllable_target: targetSyllables, 
-        user_reference: flowDNA?.referenceText || "None", // FIXED: Changed parsedText to referenceText
+        user_reference: flowDNA?.referenceText || "None", 
         useSlang: gwUseSlang,
         useIntel: gwUseIntel,
         blueprint: blueprint.map(b => ({ type: b.type, bars: b.bars }))
       };
 
-      setProgress(40);
+      setProgress(30);
+      setUxState("Passing blueprint to GPU cluster...");
 
-      const res = await fetch('/api/talon', {
+      // 3. INITIALIZE RUNPOD JOB (Using correct Ghostwriter endpoint)
+      const initRes = await fetch('/api/ghostwriter', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
         body: JSON.stringify(payload)
       });
 
-      if (!res.ok) throw new Error("Ghostwriter Worker Failed");
+      const initData = await initRes.json();
+      if (!initRes.ok) throw new Error(initData.error || "Ghostwriter Worker Failed");
 
-      setProgress(80);
-      const data = await res.json();
-      
-      if (data.error) throw new Error(data.error);
+      const jobId = initData.jobId;
+      if (!jobId) throw new Error("Failed to receive Job ID");
 
-      setGeneratedLyrics(data.lyrics);
-      setProgress(100);
-      setStatus("success");
-      if(addToast) addToast("Ghostwriter protocol complete. Lyrics secured.", "success");
+      setProgress(50);
+      let attempts = 0;
+
+      // 4. ASYNCHRONOUS POLLING (Prevents Vercel 504 Timeouts)
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        setPollingAttempts(attempts);
+        if (attempts > 2) setUxState("Warming up Neural Network (Cold Start)...");
+        else setUxState("Synthesizing Bars...");
+        
+        setProgress(Math.min(50 + (attempts * 3), 95));
+
+        try {
+          const statusRes = await fetch(`/api/ghostwriter?jobId=${jobId}`);
+          const statusData = await statusRes.json();
+
+          if (statusData.status === 'COMPLETED') {
+            clearInterval(pollInterval);
+            setGeneratedLyrics(statusData.output.lyrics);
+            setProgress(100);
+            setStatus("success");
+            if(addToast) addToast("Ghostwriter protocol complete. Lyrics secured.", "success");
+          } else if (statusData.status === 'FAILED') {
+            clearInterval(pollInterval);
+            setStatus("idle");
+            if(addToast) addToast("RunPod Execution Failed.", "error");
+          }
+        } catch (pollErr) {
+          console.error("Polling Error", pollErr);
+        }
+      }, 3000);
 
     } catch (err: any) {
       console.error(err);
       if(addToast) addToast(err.message || "Generation failed.", "error");
       setStatus("idle");
+    }
+  };
+
+  const handleRefine = async () => {
+    if (!selectedLine || !refineInstruction) return;
+    setIsRefining(true);
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Security Exception: Missing Session Token.");
+
+      const res = await fetch('/api/ghostwriter/refine', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify({ 
+          originalLine: selectedLine, 
+          instruction: refineInstruction,
+          style: gwStyle 
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Refinement API Error");
+
+      const updatedLyrics = (generatedLyrics || "").replace(selectedLine, data.refinedLine);
+      setGeneratedLyrics(updatedLyrics);
+      setRefineInstruction("");
+      setSelectedLine("");
+      if(addToast) addToast("Micro-refinement applied.", "success");
+      
+    } catch (err: any) {
+      if(addToast) addToast(err.message || "Failed to refine line.", "error");
+    } finally {
+      setIsRefining(false);
     }
   };
 
@@ -133,7 +217,7 @@ export default function Room03_Ghostwriter() {
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3 border-t border-[#222] pt-4">
             <label className="flex items-center gap-3 cursor-pointer group">
               <input type="checkbox" checked={gwUseSlang} onChange={(e) => setGwUseSlang(e.target.checked)} className="accent-[#E60000] w-4 h-4" />
               <span className="text-xs font-mono uppercase tracking-widest text-[#888] group-hover:text-white transition-colors">Inject Street Lexicon</span>
@@ -154,6 +238,7 @@ export default function Room03_Ghostwriter() {
           {status === "generating" && (
             <div className="w-full bg-[#110000] border border-[#E60000] p-4 text-center">
                <p className="font-oswald text-[#E60000] uppercase tracking-widest font-bold mb-2 flex justify-center items-center gap-2"><RefreshCw size={14} className="animate-spin" /> Neural Sync Active</p>
+               <p className="font-mono text-[9px] text-[#E60000] mb-3 uppercase tracking-widest">{uxState}</p>
                <div className="w-full h-1 bg-black overflow-hidden"><div className="h-full bg-[#E60000] transition-all duration-300" style={{width: `${progress}%`}}></div></div>
             </div>
           )}
@@ -175,8 +260,10 @@ export default function Room03_Ghostwriter() {
            <h3 className="font-oswald text-lg uppercase tracking-widest text-[#888] flex items-center gap-3">
              <Layout size={16} /> Song Blueprint <span className="text-[#333]">|</span> <span className="text-[#E60000] text-sm">{calculateTotalBars()} Bars Target</span>
            </h3>
+           <button onClick={() => setGeneratedLyrics("")} className="text-[#555] hover:text-white transition-colors" title="Clear Lyrics"><RefreshCw size={14} /></button>
         </div>
         
+        {/* BLUEPRINT BLOCK BUILDER */}
         <div className="h-48 bg-[#0a0a0a] border-b border-[#222] overflow-x-auto flex items-center px-8 gap-4 shrink-0 custom-scrollbar">
           {blueprint.map((block, index) => (
             <div key={block.id} className="w-40 shrink-0 bg-black border border-[#333] p-4 flex flex-col justify-between h-28 group relative">
@@ -199,6 +286,7 @@ export default function Room03_Ghostwriter() {
           </div>
         </div>
 
+        {/* LYRICS DISPLAY & MICRO-REFINEMENT */}
         <div className="flex-1 bg-[#050505] p-8 overflow-y-auto custom-scrollbar relative">
           <div className="max-w-2xl mx-auto">
             {!generatedLyrics ? (
@@ -208,7 +296,7 @@ export default function Room03_Ghostwriter() {
                 <p className="font-mono text-xs text-white uppercase tracking-widest">Awaiting TALON initialization command.</p>
               </div>
             ) : (
-              <div className="bg-[#020202] border border-[#111] p-8 lg:p-12 shadow-2xl">
+              <div className="bg-[#020202] border border-[#111] p-8 lg:p-12 shadow-2xl relative pb-32">
                 <div className="flex items-center justify-between border-b border-[#222] pb-6 mb-8">
                   <div>
                     <h3 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white">{gwTitle || "UNTITLED ARTIFACT"}</h3>
@@ -216,13 +304,49 @@ export default function Room03_Ghostwriter() {
                   </div>
                   <Cpu size={24} className="text-[#333]" />
                 </div>
-                <textarea 
-                  value={generatedLyrics} 
-                  onChange={(e) => setGeneratedLyrics(e.target.value)}
-                  className="w-full h-full min-h-[500px] bg-transparent text-[#ddd] font-mono text-sm leading-loose outline-none resize-none"
-                />
+                
+                {/* Line-by-Line Rendering for Refinement selection */}
+                <div className="space-y-2">
+                  {generatedLyrics.split('\n').map((line, i) => {
+                    const isHeader = line.startsWith('[');
+                    return (
+                      <p 
+                        key={i} 
+                        onClick={() => !isHeader && setSelectedLine(line)}
+                        className={`font-mono text-sm leading-loose transition-all
+                          ${isHeader ? 'text-[#E60000] font-bold mt-8 mb-4 tracking-widest text-xs' : 'text-gray-300 hover:text-white cursor-pointer hover:bg-[#111] p-1 rounded'}
+                          ${selectedLine === line ? 'bg-[#E60000]/20 border-l-2 border-[#E60000] pl-3 text-white font-bold' : ''}
+                        `}
+                      >
+                        {line}
+                      </p>
+                    )
+                  })}
+                </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Micro-Refinement Tray Popup */}
+        <div className={`absolute bottom-0 left-0 w-full bg-black border-t border-[#E60000] p-6 transition-transform duration-300 ${selectedLine ? 'translate-y-0' : 'translate-y-full'}`}>
+          <div className="flex justify-between items-center mb-4">
+             <h4 className="font-oswald text-sm text-[#E60000] uppercase tracking-widest font-bold flex items-center gap-2"><Edit3 size={14} /> Micro-Refinement</h4>
+             <button onClick={() => setSelectedLine("")} className="text-[#555] hover:text-white text-[10px] font-mono uppercase tracking-widest">Close [X]</button>
+          </div>
+          <p className="text-xs font-mono text-gray-400 mb-4 bg-[#111] p-3 border border-[#333] italic">"{selectedLine}"</p>
+          <div className="flex gap-3">
+             <input 
+               type="text" value={refineInstruction} onChange={(e) => setRefineInstruction(e.target.value)}
+               placeholder="E.g., Make it rhyme with 'cash', make it more aggressive..." 
+               className="flex-1 bg-[#111] border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000]"
+             />
+             <button 
+               onClick={handleRefine} disabled={isRefining || !refineInstruction}
+               className="bg-[#E60000] text-white px-8 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+             >
+               {isRefining ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} Rewrite Line
+             </button>
           </div>
         </div>
 
