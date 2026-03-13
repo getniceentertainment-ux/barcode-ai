@@ -1,9 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2 } from "lucide-react";
+import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Activity } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
-import { supabase } from "../../lib/supabase";
 
 export default function Room03_Ghostwriter() {
   const { 
