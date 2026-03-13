@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Layout, ShieldCheck, Activity, Cpu, ArrowRight } from "lucide-react";
+import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2 } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
+import { supabase } from "../../lib/supabase";
 
 export default function Room03_Ghostwriter() {
   const { 
@@ -42,24 +43,24 @@ export default function Room03_Ghostwriter() {
   };
 
   const handleGenerate = async () => {
-    if (!userSession?.id) return addToast("Security Exception: User Session missing.", "error");
-    if (!gwPrompt.trim()) return addToast("Missing thematic directive.", "error");
-    if (!audioData) return addToast("Instrumental DSP data missing. Return to Room 01.", "error");
-
     setIsGenerating(true);
     setPollingAttempts(0);
-    setUxState("Securing JWT Token & Matrix Alignment...");
+    setUxState("Initializing Secure API Handshake...");
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Security Exception: Missing Session Token.");
+
       const initRes = await fetch('/api/ghostwriter', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
         body: JSON.stringify({
           userId: userSession?.id,
-          prompt: gwPrompt, // PASSING THE DESCRIPTION
-          title: gwTitle,   // PASSING THE TITLE
-          bpm: audioData?.bpm,
-          key: audioData?.key, 
+          prompt: gwPrompt,
           stageName: userSession?.stageName, 
           tag: flowDNA?.tag,
           style: gwStyle,
@@ -114,9 +115,16 @@ export default function Room03_Ghostwriter() {
     setIsRefining(true);
     
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Security Exception: Missing Session Token.");
+
       const res = await fetch('/api/ghostwriter/refine', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ 
           userId: userSession?.id,
           originalLine: selectedLine, 
