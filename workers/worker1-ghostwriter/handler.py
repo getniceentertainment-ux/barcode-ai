@@ -16,7 +16,7 @@ SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
 KB_FILE = "/runpod-volume/GETNICE_knowledge_base.txt"
 
-# THE ULTIMATE BAN LIST: Includes "AI-ism" flow killers that ruin immersion
+# THE ULTIMATE BAN LIST
 BAN_LIST = [
     "plight", "fright", "ignite", "divine", "sublime", "mindstream",
     "whispers", "shadows", "dancing", "embrace", "souls", "abyss",
@@ -126,42 +126,34 @@ def enforce_bar_limit(text, expected_bars):
         
     return "\n".join(clean_lines)
 
-def construct_system_prompt(style, stage_name, track_key, bpm, thematic_intent, syllable_target, user_reference):
+def construct_system_prompt(style, stage_name, track_key, bpm):
     rag_context = load_rag_intel()
     slang_list = ", ".join(load_street_slang())
     culture_context = load_cultural_context()
     banned_words_str = ", ".join(BAN_LIST)
     
-    # THE FIX: Implement Hard Syllable-to-Word Cap Logic
-    max_words_per_line = int(syllable_target / 1.3)
-
-    kb_data = load_knowledge_base() if style == "getnice_flow" else ""
+    kb_data = load_knowledge_base()
     kb_injection = f"\n[STYLE SAMPLING]\nReference these transcripts to mirror exact vocabulary, internal rhyme schemes, and multi-syllabic structures:\n{kb_data}\nCRITICAL RULE: DO NOT REGURGITATE OR DIRECTLY COPY ANY EXACT LINES FROM THIS KNOWLEDGE BASE. Use it for stylistic inspiration only.\n" if kb_data else ""
 
-    energy_logic = "HIGH ENERGY (>135 BPM) - Use fast, staccato triplet flows." if float(bpm) >= 135 else "STANDARD ENERGY (<135 BPM) - Use laid-back, heavy boom-bap punchlines."
-    
-    # THE FIX: Replace the Mashup logic with strict Cadence Extraction
     if style == "user_flow":
-        flow_guide = f"""=== THE USER FLOW ===
-1. CADENCE ONLY: Analyze the syllable-timing of the reference: "{user_reference}"
-2. VOCABULARY RESET: Do NOT reuse words from the reference. 
-3. PUNCHY ENFORCEMENT: Every line MUST be under 10 words. 
-4. BPM SYNC: The beat is {bpm} BPM. Lines must be short enough to breathe."""
-    else:
-        flow_guide = f"""=== THE GETNICE FLOW ===
+        flow_guide = "=== THE USER FLOW ===\nMimic the exact bouncy rhythm and cadence of the user's reference flow. Keep lines short. AVOID REUSING THEIR WORDS."
+    elif style == "melodic_trap":
+        flow_guide = "=== MELODIC TRAP FLOW ===\nUse elongated vowels. Spaced out timing. Auto-tune ready cadence. Emphasize the rhyme at the end of the bar."
+    elif style == "triplet":
+        flow_guide = "=== TRIPLET FLOW (MIGOS/MEMPHIS) ===\nFast, staccato 3-beat groupings (da-da-da, da-da-da). High energy, rapid-fire."
+    elif style == "rnb":
+        flow_guide = "=== R&B VOCALIST FLOW ===\nSoulful, conversational, emotional depth. Focus on extended melodies, vocal runs, and vulnerability. Let the track breathe."
+    else: # getnice_hybrid
+        flow_guide = """=== THE GETNICE HYBRID FLOW ===
 [STYLE REFERENCE - COPY THIS EXACT GRIT AND RHYTHM]
 "I see the green in my dream awake | for the scene"
 "Cash is king blood is thicker than | cold hard green"
 "Rollin deep in the whip Benzes | and Maybachs no lease"
-
-CRITICAL RULE: You MUST write approximately {syllable_target} syllables per line (MAXIMUM {max_words_per_line} WORDS PER LINE) to perfectly sync with the {bpm} BPM instrumental. Output exactly one line per bar using the pipe symbol (|) in the middle of EVERY single line for breath control."""
+"""
 
     return f"""<|im_start|>system
-You are TALON, writing for "{stage_name.upper()}".
+You are TALON, an elite ghostwriter for "{stage_name.upper()}".
 CRITICAL: YOU DO NOT WRITE POETRY. NEVER use abstract metaphors.
-
-[THEMATIC INTENT - ADHERE STRICTLY TO THIS]
-{thematic_intent}
 
 INJECTED DATA:
 [LIVE INTEL]
@@ -173,50 +165,53 @@ INJECTED DATA:
 
 MANDATORY STYLE GUIDE:
 1. **THE BAN LIST**: Strictly avoid all AI-isms including: {banned_words_str}.
-2. **FORMATTING**: Output exactly one line per bar using the pipe symbol (|) for breath control. Do not include section headers like 'Verse' or 'Hook' within the lyrical content.
+2. **FORMATTING**: Output exactly one line per bar. DO NOT INCLUDE SECTION HEADERS LIKE [VERSE] OR [HOOK].
 3. **CONCRETE NOUNS**: Use only physical, gritty imagery—focus on cars, currency, specific locations, and tactile objects. Avoid abstract poetry. 
 4. **MUSICAL KEY**: The beat is in {track_key}. Write with vowels that resonate well in this pitch.
-5. **TEMPO LOGIC**: The beat is {bpm} BPM. {energy_logic}
-6. **VOCAL PRESETS**: Align the writing style with the "Gritty/Street" DSP preset, utilizing aggressive, compressed tonality.
 
 {flow_guide}
 <|im_end|>
 """
 
-def generate_section(system_prompt, full_track_history, section_type, bars, prompt_topic, target_syllables, strain):
+# THE FIX: INDEPENDENT SECTION GENERATION LOOP
+def generate_section(system_prompt, full_track_history, section_type, bars, thematic_intent, target_syllables, strain, title):
     bars_to_generate = bars
 
-    # DYNAMIC RHYTHM PROFILE: Apply the Blueprint Strain Multipliers
+    # Hard mathematical limits to prevent run-on lines
     min_syl = max(4, target_syllables - (3 if strain < 0.5 else 1))
     max_syl = target_syllables + (3 if strain > 0.5 else 1)
-    
-    # THE FIX: Apply the Syllable Hard-Cap logic to the specific section
-    max_words_per_line = int(target_syllables / 1.3)
+    max_words_per_line = int(target_syllables / 1.3) + 1
 
     if "INTRO" in section_type.upper():
-        prompt_instruction = f"Write INTRO ({bars} bars). Conversational, hype speech. ONE LINE PER BAR."
+        prompt_instruction = f"Write an INTRO ({bars} bars). Set the tone for the theme."
     elif "OUTRO" in section_type.upper():
         bars_to_generate = min(bars, 8) 
-        prompt_instruction = f"Write OUTRO ({bars_to_generate} bars). Fading out speech. ONE LINE PER BAR."
+        prompt_instruction = f"Write an OUTRO ({bars_to_generate} bars). Tie off the theme definitively."
     elif "HOOK" in section_type.upper():
-        prompt_instruction = f"Write HOOK ({bars} bars). Prioritize repetitive, melodic cadence and longer vowels. EXACTLY {bars} LINES."
+        prompt_instruction = f"Write a HOOK ({bars} bars). Create a highly repetitive, catchy core message that summarizes the theme."
     elif "BRIDGE" in section_type.upper():
-        prompt_instruction = f"Write BRIDGE ({bars} bars). Change flow. EXACTLY {bars} LINES."
+        prompt_instruction = f"Write a BRIDGE ({bars} bars). Switch up the flow and approach the theme from a new angle."
     else:
-        prompt_instruction = f"Write {section_type.upper()} ({bars} bars). Prioritize complex internal rhymes. EXACTLY {bars} LINES. CONCRETE NOUNS ONLY."
+        prompt_instruction = f"Write a {section_type.upper()} ({bars} bars). Tell a detailed story using CONCRETE NOUNS to advance the theme."
 
+    # THIS FORCES THE AI TO CHECK THE TITLE AND THEME BEFORE WRITING A SINGLE LINE OF THE NEW SECTION
     user_prompt = f"""<|im_start|>user
-[SECTION AWARENESS: {section_type.upper()}]
-Read the full track history to continue the story arc, BUT CRITICALLY: DO NOT REPEAT OR REGURGITATE ANY LINES FROM IT. Write 100% NEW lyrics for this section.
+[MASTER DIRECTIVE]
+Track Title: "{title}"
+Thematic Intent: "{thematic_intent}"
 
-FULL TRACK HISTORY SO FAR:
-"{full_track_history[-1500:] if full_track_history else 'None (Start of track)'}"
+[TRACK HISTORY SO FAR]
+Read this to continue the story, but DO NOT copy or repeat any of these lines:
+{full_track_history if full_track_history else "(Empty. You are generating the first section.)"}
 
-TASK: {prompt_instruction} 
-TOPIC TO FOCUS ON: {prompt_topic}
-RHYTHM PROFILE (Strain {strain}): Write between {min_syl} to {max_syl} syllables per line (ABSOLUTE MAXIMUM {max_words_per_line} WORDS PER LINE). Ensure the weight of the bar hits on the 2nd and 4th beat. EVERY LINE MUST HAVE A PIPE (|).
-TIE-OFF ENDING: The final two bars of this section MUST metaphorically tie off the thought. Do not end on a cliffhanger.
-STRICTLY FOLLOW BAR COUNT ({bars_to_generate}). DO NOT WRITE '{section_type.upper()}:' IN THE OUTPUT.
+[CURRENT INDEPENDENT TASK: {section_type.upper()}]
+You are now generating ONLY the {section_type.upper()}. 
+1. Check against the Track Title and Thematic Intent to ensure this section perfectly aligns.
+2. Write EXACTLY {bars_to_generate} lines. NO MORE. NO LESS.
+3. Keep lines punchy: under {max_words_per_line} words per line.
+4. Insert a pipe (|) in the middle of EVERY line.
+
+{prompt_instruction}
 <|im_end|>
 <|im_start|>assistant
 """
@@ -226,7 +221,7 @@ STRICTLY FOLLOW BAR COUNT ({bars_to_generate}). DO NOT WRITE '{section_type.uppe
     
     outputs = model.generate(
         **inputs, 
-        max_new_tokens=40 * bars_to_generate, 
+        max_new_tokens=30 * bars_to_generate, 
         temperature=0.85, 
         top_p=0.9, 
         top_k=50,
@@ -246,16 +241,19 @@ STRICTLY FOLLOW BAR COUNT ({bars_to_generate}). DO NOT WRITE '{section_type.uppe
 def handler(event):
     job_input = event.get("input", {})
     task_type = job_input.get("task_type", "generate")
-    topic = job_input.get("prompt", "Matrix infiltration")
-    style = job_input.get("style", "getnice_flow")
+    
+    raw_prompt = job_input.get("prompt", "Matrix infiltration")
+    title = job_input.get("title", "UNTITLED ARTIFACT")
+    
+    style = job_input.get("style", "getnice_hybrid")
     stage_name = job_input.get("stageName", "The Artist")
     track_key = job_input.get("key", "Unknown Key")
     bpm = job_input.get("bpm", 120)
-    thematic_intent = job_input.get("thematic_intent", topic)
-    syllable_target = job_input.get("syllable_target", 11)
-    user_reference = job_input.get("user_reference", "")
     
-    system_prompt = construct_system_prompt(style, stage_name, track_key, bpm, thematic_intent, syllable_target, user_reference)
+    bar_duration = (60 / float(bpm)) * 4
+    syllable_target = int(bar_duration * 3.5)
+    
+    system_prompt = construct_system_prompt(style, stage_name, track_key, bpm)
     
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16, "strain": 0.5}])
@@ -276,14 +274,15 @@ def handler(event):
                 else:
                     section_text = generated_hook
             else:
-                section_text = generate_section(system_prompt, full_track_history, sec_type, bars, topic, syllable_target, strain)
+                # Passing Title and Theme into EVERY single iteration
+                section_text = generate_section(system_prompt, full_track_history, sec_type, bars, raw_prompt, syllable_target, strain, title)
                 if "HOOK" in sec_type.upper() and generated_hook is None:
                     generated_hook = section_text
                     if "DOUBLE" in sec_type.upper():
                         section_text = generated_hook + "\n" + generated_hook
             
             final_lyrics += section_text + "\n"
-            full_track_history += f"\n[{sec_type}]\n" + section_text
+            full_track_history += f"\n[{sec_type}]\n{section_text}\n"
             
         return {"lyrics": final_lyrics.strip()}
     return {"error": "Invalid task_type."}
