@@ -19,7 +19,6 @@ export default function Room03_Ghostwriter() {
   const [pollingAttempts, setPollingAttempts] = useState(0);
   const [uxState, setUxState] = useState("Initializing Secure API Handshake...");
 
-  // Micro-Refinement State
   const [isRefining, setIsRefining] = useState(false);
   const [refineInstruction, setRefineInstruction] = useState("");
   const [selectedLine, setSelectedLine] = useState("");
@@ -45,17 +44,32 @@ export default function Room03_Ghostwriter() {
     setUxState("Securing JWT Token...");
 
     try {
-      // 1. FETCH SECURE JWT TOKEN
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (!token) throw new Error("Security Exception: Missing Session Token.");
 
-      // 2. CALCULATE SYLLABLE MATH (Strict 3.5 Syllables Per Second)
       const barDurationSeconds = (60 / audioData.bpm) * 4;
       const targetSyllables = Math.floor(barDurationSeconds * 3.5);
 
+      // THE FIX: DYNAMIC STRAIN CALCULATION
+      let currentVerseCount = 0;
+      const enhancedBlueprint = blueprint.map(b => {
+        let sectionStrain = 0.5;
+        if (b.type === "INTRO") sectionStrain = 0.3;
+        else if (b.type === "HOOK") sectionStrain = 0.6;
+        else if (b.type === "OUTRO") sectionStrain = 0.1;
+        else if (b.type === "BRIDGE") sectionStrain = 0.8;
+        else if (b.type === "VERSE") {
+          currentVerseCount++;
+          if (currentVerseCount === 1) sectionStrain = 0.4; // Introduction phase
+          else if (currentVerseCount === 2) sectionStrain = 0.9; // Structural Stress phase
+          else sectionStrain = 0.2; // The Blessings phase
+        }
+        return { type: b.type, bars: b.bars, strain: sectionStrain };
+      });
+
       const payload = {
-        prompt: gwPrompt,
+        thematic_intent: gwPrompt, // Explicitly pass thematic intent
         title: gwTitle,
         style: gwStyle,
         stageName: userSession.stageName || "The Artist",
@@ -65,13 +79,12 @@ export default function Room03_Ghostwriter() {
         user_reference: flowDNA?.referenceText || "None", 
         useSlang: gwUseSlang,
         useIntel: gwUseIntel,
-        blueprint: blueprint.map(b => ({ type: b.type, bars: b.bars }))
+        blueprint: enhancedBlueprint // Pass the strain-enhanced blueprint
       };
 
       setProgress(30);
-      setUxState("Passing blueprint to GPU cluster...");
+      setUxState("Passing structural strain limits to GPU...");
 
-      // 3. INITIALIZE RUNPOD JOB (Using correct Ghostwriter endpoint)
       const initRes = await fetch('/api/ghostwriter', {
         method: 'POST',
         headers: { 
@@ -90,7 +103,6 @@ export default function Room03_Ghostwriter() {
       setProgress(50);
       let attempts = 0;
 
-      // 4. ASYNCHRONOUS POLLING (Prevents Vercel 504 Timeouts)
       const pollInterval = setInterval(async () => {
         attempts++;
         setPollingAttempts(attempts);
@@ -181,10 +193,10 @@ export default function Room03_Ghostwriter() {
           
           <div className="bg-[#111] p-4 border border-[#333]">
              <div className="flex justify-between items-center mb-2">
-               <span className="text-[10px] font-mono uppercase text-[#888] tracking-widest flex items-center gap-2"><Activity size={12}/> Syllable Control</span>
-               <span className="text-[10px] font-mono text-[#E60000]">{audioData?.bpm ? Math.floor(audioData.bpm * 0.12) : 0} Syllables/Bar</span>
+               <span className="text-[10px] font-mono uppercase text-[#888] tracking-widest flex items-center gap-2"><Activity size={12}/> Syllable Density</span>
+               <span className="text-[10px] font-mono text-[#E60000]">{audioData?.bpm ? Math.floor(((60 / audioData.bpm) * 4) * 3.5) : 0} Syl/Bar</span>
              </div>
-             <p className="text-[9px] text-[#555] font-mono uppercase tracking-widest">Target automatically calculated based on {audioData?.bpm ? Math.round(audioData.bpm) : 0} BPM.</p>
+             <p className="text-[9px] text-[#555] font-mono uppercase tracking-widest">Dynamic Strain profiles will shift this target +/- 3 syllables per section.</p>
           </div>
 
           <div>
@@ -193,8 +205,8 @@ export default function Room03_Ghostwriter() {
           </div>
 
           <div>
-            <label className="text-[10px] text-[#888] font-mono uppercase tracking-widest font-bold mb-2 block">Directive (Topic/Story)</label>
-            <textarea value={gwPrompt} onChange={(e) => setGwPrompt(e.target.value)} rows={3} className="w-full bg-black border border-[#222] p-3 font-mono text-xs text-white outline-none focus:border-[#E60000] transition-colors resize-none" placeholder="What is the song about? Be specific. Focus on concrete physical realities..." />
+            <label className="text-[10px] text-[#888] font-mono uppercase tracking-widest font-bold mb-2 block">Thematic Intent (Story)</label>
+            <textarea value={gwPrompt} onChange={(e) => setGwPrompt(e.target.value)} rows={3} className="w-full bg-black border border-[#222] p-3 font-mono text-xs text-white outline-none focus:border-[#E60000] transition-colors resize-none" placeholder="What is the exact theme? Be specific. Focus on concrete realities..." />
           </div>
 
           <div>
@@ -264,7 +276,6 @@ export default function Room03_Ghostwriter() {
            <button onClick={() => setGeneratedLyrics("")} className="text-[#555] hover:text-white transition-colors" title="Clear Lyrics"><RefreshCw size={14} /></button>
         </div>
         
-        {/* BLUEPRINT BLOCK BUILDER */}
         <div className="h-48 bg-[#0a0a0a] border-b border-[#222] overflow-x-auto flex items-center px-8 gap-4 shrink-0 custom-scrollbar">
           {blueprint.map((block, index) => (
             <div key={block.id} className="w-40 shrink-0 bg-black border border-[#333] p-4 flex flex-col justify-between h-28 group relative">
@@ -287,7 +298,6 @@ export default function Room03_Ghostwriter() {
           </div>
         </div>
 
-        {/* LYRICS DISPLAY & MICRO-REFINEMENT */}
         <div className="flex-1 bg-[#050505] p-8 overflow-y-auto custom-scrollbar relative">
           <div className="max-w-2xl mx-auto">
             {!generatedLyrics ? (
@@ -301,12 +311,10 @@ export default function Room03_Ghostwriter() {
                 <div className="flex items-center justify-between border-b border-[#222] pb-6 mb-8">
                   <div>
                     <h3 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white">{gwTitle || "UNTITLED ARTIFACT"}</h3>
-                    <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest mt-1">Syllable Control: {audioData?.bpm ? Math.floor(audioData.bpm * 0.12) : 0}/Line</p>
                   </div>
                   <Cpu size={24} className="text-[#333]" />
                 </div>
                 
-                {/* Line-by-Line Rendering for Refinement selection */}
                 <div className="space-y-2">
                   {generatedLyrics.split('\n').map((line, i) => {
                     const isHeader = line.startsWith('[');
@@ -329,7 +337,6 @@ export default function Room03_Ghostwriter() {
           </div>
         </div>
 
-        {/* Micro-Refinement Tray Popup */}
         <div className={`absolute bottom-0 left-0 w-full bg-black border-t border-[#E60000] p-6 transition-transform duration-300 ${selectedLine ? 'translate-y-0' : 'translate-y-full'}`}>
           <div className="flex justify-between items-center mb-4">
              <h4 className="font-oswald text-sm text-[#E60000] uppercase tracking-widest font-bold flex items-center gap-2"><Edit3 size={14} /> Micro-Refinement</h4>

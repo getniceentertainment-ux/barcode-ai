@@ -16,6 +16,7 @@ SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
 KB_FILE = "/runpod-volume/GETNICE_knowledge_base.txt"
 
+# THE ULTIMATE BAN LIST: Includes "AI-ism" flow killers that ruin immersion
 BAN_LIST = [
     "plight", "fright", "ignite", "divine", "sublime", "mindstream",
     "whispers", "shadows", "dancing", "embrace", "souls", "abyss",
@@ -24,7 +25,8 @@ BAN_LIST = [
     "treasure", "warrior", "tenacity", "conqueror", "meatier", "harsh bars", 
     "victory tastes", "forged in fire", "scars", "battle", "maze", "haze", 
     "spiral staircase", "amends", "turbulent tides", "tranquility", "adversity", 
-    "guidance", "redemption", "slippery slope", "despair", "resilience", "victors"
+    "guidance", "redemption", "slippery slope", "despair", "resilience", "victors",
+    "neon", "verse", "cityscape", "echoes", "chains", "rhythms", "pulsing"
 ]
 
 model = None
@@ -92,8 +94,16 @@ def init_model():
     print("Initiating TALON Engine Deep Burn-In...")
     clean_lora_config()
     bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4")
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
-    base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL_NAME, quantization_config=bnb_config, device_map="auto", torch_dtype=torch.float16)
+    
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME, trust_remote_code=True)
+    
+    base_model = AutoModelForCausalLM.from_pretrained(
+        BASE_MODEL_NAME, 
+        quantization_config=bnb_config, 
+        device_map="auto", 
+        torch_dtype=torch.float16,
+        trust_remote_code=True
+    )
     try:
         model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
         print("GetNice Adapter fused successfully.")
@@ -116,24 +126,22 @@ def enforce_bar_limit(text, expected_bars):
         
     return "\n".join(clean_lines)
 
-def construct_system_prompt(style, stage_name, track_key, syllable_target, user_reference, bpm):
+def construct_system_prompt(style, stage_name, track_key, bpm, thematic_intent, syllable_target, user_reference):
     rag_context = load_rag_intel()
     slang_list = ", ".join(load_street_slang())
     culture_context = load_cultural_context()
     banned_words_str = ", ".join(BAN_LIST)
     
-    # KNOWLEDGE BASE INJECTION
     kb_data = load_knowledge_base() if style == "getnice_flow" else ""
-    kb_injection = f"\n[STYLE SAMPLING]\nReference these transcripts to mirror exact vocabulary and internal rhyme schemes:\n{kb_data}\n" if kb_data else ""
+    kb_injection = f"\n[STYLE SAMPLING]\nReference these transcripts to mirror exact vocabulary, internal rhyme schemes, and multi-syllabic structures:\n{kb_data}\nCRITICAL RULE: DO NOT REGURGITATE OR DIRECTLY COPY ANY EXACT LINES FROM THIS KNOWLEDGE BASE. Use it for stylistic inspiration only.\n" if kb_data else ""
 
-    # TEMPO LOGIC / ENERGY THRESHOLD
     energy_logic = "HIGH ENERGY (>135 BPM) - Use fast, staccato triplet flows." if float(bpm) >= 135 else "STANDARD ENERGY (<135 BPM) - Use laid-back, heavy boom-bap punchlines."
     
     if style == "user_flow":
         flow_guide = f"""=== THE USER FLOW ===
 Match the exact rhythm, syllable count, and cadence of the user's reference flow:
 "{user_reference}"
-CRITICAL: Maintain roughly {syllable_target} syllables per line to perfectly sync with the {bpm} BPM instrumental."""
+CRITICAL: Maintain roughly {syllable_target} syllables per line (approx 3.0-4.0 per second) to perfectly sync with the {bpm} BPM instrumental. Output exactly one line per bar using the pipe symbol (|) for breath control."""
     else:
         flow_guide = f"""=== THE GETNICE FLOW ===
 [STYLE REFERENCE - COPY THIS EXACT GRIT AND RHYTHM]
@@ -141,11 +149,14 @@ CRITICAL: Maintain roughly {syllable_target} syllables per line to perfectly syn
 "Cash is king blood is thicker than | cold hard green"
 "Rollin deep in the whip Benzes | and Maybachs no lease"
 
-CRITICAL: You MUST write exactly {syllable_target} syllables per line to perfectly sync with the {bpm} BPM instrumental."""
+CRITICAL: You MUST write approximately {syllable_target} syllables per line to perfectly sync with the {bpm} BPM instrumental. Output exactly one line per bar using the pipe symbol (|) in the middle of EVERY single line for breath control."""
 
     return f"""<|im_start|>system
 You are TALON, writing for "{stage_name.upper()}".
 CRITICAL: YOU DO NOT WRITE POETRY. NEVER use abstract metaphors.
+
+[THEMATIC INTENT - ADHERE STRICTLY TO THIS]
+{thematic_intent}
 
 INJECTED DATA:
 [LIVE INTEL]
@@ -167,8 +178,12 @@ MANDATORY STYLE GUIDE:
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic):
+def generate_section(system_prompt, full_track_history, section_type, bars, prompt_topic, target_syllables, strain):
     bars_to_generate = bars
+
+    # DYNAMIC RHYTHM PROFILE: Apply the Blueprint Strain Multipliers
+    min_syl = max(4, target_syllables - (3 if strain < 0.5 else 1))
+    max_syl = target_syllables + (3 if strain > 0.5 else 1)
 
     if "INTRO" in section_type.upper():
         prompt_instruction = f"Write INTRO ({bars} bars). Conversational, hype speech. ONE LINE PER BAR."
@@ -183,10 +198,16 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_
         prompt_instruction = f"Write {section_type.upper()} ({bars} bars). Story about {prompt_topic}. Prioritize complex internal rhymes. EXACTLY {bars} LINES. CONCRETE NOUNS ONLY."
 
     user_prompt = f"""<|im_start|>user
-PREVIOUS LYRICS:
-"{previous_lyrics[-500:] if previous_lyrics else 'None (Start of track)'}"
+[SECTION AWARENESS: {section_type.upper()}]
+Read the full track history. You MUST refer back to previous sections metaphorically to build a cohesive story arc. 
 
-TASK: {prompt_instruction} STRICTLY FOLLOW BAR COUNT ({bars_to_generate}). DO NOT WRITE '{section_type.upper()}:' IN THE OUTPUT. EVERY LINE MUST HAVE A PIPE (|).
+FULL TRACK HISTORY SO FAR:
+"{full_track_history[-1500:] if full_track_history else 'None (Start of track)'}"
+
+TASK: {prompt_instruction} 
+RHYTHM PROFILE (Strain {strain}): Write between {min_syl} to {max_syl} syllables per line. Ensure the weight of the bar hits on the 2nd and 4th beat. EVERY LINE MUST HAVE A PIPE (|).
+TIE-OFF ENDING: The final two bars of this section MUST metaphorically tie off the thought. Do not end on a cliffhanger.
+STRICTLY FOLLOW BAR COUNT ({bars_to_generate}). DO NOT WRITE '{section_type.upper()}:' IN THE OUTPUT.
 <|im_end|>
 <|im_start|>assistant
 """
@@ -197,15 +218,17 @@ TASK: {prompt_instruction} STRICTLY FOLLOW BAR COUNT ({bars_to_generate}). DO NO
     outputs = model.generate(
         **inputs, 
         max_new_tokens=40 * bars_to_generate, 
-        temperature=0.85, # CREATIVITY PROFILE LOCKED
+        temperature=0.85, 
         top_p=0.9, 
-        repetition_penalty=1.15, # PENALTY LOCKED
+        top_k=50,
+        repetition_penalty=1.15,
         pad_token_id=tokenizer.eos_token_id, 
         eos_token_id=tokenizer.eos_token_id
     )
     
-    response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=False)
+    response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
     clean_response = response.split("<|im_end|>")[0].strip().replace("<|im_start|>", "").replace("<|im_start|>assistant", "").strip()
+    clean_response = re.sub(r'<pad\d*>', '', clean_response)
     
     final_cut = enforce_bar_limit(clean_response, bars_to_generate)
         
@@ -219,21 +242,24 @@ def handler(event):
     stage_name = job_input.get("stageName", "The Artist")
     track_key = job_input.get("key", "Unknown Key")
     bpm = job_input.get("bpm", 120)
-    
+    thematic_intent = job_input.get("thematic_intent", topic)
     syllable_target = job_input.get("syllable_target", 11)
     user_reference = job_input.get("user_reference", "")
     
-    system_prompt = construct_system_prompt(style, stage_name, track_key, syllable_target, user_reference, bpm)
+    system_prompt = construct_system_prompt(style, stage_name, track_key, bpm, thematic_intent, syllable_target, user_reference)
     
     if task_type == "generate":
-        blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16}])
+        blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16, "strain": 0.5}])
         final_lyrics = ""
-        context_lyrics = ""
+        # THE FIX: Replace the short 8-line memory with the Full Track History
+        full_track_history = "" 
         generated_hook = None 
         
         for section in blueprint:
             sec_type = section.get("type", "VERSE")
             bars = section.get("bars", 16)
+            strain = section.get("strain", 0.5)
+            
             final_lyrics += f"\n[{sec_type} - {bars} BARS]\n"
             
             # MEMORY MANAGEMENT: Cache hooks and parse Double Hooks
@@ -243,14 +269,15 @@ def handler(event):
                 else:
                     section_text = generated_hook
             else:
-                section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic)
+                section_text = generate_section(system_prompt, full_track_history, sec_type, bars, topic, syllable_target, strain)
                 if "HOOK" in sec_type.upper() and generated_hook is None:
                     generated_hook = section_text
                     if "DOUBLE" in sec_type.upper():
                         section_text = generated_hook + "\n" + generated_hook
             
             final_lyrics += section_text + "\n"
-            context_lyrics = "\n".join((context_lyrics + "\n" + section_text).strip().split("\n")[-8:])
+            # Append entire output to track history to maintain deep thematic cohesion
+            full_track_history += f"\n[{sec_type}]\n" + section_text
             
         return {"lyrics": final_lyrics.strip()}
     return {"error": "Invalid task_type."}
