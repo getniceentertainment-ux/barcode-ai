@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2 } from "lucide-react";
+import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Layout, ShieldCheck, Cpu, Activity, ArrowRight } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
