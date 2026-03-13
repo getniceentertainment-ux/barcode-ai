@@ -14,7 +14,6 @@ LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
 SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_briefing.txt")
 SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
-KB_FILE = "/runpod-volume/GETNICE_knowledge_base.txt"
 
 # THE ULTIMATE BAN LIST
 BAN_LIST = [
@@ -65,14 +64,6 @@ def load_cultural_context():
                 return f"CULTURAL ANCHOR: {item.get('title', 'STREET POLITICS')} - {item.get('content', '')[:400]}..."
     except Exception: pass
     return "Focus on the struggle, the hustle, and survival."
-
-def load_knowledge_base():
-    """References specific artist transcripts for internal rhyme schemes."""
-    if os.path.exists(KB_FILE):
-        try:
-            with open(KB_FILE, "r", encoding="utf-8") as f: return f.read()[:1500]
-        except Exception: pass
-    return ""
 
 def clean_lora_config():
     config_path = os.path.join(LORA_WEIGHTS_DIR, "adapter_config.json")
@@ -126,17 +117,14 @@ def enforce_bar_limit(text, expected_bars):
         
     return "\n".join(clean_lines)
 
-def construct_system_prompt(style, stage_name, track_key, bpm):
+def construct_system_prompt(style, stage_name, track_key, bpm, user_reference):
     rag_context = load_rag_intel()
     slang_list = ", ".join(load_street_slang())
     culture_context = load_cultural_context()
     banned_words_str = ", ".join(BAN_LIST)
-    
-    kb_data = load_knowledge_base()
-    kb_injection = f"\n[STYLE SAMPLING]\nReference these transcripts to mirror exact vocabulary, internal rhyme schemes, and multi-syllabic structures:\n{kb_data}\nCRITICAL RULE: DO NOT REGURGITATE OR DIRECTLY COPY ANY EXACT LINES FROM THIS KNOWLEDGE BASE. Use it for stylistic inspiration only.\n" if kb_data else ""
 
     if style == "user_flow":
-        flow_guide = "=== THE USER FLOW ===\nMimic the exact bouncy rhythm and cadence of the user's reference flow. Keep lines short. AVOID REUSING THEIR WORDS."
+        flow_guide = f"=== THE USER FLOW ===\n[REFERENCE CADENCE]: '{user_reference}'\nMimic the exact bouncy rhythm and syllable timing of the reference flow above. Keep lines short. CRITICAL: DO NOT REUSE ANY WORDS FROM THE REFERENCE CADENCE."
     elif style == "melodic_trap":
         flow_guide = "=== MELODIC TRAP FLOW ===\nUse elongated vowels. Spaced out timing. Auto-tune ready cadence. Emphasize the rhyme at the end of the bar."
     elif style == "triplet":
@@ -144,12 +132,7 @@ def construct_system_prompt(style, stage_name, track_key, bpm):
     elif style == "rnb":
         flow_guide = "=== R&B VOCALIST FLOW ===\nSoulful, conversational, emotional depth. Focus on extended melodies, vocal runs, and vulnerability. Let the track breathe."
     else: # getnice_hybrid
-        flow_guide = """=== THE GETNICE HYBRID FLOW ===
-[STYLE REFERENCE - COPY THIS EXACT GRIT AND RHYTHM]
-"I see the green in my dream awake | for the scene"
-"Cash is king blood is thicker than | cold hard green"
-"Rollin deep in the whip Benzes | and Maybachs no lease"
-"""
+        flow_guide = "=== THE GETNICE HYBRID FLOW ===\n[STYLE REFERENCE - COPY THIS EXACT GRIT AND RHYTHM]\n\"I see the green in my dream awake | for the scene\"\n\"Cash is king blood is thicker than | cold hard green\"\n\"Rollin deep in the whip Benzes | and Maybachs no lease\""
 
     return f"""<|im_start|>system
 You are TALON, an elite ghostwriter for "{stage_name.upper()}".
@@ -161,7 +144,7 @@ INJECTED DATA:
 [CULTURAL ANCHOR]
 {culture_context}
 [SUGGESTED LEXICON]
-{slang_list}{kb_injection}
+{slang_list}
 
 MANDATORY STYLE GUIDE:
 1. **THE BAN LIST**: Strictly avoid all AI-isms including: {banned_words_str}.
@@ -173,7 +156,6 @@ MANDATORY STYLE GUIDE:
 <|im_end|>
 """
 
-# THE FIX: INDEPENDENT SECTION GENERATION LOOP
 def generate_section(system_prompt, full_track_history, section_type, bars, thematic_intent, target_syllables, strain, title):
     bars_to_generate = bars
 
@@ -244,6 +226,7 @@ def handler(event):
     
     raw_prompt = job_input.get("prompt", "Matrix infiltration")
     title = job_input.get("title", "UNTITLED ARTIFACT")
+    user_reference = job_input.get("tag", "") # Captures Brain Train DNA securely
     
     style = job_input.get("style", "getnice_hybrid")
     stage_name = job_input.get("stageName", "The Artist")
@@ -253,7 +236,7 @@ def handler(event):
     bar_duration = (60 / float(bpm)) * 4
     syllable_target = int(bar_duration * 3.5)
     
-    system_prompt = construct_system_prompt(style, stage_name, track_key, bpm)
+    system_prompt = construct_system_prompt(style, stage_name, track_key, bpm, user_reference)
     
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16, "strain": 0.5}])
