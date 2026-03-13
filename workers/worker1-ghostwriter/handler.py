@@ -132,16 +132,21 @@ def construct_system_prompt(style, stage_name, track_key, bpm, thematic_intent, 
     culture_context = load_cultural_context()
     banned_words_str = ", ".join(BAN_LIST)
     
+    # THE FIX: Implement Hard Syllable-to-Word Cap Logic
+    max_words_per_line = int(syllable_target / 1.3)
+
     kb_data = load_knowledge_base() if style == "getnice_flow" else ""
     kb_injection = f"\n[STYLE SAMPLING]\nReference these transcripts to mirror exact vocabulary, internal rhyme schemes, and multi-syllabic structures:\n{kb_data}\nCRITICAL RULE: DO NOT REGURGITATE OR DIRECTLY COPY ANY EXACT LINES FROM THIS KNOWLEDGE BASE. Use it for stylistic inspiration only.\n" if kb_data else ""
 
     energy_logic = "HIGH ENERGY (>135 BPM) - Use fast, staccato triplet flows." if float(bpm) >= 135 else "STANDARD ENERGY (<135 BPM) - Use laid-back, heavy boom-bap punchlines."
     
+    # THE FIX: Replace the Mashup logic with strict Cadence Extraction
     if style == "user_flow":
         flow_guide = f"""=== THE USER FLOW ===
-Match the exact rhythm, syllable count, and cadence of the user's reference flow:
-"{user_reference}"
-CRITICAL: Maintain roughly {syllable_target} syllables per line (approx 3.0-4.0 per second) to perfectly sync with the {bpm} BPM instrumental. Output exactly one line per bar using the pipe symbol (|) for breath control."""
+1. CADENCE ONLY: Analyze the syllable-timing of the reference: "{user_reference}"
+2. VOCABULARY RESET: Do NOT reuse words from the reference. 
+3. PUNCHY ENFORCEMENT: Every line MUST be under 10 words. 
+4. BPM SYNC: The beat is {bpm} BPM. Lines must be short enough to breathe."""
     else:
         flow_guide = f"""=== THE GETNICE FLOW ===
 [STYLE REFERENCE - COPY THIS EXACT GRIT AND RHYTHM]
@@ -149,7 +154,7 @@ CRITICAL: Maintain roughly {syllable_target} syllables per line (approx 3.0-4.0 
 "Cash is king blood is thicker than | cold hard green"
 "Rollin deep in the whip Benzes | and Maybachs no lease"
 
-CRITICAL: You MUST write approximately {syllable_target} syllables per line to perfectly sync with the {bpm} BPM instrumental. Output exactly one line per bar using the pipe symbol (|) in the middle of EVERY single line for breath control."""
+CRITICAL RULE: You MUST write approximately {syllable_target} syllables per line (MAXIMUM {max_words_per_line} WORDS PER LINE) to perfectly sync with the {bpm} BPM instrumental. Output exactly one line per bar using the pipe symbol (|) in the middle of EVERY single line for breath control."""
 
     return f"""<|im_start|>system
 You are TALON, writing for "{stage_name.upper()}".
@@ -184,6 +189,9 @@ def generate_section(system_prompt, full_track_history, section_type, bars, prom
     # DYNAMIC RHYTHM PROFILE: Apply the Blueprint Strain Multipliers
     min_syl = max(4, target_syllables - (3 if strain < 0.5 else 1))
     max_syl = target_syllables + (3 if strain > 0.5 else 1)
+    
+    # THE FIX: Apply the Syllable Hard-Cap logic to the specific section
+    max_words_per_line = int(target_syllables / 1.3)
 
     if "INTRO" in section_type.upper():
         prompt_instruction = f"Write INTRO ({bars} bars). Conversational, hype speech. ONE LINE PER BAR."
@@ -195,17 +203,18 @@ def generate_section(system_prompt, full_track_history, section_type, bars, prom
     elif "BRIDGE" in section_type.upper():
         prompt_instruction = f"Write BRIDGE ({bars} bars). Change flow. EXACTLY {bars} LINES."
     else:
-        prompt_instruction = f"Write {section_type.upper()} ({bars} bars). Story about {prompt_topic}. Prioritize complex internal rhymes. EXACTLY {bars} LINES. CONCRETE NOUNS ONLY."
+        prompt_instruction = f"Write {section_type.upper()} ({bars} bars). Prioritize complex internal rhymes. EXACTLY {bars} LINES. CONCRETE NOUNS ONLY."
 
     user_prompt = f"""<|im_start|>user
 [SECTION AWARENESS: {section_type.upper()}]
-Read the full track history. You MUST refer back to previous sections metaphorically to build a cohesive story arc. 
+Read the full track history to continue the story arc, BUT CRITICALLY: DO NOT REPEAT OR REGURGITATE ANY LINES FROM IT. Write 100% NEW lyrics for this section.
 
 FULL TRACK HISTORY SO FAR:
 "{full_track_history[-1500:] if full_track_history else 'None (Start of track)'}"
 
 TASK: {prompt_instruction} 
-RHYTHM PROFILE (Strain {strain}): Write between {min_syl} to {max_syl} syllables per line. Ensure the weight of the bar hits on the 2nd and 4th beat. EVERY LINE MUST HAVE A PIPE (|).
+TOPIC TO FOCUS ON: {prompt_topic}
+RHYTHM PROFILE (Strain {strain}): Write between {min_syl} to {max_syl} syllables per line (ABSOLUTE MAXIMUM {max_words_per_line} WORDS PER LINE). Ensure the weight of the bar hits on the 2nd and 4th beat. EVERY LINE MUST HAVE A PIPE (|).
 TIE-OFF ENDING: The final two bars of this section MUST metaphorically tie off the thought. Do not end on a cliffhanger.
 STRICTLY FOLLOW BAR COUNT ({bars_to_generate}). DO NOT WRITE '{section_type.upper()}:' IN THE OUTPUT.
 <|im_end|>
@@ -251,7 +260,6 @@ def handler(event):
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16, "strain": 0.5}])
         final_lyrics = ""
-        # THE FIX: Replace the short 8-line memory with the Full Track History
         full_track_history = "" 
         generated_hook = None 
         
@@ -262,7 +270,6 @@ def handler(event):
             
             final_lyrics += f"\n[{sec_type} - {bars} BARS]\n"
             
-            # MEMORY MANAGEMENT: Cache hooks and parse Double Hooks
             if "HOOK" in sec_type.upper() and generated_hook is not None:
                 if "DOUBLE" in sec_type.upper():
                     section_text = generated_hook + "\n" + generated_hook
@@ -276,7 +283,6 @@ def handler(event):
                         section_text = generated_hook + "\n" + generated_hook
             
             final_lyrics += section_text + "\n"
-            # Append entire output to track history to maintain deep thematic cohesion
             full_track_history += f"\n[{sec_type}]\n" + section_text
             
         return {"lyrics": final_lyrics.strip()}

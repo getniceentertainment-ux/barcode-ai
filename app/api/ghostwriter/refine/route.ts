@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     const userId = user.id; // STRICT OVERRIDE
 
     const body = await req.json();
-    const { originalLine, instruction, style } = body;
+    const { originalLine, instruction, style, bpm = 120 } = body;
 
     if (!originalLine || !instruction) return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
 
@@ -35,7 +35,14 @@ export async function POST(req: Request) {
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_TALON;
 
-    const refinePrompt = `REWRITE THIS LINE: "${originalLine}". INSTRUCTION: ${instruction}. Keep it the exact same length.`;
+    // THE FIX: The Surgical Refinement Directive
+    const refinePrompt = `TALON Engine: Perform a Vocabulary Purge. You are currently mirroring the input text too closely.
+
+Apply Concrete Rule: Replace all abstract thoughts (e.g., 'life I chose', 'staying strong') with Concrete Nouns (e.g., 'Blacked out Beamer', 'Safe in the floorboards').
+Shorten Bar Length: Each line must have exactly ONE pipe (|) and no more than 8 words total to match the ${bpm} BPM tempo.
+Kill the Regurgitation: Do not use any phrases found in the PREVIOUS LYRICS section. Generate 100% new content using the established Style Sampling.
+
+REWRITE THIS LINE: "${originalLine}". INSTRUCTION: ${instruction}`;
 
     const response = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/runsync`, {
       method: 'POST',

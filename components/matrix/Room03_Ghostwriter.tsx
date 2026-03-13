@@ -156,7 +156,8 @@ export default function Room03_Ghostwriter() {
         body: JSON.stringify({ 
           originalLine: selectedLine, 
           instruction: refineInstruction,
-          style: gwStyle 
+          style: gwStyle,
+          bpm: audioData?.bpm || 120 // NEW: Passed BPM to Refinement Payload
         })
       });
 
