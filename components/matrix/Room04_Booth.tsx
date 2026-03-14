@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, ArrowRight, Activity, Save, Trash2, ListMusic } from "lucide-react";
+import { Mic, Square, Play, Pause, ArrowRight, Activity, Save, Trash2, ListMusic, Info } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 
-function encodeWAV(samples: Float32Array, sampleRate: number) {
+// Helper to convert raw Float32 Worklet PCM to a standard WAV Blob
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
   const writeString = (view: DataView, offset: number, string: string) => {
@@ -44,8 +44,8 @@ export default function Room04_Booth() {
     if (waveformRef.current && audioData?.url && !wavesurferRef.current) {
       wavesurferRef.current = WaveSurfer.create({
         container: waveformRef.current, waveColor: '#333333', progressColor: '#E60000',
-        cursorColor: '#ffffff', barWidth: 2, barGap: 1, barRadius: 2, height: 80, normalize: true,
-        interact: true // THE FIX: explicitly allow clicking to seek
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
       });
       wavesurferRef.current.load(audioData.url);
       
@@ -98,104 +98,104 @@ export default function Room04_Booth() {
     if (willPlay) {
       wavesurferRef.current.play();
       vocalStems.forEach(stem => {
-        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
-        if (el) { el.currentTime = currentWS_Time; el.play().catch(e => console.error(e)); }
-      });
-    } else {
-      wavesurferRef.current.pause();
-      vocalStems.forEach(stem => {
-        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
-        if (el) el.pause();
-      });
-    }
-  };
-
-  const stopEverything = () => {
-    if (wavesurferRef.current) { wavesurferRef.current.pause(); wavesurferRef.current.seekTo(0); }
-    vocalStems.forEach(stem => {
-      const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
-      if (el) { el.pause(); el.currentTime = 0; }
+  const toggleMute = (id: string) => {
+    setMutedStems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-
-    if (isRecording && workletNodeRef.current && audioCtxRef.current) {
-      workletNodeRef.current.disconnect();
-      mediaStreamRef.current?.getTracks().forEach(t => t.stop());
-      const totalLength = recordedChunksRef.current.reduce((acc, val) => acc + val.length, 0);
-      const merged = new Float32Array(totalLength);
-      let offset = 0;
-      for (let chunk of recordedChunksRef.current) { merged.set(chunk, offset); offset += chunk.length; }
-      
-      const wavBlob = encodeWAV(merged, audioCtxRef.current.sampleRate);
-      addVocalStem({ id: `TAKE_${Date.now()}`, type: vocalStems.length === 0 ? "Lead" : "Adlib", url: URL.createObjectURL(wavBlob), blob: wavBlob, volume: 0 });
-      audioCtxRef.current.close(); audioCtxRef.current = null; workletNodeRef.current = null; mediaStreamRef.current = null;
-    }
-    setIsPlaying(false); setIsRecording(false); setCurrentTime(0);
   };
 
-  const startHardwareRecording = async () => {
-    try {
-      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') await audioCtxRef.current.close();
-      const sampleRate = 44100;
-      const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
+  // --- TELEPROMPTER PARSER ---
+  // Transforms the raw syntax into a highly visual, color-coded rhythm map
+  const renderLyricLine = (line: string, isActive: boolean) => {
+    if (line.startsWith('[')) return line; // Headers handled in the main map
 
-      let padTime = currentWS_Time - 0.15;
-      if (padTime < 0) padTime = 0;
-      recordedChunksRef.current = [new Float32Array(Math.floor(padTime * sampleRate))]; 
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-      mediaStreamRef.current = stream;
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate });
-      audioCtxRef.current = audioCtx;
-
-      const workletCode = `class RecorderWorklet extends AudioWorkletProcessor { process(inputs) { if (inputs[0] && inputs[0].length > 0) { this.port.postMessage(inputs[0][0]); } return true; } } registerProcessor('recorder-worklet', RecorderWorklet);`;
-      const blob = new Blob([workletCode], { type: 'application/javascript' });
-      await audioCtx.audioWorklet.addModule(URL.createObjectURL(blob));
-
-      const source = audioCtx.createMediaStreamSource(stream);
-      const workletNode = new AudioWorkletNode(audioCtx, 'recorder-worklet');
-      workletNodeRef.current = workletNode;
-      workletNode.port.onmessage = (e) => recordedChunksRef.current.push(new Float32Array(e.data));
-
-      source.connect(workletNode); workletNode.connect(audioCtx.destination); 
-      if (wavesurferRef.current) wavesurferRef.current.play();
-      
-      vocalStems.forEach(stem => {
-        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
-        if (el) { el.currentTime = currentWS_Time; el.play().catch(e => console.error(e)); }
-      });
-      setIsRecording(true); setIsPlaying(true);
-    } catch (err) {
-      alert("Hardware microphone access is required for zero-latency tracking.");
-    }
+    // Split by the forward slash and the immediate word/syllable following it
+    const parts = line.split(/(\/\s*[a-zA-Z0-9'-]+)/g);
+    
+    return (
+      <>
+        {parts.map((part, index) => {
+          if (part.startsWith('/')) {
+            const word = part.substring(1).trim();
+            return (
+              <span key={index}>
+                <span className="text-[#00FFCC] font-bold mx-[2px] select-none text-xl leading-none drop-shadow-[0_0_8px_rgba(0,255,204,0.8)]">/</span>
+                <span className="text-white font-extrabold">{word}</span>
+              </span>
+            );
+          }
+          // When the line is active, brighten the pocket syllables slightly so they are easier to read
+          return <span key={index} className={isActive ? "text-gray-200" : "text-gray-500"}>{part}</span>;
+        })}
+      </>
+    );
   };
-
-  const toggleMute = (id: string) => setMutedStems(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
 
   return (
     <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500">
-      {vocalStems.map(stem => (<audio key={`audio-${stem.id}`} id={`booth-stem-${stem.id}`} src={stem.url} muted={mutedStems.has(stem.id)} className="hidden" />))}
+      
+      {/* HIDDEN AUDIO ENGINES */}
+      {vocalStems.map(stem => (
+        <audio 
+          key={`audio-${stem.id}`} 
+          id={`booth-stem-${stem.id}`} 
+          src={stem.url} 
+          muted={mutedStems.has(stem.id)} 
+          className="hidden" 
+        />
+      ))}
 
+      {/* LEFT COL: TELEPROMPTER */}
       <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
         <div className="p-8 pb-4">
            <h2 className="font-oswald text-xl uppercase tracking-widest mb-2 font-bold text-[#555] border-b border-[#111] pb-4 flex items-center justify-between">
-             Active Matrix // Teleprompter {audioData?.bpm && <span className="text-[10px] text-[#E60000]">{Math.round(audioData.bpm)} BPM</span>}
+             Active Matrix // Teleprompter
+             {audioData?.bpm && <span className="text-[10px] text-[#E60000]">{Math.round(audioData.bpm)} BPM</span>}
            </h2>
+           
+           {/* NEW: TELEPROMPTER LEGEND */}
+           <div className="bg-[#0a0a0a] border border-[#222] p-4 mt-4 rounded-md flex flex-col gap-3 shadow-lg">
+             <h4 className="text-[#E60000] font-oswald uppercase tracking-widest text-xs font-bold flex items-center gap-2">
+               <Info size={14} /> BPM Architect Guide
+             </h4>
+             <div className="flex flex-col gap-1 text-[10px] font-mono uppercase tracking-widest text-[#888]">
+               <span className="flex items-center gap-2"><span className="text-[#00FFCC] font-bold text-sm drop-shadow-[0_0_5px_rgba(0,255,204,0.8)]">/</span> = Metronome Downbeat</span>
+               <span className="flex items-center gap-2"><span className="text-white font-bold bg-[#111] px-1 rounded">WHITE</span> = Stressed Syllable</span>
+               <span className="flex items-center gap-2"><span className="text-gray-500">GRAY</span> = Pocket / In-between</span>
+             </div>
+           </div>
         </div>
+        
         <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose scroll-smooth">
-          {lyricLines.length > 0 ? lyricLines.map((line, i) => {
+          {lyricLines.length > 0 ? (
+            lyricLines.map((line, i) => {
               let isActive = false;
               if (!line.isHeader && (isPlaying || isRecording)) {
                  const nextLine = lyricLines.slice(i + 1).find(l => !l.isHeader);
-                 const endTime = nextLine ? nextLine.startTime : line.startTime + (audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5);
+                 const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5; 
+                 const endTime = nextLine ? nextLine.startTime : line.startTime + secondsPerBar;
                  isActive = currentTime >= line.startTime && currentTime < endTime;
               }
               return (
-                <p key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 transition-all duration-300'} ${isActive ? 'text-white text-lg font-bold bg-[#E60000]/20 py-1 px-3 border-l-2 border-[#E60000] transform translate-x-2' : ''}`}>{line.text}</p>
+                <p key={i} className={`
+                    ${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 transition-all duration-300'}
+                    ${isActive ? 'text-lg font-bold bg-[#E60000]/20 py-1 px-3 border-l-2 border-[#E60000] transform translate-x-2' : ''}
+                  `}>
+                  {line.isHeader ? line.text : renderLyricLine(line.text, isActive)}
+                </p>
               )
-            }) : <div className="h-full flex flex-col items-center justify-center opacity-20"><p className="uppercase tracking-[0.3em] text-center">NO LYRICS DETECTED</p></div>}
+            })
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center opacity-20"><p className="uppercase tracking-[0.3em] text-center">NO LYRICS DETECTED<br/>RETURN TO GHOSTWRITER</p></div>
+          )}
         </div>
+        <div className="absolute bottom-0 left-0 w-full h-12 bg-gradient-to-t from-[#020202] to-transparent pointer-events-none"></div>
       </div>
 
+      {/* RIGHT COL: HARDWARE DAW */}
       <div className="flex-1 flex flex-col relative">
         <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10">
           <div className="flex items-center gap-8">
