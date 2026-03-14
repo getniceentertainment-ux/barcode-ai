@@ -22,13 +22,13 @@ export default function Room03_Ghostwriter() {
   const [refineInstruction, setRefineInstruction] = useState("");
   const [selectedLine, setSelectedLine] = useState("");
 
-  // SPRINT 2: Exact CEO Flow Mapping
+  // SPRINT 3: Exact Flow Mapping from the new handler.py
   const styles = [
-    { id: "getnice_hybrid", name: "GetNice Hybrid Triplet" },
-    { id: "drill", name: "NY Drill" },
-    { id: "boom_bap", name: "Boom Bap" },
-    { id: "melodic_trap", name: "Melodic Trap" },
-    { id: "chopper", name: "Chopper (Fast)" }
+    { id: "getnice_hybrid", name: "GetNice Hybrid" },
+    { id: "heartbeat", name: "Heartbeat (Boom-Bap)" },
+    { id: "lazy", name: "Lazy (Wavy/Delayed)" },
+    { id: "triplet", name: "Triplet (Trap)" },
+    { id: "chopper", name: "Chopper (Fast/Tech)" }
   ];
 
   // RESTORED: BLUEPRINT MATH LOGIC
@@ -43,9 +43,13 @@ export default function Room03_Ghostwriter() {
   };
 
   const handleGenerate = async () => {
+    if (!userSession?.id) return addToast("Security Exception: User Session missing.", "error");
+    if (!gwPrompt.trim()) return addToast("Missing thematic directive.", "error");
+    if (!audioData) return addToast("Instrumental DSP data missing. Return to Room 01.", "error");
+
     setIsGenerating(true);
     setPollingAttempts(0);
-    setUxState("Initializing Secure API Handshake...");
+    setUxState("Securing JWT Token & Matrix Alignment...");
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -56,11 +60,14 @@ export default function Room03_Ghostwriter() {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           userId: userSession?.id,
           prompt: gwPrompt,
+          title: gwTitle,
+          bpm: audioData?.bpm,
+          key: audioData?.key, 
           stageName: userSession?.stageName, 
           tag: flowDNA?.tag,
           style: gwStyle,
@@ -322,11 +329,11 @@ export default function Room03_Ghostwriter() {
           )}
         </div>
 
-        {/* Micro-Refinement Tray */}
+        {/* Micro-Refinement Tray Popup */}
         <div className={`absolute bottom-0 left-0 w-full bg-black border-t border-[#E60000] p-6 transition-transform duration-300 ${selectedLine ? 'translate-y-0' : 'translate-y-full'}`}>
           <div className="flex justify-between items-center mb-4">
              <h4 className="font-oswald text-sm text-[#E60000] uppercase tracking-widest font-bold flex items-center gap-2"><Edit3 size={14} /> Micro-Refinement</h4>
-             <button onClick={() => setSelectedLine("")} className="text-[#555] hover:text-white text-[10px] font-mono uppercase">Close [X]</button>
+             <button onClick={() => setSelectedLine("")} className="text-[#555] hover:text-white text-[10px] font-mono uppercase tracking-widest">Close [X]</button>
           </div>
           <p className="text-xs font-mono text-gray-400 mb-4 bg-[#111] p-3 border border-[#333] italic">"{selectedLine}"</p>
           <div className="flex gap-3">
@@ -343,6 +350,7 @@ export default function Room03_Ghostwriter() {
              </button>
           </div>
         </div>
+
       </div>
     </div>
   );

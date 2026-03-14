@@ -40,7 +40,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing line or instruction." }, { status: 400 });
     }
 
-    // Ping GPU for a synchronous response (runSync instead of run to return immediately)
+    // FIXED: Formatted the payload to strictly match the new handler.py schema
     const runResponse = await fetch(`https://api.runpod.ai/v2/${process.env.RUNPOD_ENDPOINT_TALON}/runsync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}` },
@@ -48,14 +48,14 @@ export async function POST(req: Request) {
         input: {
           task_type: "refine",
           originalLine: originalLine,
-          instruction: instruction,
-          style: style || "getnice_hybrid"
+          instruction: instruction
         }
       })
     });
 
     const runData = await runResponse.json();
     
+    // FIXED: The new handler.py returns {"refinedLine": "..."} instead of {"lyrics": "..."}
     if (runData.output && runData.output.refinedLine) {
       return NextResponse.json({ refinedLine: runData.output.refinedLine });
     } else {

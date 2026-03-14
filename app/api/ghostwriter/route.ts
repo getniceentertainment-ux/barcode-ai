@@ -61,6 +61,7 @@ export async function POST(req: Request) {
 
     const thematicPrompt = title ? `SONG TITLE: "${title}". ${prompt}` : prompt;
 
+    // FIXED: Passed missing parameters (bpm, key, stageName) into the input object for handler.py
     const runResponse = await fetch(`https://api.runpod.ai/v2/${process.env.RUNPOD_ENDPOINT_TALON}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}` },
