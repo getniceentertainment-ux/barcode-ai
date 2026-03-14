@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Layout, ShieldCheck, Cpu, Activity, ArrowRight, Info } from "lucide-react";
+import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Layout, ShieldCheck, Cpu, Activity, ArrowRight } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -17,7 +17,6 @@ export default function Room03_Ghostwriter() {
   const [pollingAttempts, setPollingAttempts] = useState(0);
   const [uxState, setUxState] = useState("Initializing Secure API Handshake...");
   
-  // Micro-Refinement State
   const [isRefining, setIsRefining] = useState(false);
   const [refineInstruction, setRefineInstruction] = useState("");
   const [selectedLine, setSelectedLine] = useState("");
@@ -155,32 +154,6 @@ export default function Room03_Ghostwriter() {
     }
   };
 
-  // --- TELEPROMPTER PARSER ---
-  // Transforms the raw syntax into a highly visual, color-coded rhythm map
-  const renderLyricLine = (line: string) => {
-    if (line.startsWith('[')) return line; // Headers handled in the main map
-
-    // Split by the forward slash and the immediate word/syllable following it
-    const parts = line.split(/(\/\s*[a-zA-Z0-9'-]+)/g);
-    
-    return (
-      <>
-        {parts.map((part, index) => {
-          if (part.startsWith('/')) {
-            const word = part.substring(1).trim();
-            return (
-              <span key={index}>
-                <span className="text-[#00FFCC] font-bold mx-[2px] select-none text-lg leading-none drop-shadow-[0_0_8px_rgba(0,255,204,0.8)]">/</span>
-                <span className="text-white font-extrabold">{word}</span>
-              </span>
-            );
-          }
-          return <span key={index} className="text-gray-400">{part}</span>;
-        })}
-      </>
-    );
-  };
-
   return (
     <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500">
       
@@ -264,7 +237,7 @@ export default function Room03_Ghostwriter() {
       {/* RIGHT COL: BLUEPRINT VISUALIZER & LYRICS */}
       <div className="flex-1 flex flex-col relative bg-[#020202] overflow-hidden">
         
-        {/* HEADER: BLUEPRINT DETAILS */}
+        {/* HEADER */}
         <div className="h-16 border-b border-[#222] bg-[#0a0a0a] flex items-center justify-between px-8 shrink-0">
            <h3 className="font-oswald text-lg uppercase tracking-widest text-[#888] flex items-center gap-3">
              <Layout size={16} /> Song Blueprint <span className="text-[#333]">|</span> <span className="text-[#E60000] text-sm">{calculateTotalBars()} Bars Target</span>
@@ -275,7 +248,7 @@ export default function Room03_Ghostwriter() {
            </div>
         </div>
 
-        {/* BLUEPRINT BLOCK BUILDER SCROLLBAR */}
+        {/* BLUEPRINT BLOCK BUILDER */}
         <div className="h-40 bg-black border-b border-[#222] overflow-x-auto flex items-center px-8 gap-4 shrink-0 custom-scrollbar shadow-[inset_0_-10px_20px_rgba(0,0,0,0.5)]">
           {blueprint.map((block, index) => (
             <div key={block.id} className="w-36 shrink-0 bg-[#050505] border border-[#333] p-4 flex flex-col justify-between h-24 group relative hover:border-[#E60000] transition-colors">
@@ -309,7 +282,7 @@ export default function Room03_Ghostwriter() {
           ) : lyrics ? (
             <div className="max-w-2xl mx-auto space-y-2 pb-32">
               
-              <div className="flex items-center justify-between border-b border-[#222] pb-6 mb-6">
+              <div className="flex items-center justify-between border-b border-[#222] pb-6 mb-8">
                 <div>
                   <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white glow-red">{gwTitle || "UNTITLED ARTIFACT"}</h3>
                   <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest mt-2 flex items-center gap-2">
@@ -319,35 +292,22 @@ export default function Room03_Ghostwriter() {
                 <Cpu size={32} className="text-[#E60000] opacity-50" />
               </div>
 
-              {/* NEW: TELEPROMPTER LEGEND */}
-              <div className="bg-[#0a0a0a] border border-[#222] p-4 mb-8 rounded-md flex flex-col gap-3 shadow-lg">
-                <h4 className="text-[#E60000] font-oswald uppercase tracking-widest text-xs font-bold flex items-center gap-2">
-                  <Info size={14} /> BPM Architect Teleprompter Guide
-                </h4>
-                <div className="flex flex-wrap gap-x-6 gap-y-2 text-[10px] font-mono uppercase tracking-widest text-[#888]">
-                  <span className="flex items-center gap-2"><span className="text-[#00FFCC] font-bold text-sm drop-shadow-[0_0_5px_rgba(0,255,204,0.8)]">/</span> = Metronome Downbeat</span>
-                  <span className="flex items-center gap-2"><span className="text-white font-bold bg-[#111] px-1 rounded">WHITE TEXT</span> = Stressed Syllable (Hit this on the beat)</span>
-                  <span className="flex items-center gap-2"><span className="text-gray-500">GRAY TEXT</span> = Pocket / In-between beats</span>
-                </div>
-              </div>
-
-              {/* RENDERED LYRICS */}
-              <div className="space-y-3">
-                {lyrics.split('\n').map((line, i) => {
-                  const isHeader = line.startsWith('[');
-                  return (
-                    <div 
-                      key={i} 
-                      onClick={() => !isHeader && setSelectedLine(line)}
-                      className={`transition-all ${!isHeader && 'cursor-pointer hover:bg-[#111] p-2 rounded -mx-2'}`}
-                    >
-                      <p className={`font-mono text-[15px] leading-relaxed ${isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : ''} ${selectedLine === line ? 'bg-[#E60000]/10 border-l-2 border-[#E60000] pl-3' : ''}`}>
-                        {isHeader ? line : renderLyricLine(line)}
-                      </p>
-                    </div>
-                  )
-                })}
-              </div>
+              {/* RENDERED TEXT: Simple Stacked View */}
+              {lyrics.split('\n').map((line, i) => {
+                const isHeader = line.startsWith('[');
+                return (
+                  <p 
+                    key={i} 
+                    onClick={() => !isHeader && setSelectedLine(line)}
+                    className={`font-mono text-sm transition-all
+                      ${isHeader ? 'text-[#E60000] font-bold mt-8 mb-4 tracking-widest text-xs' : 'text-gray-300 hover:text-white cursor-pointer hover:bg-[#111] p-1 rounded'}
+                      ${selectedLine === line ? 'bg-[#E60000]/20 border-l-2 border-[#E60000] pl-3 text-white font-bold' : ''}
+                    `}
+                  >
+                    {line}
+                  </p>
+                )
+              })}
 
               <div className="pt-12 flex justify-end">
                 <button onClick={() => setActiveRoom("04")} className="bg-white text-black px-8 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center gap-2">
