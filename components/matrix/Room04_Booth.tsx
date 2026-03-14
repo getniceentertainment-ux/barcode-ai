@@ -6,16 +6,20 @@ import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 
 // Helper to convert raw Float32 Worklet PCM to a standard WAV Blob
+function encodeWAV(samples: Float32Array, sampleRate: number) {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
+  
   const writeString = (view: DataView, offset: number, string: string) => {
     for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
   };
+
   writeString(view, 0, 'RIFF'); view.setUint32(4, 36 + samples.length * 2, true);
   writeString(view, 8, 'WAVE'); writeString(view, 12, 'fmt '); view.setUint32(16, 16, true);
   view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true);
   view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
   writeString(view, 36, 'data'); view.setUint32(40, samples.length * 2, true);
+
   let offset = 44;
   for (let i = 0; i < samples.length; i++, offset += 2) {
     let s = Math.max(-1, Math.min(1, samples[i]));
@@ -31,49 +35,83 @@ export default function Room04_Booth() {
   const [isRecording, setIsRecording] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean}[]>([]);
+  
+  // PRO-DAW: Stem Muting State
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
 
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
+  
+  // Hardware Audio Refs
   const audioCtxRef = useRef<AudioContext | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Float32Array[]>([]);
 
+  // 1. WAVEFORM INITIALIZATION
   useEffect(() => {
     if (waveformRef.current && audioData?.url && !wavesurferRef.current) {
       wavesurferRef.current = WaveSurfer.create({
         container: waveformRef.current, waveColor: '#333333', progressColor: '#E60000',
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+        cursorColor: '#ffffff', barWidth: 2, barGap: 1, barRadius: 2, height: 80, normalize: true,
       });
+      
       wavesurferRef.current.load(audioData.url);
       
-      wavesurferRef.current.on('audioprocess', (time) => setCurrentTime(time));
-
-      // THE FIX: Sync all stems instantly when the user clicks the timeline to Punch-In
-      wavesurferRef.current.on('interaction', (newTime) => {
-         setCurrentTime(newTime);
-         vocalStems.forEach(stem => {
-            const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
-            if (el) el.currentTime = newTime;
-         });
+      wavesurferRef.current.on('audioprocess', (time) => {
+        setCurrentTime(time);
       });
 
-      wavesurferRef.current.on('finish', () => stopEverything());
-    }
-    return () => {
-      if (wavesurferRef.current) { wavesurferRef.current.destroy(); wavesurferRef.current = null; }
-    };
-  }, [audioData, vocalStems]);
+      wavesurferRef.current.on('seek' as any, (progress: any) => {
+        const duration = wavesurferRef.current?.getDuration() || 0;
+        const time = progress * duration;
+        setCurrentTime(time);
+        window.dispatchEvent(new CustomEvent('booth-seek', { detail: time }));
+      });
 
+      wavesurferRef.current.on('finish', () => {
+        window.dispatchEvent(new Event('booth-finish'));
+      });
+    }
+    
+    return () => {
+      if (wavesurferRef.current) {
+        wavesurferRef.current.destroy();
+        wavesurferRef.current = null;
+      }
+    };
+  }, [audioData]);
+
+  // 2. SYNCHRONIZATION LISTENERS
+  useEffect(() => {
+    const handleSeek = (e: any) => {
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) el.currentTime = e.detail;
+      });
+    };
+    const handleFinish = () => stopEverything();
+    
+    window.addEventListener('booth-seek', handleSeek);
+    window.addEventListener('booth-finish', handleFinish);
+    
+    return () => {
+      window.removeEventListener('booth-seek', handleSeek);
+      window.removeEventListener('booth-finish', handleFinish);
+    };
+  }); 
+
+  // HARDWARE CLEANUP
   useEffect(() => {
     return () => {
-      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') audioCtxRef.current.close();
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+         audioCtxRef.current.close();
+      }
       mediaStreamRef.current?.getTracks().forEach(t => t.stop());
     };
   }, []);
 
+  // TELEPROMPTER MATH
   useEffect(() => {
     if (!generatedLyrics) return;
     const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5; 
@@ -89,30 +127,10 @@ export default function Room04_Booth() {
     setLyricLines(parsed);
   }, [generatedLyrics, audioData]);
 
-  const togglePlayback = () => {
-    if (!wavesurferRef.current) return;
-    const willPlay = !isPlaying;
-    setIsPlaying(willPlay);
-    const currentWS_Time = wavesurferRef.current.getCurrentTime();
-
-    if (willPlay) {
-      wavesurferRef.current.play();
-      vocalStems.forEach(stem => {
-  const toggleMute = (id: string) => {
-    setMutedStems(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   // --- TELEPROMPTER PARSER ---
-  // Transforms the raw syntax into a highly visual, color-coded rhythm map
   const renderLyricLine = (line: string, isActive: boolean) => {
-    if (line.startsWith('[')) return line; // Headers handled in the main map
+    if (line.startsWith('[')) return line; 
 
-    // Split by the forward slash and the immediate word/syllable following it
     const parts = line.split(/(\/\s*[a-zA-Z0-9'-]+)/g);
     
     return (
@@ -127,11 +145,164 @@ export default function Room04_Booth() {
               </span>
             );
           }
-          // When the line is active, brighten the pocket syllables slightly so they are easier to read
           return <span key={index} className={isActive ? "text-gray-200" : "text-gray-500"}>{part}</span>;
         })}
       </>
     );
+  };
+
+  // PRO-DAW: Master Playback Controller
+  const togglePlayback = () => {
+    if (!wavesurferRef.current) return;
+    
+    const willPlay = !isPlaying;
+    setIsPlaying(willPlay);
+
+    const currentWS_Time = wavesurferRef.current.getCurrentTime();
+
+    if (willPlay) {
+      wavesurferRef.current.play();
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) {
+          el.currentTime = currentWS_Time; 
+          el.play().catch(e => console.error("Stem play error:", e));
+        }
+      });
+    } else {
+      wavesurferRef.current.pause();
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) el.pause();
+      });
+    }
+  };
+
+  const stopEverything = () => {
+    if (wavesurferRef.current) {
+      wavesurferRef.current.pause();
+      wavesurferRef.current.seekTo(0);
+    }
+    
+    vocalStems.forEach(stem => {
+      const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+      if (el) {
+        el.pause();
+        el.currentTime = 0;
+      }
+    });
+
+    if (isRecording && workletNodeRef.current && audioCtxRef.current) {
+      workletNodeRef.current.disconnect();
+      mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+      
+      const totalLength = recordedChunksRef.current.reduce((acc, val) => acc + val.length, 0);
+      const merged = new Float32Array(totalLength);
+      let offset = 0;
+      for (let chunk of recordedChunksRef.current) {
+        merged.set(chunk, offset);
+        offset += chunk.length;
+      }
+      
+      const wavBlob = encodeWAV(merged, audioCtxRef.current.sampleRate);
+      addVocalStem({
+        id: `TAKE_${Date.now()}`,
+        type: vocalStems.length === 0 ? "Lead" : "Adlib", 
+        url: URL.createObjectURL(wavBlob),
+        blob: wavBlob,
+        volume: 0 
+      });
+
+      audioCtxRef.current.close();
+      audioCtxRef.current = null;
+      workletNodeRef.current = null;
+      mediaStreamRef.current = null;
+    }
+
+    setIsPlaying(false);
+    setIsRecording(false);
+    setCurrentTime(0);
+  };
+
+  const startHardwareRecording = async () => {
+    try {
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        await audioCtxRef.current.close();
+      }
+
+      const sampleRate = 44100;
+      const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
+
+      const LATENCY_OFFSET = 0.15; 
+      let padTime = currentWS_Time - LATENCY_OFFSET;
+      if (padTime < 0) padTime = 0;
+
+      const silentSamplesCount = Math.floor(padTime * sampleRate);
+      const silenceChunk = new Float32Array(silentSamplesCount); 
+      recordedChunksRef.current = [silenceChunk]; 
+
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+      });
+      mediaStreamRef.current = stream;
+
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate });
+      audioCtxRef.current = audioCtx;
+
+      const workletCode = `
+        class RecorderWorklet extends AudioWorkletProcessor {
+          process(inputs, outputs, parameters) {
+            if (inputs[0] && inputs[0].length > 0) {
+              const channelData = inputs[0][0]; 
+              this.port.postMessage(channelData);
+            }
+            return true;
+          }
+        }
+        registerProcessor('recorder-worklet', RecorderWorklet);
+      `;
+      const blob = new Blob([workletCode], { type: 'application/javascript' });
+      await audioCtx.audioWorklet.addModule(URL.createObjectURL(blob));
+
+      const source = audioCtx.createMediaStreamSource(stream);
+      const workletNode = new AudioWorkletNode(audioCtx, 'recorder-worklet');
+      workletNodeRef.current = workletNode;
+
+      workletNode.port.onmessage = (e) => {
+        recordedChunksRef.current.push(new Float32Array(e.data));
+      };
+
+      source.connect(workletNode);
+      workletNode.connect(audioCtx.destination); 
+
+      if (wavesurferRef.current) {
+        wavesurferRef.current.play();
+      }
+      
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) {
+          el.currentTime = currentWS_Time; 
+          el.play().catch(e => console.error("Stem play error:", e));
+        }
+      });
+      
+      setIsRecording(true);
+      setIsPlaying(true);
+      
+    } catch (err) {
+      console.error("Hardware Mic Access Denied:", err);
+      alert("Hardware microphone access is required for zero-latency tracking.");
+    }
+  };
+
+  const toggleMute = (id: string) => {
+    setMutedStems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   return (
@@ -220,12 +391,14 @@ export default function Room04_Booth() {
 
         <div className="bg-[#050505] p-6 border-b border-[#222]">
            <div className="flex justify-between items-center mb-4">
-             <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest">Click Waveform to Punch In</p>
+             <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest">Instrumental Waveform</p>
+             {isRecording && <p className="text-[10px] text-green-500 font-mono uppercase tracking-widest animate-pulse border border-green-500/30 px-2 py-0.5 bg-green-500/10">AudioWorklet Bypass Active</p>}
            </div>
            <div ref={waveformRef} className="w-full bg-black border border-[#111] rounded-lg overflow-hidden cursor-pointer hover:border-[#E60000] transition-colors"></div>
         </div>
 
         <div className="flex-1 bg-black flex flex-col items-center justify-center relative overflow-hidden">
+          <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#E60000 1px, transparent 1px), linear-gradient(90deg, #E60000 1px, transparent 1px)', backgroundSize: '100px 100px', transform: 'perspective(500px) rotateX(60deg) translateY(-100px) translateZ(-200px)' }}></div>
           {isRecording && (
             <div className="text-center z-10 animate-in zoom-in">
               <Activity size={80} className="text-[#E60000] animate-bounce mx-auto mb-4" />
