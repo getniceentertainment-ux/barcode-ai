@@ -18,7 +18,6 @@ export default function Room01_Lab() {
   const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([]);
 
   useEffect(() => {
-    // 1. DYNAMICALLY FETCH MARKETPLACE BEATS
     const fetchMarketplaceBeats = async () => {
       try {
         const { data, error } = await supabase.storage.from('marketplace_beats').list();
@@ -49,7 +48,6 @@ export default function Room01_Lab() {
     
     fetchMarketplaceBeats();
 
-    // 2. CHECK FOR COMPLETED STRIPE PURCHASES
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('beat_purchased') === 'true') {
@@ -146,23 +144,44 @@ export default function Room01_Lab() {
       const token = session?.access_token;
       if (!token) throw new Error("Security Exception: Missing Session Token.");
 
-      // MDX NEURAL SEPARATION (Stem Extraction)
+      // 🚨 THE ANTI-TIMEOUT FIX: Client-Side MDX Polling
       if (useDemucs) {
         setStatus("separating");
-        const mdxRes = await fetch('/api/demucs', {
+        
+        // 1. Start the Job
+        const mdxInitRes = await fetch('/api/demucs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ file_url: currentCloudUrl })
         });
         
-        const mdxData = await mdxRes.json();
-        if (!mdxRes.ok) {
+        const initData = await mdxInitRes.json();
+        if (!mdxInitRes.ok) {
            await supabase.storage.from('audio_raw').remove([filePath]);
-           throw new Error(mdxData.error || "MDX Separation Failed");
+           throw new Error(initData.error || "MDX Separation Failed to initialize.");
         }
         
-        currentCloudUrl = mdxData.instrumental_url || currentCloudUrl;
-        if(addToast) addToast("MDX Separation Complete. Instrumental isolated.", "success");
+        const jobId = initData.jobId;
+        let isCompleted = false;
+        
+        // 2. Poll the Job every 5 seconds indefinitely until it finishes
+        while (!isCompleted) {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          const pollRes = await fetch(`/api/demucs?jobId=${jobId}`);
+          const pollData = await pollRes.json();
+
+          if (pollData.status === "COMPLETED") {
+             isCompleted = true;
+             // Extract the clean instrumental URL from the RunPod output
+             const stems = pollData.output?.stems || {};
+             currentCloudUrl = stems.instrumental || currentCloudUrl;
+             if(addToast) addToast("MDX Separation Complete. Instrumental isolated.", "success");
+          } else if (pollData.status === "FAILED") {
+             await supabase.storage.from('audio_raw').remove([filePath]);
+             throw new Error("RunPod MDX GPU Execution Failed.");
+          }
+          // If status is "IN_PROGRESS" or "IN_QUEUE", the loop simply repeats.
+        }
       }
 
       setStatus("analyzing");
@@ -198,7 +217,7 @@ export default function Room01_Lab() {
       }, 500);
 
     } catch (err: any) {
-      console.error("DSP Pipeline Error:", err);
+      console.error("DSP/MDX Pipeline Error:", err);
       if(addToast) addToast(err.message || "Error processing audio.", "error");
       setStatus("idle");
     }
