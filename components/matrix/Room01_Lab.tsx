@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { UploadCloud, DollarSign, Loader2, CheckCircle2, AlertTriangle, ShieldCheck, Scale } from "lucide-react";
+import { UploadCloud, DollarSign, Loader2, CheckCircle2, AlertTriangle, ShieldCheck, Scale, Activity, Zap } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -9,13 +9,12 @@ export default function Room01_Lab() {
   const { audioData, setAudioData, setActiveRoom, userSession, addToast } = useMatrixStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">(audioData ? "success" : "idle");
+  const [status, setStatus] = useState<"idle" | "uploading" | "separating" | "analyzing" | "success">(audioData ? "success" : "idle");
   const [purchasingBeat, setPurchasingBeat] = useState<string | null>(null);
   
-  // NEW: Anti-Piracy Legal Screener
   const [legalConsent, setLegalConsent] = useState(false);
+  const [useDemucs, setUseDemucs] = useState(false);
   
-  // Start with an empty array, we will populate this from Supabase
   const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([]);
 
   useEffect(() => {
@@ -29,14 +28,13 @@ export default function Room01_Lab() {
           const fetchedBeats = data
             .filter(file => file.name.endsWith('.mp3') || file.name.endsWith('.wav'))
             .map(file => {
-              // Algorithmic Pricing: Extracts BPM from filename (e.g., Beat_140BPM.mp3)
               const bpmMatch = file.name.match(/_?(\d+)\s*BPM/i);
               const bpm = bpmMatch ? parseInt(bpmMatch[1]) : 120;
               
               let calculatedPrice = 29.99;
-              if (bpm >= 140) calculatedPrice = 149.99; // Premium Drill
-              else if (bpm >= 125) calculatedPrice = 99.99; // Premium Trap
-              else if (bpm >= 110) calculatedPrice = 49.99; // Standard
+              if (bpm >= 140) calculatedPrice = 149.99; 
+              else if (bpm >= 125) calculatedPrice = 99.99; 
+              else if (bpm >= 110) calculatedPrice = 49.99; 
 
               const { data: urlData } = supabase.storage.from('marketplace_beats').getPublicUrl(file.name);
               return { name: file.name, url: urlData.publicUrl, price: calculatedPrice };
@@ -75,15 +73,12 @@ export default function Room01_Lab() {
 
       const res = await fetch('/api/dsp', { 
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Authorization': `Bearer ${token}` 
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ file_url: fileUrl, userId: userSession?.id }) 
       });
       
       const analysis = await res.json();
-      if (!res.ok) throw new Error(analysis.error || `DSP Processing failed (Status ${res.status})`);
+      if (!res.ok) throw new Error(analysis.error || `DSP Processing failed`);
       
       setAudioData({
         url: fileUrl,
@@ -114,7 +109,7 @@ export default function Room01_Lab() {
     if (!file || !userSession?.id) return;
     
     if (!legalConsent) {
-      if(addToast) addToast("You must accept the DMCA Liability Waiver to proceed.", "error");
+      if(addToast) addToast("You must accept the Anti-Piracy Liability Waiver to proceed.", "error");
       return;
     }
 
@@ -135,8 +130,9 @@ export default function Room01_Lab() {
       const { data: profile, error: profileError } = await supabase.from('profiles').select('credits, tier').eq('id', userSession.id).single();
       if (profileError || !profile) throw new Error("Could not verify identity in ledger.");
       
-      if (profile.tier !== 'The Mogul' && profile.credits < 1) {
-        throw new Error("Insufficient Credits. Upgrade your tier to execute this operation.");
+      const requiredCredits = useDemucs ? 2 : 1; 
+      if (profile.tier !== 'The Mogul' && profile.credits < requiredCredits) {
+        throw new Error(`Insufficient Credits. This operation requires ${requiredCredits} generations.`);
       }
 
       const filePath = `${userSession.id}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
@@ -144,28 +140,44 @@ export default function Room01_Lab() {
       if (uploadError) throw uploadError;
 
       const { data: publicUrlData } = supabase.storage.from('audio_raw').getPublicUrl(filePath);
-      const currentCloudUrl = publicUrlData.publicUrl;
+      let currentCloudUrl = publicUrlData.publicUrl;
 
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if (!token) throw new Error("Security Exception: Missing Session Token. Please log in.");
+      if (!token) throw new Error("Security Exception: Missing Session Token.");
+
+      // MDX NEURAL SEPARATION (Stem Extraction)
+      if (useDemucs) {
+        setStatus("separating");
+        const mdxRes = await fetch('/api/demucs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ file_url: currentCloudUrl })
+        });
+        
+        const mdxData = await mdxRes.json();
+        if (!mdxRes.ok) {
+           await supabase.storage.from('audio_raw').remove([filePath]);
+           throw new Error(mdxData.error || "MDX Separation Failed");
+        }
+        
+        currentCloudUrl = mdxData.instrumental_url || currentCloudUrl;
+        if(addToast) addToast("MDX Separation Complete. Instrumental isolated.", "success");
+      }
 
       setStatus("analyzing");
       
       const res = await fetch('/api/dsp', { 
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify({ file_url: currentCloudUrl, userId: userSession.id }) 
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ file_url: currentCloudUrl }) 
       });
       
       const analysis = await res.json();
 
       if (!res.ok) {
         await supabase.storage.from('audio_raw').remove([filePath]);
-        throw new Error(analysis.error || `DSP Processing failed (Status ${res.status})`);
+        throw new Error(analysis.error || `DSP Processing failed`);
       }
       
       setAudioData({
@@ -198,20 +210,11 @@ export default function Room01_Lab() {
       const res = await fetch('/api/stripe/beat-lease', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          beatName: beat.name,
-          beatUrl: beat.url,
-          price: beat.price,
-          userId: userSession?.id
-        })
+        body: JSON.stringify({ beatName: beat.name, beatUrl: beat.url, price: beat.price, userId: userSession?.id })
       });
-
       const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        throw new Error(data.error || "Failed to initialize Stripe Checkout.");
-      }
+      if (data.url) window.location.href = data.url;
+      else throw new Error(data.error || "Failed to initialize Stripe Checkout.");
     } catch (err: any) {
       console.error("Purchase Error:", err);
       if(addToast) addToast("Checkout failed: " + err.message, "error");
@@ -222,8 +225,9 @@ export default function Room01_Lab() {
   return (
     <div className="max-w-6xl mx-auto h-full grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
       
+      {/* LEFT COL: INJECTION DROPZONE */}
       <div className="lg:col-span-2 flex flex-col justify-center">
-        <div className={`border-2 transition-all group rounded-lg text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[400px]
+        <div className={`border-2 transition-all group rounded-lg text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[450px]
           ${status === 'idle' ? 'border-[#222] bg-[#050505]' : 'border-[#E60000] bg-[#110000] border-solid'}`}>
           
           {status === 'analyzing' && <div className="absolute inset-0 bg-[#E60000]/10 animate-pulse pointer-events-none" />}
@@ -231,7 +235,12 @@ export default function Room01_Lab() {
           {status === 'idle' && (
             <div className="w-full h-full flex flex-col items-center justify-center p-10 relative">
               
-              {/* THE LEGAL SCREENER UI */}
+              <div className="absolute top-4 right-4 bg-[#111] border border-[#333] px-3 py-1 flex items-center gap-2 rounded-full">
+                <Zap size={12} className="text-[#E60000]" />
+                <span className="text-[9px] font-mono uppercase tracking-widest text-[#888]">Cost: {useDemucs ? '2 Credits' : '1 Credit'}</span>
+              </div>
+
+              {/* ANTI-PIRACY & LIABILITY WAIVER */}
               <div className="absolute bottom-0 left-0 w-full bg-[#0a0a0a] border-t border-[#222] p-4 flex items-start gap-3 text-left">
                 <input 
                   type="checkbox" 
@@ -242,20 +251,35 @@ export default function Room01_Lab() {
                 />
                 <label htmlFor="legal-consent" className="cursor-pointer">
                   <span className="flex items-center gap-2 text-[10px] font-bold text-[#E60000] uppercase tracking-widest mb-1">
-                    <Scale size={12} /> Audio Clearance & Liability Waiver
+                    <Scale size={12} /> Audio Clearance & Anti-Piracy Waiver
                   </span>
                   <span className="text-[9px] font-mono text-[#888] uppercase leading-relaxed block">
-                    By checking this box, I confirm this audio is either an authorized GetNice Marketplace lease or an independently cleared instrumental. I assume full legal and financial liability for any unauthorized copyright material.
+                    By checking this box, I confirm this audio is either an authorized Marketplace lease or independently cleared. I assume full legal and financial liability for any unauthorized copyright material or illicit stem extraction (vocals/beats). GetNice Records is strictly a platform and assumes zero liability for user piracy.
                   </span>
                 </label>
               </div>
 
-              <label className={`flex flex-col items-center mb-16 transition-opacity duration-300 ${!legalConsent ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer hover:text-[#E60000]'}`}>
+              <label className={`flex flex-col items-center mb-24 transition-opacity duration-300 ${!legalConsent ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer hover:text-[#E60000]'}`}>
                 <UploadCloud size={64} className={`mx-auto mb-6 transition-colors relative z-10 ${legalConsent ? 'text-[#555] group-hover:text-[#E60000]' : 'text-[#222]'}`} />
-                <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold relative z-10 text-white">INJECT RAW AUDIO</h2>
-                <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest relative z-10">Instrumentals Only // Max 20MB</p>
+                <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold relative z-10 text-white group-hover:text-[#E60000] transition-colors">INJECT RAW AUDIO</h2>
+                <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest relative z-10 mb-6">Max 20MB // WAV or MP3</p>
                 <input type="file" className="hidden" onChange={handleFileUpload} accept="audio/*" ref={fileInputRef} disabled={!legalConsent} />
               </label>
+
+              {/* MDX Separation Toggle */}
+              <div className={`absolute bottom-[110px] flex items-center gap-3 border px-4 py-3 rounded group transition-colors ${legalConsent ? 'border-[#222] bg-[#0a0a0a] hover:border-[#E60000]' : 'border-[#111] bg-black opacity-30 cursor-not-allowed'}`}>
+                <input
+                  type="checkbox"
+                  id="mdx-toggle"
+                  checked={useDemucs}
+                  onChange={(e) => setUseDemucs(e.target.checked)}
+                  disabled={!legalConsent}
+                  className="accent-[#E60000] w-4 h-4 cursor-pointer"
+                />
+                <label htmlFor="mdx-toggle" className={`text-[10px] font-mono uppercase tracking-widest transition-colors ${legalConsent ? 'text-[#888] cursor-pointer group-hover:text-white' : 'text-[#333]'}`}>
+                  Enable MDX Stem Split (Extract Beat / Isolate Vocals)
+                </label>
+              </div>
 
             </div>
           )}
@@ -265,6 +289,14 @@ export default function Room01_Lab() {
               <UploadCloud size={64} className="mx-auto mb-6 text-[#E60000] animate-bounce" />
               <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">UPLOADING...</h2>
               <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest">Transmitting to Secure Supabase Bucket</p>
+            </div>
+          )}
+
+          {status === 'separating' && (
+            <div className="relative z-10 flex flex-col items-center pointer-events-none">
+              <Activity size={64} className="mx-auto mb-6 text-[#E60000] animate-pulse" />
+              <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">MDX NEURAL SPLIT</h2>
+              <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest">Deconstructing Audio into Master Stems...</p>
             </div>
           )}
 
@@ -304,7 +336,7 @@ export default function Room01_Lab() {
                 <button onClick={() => setActiveRoom("02")} className="w-full bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">
                   Advance to Brain Train
                 </button>
-                <button onClick={() => { setAudioData(null as any); setStatus("idle"); setLegalConsent(false); }} className="w-full border border-[#333] text-[#888] py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#111] hover:text-white transition-all">
+                <button onClick={() => { setAudioData(null as any); setStatus("idle"); setLegalConsent(false); setUseDemucs(false); }} className="w-full border border-[#333] text-[#888] py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#111] hover:text-white transition-all">
                   Analyze New Track
                 </button>
               </div>
@@ -313,6 +345,7 @@ export default function Room01_Lab() {
         </div>
       </div>
 
+      {/* RIGHT COL: MARKETPLACE */}
       <div className="bg-[#050505] border border-[#111] p-6 rounded-lg overflow-y-auto custom-scrollbar flex flex-col">
         <h3 className="font-oswald text-sm uppercase tracking-widest text-[#E60000] border-b border-[#222] pb-3 mb-4 font-bold flex items-center gap-2">
           <DollarSign size={16} /> Marketplace // Beats
