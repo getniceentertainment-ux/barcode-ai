@@ -6,7 +6,8 @@ import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
 export default function Room01_Lab() {
-  const { audioData, setAudioData, setActiveRoom, userSession, addToast } = useMatrixStore();
+  // THE FIX: Destructured addVocalStem so we can actually save your separated vocals!
+  const { audioData, setAudioData, setActiveRoom, userSession, addToast, addVocalStem } = useMatrixStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [status, setStatus] = useState<"idle" | "uploading" | "separating" | "analyzing" | "success">(audioData ? "success" : "idle");
@@ -69,14 +70,32 @@ export default function Room01_Lab() {
       const token = session?.access_token;
       if (!token) throw new Error("Security Exception: Missing Session Token. Please log in.");
 
-      const res = await fetch('/api/dsp', { 
+      const dspInitRes = await fetch('/api/dsp', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ file_url: fileUrl, userId: userSession?.id }) 
+        body: JSON.stringify({ file_url: fileUrl }) 
       });
       
-      const analysis = await res.json();
-      if (!res.ok) throw new Error(analysis.error || `DSP Processing failed`);
+      const dspInitData = await dspInitRes.json();
+      if (!dspInitRes.ok) throw new Error(dspInitData.error || `DSP Processing failed to start`);
+
+      const dspJobId = dspInitData.jobId;
+      let dspCompleted = false;
+      let analysis: any = null;
+
+      while (!dspCompleted) {
+         await new Promise(resolve => setTimeout(resolve, 3000));
+         const dspPollRes = await fetch(`/api/dsp?jobId=${dspJobId}`);
+         const dspPollData = await dspPollRes.json();
+
+         if (dspPollData.status === "COMPLETED") {
+            dspCompleted = true;
+            if (dspPollData.output?.error) throw new Error(`DSP Error: ${dspPollData.output.error}`);
+            analysis = dspPollData.output;
+         } else if (dspPollData.status === "FAILED") {
+            throw new Error("RunPod DSP GPU Execution Failed.");
+         }
+      }
       
       setAudioData({
         url: fileUrl,
@@ -144,11 +163,10 @@ export default function Room01_Lab() {
       const token = session?.access_token;
       if (!token) throw new Error("Security Exception: Missing Session Token.");
 
-      // 🚨 THE ANTI-TIMEOUT FIX: Client-Side MDX Polling
+      // 1. 🚨 MDX NEURAL SEPARATION POLLING
       if (useDemucs) {
         setStatus("separating");
         
-        // 1. Start the Job
         const mdxInitRes = await fetch('/api/demucs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -164,7 +182,6 @@ export default function Room01_Lab() {
         const jobId = initData.jobId;
         let isCompleted = false;
         
-        // 2. Poll the Job every 5 seconds indefinitely until it finishes
         while (!isCompleted) {
           await new Promise(resolve => setTimeout(resolve, 5000));
           const pollRes = await fetch(`/api/demucs?jobId=${jobId}`);
@@ -172,33 +189,66 @@ export default function Room01_Lab() {
 
           if (pollData.status === "COMPLETED") {
              isCompleted = true;
-             // Extract the clean instrumental URL from the RunPod output
+             
+             // Check if RunPod crashed internally despite saying "COMPLETED"
+             if (pollData.output?.error) throw new Error(`MDX Internal Error: ${pollData.output.error}`);
+
              const stems = pollData.output?.stems || {};
              currentCloudUrl = stems.instrumental || currentCloudUrl;
-             if(addToast) addToast("MDX Separation Complete. Instrumental isolated.", "success");
+             
+             // THE FIX: CAPTURE THE VOCALS!
+             if (stems.vocals && addVocalStem) {
+                 addVocalStem({
+                     id: `MDX_VOCAL_${Date.now()}`,
+                     type: 'Lead',
+                     url: stems.vocals,
+                     volume: 0.8
+                 });
+                 if(addToast) addToast("Vocals successfully isolated and sent to the Booth.", "success");
+             }
+             
           } else if (pollData.status === "FAILED") {
              await supabase.storage.from('audio_raw').remove([filePath]);
              throw new Error("RunPod MDX GPU Execution Failed.");
           }
-          // If status is "IN_PROGRESS" or "IN_QUEUE", the loop simply repeats.
         }
       }
 
+      // 2. 🚨 DSP ASYNC POLLING (Bypassing Vercel 10s Killswitch)
       setStatus("analyzing");
       
-      const res = await fetch('/api/dsp', { 
+      const dspInitRes = await fetch('/api/dsp', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ file_url: currentCloudUrl }) 
       });
       
-      const analysis = await res.json();
-
-      if (!res.ok) {
+      const dspInitData = await dspInitRes.json();
+      if (!dspInitRes.ok) {
         await supabase.storage.from('audio_raw').remove([filePath]);
-        throw new Error(analysis.error || `DSP Processing failed`);
+        throw new Error(dspInitData.error || `DSP Processing failed to start`);
+      }
+
+      const dspJobId = dspInitData.jobId;
+      let dspCompleted = false;
+      let analysis: any = null;
+
+      while (!dspCompleted) {
+         await new Promise(resolve => setTimeout(resolve, 3000));
+         const dspPollRes = await fetch(`/api/dsp?jobId=${dspJobId}`);
+         const dspPollData = await dspPollRes.json();
+
+         if (dspPollData.status === "COMPLETED") {
+            dspCompleted = true;
+            if (dspPollData.output?.error) throw new Error(`DSP Error: ${dspPollData.output.error}`);
+            analysis = dspPollData.output;
+         } else if (dspPollData.status === "FAILED") {
+            await supabase.storage.from('audio_raw').remove([filePath]);
+            throw new Error("RunPod DSP GPU Execution Failed.");
+         }
       }
       
+      // Store the exact, uncompressed instrumental URL that MDX generated
       setAudioData({
         url: currentCloudUrl,
         fileName: file.name,
