@@ -8,7 +8,6 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// 1. GET ROUTE: Required for Room 01 to poll the RunPod Job Status
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -19,7 +18,8 @@ export async function GET(req: Request) {
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_MDX;
 
     const statusRes = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/status/${jobId}`, {
-      headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` }
+      headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
+      cache: 'no-store' // THE FIX: Bypasses Next.js aggressive caching
     });
     
     return NextResponse.json(await statusRes.json());
@@ -28,10 +28,8 @@ export async function GET(req: Request) {
   }
 }
 
-// 2. POST ROUTE: Initiates the Async MDX Neural Split
 export async function POST(req: Request) {
   try {
-    // FORTRESS LOCKDOWN: CRYPTOGRAPHIC JWT VERIFICATION
     const authHeader = req.headers.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: "Security Exception: Missing Auth Token." }, { status: 401 });
@@ -49,7 +47,6 @@ export async function POST(req: Request) {
 
     if (!file_url) return NextResponse.json({ error: "Missing file_url" }, { status: 400 });
 
-    // CHECK LEDGER CREDITS
     const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('credits, tier')
@@ -67,7 +64,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Server missing RunPod MDX configuration." }, { status: 500 });
     }
 
-    // THE FIX: We pass the exact ".onnx" extension and use "/run" to bypass 90s timeouts
     const runResponse = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
@@ -75,7 +71,7 @@ export async function POST(req: Request) {
         input: {
           task_type: "separate",
           file_url: file_url,
-          model: "UVR-MDX-NET-Voc_FT.onnx", // <-- THE FATAL GPU ERROR FIX
+          model: "UVR-MDX-NET-Voc_FT.onnx",
           userId: user.id
         }
       })
@@ -84,12 +80,9 @@ export async function POST(req: Request) {
     const data = await runResponse.json();
 
     if (data.id) {
-      // Deduct toll
       if (profile.tier !== 'The Mogul') {
         await supabaseAdmin.from('profiles').update({ credits: profile.credits - 1 }).eq('id', user.id);
       }
-      
-      // Return Job ID to Room 01 so it can start polling!
       return NextResponse.json({ jobId: data.id });
     } else {
       throw new Error(data.error || "MDX Worker Failed to start");

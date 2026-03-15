@@ -8,7 +8,6 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// 1. GET ROUTE: Required for Room 01 to poll the DSP Job Status
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -19,7 +18,8 @@ export async function GET(req: Request) {
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP;
 
     const statusRes = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/status/${jobId}`, {
-      headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` }
+      headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
+      cache: 'no-store' // THE FIX: Bypasses Next.js aggressive caching
     });
     
     return NextResponse.json(await statusRes.json());
@@ -28,37 +28,46 @@ export async function GET(req: Request) {
   }
 }
 
-// 2. POST ROUTE: Initiates the Async DSP Analysis
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: "Security Exception: Missing Auth Token." }, { status: 401 });
+      return NextResponse.json({ error: "Security Exception: Missing or invalid Auth Token." }, { status: 401 });
     }
-
+    
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-
+    
     if (authError || !user) {
-      return NextResponse.json({ error: "Security Exception: Invalid Token." }, { status: 401 });
+      return NextResponse.json({ error: "Security Exception: Forged or Expired Token." }, { status: 401 });
     }
 
+    const userId = user.id;
     const body = await req.json();
     const { file_url } = body;
 
     if (!file_url) return NextResponse.json({ error: "Missing file_url" }, { status: 400 });
 
+    const { data: profile, error: dbError } = await supabaseAdmin
+      .from('profiles')
+      .select('credits, tier')
+      .eq('id', userId)
+      .single();
+
+    if (dbError || !profile) return NextResponse.json({ error: "Security Exception: Identity not found." }, { status: 401 });
+    if (profile.tier !== 'The Mogul' && profile.credits <= 0) return NextResponse.json({ error: "Insufficient Generations." }, { status: 403 });
+
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP;
 
-    if (!RUNPOD_API_KEY || !ENDPOINT_ID) {
-      return NextResponse.json({ error: "Server missing RunPod DSP configuration." }, { status: 500 });
-    }
+    if (!RUNPOD_API_KEY || !ENDPOINT_ID) return NextResponse.json({ error: "Server missing DSP config." }, { status: 500 });
 
-    // THE FIX: Use "/run" to bypass Vercel's 10-second timeout
     const runResponse = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/run`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${RUNPOD_API_KEY}`
+      },
       body: JSON.stringify({
         input: {
           task_type: "analyze",
@@ -70,10 +79,12 @@ export async function POST(req: Request) {
     const data = await runResponse.json();
 
     if (data.id) {
-      // Return Job ID to Room 01 so it can start polling
+      if (profile.tier !== 'The Mogul') {
+        await supabaseAdmin.from('profiles').update({ credits: profile.credits - 1 }).eq('id', userId);
+      }
       return NextResponse.json({ jobId: data.id });
     } else {
-      throw new Error(data.error || "DSP Worker Failed to start");
+      throw new Error(data.error || "DSP processing failed");
     }
 
   } catch (error: any) {

@@ -30,7 +30,8 @@ export async function GET(req: Request) {
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_TALON;
 
     const statusRes = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/status/${jobId}`, {
-      headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` }
+      headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
+      cache: 'no-store' // THE FIX
     });
     
     return NextResponse.json(await statusRes.json());
