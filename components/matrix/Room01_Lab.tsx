@@ -1,12 +1,11 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { UploadCloud, DollarSign, Loader2, CheckCircle2, AlertTriangle, ShieldCheck, Scale, Activity, Zap } from "lucide-react";
+import { UploadCloud, DollarSign, Loader2, CheckCircle2, ShieldCheck, Scale, Activity, Zap } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
 export default function Room01_Lab() {
-  // THE FIX: Destructured addVocalStem so we can actually save your separated vocals!
   const { audioData, setAudioData, setActiveRoom, userSession, addToast, addVocalStem } = useMatrixStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -73,7 +72,7 @@ export default function Room01_Lab() {
       const dspInitRes = await fetch('/api/dsp', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ file_url: fileUrl }) 
+        body: JSON.stringify({ file_url: fileUrl, userId: userSession?.id }) 
       });
       
       const dspInitData = await dspInitRes.json();
@@ -85,7 +84,7 @@ export default function Room01_Lab() {
 
       while (!dspCompleted) {
          await new Promise(resolve => setTimeout(resolve, 3000));
-         const dspPollRes = await fetch(`/api/dsp?jobId=${dspJobId}`);
+         const dspPollRes = await fetch(`/api/dsp?jobId=${dspJobId}&t=${Date.now()}`);
          const dspPollData = await dspPollRes.json();
 
          if (dspPollData.status === "COMPLETED") {
@@ -109,10 +108,13 @@ export default function Room01_Lab() {
       setStatus("success");
       if(addToast) addToast(`Purchase Verified: ${fileName} Secured.`, "success");
       
+      // Auto-Play & Auto-Route
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('matrix-global-seek', { detail: 0 }));
         window.dispatchEvent(new Event('matrix-global-play'));
       }, 500);
+
+      setTimeout(() => setActiveRoom("02"), 1500);
 
     } catch (err: any) {
       console.error("DSP Pipeline Error:", err);
@@ -184,19 +186,20 @@ export default function Room01_Lab() {
         
         while (!isCompleted) {
           await new Promise(resolve => setTimeout(resolve, 5000));
-          const pollRes = await fetch(`/api/demucs?jobId=${jobId}`);
+          const pollRes = await fetch(`/api/demucs?jobId=${jobId}&t=${Date.now()}`);
           const pollData = await pollRes.json();
 
           if (pollData.status === "COMPLETED") {
              isCompleted = true;
              
-             // Check if RunPod crashed internally despite saying "COMPLETED"
              if (pollData.output?.error) throw new Error(`MDX Internal Error: ${pollData.output.error}`);
 
              const stems = pollData.output?.stems || {};
+             
+             // Extract the Instrumental for the Audio Player
              currentCloudUrl = stems.instrumental || currentCloudUrl;
              
-             // THE FIX: CAPTURE THE VOCALS!
+             // CAPTURE THE VOCALS
              if (stems.vocals && addVocalStem) {
                  addVocalStem({
                      id: `MDX_VOCAL_${Date.now()}`,
@@ -214,7 +217,7 @@ export default function Room01_Lab() {
         }
       }
 
-      // 2. 🚨 DSP ASYNC POLLING (Bypassing Vercel 10s Killswitch)
+      // 2. 🚨 DSP ASYNC POLLING
       setStatus("analyzing");
       
       const dspInitRes = await fetch('/api/dsp', { 
@@ -235,7 +238,7 @@ export default function Room01_Lab() {
 
       while (!dspCompleted) {
          await new Promise(resolve => setTimeout(resolve, 3000));
-         const dspPollRes = await fetch(`/api/dsp?jobId=${dspJobId}`);
+         const dspPollRes = await fetch(`/api/dsp?jobId=${dspJobId}&t=${Date.now()}`);
          const dspPollData = await dspPollRes.json();
 
          if (dspPollData.status === "COMPLETED") {
@@ -248,10 +251,10 @@ export default function Room01_Lab() {
          }
       }
       
-      // Store the exact, uncompressed instrumental URL that MDX generated
+      // 3. SET THE PLAYER AUDIO
       setAudioData({
         url: currentCloudUrl,
-        fileName: file.name,
+        fileName: file.name.replace(/\.[^/.]+$/, "") + (useDemucs ? " (Instrumental)" : ""),
         bpm: analysis.bpm || 120, 
         totalBars: analysis.total_bars || 64,
         key: analysis.key || "Unknown",
@@ -261,10 +264,13 @@ export default function Room01_Lab() {
       setStatus("success");
       if(addToast) addToast("Audio imported & analyzed successfully", "success");
 
+      // Auto-Play & Auto-Route Restored
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('matrix-global-seek', { detail: 0 }));
         window.dispatchEvent(new Event('matrix-global-play'));
       }, 500);
+
+      setTimeout(() => setActiveRoom("02"), 1500);
 
     } catch (err: any) {
       console.error("DSP/MDX Pipeline Error:", err);
@@ -377,38 +383,12 @@ export default function Room01_Lab() {
             </div>
           )}
 
+          {/* THE CLEAN ORIGINAL SUCCESS STATE (With Auto-Routing) */}
           {status === 'success' && audioData && (
-            <div className="relative z-10 flex flex-col items-center animate-in zoom-in w-full px-8 py-10">
-              <ShieldCheck size={48} className="mx-auto mb-4 text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full bg-green-500/10 p-2" />
-              <h2 className="font-oswald text-3xl uppercase tracking-widest mb-6 font-bold text-white">Smart Analysis Complete</h2>
-              
-              <div className="bg-black border border-green-500/30 p-6 w-full max-w-sm mb-8 space-y-4 text-left">
-                <div className="flex justify-between items-center border-b border-[#222] pb-2">
-                  <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Detected BPM</span>
-                  <span className="text-lg font-oswald text-green-500 font-bold">{Math.round(audioData.bpm)}</span>
-                </div>
-                <div className="flex justify-between items-center border-b border-[#222] pb-2">
-                  <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Structural Length</span>
-                  <span className="text-lg font-oswald text-green-500 font-bold">{audioData.totalBars} Bars</span>
-                </div>
-                <div className="flex justify-between items-center border-b border-[#222] pb-2">
-                  <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Musical Key</span>
-                  <span className="text-sm font-oswald text-green-500 font-bold uppercase">{audioData.key}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Rhythm Grid</span>
-                  <span className="text-[10px] font-mono text-green-500 tracking-widest">SECURED</span>
-                </div>
-              </div>
-
-              <div className="w-full max-w-sm flex flex-col gap-3">
-                <button onClick={() => setActiveRoom("02")} className="w-full bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">
-                  Advance to Brain Train
-                </button>
-                <button onClick={() => { setAudioData(null as any); setStatus("idle"); setLegalConsent(false); setUseDemucs(false); }} className="w-full border border-[#333] text-[#888] py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#111] hover:text-white transition-all">
-                  Analyze New Track
-                </button>
-              </div>
+            <div className="relative z-10 flex flex-col items-center animate-in zoom-in py-20">
+              <CheckCircle2 size={64} className="mx-auto mb-6 text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" />
+              <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">DSP COMPLETE</h2>
+              <p className="font-mono text-[10px] text-green-500 uppercase tracking-widest mt-2 animate-pulse">Routing to Brain Train...</p>
             </div>
           )}
         </div>
