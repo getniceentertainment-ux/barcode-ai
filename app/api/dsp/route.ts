@@ -8,14 +8,16 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// 1. GET ROUTE: Required for Room 01 to poll the DSP Job Status
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get('jobId');
-    if (!jobId) return NextResponse.json({ error: "Missing jobId" }, { status: 400 });
+    
+    // The Ghost Bug Fix: Prevent polling if the ID is undefined
+    if (!jobId || jobId === 'undefined') return NextResponse.json({ error: "Missing or invalid jobId" }, { status: 400 });
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
-    // THE FIX: Fallback applied here
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP || process.env.RUNPOD_ENDPOINT_ID;
 
     const statusRes = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/status/${jobId}`, {
@@ -29,6 +31,7 @@ export async function GET(req: Request) {
   }
 }
 
+// 2. POST ROUTE: Initiates the Async DSP Analysis
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get('Authorization');
@@ -59,11 +62,11 @@ export async function POST(req: Request) {
     if (profile.tier !== 'The Mogul' && profile.credits <= 0) return NextResponse.json({ error: "Insufficient Generations." }, { status: 403 });
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
-    // THE FIX: Fallback applied here to prevent the silent 500 crash
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP || process.env.RUNPOD_ENDPOINT_ID;
 
     if (!RUNPOD_API_KEY || !ENDPOINT_ID) return NextResponse.json({ error: "Server missing DSP config." }, { status: 500 });
 
+    // THE FIX: Use "/run" instead of "/runsync" so it generates a jobId!
     const runResponse = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/run`, {
       method: 'POST',
       headers: {
@@ -84,6 +87,7 @@ export async function POST(req: Request) {
       if (profile.tier !== 'The Mogul') {
         await supabaseAdmin.from('profiles').update({ credits: profile.credits - 1 }).eq('id', userId);
       }
+      // Pass the Job ID back to the frontend loop
       return NextResponse.json({ jobId: data.id });
     } else {
       throw new Error(data.error || "DSP processing failed");

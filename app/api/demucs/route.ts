@@ -12,16 +12,16 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get('jobId');
-    if (!jobId) return NextResponse.json({ error: "Missing jobId" }, { status: 400 });
+    if (!jobId || jobId === 'undefined') return NextResponse.json({ error: "Missing jobId" }, { status: 400 });
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
     const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_MDX;
 
     const statusRes = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/status/${jobId}`, {
       headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
-      cache: 'no-store' // THE FIX: Bypasses Next.js aggressive caching
+      cache: 'no-store'
     });
-    
+
     return NextResponse.json(await statusRes.json());
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -64,6 +64,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Server missing RunPod MDX configuration." }, { status: 500 });
     }
 
+    // THE FIX: Use "/run" instead of "/runsync"
     const runResponse = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
