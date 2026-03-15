@@ -15,11 +15,12 @@ export async function GET(req: Request) {
     if (!jobId) return NextResponse.json({ error: "Missing jobId" }, { status: 400 });
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
-    const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP;
+    // THE FIX: Fallback applied here
+    const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP || process.env.RUNPOD_ENDPOINT_ID;
 
     const statusRes = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/status/${jobId}`, {
       headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
-      cache: 'no-store' // THE FIX: Bypasses Next.js aggressive caching
+      cache: 'no-store'
     });
     
     return NextResponse.json(await statusRes.json());
@@ -58,7 +59,8 @@ export async function POST(req: Request) {
     if (profile.tier !== 'The Mogul' && profile.credits <= 0) return NextResponse.json({ error: "Insufficient Generations." }, { status: 403 });
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
-    const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP;
+    // THE FIX: Fallback applied here to prevent the silent 500 crash
+    const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP || process.env.RUNPOD_ENDPOINT_ID;
 
     if (!RUNPOD_API_KEY || !ENDPOINT_ID) return NextResponse.json({ error: "Server missing DSP config." }, { status: 500 });
 

@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 import requests
 import runpod
@@ -22,11 +23,27 @@ def download_file(url, dest_path):
 def upload_to_supabase(file_path, destination_path):
     if not supabase:
         raise Exception("Supabase credentials missing in GPU environment.")
-    print(f"[MDX] Uploading stem to Supabase: {destination_path}")
-    with open(file_path, 'rb') as f:
-        supabase.storage.from_("audio_raw").upload(destination_path, f, file_options={"content-type": "audio/wav"})
     
+    print(f"[MDX] Uploading stem to Supabase: {destination_path}")
+    sys.stdout.flush() # Force log to UI
+    
+    try:
+        # Read the audio file completely into raw bytes to guarantee Supabase compatibility
+        with open(file_path, 'rb') as f:
+            file_bytes = f.read()
+            
+        supabase.storage.from_("audio_raw").upload(
+            destination_path, 
+            file_bytes, 
+            file_options={"content-type": "audio/wav"}
+        )
+    except Exception as e:
+        print(f"[MDX UPLOAD ERROR] {str(e)}")
+        sys.stdout.flush()
+        raise Exception(f"Failed to secure file in matrix: {str(e)}")
+        
     url_data = supabase.storage.from_("audio_raw").get_public_url(destination_path)
+    # the supabase v2 client returns a string directly
     return url_data
 
 def handler(event):
@@ -47,9 +64,12 @@ def handler(event):
         separator.load_model(model_name)
 
         print(f"[MDX] Downloading artifact from Matrix: {file_url}")
+        sys.stdout.flush()
         download_file(file_url, temp_input.name)
 
         print(f"[MDX] Running Neural Separation (CUDA Available: {torch.cuda.is_available()})")
+        sys.stdout.flush()
+        
         output_files = separator.separate(temp_input.name)
         
         job_id = event.get("id", str(int(time.time())))
@@ -67,6 +87,9 @@ def handler(event):
             else:
                 stems["instrumental"] = public_url
         
+        print(f"[MDX] Execution complete. Payload secure.")
+        sys.stdout.flush()
+        
         return {
             "status": "COMPLETED",
             "stems": stems,
@@ -74,7 +97,8 @@ def handler(event):
         }
 
     except Exception as e:
-        print(f"[MDX ERROR] {str(e)}")
+        print(f"[MDX CATASTROPHIC ERROR] {str(e)}")
+        sys.stdout.flush()
         return {"error": str(e)}
     finally:
         if os.path.exists(temp_input.name):
