@@ -2,3 +2,4 @@ runpod==1.4.0
 requests==2.31.0
 audio-separator[gpu]==0.17.2
 onnxruntime-gpu==1.17.1
+supabase==2.3.0

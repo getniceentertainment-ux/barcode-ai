@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     const runResponse = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/runsync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
-      body: JSON.stringify({ input: { task_type: "separate", file_url: file_url, model: "UVR-MDX-NET-Voc_FT.onnx" } })
+      body: JSON.stringify({ input: { task_type: "separate", file_url: file_url, model: "UVR-MDX-NET-Voc_FT.onnx", userId: userId } })
     });
 
     const data = await runResponse.json();

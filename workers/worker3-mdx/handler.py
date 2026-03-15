@@ -3,7 +3,14 @@ import tempfile
 import requests
 import runpod
 import torch
+import time
 from audio_separator.separator import Separator
+from supabase import create_client, Client
+
+# Initialize Supabase
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 def download_file(url, dest_path):
     response = requests.get(url, stream=True)
@@ -12,61 +19,64 @@ def download_file(url, dest_path):
         for chunk in response.iter_content(chunk_size=8192):
             f.write(chunk)
 
+def upload_to_supabase(file_path, destination_path):
+    if not supabase:
+        raise Exception("Supabase credentials missing in GPU environment.")
+    print(f"[MDX] Uploading stem to Supabase: {destination_path}")
+    with open(file_path, 'rb') as f:
+        supabase.storage.from_("audio_raw").upload(destination_path, f, file_options={"content-type": "audio/wav"})
+    
+    url_data = supabase.storage.from_("audio_raw").get_public_url(destination_path)
+    return url_data
+
 def handler(event):
     """RunPod Worker for High-Quality MDX Stem Separation"""
     job_input = event.get("input", {})
     file_url = job_input.get("file_url")
-    # audio-separator requires the exact filename with extension
     model_name = job_input.get("model", "UVR-MDX-NET-Voc_FT.onnx") 
+    user_id = job_input.get("userId", "GUEST")
 
     if not file_url:
         return {"error": "Missing file_url in payload"}
 
-    # Initialize the Separator
     separator = Separator(output_dir=tempfile.gettempdir())
-    
     temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
     temp_input.close()
 
     try:
-        # Load model (this uses the cached version downloaded during Docker build)
         separator.load_model(model_name)
 
         print(f"[MDX] Downloading artifact from Matrix: {file_url}")
         download_file(file_url, temp_input.name)
 
         print(f"[MDX] Running Neural Separation (CUDA Available: {torch.cuda.is_available()})")
-        
-        # Separates audio into two files (Instrumental and Vocals)
         output_files = separator.separate(temp_input.name)
         
-        stems = {
-            "instrumental": None,
-            "vocals": None
-        }
+        job_id = event.get("id", str(int(time.time())))
+        stems = {"instrumental": None, "vocals": None}
         
-        # Map the output files to their respective roles
         for f in output_files:
-            # Note: In a full production setup, you would upload these local files 
-            # back to Supabase here and return the public URLs. 
             file_path = os.path.join(tempfile.gettempdir(), f)
+            dest_path = f"{user_id}/mdx_{job_id}_{f}"
+            
+            # Securely route the local GPU file back to the Cloud
+            public_url = upload_to_supabase(file_path, dest_path)
+
             if "Vocals" in f or "vocals" in f:
-                stems["vocals"] = file_path
+                stems["vocals"] = public_url
             else:
-                stems["instrumental"] = file_path
+                stems["instrumental"] = public_url
         
-        # Must return 'COMPLETED' so Next.js knows it succeeded
         return {
             "status": "COMPLETED",
             "stems": stems,
-            "message": "Artifact deconstructed into 2-stem MDX format."
+            "message": "Artifact deconstructed and secured in Matrix."
         }
 
     except Exception as e:
         print(f"[MDX ERROR] {str(e)}")
         return {"error": str(e)}
     finally:
-        # Garbage Collection
         if os.path.exists(temp_input.name):
             os.remove(temp_input.name)
 
