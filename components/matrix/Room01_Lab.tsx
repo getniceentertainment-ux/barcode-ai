@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { UploadCloud, DollarSign, Loader2, Activity, AlertTriangle, ArrowRight, CheckCircle2, ShoppingCart, X } from "lucide-react";
+import { UploadCloud, DollarSign, Loader2, Activity, AlertTriangle, ArrowRight, CheckCircle2, ShoppingCart, X, ShieldCheck, Crown } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -10,10 +10,11 @@ export default function Room01_Lab() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">(audioData ? "success" : "idle");
-  const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([]);
+  const [beats, setBeats] = useState<{name: string, url: string}[]>([]);
   
-  // NEW: UI Checkout States
-  const [selectedBeat, setSelectedBeat] = useState<{name: string, url: string, price: number} | null>(null);
+  // UI Checkout States
+  const [selectedBeat, setSelectedBeat] = useState<{name: string, url: string} | null>(null);
+  const [licenseType, setLicenseType] = useState<"standard" | "exclusive">("standard");
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
@@ -26,15 +27,8 @@ export default function Room01_Lab() {
           const fetchedBeats = data
             .filter(file => file.name.endsWith('.mp3') || file.name.endsWith('.wav'))
             .map(file => {
-              const bpmMatch = file.name.match(/_?(\d+)\s*BPM/i);
-              const bpm = bpmMatch ? parseInt(bpmMatch[1]) : 120;
-              let calculatedPrice = 29.99;
-              if (bpm >= 140) calculatedPrice = 149.99;
-              else if (bpm >= 125) calculatedPrice = 99.99;
-              else if (bpm >= 110) calculatedPrice = 49.99;
-
               const { data: urlData } = supabase.storage.from('marketplace_beats').getPublicUrl(file.name);
-              return { name: file.name, url: urlData.publicUrl, price: calculatedPrice };
+              return { name: file.name, url: urlData.publicUrl };
             });
 
           if (fetchedBeats.length > 0) {
@@ -51,7 +45,7 @@ export default function Room01_Lab() {
     };
     fetchMarketplaceBeats();
 
-    // 2. RESTORED: Intercept successful Stripe payments when they return to the app
+    // 2. Intercept successful Stripe payments when they return to the app
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('beat_purchased') === 'true') {
@@ -59,7 +53,6 @@ export default function Room01_Lab() {
         const beatName = params.get('beat_name');
         
         if (beatUrl && beatName) {
-          // Clean the URL so it doesn't trigger again on refresh
           window.history.replaceState({}, document.title, window.location.pathname);
           executeDSPAfterPurchase(beatUrl, beatName);
         }
@@ -67,7 +60,7 @@ export default function Room01_Lab() {
     }
   }, []);
 
-  // RESTORED: Auto-DSP the beat they just paid for
+  // Auto-DSP the beat they just paid for
   const executeDSPAfterPurchase = async (fileUrl: string, fileName: string) => {
     setStatus("analyzing");
     try {
@@ -176,26 +169,28 @@ export default function Room01_Lab() {
     }
   };
 
-  // RESTORED: Trigger the Stripe API call
   const handleConfirmPurchase = async () => {
     if (!selectedBeat) return;
     setIsRedirecting(true);
+    
+    // ALIGNED WITH BUSINESS MODEL
+    const activePrice = licenseType === 'standard' ? 29.99 : 500.00;
     
     try {
       const res = await fetch('/api/stripe/beat-lease', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          beatName: selectedBeat.name, 
+          beatName: `${licenseType.toUpperCase()} LEASE: ${selectedBeat.name}`, 
           beatUrl: selectedBeat.url, 
-          price: selectedBeat.price, 
+          price: activePrice, 
           userId: userSession?.id 
         })
       });
       
       const data = await res.json();
       if (data.url) {
-        window.location.href = data.url; // Secure redirect to Stripe Checkout
+        window.location.href = data.url; 
       } else {
         throw new Error(data.error || "Failed to initialize Stripe Checkout.");
       }
@@ -233,7 +228,7 @@ export default function Room01_Lab() {
             </div>
           )}
 
-          {/* STATE: IN-UI CHECKOUT CONFIRMATION */}
+          {/* STATE: IN-UI CHECKOUT CONFIRMATION (ACCURATE PRICING) */}
           {selectedBeat && status === 'idle' && (
             <div className="w-full h-full flex flex-col items-center justify-center p-10 relative animate-in zoom-in duration-300">
               <button 
@@ -245,25 +240,49 @@ export default function Room01_Lab() {
               </button>
               
               <ShoppingCart size={48} className="text-[#E60000] mb-4" />
-              <h2 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-1">Commercial Lease</h2>
-              <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest mb-8 text-center max-w-sm">
-                You are about to lease this track from the GetNice Marketplace. The audio will automatically route to the DSP analyzer upon purchase.
+              <h2 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-1">Acquire Asset</h2>
+              <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest mb-6 text-center max-w-sm">
+                Select your licensing terms for this track. Audio will automatically route to the DSP analyzer upon purchase.
               </p>
 
-              <div className="bg-black border border-[#222] w-full max-w-sm p-6 mb-8 text-left">
+              {/* License Type Toggle */}
+              <div className="flex gap-4 w-full max-w-sm mb-6">
+                 <button 
+                   onClick={() => setLicenseType('standard')}
+                   className={`flex-1 p-4 border transition-all flex flex-col items-center gap-2 ${licenseType === 'standard' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#888] hover:border-[#555]'}`}
+                 >
+                   <ShieldCheck size={20} />
+                   <span className="font-oswald uppercase tracking-widest font-bold">Standard</span>
+                   <span className="font-mono text-[10px]">$29.99</span>
+                 </button>
+                 <button 
+                   onClick={() => setLicenseType('exclusive')}
+                   className={`flex-1 p-4 border transition-all flex flex-col items-center gap-2 ${licenseType === 'exclusive' ? 'bg-yellow-500 border-yellow-500 text-black' : 'bg-black border-[#222] text-[#888] hover:border-yellow-500/50'}`}
+                 >
+                   <Crown size={20} />
+                   <span className="font-oswald uppercase tracking-widest font-bold">Exclusive</span>
+                   <span className="font-mono text-[10px]">$500.00</span>
+                 </button>
+              </div>
+
+              <div className="bg-black border border-[#222] w-full max-w-sm p-6 mb-8 text-left relative overflow-hidden">
+                 {licenseType === 'exclusive' && <div className="absolute top-0 right-0 w-16 h-16 bg-yellow-500 opacity-10 blur-xl rounded-full pointer-events-none"></div>}
+                 
                  <p className="text-[10px] text-[#E60000] font-mono uppercase tracking-widest font-bold mb-1">Selected Asset</p>
                  <p className="font-oswald text-xl text-white truncate uppercase tracking-widest mb-4">{selectedBeat.name}</p>
                  
                  <div className="flex justify-between items-end border-t border-[#222] pt-4">
                     <span className="text-[10px] text-[#555] font-mono uppercase tracking-widest">Total Due</span>
-                    <span className="text-3xl font-oswald font-bold text-green-500">${selectedBeat.price.toFixed(2)}</span>
+                    <span className={`text-3xl font-oswald font-bold ${licenseType === 'exclusive' ? 'text-yellow-500' : 'text-green-500'}`}>
+                      ${licenseType === 'standard' ? '29.99' : '500.00'}
+                    </span>
                  </div>
               </div>
 
               <button 
                 onClick={handleConfirmPurchase}
                 disabled={isRedirecting}
-                className="w-full max-w-sm bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-3 shadow-[0_0_20px_rgba(230,0,0,0.3)]"
+                className={`w-full max-w-sm text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest transition-all flex justify-center items-center gap-3 ${licenseType === 'exclusive' ? 'bg-yellow-600 hover:bg-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.3)] text-black' : 'bg-[#E60000] hover:bg-red-700 shadow-[0_0_20px_rgba(230,0,0,0.3)]'}`}
               >
                 {isRedirecting ? <><Loader2 size={20} className="animate-spin" /> Routing to Secure Gateway...</> : "Confirm & Pay via Stripe"}
               </button>
@@ -336,7 +355,7 @@ export default function Room01_Lab() {
           <DollarSign size={16} /> Marketplace // Beats
         </h3>
         <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mb-6 leading-relaxed">
-          Purchase a commercial lease. The track will be automatically routed to the DSP queue.
+          Purchase a commercial lease or exclusive buyout. The track will automatically route to the DSP queue.
         </p>
 
         <div className="space-y-3 flex-1">
@@ -348,7 +367,7 @@ export default function Room01_Lab() {
               <div className="flex flex-col pr-4 overflow-hidden">
                 <span className={`text-[10px] font-mono uppercase truncate font-bold ${selectedBeat?.name === b.name ? 'text-white' : 'text-gray-300'}`}>{b.name}</span>
                 <span className="text-[9px] font-mono text-green-500 uppercase mt-1 tracking-widest">
-                  Lease: ${b.price.toFixed(2)}
+                  Standard / Exclusive
                 </span>
               </div>
               <button
