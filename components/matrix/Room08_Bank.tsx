@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Wallet, TrendingUp, FileText, CheckCircle2, AlertTriangle, ArrowRight, Lock, CreditCard, Loader2, Link as LinkIcon, Radio, Clock, Archive, Download, PlusCircle } from "lucide-react";
+import { Wallet, TrendingUp, FileText, CheckCircle2, AlertTriangle, ArrowRight, Lock, CreditCard, Loader2, Link as LinkIcon, Radio, Clock, Archive, Download, PlusCircle, Zap, Calendar, X } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -18,13 +18,30 @@ export default function Room08_Bank() {
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [trackScore, setTrackScore] = useState<number>(0);
 
-  // Vault State
+  // Vault & Rollout State
   const [vaultTracks, setVaultTracks] = useState<any[]>([]);
   const [isLoadingVault, setIsLoadingVault] = useState(false);
+  const [isGeneratingRollout, setIsGeneratingRollout] = useState<string | null>(null);
+  const [activeRollout, setActiveRollout] = useState<string | null>(null);
 
   const artistSplit = 60;
   const labelSplit = 40;
   const marketingAdvance = 1000.00;
+
+  useEffect(() => {
+    // Check for successful Stripe Return from an Exec Rollout purchase
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('rollout_purchased') === 'true') {
+        const trackId = params.get('track_id');
+        if (trackId) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setActiveTab("vault");
+          generateExecRollout(trackId);
+        }
+      }
+    }
+  }, [userSession]); // Depend on userSession to ensure auth token is ready
 
   useEffect(() => {
     const evaluateLedger = async () => {
@@ -71,6 +88,49 @@ export default function Room08_Bank() {
     };
     if (activeTab === "vault") fetchVault();
   }, [userSession, activeTab]);
+
+  // --- EXEC ROLLOUT LOGIC ---
+  const handlePurchaseRollout = async (track: any) => {
+    setIsGeneratingRollout(track.id);
+    try {
+      const res = await fetch('/api/stripe/rollout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackId: track.id, trackTitle: track.title, userId: userSession?.id })
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else throw new Error(data.error);
+    } catch(err: any) {
+      if(addToast) addToast("Checkout failed: " + err.message, "error");
+      setIsGeneratingRollout(null);
+    }
+  };
+
+  const generateExecRollout = async (trackId: string) => {
+     setIsGeneratingRollout(trackId);
+     if(addToast) addToast("Payment verified. Generating 30-Day Exec Rollout...", "info");
+     try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch('/api/distribution/rollout', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+           body: JSON.stringify({ trackId })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        // Update local state and show the modal!
+        setVaultTracks(prev => prev.map(t => t.id === trackId ? { ...t, exec_rollout: data.rollout } : t));
+        setActiveRollout(data.rollout);
+        if(addToast) addToast("Exec Rollout Strategy Generated.", "success");
+     } catch(err: any) {
+        if(addToast) addToast(err.message, "error");
+     } finally {
+        setIsGeneratingRollout(null);
+     }
+  };
+  // -------------------------
 
   const handleAcceptDeal = () => setStatus("distributed");
 
@@ -264,7 +324,7 @@ export default function Room08_Bank() {
           </div>
         )}
 
-        {/* TAB 2: THE VAULT */}
+        {/* TAB 2: THE VAULT & EXEC ROLLOUTS */}
         {activeTab === "vault" && (
           <div className="animate-in fade-in">
             {isLoadingVault ? (
@@ -281,8 +341,8 @@ export default function Room08_Bank() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {vaultTracks.map((track) => (
-                  <div key={track.id} className="bg-black border border-[#222] hover:border-[#E60000] transition-colors group flex flex-col">
-                    <div className="aspect-square bg-[#111] w-full relative overflow-hidden">
+                  <div key={track.id} className="bg-black border border-[#222] hover:border-[#E60000] transition-colors group flex flex-col h-full">
+                    <div className="aspect-square bg-[#111] w-full relative overflow-hidden shrink-0">
                       {track.cover_url ? (
                         <img src={track.cover_url} alt="Cover" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                       ) : (
@@ -292,19 +352,44 @@ export default function Room08_Bank() {
                         Score: {track.hit_score}
                       </div>
                     </div>
-                    <div className="p-4 flex-1 flex flex-col">
-                      <h3 className="font-oswald text-lg uppercase tracking-widest text-white truncate mb-1" title={track.title}>{track.title}</h3>
-                      <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mb-4">
-                        {new Date(track.created_at).toLocaleDateString()}
-                      </p>
-                      <a 
-                        href={track.audio_url} 
-                        download
-                        target="_blank" rel="noreferrer"
-                        className="mt-auto flex items-center justify-center gap-2 bg-[#111] text-white py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-[#E60000] transition-colors"
-                      >
-                        <Download size={14} /> Download Master
-                      </a>
+                    <div className="p-4 flex-1 flex flex-col justify-between">
+                      <div>
+                        <h3 className="font-oswald text-lg uppercase tracking-widest text-white truncate mb-1" title={track.title}>{track.title}</h3>
+                        <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mb-6">
+                          {new Date(track.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      
+                      {/* ACTION BUTTONS */}
+                      <div className="flex flex-col gap-2 mt-auto">
+                        <a 
+                          href={track.audio_url} 
+                          download
+                          target="_blank" rel="noreferrer"
+                          className="w-full flex items-center justify-center gap-2 bg-[#111] border border-[#222] text-white py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-[#222] transition-colors"
+                        >
+                          <Download size={14} /> Download Master
+                        </a>
+
+                        {/* EXEC ROLLOUT UPSELL / DISPLAY */}
+                        {track.exec_rollout ? (
+                          <button 
+                            onClick={() => setActiveRollout(track.exec_rollout)}
+                            className="w-full flex items-center justify-center gap-2 bg-[#E60000] text-white py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors shadow-[0_0_15px_rgba(230,0,0,0.3)]"
+                          >
+                            <Calendar size={14} /> View Exec Rollout
+                          </button>
+                        ) : (
+                          <button 
+                            onClick={() => handlePurchaseRollout(track)} 
+                            disabled={isGeneratingRollout === track.id}
+                            className="w-full flex items-center justify-center gap-2 bg-black border border-[#333] text-yellow-500 py-3 text-[10px] font-bold uppercase tracking-widest hover:border-yellow-500 transition-colors disabled:opacity-50"
+                          >
+                            {isGeneratingRollout === track.id ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />} 
+                            Acquire Rollout ($14.99)
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -314,6 +399,46 @@ export default function Room08_Bank() {
         )}
 
       </div>
+
+      {/* EXEC ROLLOUT MODAL */}
+      {activeRollout && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 md:p-10 animate-in fade-in duration-300">
+           <div className="bg-[#050505] border border-[#E60000] w-full max-w-4xl h-full md:max-h-[85vh] flex flex-col relative shadow-[0_0_50px_rgba(230,0,0,0.3)]">
+              <button 
+                onClick={() => setActiveRollout(null)} 
+                className="absolute top-6 right-6 text-[#888] hover:text-white transition-colors z-10"
+              >
+                <X size={28} />
+              </button>
+              
+              <div className="p-8 border-b border-[#222] bg-[#0a0a0a] shrink-0">
+                <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-[#E60000] flex items-center gap-3">
+                  <Calendar size={28} /> Exec Rollout Strategy
+                </h2>
+                <p className="font-mono text-[10px] text-[#888] uppercase tracking-[0.3em] mt-2">
+                  30-Day Omnichannel Deployment Calendar
+                </p>
+              </div>
+              
+              <div className="p-8 overflow-y-auto custom-scrollbar font-mono text-sm text-gray-300 leading-loose whitespace-pre-wrap">
+                {activeRollout}
+              </div>
+              
+              <div className="p-6 border-t border-[#222] bg-black shrink-0 flex justify-between items-center">
+                 <span className="text-[10px] text-green-500 font-mono uppercase tracking-widest flex items-center gap-2">
+                   <CheckCircle2 size={14}/> Saved permanently to Vault
+                 </span>
+                 <button 
+                   onClick={() => setActiveRollout(null)} 
+                   className="bg-white text-black px-8 py-3 font-oswald uppercase tracking-widest text-xs font-bold hover:bg-[#E60000] hover:text-white transition-colors"
+                 >
+                   Close Terminal
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
     </div>
   );
 }
