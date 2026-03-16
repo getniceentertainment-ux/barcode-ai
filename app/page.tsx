@@ -8,6 +8,7 @@ import {
   Play, Pause, SkipBack, SkipForward, Volume2, Lock
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
+import { supabase } from "../lib/supabase"; // Make sure Supabase is imported for Auth!
 
 // The Gateway
 import EntryGateway from "../components/matrix/EntryGateway";
@@ -69,6 +70,13 @@ export default function MatrixController() {
     const m = Math.floor(time / 60).toString().padStart(2, '0');
     const s = Math.floor(time % 60).toString().padStart(2, '0');
     return `${m}:${s}`;
+  };
+
+  // THE DISCONNECT FIX
+  const handleDisconnect = async () => {
+    await supabase.auth.signOut(); // Securely destroy the cloud session
+    clearMatrix(); // Wipe the local Zustand store
+    window.location.reload(); // Refresh to trigger EntryGateway
   };
 
   if (!hasAccess) return <EntryGateway />;
@@ -134,12 +142,17 @@ export default function MatrixController() {
           <h1 className="font-oswald text-2xl uppercase tracking-[0.2em] font-bold text-[#E60000]">Bar-Code.ai</h1>
           {userSession && (
             <div className="mt-4 p-3 bg-[#050505] border border-[#222]">
-              <p className="font-mono text-[9px] text-[#555] uppercase">Active Session:</p>
-              <p className="font-mono text-[10px] text-green-500 truncate">{userSession.id}</p>
-              <div className="flex justify-between items-end mt-1">
-                <p className="font-mono text-[10px] text-[#E60000] uppercase font-bold tracking-widest">{userSession.tier}</p>
-                <button onClick={() => { clearMatrix(); window.location.reload(); }} className="text-[#555] hover:text-white transition-colors" title="Disconnect">
-                  <LogOut size={12} />
+              <p className="font-mono text-[9px] text-[#555] uppercase">Active Operator:</p>
+              
+              {/* THE ACTIVE SESSION FIX: Formatted to look like a Matrix Terminal Node */}
+              <p className="font-mono text-[10px] text-white truncate font-bold tracking-widest mt-1">
+                NODE_{userSession.id.substring(0, 8).toUpperCase()}
+              </p>
+              
+              <div className="flex justify-between items-end mt-2 pt-2 border-t border-[#111]">
+                <p className="font-mono text-[9px] text-green-500 uppercase font-bold tracking-widest">{userSession.tier}</p>
+                <button onClick={handleDisconnect} className="text-[#555] hover:text-[#E60000] transition-colors flex items-center gap-1 text-[9px] font-mono uppercase" title="Secure Logout">
+                  <LogOut size={10} /> Disconnect
                 </button>
               </div>
             </div>
