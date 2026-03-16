@@ -64,7 +64,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Server missing RunPod MDX configuration." }, { status: 500 });
     }
 
-    // THE FIX: Use "/run" instead of "/runsync"
     const runResponse = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
@@ -72,7 +71,7 @@ export async function POST(req: Request) {
         input: {
           task_type: "separate",
           file_url: file_url,
-          model: "UVR-MDX-NET-Voc_FT.onnx",
+          model: "Kim_Vocal_2.onnx", // THE UPGRADE: Zero-bleed vocal isolation
           userId: user.id
         }
       })

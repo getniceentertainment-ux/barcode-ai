@@ -6,83 +6,82 @@ import runpod
 import torch
 import time
 from audio_separator.separator import Separator
-from supabase import create_client, Client
-
-# Initialize Supabase
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 def download_file(url, dest_path):
-    response = requests.get(url, stream=True)
+    response = requests.get(url, stream=True, timeout=60)
     response.raise_for_status()
     with open(dest_path, 'wb') as f:
         for chunk in response.iter_content(chunk_size=8192):
             f.write(chunk)
 
-def upload_to_supabase(file_path, destination_path):
-    if not supabase:
-        raise Exception("Supabase credentials missing in GPU environment.")
+def upload_to_supabase_native(file_path, destination_path):
+    SUPABASE_URL = os.environ.get("SUPABASE_URL")
+    SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
     
-    print(f"[MDX] Uploading stem to Supabase: {destination_path}")
-    sys.stdout.flush() # Force log to UI
-    
-    try:
-        # Read the audio file completely into raw bytes to guarantee Supabase compatibility
-        with open(file_path, 'rb') as f:
-            file_bytes = f.read()
-            
-        supabase.storage.from_("audio_raw").upload(
-            destination_path, 
-            file_bytes, 
-            file_options={"content-type": "audio/wav"}
-        )
-    except Exception as e:
-        print(f"[MDX UPLOAD ERROR] {str(e)}")
-        sys.stdout.flush()
-        raise Exception(f"Failed to secure file in matrix: {str(e)}")
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise Exception("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.")
         
-    url_data = supabase.storage.from_("audio_raw").get_public_url(destination_path)
-    return url_data
+    SUPABASE_URL = SUPABASE_URL.rstrip('/')
+    upload_url = f"{SUPABASE_URL}/storage/v1/object/audio_raw/{destination_path}"
+    
+    headers = {
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "audio/wav",
+        "x-upsert": "true" 
+    }
+    
+    print(f"[MDX] Uploading stem via REST API: {destination_path}")
+    sys.stdout.flush() 
+    
+    with open(file_path, 'rb') as f:
+        response = requests.post(upload_url, headers=headers, data=f, timeout=120)
+        
+    if response.status_code not in [200, 201]:
+        raise Exception(f"Supabase REST Upload Failed ({response.status_code}): {response.text}")
+        
+    public_url = f"{SUPABASE_URL}/storage/v1/object/public/audio_raw/{destination_path}"
+    return public_url
 
 def handler(event):
-    """RunPod Worker for High-Quality MDX Stem Separation"""
-    job_input = event.get("input", {})
-    file_url = job_input.get("file_url")
-    model_name = job_input.get("model", "UVR-MDX-NET-Voc_FT.onnx") 
-    user_id = job_input.get("userId", "GUEST")
-
-    if not file_url:
-        return {"error": "Missing file_url in payload"}
-
-    separator = Separator(output_dir=tempfile.gettempdir())
-    temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-    temp_input.close()
-
+    temp_input_name = None
+    
     try:
-        separator.load_model(model_name)
+        job_input = event.get("input", {})
+        file_url = job_input.get("file_url")
+        # THE FIX: Fallback to the new Kim_Vocal_2 model
+        model_name = job_input.get("model", "Kim_Vocal_2.onnx") 
+        user_id = job_input.get("userId", "GUEST")
+
+        if not file_url:
+            return {"error": "Missing file_url in payload"}
+
+        # THE FIX: Enabled Normalization to prevent audio clipping during split
+        separator = Separator(output_dir=tempfile.gettempdir(), normalization_enabled=True)
+        separator.load_model(model_name) 
+        
+        temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+        temp_input_name = temp_input.name
+        temp_input.close()
 
         print(f"[MDX] Downloading artifact from Matrix: {file_url}")
         sys.stdout.flush()
-        download_file(file_url, temp_input.name)
+        download_file(file_url, temp_input_name)
 
         print(f"[MDX] Running Neural Separation (CUDA Available: {torch.cuda.is_available()})")
         sys.stdout.flush()
         
-        output_files = separator.separate(temp_input.name)
+        output_files = separator.separate(temp_input_name)
         
         job_id = event.get("id", str(int(time.time())))
         stems = {"instrumental": None, "vocals": None}
         
         for f in output_files:
-            # Safely resolve absolute path vs relative filename
             file_path = f if os.path.isabs(f) else os.path.join(tempfile.gettempdir(), f)
             filename_only = os.path.basename(file_path)
             
             dest_path = f"{user_id}/mdx_{job_id}_{filename_only}"
             
-            # Securely route the local GPU file back to the Cloud
-            public_url = upload_to_supabase(file_path, dest_path)
+            public_url = upload_to_supabase_native(file_path, dest_path)
 
             if "Vocals" in f or "vocals" in f:
                 stems["vocals"] = public_url
@@ -99,12 +98,13 @@ def handler(event):
         }
 
     except Exception as e:
-        print(f"[MDX CATASTROPHIC ERROR] {str(e)}")
+        print(f"[MDX EXECUTION ERROR] {str(e)}")
         sys.stdout.flush()
         return {"error": str(e)}
+        
     finally:
-        if os.path.exists(temp_input.name):
-            os.remove(temp_input.name)
+        if temp_input_name and os.path.exists(temp_input_name):
+            os.remove(temp_input_name)
 
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
