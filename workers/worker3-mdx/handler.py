@@ -43,7 +43,6 @@ def upload_to_supabase(file_path, destination_path):
         raise Exception(f"Failed to secure file in matrix: {str(e)}")
         
     url_data = supabase.storage.from_("audio_raw").get_public_url(destination_path)
-    # the supabase v2 client returns a string directly
     return url_data
 
 def handler(event):
@@ -76,8 +75,11 @@ def handler(event):
         stems = {"instrumental": None, "vocals": None}
         
         for f in output_files:
-            file_path = os.path.join(tempfile.gettempdir(), f)
-            dest_path = f"{user_id}/mdx_{job_id}_{f}"
+            # Safely resolve absolute path vs relative filename
+            file_path = f if os.path.isabs(f) else os.path.join(tempfile.gettempdir(), f)
+            filename_only = os.path.basename(file_path)
+            
+            dest_path = f"{user_id}/mdx_{job_id}_{filename_only}"
             
             # Securely route the local GPU file back to the Cloud
             public_url = upload_to_supabase(file_path, dest_path)
