@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { UploadCloud, DollarSign, Loader2, Activity, AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
+import { UploadCloud, DollarSign, Loader2, Activity, AlertTriangle, ArrowRight, CheckCircle2, ShoppingCart, X } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -11,9 +11,13 @@ export default function Room01_Lab() {
 
   const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">(audioData ? "success" : "idle");
   const [beats, setBeats] = useState<{name: string, url: string, price: number}[]>([]);
+  
+  // NEW: UI Checkout States
+  const [selectedBeat, setSelectedBeat] = useState<{name: string, url: string, price: number} | null>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
-    // Fetch marketplace beats
+    // 1. Fetch marketplace beats
     const fetchMarketplaceBeats = async () => {
       try {
         const { data, error } = await supabase.storage.from('marketplace_beats').list();
@@ -46,7 +50,58 @@ export default function Room01_Lab() {
       }
     };
     fetchMarketplaceBeats();
+
+    // 2. RESTORED: Intercept successful Stripe payments when they return to the app
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('beat_purchased') === 'true') {
+        const beatUrl = params.get('beat_url');
+        const beatName = params.get('beat_name');
+        
+        if (beatUrl && beatName) {
+          // Clean the URL so it doesn't trigger again on refresh
+          window.history.replaceState({}, document.title, window.location.pathname);
+          executeDSPAfterPurchase(beatUrl, beatName);
+        }
+      }
+    }
   }, []);
+
+  // RESTORED: Auto-DSP the beat they just paid for
+  const executeDSPAfterPurchase = async (fileUrl: string, fileName: string) => {
+    setStatus("analyzing");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Security Exception: Missing Session Token. Please log in.");
+
+      const res = await fetch('/api/dsp', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ file_url: fileUrl, userId: userSession?.id }) 
+      });
+      
+      const analysis = await res.json();
+      if (!res.ok) throw new Error(analysis.error || `DSP Processing failed`);
+      
+      setAudioData({
+        url: fileUrl,
+        fileName: fileName,
+        bpm: analysis.bpm || 120, 
+        totalBars: analysis.total_bars || 64,
+        key: analysis.key || "Unknown",
+        grid: analysis.grid || []
+      });
+
+      setStatus("success");
+      if(addToast) addToast(`Purchase Verified: ${fileName} Secured.`, "success");
+
+    } catch (err: any) {
+      console.error("DSP Pipeline Error:", err);
+      if(addToast) addToast(err.message, "error");
+      setStatus("idle");
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -121,32 +176,50 @@ export default function Room01_Lab() {
     }
   };
 
-  const handleSelectMarketplaceBeat = (beat: { name: string, url: string, price: number }) => {
-    setStatus("analyzing");
-    setTimeout(() => {
-      setAudioData({
-        url: beat.url,
-        fileName: beat.name,
-        bpm: parseInt(beat.name.match(/_?(\d+)\s*BPM/i)?.[1] || "120"),
-        totalBars: 88,
-        key: "C# Minor"
+  // RESTORED: Trigger the Stripe API call
+  const handleConfirmPurchase = async () => {
+    if (!selectedBeat) return;
+    setIsRedirecting(true);
+    
+    try {
+      const res = await fetch('/api/stripe/beat-lease', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          beatName: selectedBeat.name, 
+          beatUrl: selectedBeat.url, 
+          price: selectedBeat.price, 
+          userId: userSession?.id 
+        })
       });
-      setStatus("success");
-      if(addToast) addToast("Marketplace beat secured.", "success");
-    }, 2000);
+      
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url; // Secure redirect to Stripe Checkout
+      } else {
+        throw new Error(data.error || "Failed to initialize Stripe Checkout.");
+      }
+    } catch (err: any) {
+      console.error("Purchase Error:", err);
+      if(addToast) addToast("Checkout failed: " + err.message, "error");
+      setIsRedirecting(false);
+      setSelectedBeat(null);
+    }
   };
 
   return (
     <div className="max-w-6xl mx-auto h-full grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
 
-      {/* LEFT COL: INJECTION DROPZONE */}
-      <div className="lg:col-span-2 flex flex-col justify-center">
+      {/* LEFT COL: INJECTION DROPZONE & IN-UI CHECKOUT */}
+      <div className="lg:col-span-2 flex flex-col justify-center relative">
         <div className={`border-2 transition-all group rounded-lg text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[450px]
-          ${status === 'idle' ? 'border-[#222] bg-[#050505] hover:border-[#E60000] border-dashed' : 'border-[#E60000] bg-[#110000] border-solid'}`}>
+          ${status === 'idle' && !selectedBeat ? 'border-[#222] bg-[#050505] hover:border-[#E60000] border-dashed' : 
+            selectedBeat ? 'border-[#E60000] bg-[#110000] border-solid' : 'border-[#E60000] bg-[#110000] border-solid'}`}>
 
           {status === 'analyzing' && <div className="absolute inset-0 bg-[#E60000]/10 animate-pulse pointer-events-none" />}
 
-          {status === 'idle' && (
+          {/* STATE: DEFAULT UPLOAD */}
+          {status === 'idle' && !selectedBeat && (
             <div className="w-full h-full flex flex-col items-center justify-center p-10 relative">
               <label className="cursor-pointer flex flex-col items-center w-full h-full justify-center">
                 <UploadCloud size={64} className="mx-auto mb-6 text-[#222] group-hover:text-[#E60000] transition-colors relative z-10" />
@@ -157,6 +230,43 @@ export default function Room01_Lab() {
                 </div>
                 <input type="file" className="hidden" onChange={handleFileUpload} accept="audio/*" ref={fileInputRef} />
               </label>
+            </div>
+          )}
+
+          {/* STATE: IN-UI CHECKOUT CONFIRMATION */}
+          {selectedBeat && status === 'idle' && (
+            <div className="w-full h-full flex flex-col items-center justify-center p-10 relative animate-in zoom-in duration-300">
+              <button 
+                onClick={() => setSelectedBeat(null)} 
+                className="absolute top-4 right-4 text-[#888] hover:text-white p-2"
+                disabled={isRedirecting}
+              >
+                <X size={20} />
+              </button>
+              
+              <ShoppingCart size={48} className="text-[#E60000] mb-4" />
+              <h2 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-1">Commercial Lease</h2>
+              <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest mb-8 text-center max-w-sm">
+                You are about to lease this track from the GetNice Marketplace. The audio will automatically route to the DSP analyzer upon purchase.
+              </p>
+
+              <div className="bg-black border border-[#222] w-full max-w-sm p-6 mb-8 text-left">
+                 <p className="text-[10px] text-[#E60000] font-mono uppercase tracking-widest font-bold mb-1">Selected Asset</p>
+                 <p className="font-oswald text-xl text-white truncate uppercase tracking-widest mb-4">{selectedBeat.name}</p>
+                 
+                 <div className="flex justify-between items-end border-t border-[#222] pt-4">
+                    <span className="text-[10px] text-[#555] font-mono uppercase tracking-widest">Total Due</span>
+                    <span className="text-3xl font-oswald font-bold text-green-500">${selectedBeat.price.toFixed(2)}</span>
+                 </div>
+              </div>
+
+              <button 
+                onClick={handleConfirmPurchase}
+                disabled={isRedirecting}
+                className="w-full max-w-sm bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-3 shadow-[0_0_20px_rgba(230,0,0,0.3)]"
+              >
+                {isRedirecting ? <><Loader2 size={20} className="animate-spin" /> Routing to Secure Gateway...</> : "Confirm & Pay via Stripe"}
+              </button>
             </div>
           )}
 
@@ -209,7 +319,7 @@ export default function Room01_Lab() {
                 </button>
 
                 <button
-                  onClick={() => { setAudioData(null as any); setStatus("idle"); }}
+                  onClick={() => { setAudioData(null as any); setStatus("idle"); setSelectedBeat(null); }}
                   className="w-full border border-[#333] text-[#888] py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#111] hover:text-white transition-all"
                 >
                   Analyze New Track
@@ -226,22 +336,25 @@ export default function Room01_Lab() {
           <DollarSign size={16} /> Marketplace // Beats
         </h3>
         <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mb-6 leading-relaxed">
-          Select a pre-analyzed track to bypass the DSP processing queue.
+          Purchase a commercial lease. The track will be automatically routed to the DSP queue.
         </p>
 
         <div className="space-y-3 flex-1">
           {beats.map((b, i) => (
-            <div key={i} className="bg-black p-4 border border-[#111] flex items-center justify-between group hover:border-[#E60000] transition-colors">
+            <div key={i} className={`bg-black p-4 border flex items-center justify-between group transition-colors cursor-pointer
+              ${selectedBeat?.name === b.name ? 'border-[#E60000]' : 'border-[#111] hover:border-[#E60000]/50'}`}
+              onClick={() => status === 'idle' && setSelectedBeat(b)}
+            >
               <div className="flex flex-col pr-4 overflow-hidden">
-                <span className="text-[10px] font-mono text-gray-300 uppercase truncate font-bold">{b.name}</span>
+                <span className={`text-[10px] font-mono uppercase truncate font-bold ${selectedBeat?.name === b.name ? 'text-white' : 'text-gray-300'}`}>{b.name}</span>
                 <span className="text-[9px] font-mono text-green-500 uppercase mt-1 tracking-widest">
                   Lease: ${b.price.toFixed(2)}
                 </span>
               </div>
               <button
-                onClick={() => handleSelectMarketplaceBeat(b)}
                 disabled={status !== 'idle'}
-                className="bg-white text-black px-4 py-2 text-[9px] font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-colors disabled:opacity-50 shrink-0"
+                className={`px-4 py-2 text-[9px] font-bold uppercase tracking-widest transition-colors disabled:opacity-50 shrink-0
+                  ${selectedBeat?.name === b.name ? 'bg-[#E60000] text-white' : 'bg-white text-black group-hover:bg-[#E60000] group-hover:text-white'}`}
               >
                 Select
               </button>
