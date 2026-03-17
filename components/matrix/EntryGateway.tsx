@@ -38,12 +38,12 @@ export default function EntryGateway() {
       if (!profile) {
         const { error: insertError } = await supabase.from('profiles').insert({
           id: session.user.id,
-          tier: 'The Free Loader',
+          tier: 'Free Loader',
           credits: 5
         });
         if (insertError) throw insertError;
         
-        grantAccess({ id: session.user.id, tier: 'The Free Loader', walletBalance: 0 });
+        grantAccess({ id: session.user.id, tier: 'Free Loader', walletBalance: 0 });
       } else {
         grantAccess({ id: session.user.id, tier: profile.tier, walletBalance: 0 });
       }
