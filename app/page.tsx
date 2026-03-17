@@ -142,7 +142,7 @@ export default function MatrixController() {
 
   const renderActiveRoom = () => {
     const lockedRooms = ["01", "02", "03", "04", "05", "06"];
-    if (store.isProjectFinalized && lockedRooms.includes(store.activeRoom)) {
+    if (store.isFinalized && lockedRooms.includes(store.activeRoom)) {
       return (
         <div className="h-full flex flex-col items-center justify-center text-center animate-in zoom-in duration-500">
           <div className="bg-[#110000] border border-[#E60000]/30 p-12 rounded-lg flex flex-col items-center max-w-xl">
@@ -201,7 +201,7 @@ export default function MatrixController() {
         <nav className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar">
           <div className="space-y-1 mb-8">
             {rooms.map((room) => {
-              const isLocked = store.isProjectFinalized && ["01", "02", "03", "04", "05", "06"].includes(room.id);
+              const isLocked = store.isFinalized && ["01", "02", "03", "04", "05", "06"].includes(room.id);
               return (
                 <button
                   key={room.id} onClick={() => store.setActiveRoom(room.id)}
@@ -258,9 +258,9 @@ export default function MatrixController() {
 
              {/* Matrix Status Indicator */}
              <div className="flex items-center gap-2 border-l border-[#222] pl-4 sm:pl-6">
-               <div className={`w-1.5 h-1.5 rounded-full ${store.isProjectFinalized ? 'bg-yellow-500' : 'bg-[#E60000] animate-pulse'}`} />
-               <span className={`text-[8px] uppercase font-bold tracking-widest hidden sm:inline ${store.isProjectFinalized ? 'text-yellow-500' : 'text-[#E60000]'}`}>
-                 {store.isProjectFinalized ? 'Matrix Locked' : 'Active Matrix'}
+               <div className={`w-1.5 h-1.5 rounded-full ${store.isFinalized ? 'bg-yellow-500' : 'bg-[#E60000] animate-pulse'}`} />
+               <span className={`text-[8px] uppercase font-bold tracking-widest hidden sm:inline ${store.isFinalized ? 'text-yellow-500' : 'text-[#E60000]'}`}>
+                 {store.isFinalized ? 'Matrix Locked' : 'Active Matrix'}
                </span>
              </div>
 
