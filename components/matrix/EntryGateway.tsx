@@ -28,7 +28,7 @@ export default function EntryGateway() {
     try {
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('tier, credits')
+        .select('tier, credits, stage_name, wallet_balance')
         .eq('id', session.user.id)
         .single();
 
@@ -43,9 +43,21 @@ export default function EntryGateway() {
         });
         if (insertError) throw insertError;
         
-        grantAccess({ id: session.user.id, tier: 'Free Loader', walletBalance: 0 });
+        grantAccess({ 
+          id: session.user.id, 
+          stageName: "Artist",
+          tier: 'Free Loader', 
+          walletBalance: 0,
+          creditsRemaining: 5
+        });
       } else {
-        grantAccess({ id: session.user.id, tier: profile.tier, walletBalance: 0 });
+        grantAccess({ 
+          id: session.user.id, 
+          stageName: profile.stage_name || "Artist",
+          tier: profile.tier, 
+          walletBalance: profile.wallet_balance || 0,
+          creditsRemaining: profile.tier === 'The Mogul' ? 'UNLIMITED' : (profile.credits || 0)
+        });
       }
     } catch (error: any) {
       console.error("Profile Error:", error);
