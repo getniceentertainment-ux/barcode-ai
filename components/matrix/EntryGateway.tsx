@@ -99,7 +99,7 @@ export default function EntryGateway() {
     }
   };
 
-  // THE FIX: ASYNC STRIPE ROUTING RESTORED
+  // ASYNC STRIPE ROUTING RESTORED
   const handleTierSelection = async (tier: AccessTier) => {
     if (!userProfile) return;
     
@@ -117,13 +117,13 @@ export default function EntryGateway() {
 
     // TIER ROUTING LOGIC
     if (tier === "Free Loader") {
-      // Enter directly without paying
+      // Enter directly without paying - NOW PASSING REAL DB CREDITS SO IT SHOWS 500!
       const session: UserSession = {
         id: userProfile.id,
         stageName: userProfile.stage_name || "Artist",
         tier: "Free Loader",
         walletBalance: userProfile.wallet_balance || 0,
-        creditsRemaining: 5
+        creditsRemaining: userProfile.credits !== undefined ? userProfile.credits : 500 
       };
       grantAccess(session);
     } else {
@@ -149,8 +149,9 @@ export default function EntryGateway() {
     }
   };
 
+  // Visually changed the Free Loader tier description to reflect the testing phase
   const tiers: { name: AccessTier; price: string; features: string[]; isPro?: boolean }[] = [
-    { name: "Free Loader", price: "0", features: ["5 Generations / Mo", "Standard Queue", "Watermarked Audio"] },
+    { name: "Free Loader", price: "0", features: ["500 Generations (Testing)", "Standard Queue", "Watermarked Audio"] },
     { name: "The Artist", price: "39", features: ["100 Generations / Mo", "Uncompressed WAVs", "Commercial Rights"] },
     { name: "The Mogul", price: "99", isPro: true, features: ["Unlimited Generations", "Instant Inference", "A&R Fast-Track", "Live Radio Submissions"] }
   ];
