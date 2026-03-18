@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Sliders, PlayCircle, Loader2, CheckCircle2, Waves, Settings2, ArrowRight, Volume2, ListMusic, Headphones, Trash2 } from "lucide-react";
+import { Sliders, PlayCircle, Loader2, CheckCircle2, Waves, Settings2, ArrowRight, Volume2, ListMusic, Headphones, Trash2, Activity } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 
 const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -10,7 +10,6 @@ const VOCAL_CHAINS = [
   { id: "foundation_eq", name: "Foundation EQ", desc: "Boom Bap / Golden Age Gritty Punch", color: "text-yellow-500", comp: { ratio: 4, attack: 0.012, release: 0.045, knee: 0, threshold: -28 }, eq: [3, 3, 0, 0, 0, 0, 0, -1, -2, -4], presence: 10, reverb: 15 },
   { id: "gangsta_eq", name: "Gangsta EQ", desc: "Trap / Southern 808 Heavy", color: "text-purple-500", comp: { ratio: 3, attack: 0.035, release: 0.100, knee: 0, threshold: -26 }, eq: [4, 0, 0, -3, 0, 0, 0, 0, 1.5, 3], presence: 60, reverb: 30 },
   { id: "modern_eq", name: "Modern EQ", desc: "Drill / Hyper-Controlled & Scooped", color: "text-blue-500", comp: { ratio: 5, attack: 0.003, release: 0.050, knee: 0, threshold: -30 }, eq: [0, 2, 0, 0, -2, 0, 0, 2, 0, 0], presence: 40, reverb: 45 },
-  { id: "fusion_eq", name: "Fusion EQ", desc: "Latin / Grime Wall of Sound", color: "text-green-500", comp: { ratio: 2, attack: 0.030, release: 0.250, knee: 40, threshold: -22 }, eq: [0, 0, 2, 0, 1, 2, 2, 0, 0, 0], presence: 20, reverb: 20 },
 ];
 
 function createReverb(audioCtx: BaseAudioContext, duration: number, decay: number) {
@@ -70,7 +69,13 @@ export default function Room05_VocalSuite() {
     if (wetGainRef.current && dryGainRef.current) { wetGainRef.current.gain.value = reverbMix / 100; dryGainRef.current.gain.value = 1 - (reverbMix / 100); }
     const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
     if (eqBandsRef.current.length === 10) eqBandsRef.current.forEach((band, i) => { band.gain.value = preset.eq[i]; });
-    if (compRef.current) { compRef.current.ratio.value = preset.comp.ratio; compRef.current.attack.value = preset.comp.attack; compRef.current.release.value = preset.comp.release; compRef.current.knee.value = preset.comp.knee; compRef.current.threshold.value = preset.comp.threshold; }
+    if (compRef.current) {
+      compRef.current.ratio.value = preset.comp.ratio;
+      compRef.current.attack.value = preset.comp.attack;
+      compRef.current.release.value = preset.comp.release;
+      compRef.current.knee.value = preset.comp.knee;
+      compRef.current.threshold.value = preset.comp.threshold;
+    }
     if (saturationRef.current) saturationRef.current.curve = makeDistortionCurve(presenceIntensity / 2);
   }, [reverbMix, presenceIntensity, activeChain]);
 
@@ -89,11 +94,14 @@ export default function Room05_VocalSuite() {
       prevOfflineNode.connect(offlineComp); offlineComp.connect(offlineSaturation); offlineSaturation.connect(offlineCtx.destination);
       masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(offlineCtx.destination);
       decodedBuffers.forEach(buf => { const source = offlineCtx.createBufferSource(); source.buffer = buf; source.connect(masterGain); source.start(0); });
-      const wavBlob = audioBufferToWav(await offlineCtx.startRendering());
+      const renderedBuffer = await offlineCtx.startRendering();
+      const wavBlob = audioBufferToWav(renderedBuffer);
       activeStemIds.forEach(id => removeVocalStem(id));
-      // FIX: Added offsetBars: 0 for build success
+      
+      // PRODUCTION BUILD FIX: Integration of offsetBars mandatory property
       addVocalStem({ id: `MIXED_STEM_${Date.now()}`, type: "Lead", url: URL.createObjectURL(wavBlob), blob: wavBlob, volume: 0, offsetBars: 0 });
-      setStatus("success"); if(addToast) addToast("DSP Applied.", "success");
+      
+      setStatus("success"); if(addToast) addToast("Proprietary DSP applied successfully.", "success");
     } catch (err: any) { setStatus("idle"); if(addToast) addToast(err.message, "error"); }
   };
 
@@ -101,7 +109,7 @@ export default function Room05_VocalSuite() {
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 border border-[#222]">
       {vocalStems.map(s => <audio key={s.id} id={`audio-stem-${s.id}`} src={s.url} crossOrigin="anonymous" className="hidden" />)}
       <div className="w-full md:w-1/3 border-r border-[#222] flex flex-col bg-black">
-        <div className="p-6 border-b border-[#222]"><h2 className="font-oswald text-2xl uppercase font-bold text-white flex items-center gap-3"><Settings2 size={24} className="text-[#E60000]" /> Engineering</h2></div>
+        <div className="p-6 border-b border-[#222] bg-[#050505]"><h2 className="font-oswald text-2xl uppercase font-bold text-white flex items-center gap-3"><Settings2 size={24} className="text-[#E60000]" /> Engineering</h2></div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {VOCAL_CHAINS.map(c => (
             <button key={c.id} onClick={() => { setActiveChain(c.id); setPresenceIntensity(c.presence); setReverbMix(c.reverb); }} className={`w-full text-left p-4 border transition-all ${activeChain === c.id ? 'border-[#E60000] bg-[#110000]' : 'border-[#222] bg-[#0a0a0a] hover:border-[#555]'}`}>
@@ -112,23 +120,35 @@ export default function Room05_VocalSuite() {
         </div>
         <div className="h-64 bg-[#020202] border-t border-[#222] p-4 overflow-y-auto custom-scrollbar">
            <h3 className="text-[10px] font-bold text-[#555] uppercase tracking-widest mb-4 flex items-center gap-2"><ListMusic size={12} /> Vocal Matrix</h3>
-           {vocalStems.map(s => <div key={s.id} className="flex items-center gap-2 bg-[#0a0a0a] p-2 border border-[#111] mb-1"><Headphones size={12} className={mutedStems.has(s.id) ? 'text-[#333]' : 'text-green-500'} /><span className="font-mono text-[9px] text-white truncate flex-1 uppercase">{s.id.substring(5, 12)}</span><button onClick={() => setMutedStems(prev => { const n = new Set(prev); if(n.has(s.id)) n.delete(s.id); else n.add(s.id); return n; })} className={`w-6 h-6 flex items-center justify-center text-[8px] font-bold border ${mutedStems.has(s.id) ? 'bg-red-950 border-red-500 text-white' : 'bg-black border-[#222] text-[#444]'}`}>M</button><button onClick={() => removeVocalStem(s.id)} className="w-6 h-6 flex items-center justify-center text-[#444] hover:text-[#E60000]"><Trash2 size={10}/></button></div>)}
+           {vocalStems.map(s => (
+             <div key={s.id} className="flex items-center gap-2 bg-[#0a0a0a] p-2 border border-[#111] mb-1 relative overflow-hidden group">
+               <Headphones size={12} className={mutedStems.has(s.id) ? 'text-[#333]' : 'text-green-500'} />
+               <span className="font-mono text-[9px] text-white truncate flex-1 uppercase">{s.id.substring(0, 10)}</span>
+               <div className="flex gap-1">
+                 <button onClick={() => setMutedStems(prev => { const n = new Set(prev); if(n.has(s.id)) n.delete(s.id); else n.add(s.id); return n; })} className={`w-6 h-6 flex items-center justify-center text-[8px] font-bold border transition-colors ${mutedStems.has(s.id) ? 'bg-red-950 border-red-500 text-white' : 'bg-black border-[#222] text-[#444]'}`}>M</button>
+                 <button onClick={() => removeVocalStem(s.id)} className="w-6 h-6 flex items-center justify-center text-[#444] hover:text-[#E60000] transition-colors"><Trash2 size={10}/></button>
+               </div>
+             </div>
+           ))}
         </div>
       </div>
       <div className="flex-1 flex flex-col p-8 md:p-12 relative overflow-hidden bg-black">
         <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none"><Waves size={400} /></div>
         <div className="relative z-10 max-w-xl mx-auto w-full flex-1 flex flex-col">
-          <div className="bg-black border border-[#222] p-8 mb-8">
-            <h3 className="font-oswald text-lg uppercase text-[#E60000] mb-6 border-b border-[#222] pb-3 flex items-center gap-2"><Sliders size={16} /> Macro Adjustments</h3>
+          <div className="bg-black/40 backdrop-blur-sm border border-[#222] p-8 mb-8">
+            <div className="flex justify-between items-center mb-6 border-b border-[#222] pb-3">
+               <h3 className="font-oswald text-lg uppercase text-[#E60000] flex items-center gap-2"><Sliders size={16} /> Macro Adjustments</h3>
+               <div className="flex items-center gap-2 text-green-500"><Activity size={12} className="animate-pulse" /><span className="text-[8px] font-mono uppercase tracking-widest font-bold">Real-time DSP</span></div>
+            </div>
             <div className="space-y-8">
               <div><div className="flex justify-between items-center mb-3"><label className="text-[10px] font-mono uppercase text-[#888]">Presence / Saturation</label><span className="text-xs font-mono text-white">{presenceIntensity}%</span></div><input type="range" min="0" max="100" value={presenceIntensity} onChange={(e) => setPresenceIntensity(Number(e.target.value))} className="w-full h-1 bg-[#333] appearance-none cursor-pointer accent-[#E60000]" /></div>
               <div><div className="flex justify-between items-center mb-3"><label className="text-[10px] font-mono uppercase text-[#888]">Vocal Space (Reverb)</label><span className="text-xs font-mono text-white">{reverbMix}%</span></div><input type="range" min="0" max="100" value={reverbMix} onChange={(e) => setReverbMix(Number(e.target.value))} className="w-full h-1 bg-[#333] appearance-none cursor-pointer accent-[#E60000]" /></div>
             </div>
           </div>
           <div className="mt-auto">
-            {status === "idle" && <button onClick={handleApplyEngineering} disabled={vocalStems.length === 0} className="w-full bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-3 shadow-[0_0_20px_rgba(230,0,0,0.2)]">Bake & Apply Chain <PlayCircle size={20} /></button>}
-            {status === "processing" && <div className="bg-[#110000] border border-[#E60000] p-6 flex flex-col items-center animate-pulse"><Loader2 size={32} className="text-[#E60000] animate-spin mb-4" /><p className="font-oswald text-xl uppercase font-bold text-white">Rendering Audio...</p></div>}
-            {status === "success" && <div className="bg-green-950/20 border border-green-500/30 p-6 flex flex-col items-center animate-in zoom-in"><CheckCircle2 size={32} className="text-green-500 mb-4" /><p className="font-oswald text-xl uppercase font-bold text-white mb-6">Vocals Engineered</p><button onClick={() => setActiveRoom("06")} className="w-full bg-white text-black py-4 font-oswald text-md font-bold uppercase hover:bg-gray-200 transition-all flex justify-center items-center gap-3">Proceed to Mastering <ArrowRight size={18} /></button></div>}
+            {status === "idle" && <button onClick={handleApplyEngineering} disabled={vocalStems.length === 0} className="w-full bg-[#E60000] text-white py-6 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-3 shadow-[0_0_20px_rgba(230,0,0,0.2)]">Bake & Apply Chain <PlayCircle size={20} /></button>}
+            {status === "processing" && <div className="bg-[#110000] border-2 border-[#E60000] p-10 flex flex-col items-center animate-pulse"><Loader2 size={32} className="text-[#E60000] animate-spin mb-4" /><p className="font-oswald text-2xl uppercase font-bold text-white">Rendering Matrix...</p></div>}
+            {status === "success" && <div className="bg-green-950/20 border border-green-500/30 p-10 flex flex-col items-center animate-in zoom-in"><CheckCircle2 size={32} className="text-green-500 mb-4" /><p className="font-oswald text-xl uppercase font-bold text-white mb-6">Vocals Engineered</p><button onClick={() => setActiveRoom("06")} className="w-full bg-white text-black py-4 font-oswald text-md font-bold uppercase hover:bg-gray-200 transition-all flex justify-center items-center gap-3">Proceed to Mastering <ArrowRight size={18} /></button></div>}
           </div>
         </div>
       </div>

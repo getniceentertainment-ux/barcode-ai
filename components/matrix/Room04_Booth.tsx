@@ -1,16 +1,14 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, ArrowRight, Activity, Save, Trash2, ListMusic, ChevronLeft, ChevronRight } from "lucide-react";
+import { Mic, Square, Play, Pause, ArrowRight, Activity, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, VolumeX } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 
 function encodeWAV(samples: Float32Array, sampleRate: number) {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
-  const writeString = (view: DataView, offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
-  };
+  const writeString = (v: DataView, o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
   writeString(view, 0, 'RIFF'); view.setUint32(4, 36 + samples.length * 2, true);
   writeString(view, 8, 'WAVE'); writeString(view, 12, 'fmt '); view.setUint32(16, 16, true);
   view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true);
@@ -42,7 +40,6 @@ export default function Room04_Booth() {
 
   const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
 
-  // 1. HARDWARE INIT (Preserving Wavesurfer event handlers)
   useEffect(() => {
     if (waveformRef.current && audioData?.url && !wavesurferRef.current) {
       wavesurferRef.current = WaveSurfer.create({
@@ -56,12 +53,11 @@ export default function Room04_Booth() {
         setCurrentTime(time);
         window.dispatchEvent(new CustomEvent('booth-seek', { detail: time }));
       });
-      wavesurferRef.current.on('finish', () => window.dispatchEvent(new Event('booth-finish')));
+      wavesurferRef.current.on('finish', () => stopEverything());
     }
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // 2. TIMELINE SYNC (Preserving stem sync on seek)
   useEffect(() => {
     const handleSeek = (e: any) => {
       vocalStems.forEach(stem => {
@@ -69,30 +65,19 @@ export default function Room04_Booth() {
         if (el) el.currentTime = Math.max(0, e.detail - (stem.offsetBars * secondsPerBar));
       });
     };
-    const handleFinish = () => stopEverything();
     window.addEventListener('booth-seek', handleSeek);
-    window.addEventListener('booth-finish', handleFinish);
-    return () => {
-      window.removeEventListener('booth-seek', handleSeek);
-      window.removeEventListener('booth-finish', handleFinish);
-    };
-  });
+    return () => window.removeEventListener('booth-seek', handleSeek);
+  }, [vocalStems, secondsPerBar]);
 
-  // 3. TELEPROMPTER LOGIC (Preserving your absolute bar math)
   useEffect(() => {
     if (!generatedLyrics) return;
     const lines = generatedLyrics.split('\n');
-    let currentBlockIndex = -1;
-    let barOffsetWithinBlock = 0; 
+    let currentBlockIndex = -1; let barOffsetWithinBlock = 0; 
     const parsed = lines.filter(l => l.trim()).map((text) => {
-      if (text.startsWith('[')) {
-         currentBlockIndex++; barOffsetWithinBlock = 0;
-         return { text, startTime: 0, isHeader: true, timestamp: "" };
-      }
+      if (text.startsWith('[')) { currentBlockIndex++; barOffsetWithinBlock = 0; return { text, startTime: 0, isHeader: true, timestamp: "" }; }
       let blockStartBar = 0;
       if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
-         const block = blueprint[currentBlockIndex];
-         blockStartBar = (block as any).startBar ?? 0;
+         blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
       }
       const absoluteBar = blockStartBar + barOffsetWithinBlock;
       const startTimeSec = absoluteBar * secondsPerBar;
@@ -109,26 +94,26 @@ export default function Room04_Booth() {
     if (!wavesurferRef.current) return;
     const willPlay = !isPlaying;
     setIsPlaying(willPlay);
-    const currentWS_Time = wavesurferRef.current.getCurrentTime();
+    const time = wavesurferRef.current.getCurrentTime();
     if (willPlay) {
       wavesurferRef.current.play();
-      vocalStems.forEach(stem => {
-        const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+      vocalStems.forEach(s => {
+        const el = document.getElementById(`booth-stem-${s.id}`) as HTMLAudioElement;
         if (el) {
-          el.currentTime = Math.max(0, currentWS_Time - (stem.offsetBars * secondsPerBar));
-          if (currentWS_Time >= (stem.offsetBars * secondsPerBar)) el.play().catch(() => {});
+          el.currentTime = Math.max(0, time - (s.offsetBars * secondsPerBar));
+          if (time >= (s.offsetBars * secondsPerBar)) el.play().catch(() => {});
         }
       });
     } else {
       wavesurferRef.current.pause();
-      vocalStems.forEach(stem => (document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement)?.pause());
+      vocalStems.forEach(s => (document.getElementById(`booth-stem-${s.id}`) as HTMLAudioElement)?.pause());
     }
   };
 
   const stopEverything = () => {
     wavesurferRef.current?.pause(); wavesurferRef.current?.seekTo(0);
-    vocalStems.forEach(stem => {
-      const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement;
+    vocalStems.forEach(s => {
+      const el = document.getElementById(`booth-stem-${s.id}`) as HTMLAudioElement;
       if (el) { el.pause(); el.currentTime = 0; }
     });
     if (isRecording && workletNodeRef.current && audioCtxRef.current) {
@@ -150,7 +135,7 @@ export default function Room04_Booth() {
       if (audioCtxRef.current) await audioCtxRef.current.close();
       const sampleRate = 44100;
       const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
-      const LATENCY_OFFSET = 0.15; // YOUR PUNCH-IN PATCH PRESERVED
+      const LATENCY_OFFSET = 0.15; // PUNCH-IN PATCH
       let padTime = Math.max(0, currentWS_Time - LATENCY_OFFSET);
       recordedChunksRef.current = [new Float32Array(Math.floor(padTime * sampleRate))];
 
@@ -186,7 +171,7 @@ export default function Room04_Booth() {
         </div>
         <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose">
           {lyricLines.map((line, i) => {
-            const isActive = !line.isHeader && isPlaying && currentTime >= line.startTime && currentTime < (line.startTime + secondsPerBar);
+            const isActive = !line.isHeader && isPlaying && currentTime >= line.startTime && currentTime < (line.startTime + (secondsPerBar * 2));
             return (
               <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActive ? 'text-white text-lg font-bold bg-[#E60000]/20 py-1 px-3 border-l-2 border-[#E60000] translate-x-2' : ''}`}>
                 {!line.isHeader && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
@@ -222,13 +207,12 @@ export default function Room04_Booth() {
             {vocalStems.map(s => (
               <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group">
                 <div className="flex justify-between items-center mb-3">
+                  <span className={`text-[9px] uppercase font-bold tracking-widest px-2 py-1 ${s.type === 'Lead' ? 'bg-[#E60000] text-white' : 'bg-[#222] text-[#888]'}`}>{s.type}</span>
                   <div className="flex items-center gap-2">
-                    <span className={`text-[9px] uppercase font-bold tracking-widest px-2 py-1 ${s.type === 'Lead' ? 'bg-[#E60000] text-white' : 'bg-[#222] text-[#888]'}`}>{s.type}</span>
-                    <span className="text-[10px] font-mono text-[#444]">{s.id.substring(5, 12)}</span>
+                    <button onClick={() => setMutedStems(prev => { const n = new Set(prev); if(n.has(s.id)) n.delete(s.id); else n.add(s.id); return n; })} className={`w-8 h-8 flex items-center justify-center text-[10px] font-bold border transition-all ${mutedStems.has(s.id) ? 'bg-red-950 text-red-500 border-red-500' : 'bg-[#111] text-[#555] border-[#333]'}`}>M</button>
+                    <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
                   </div>
-                  <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
                 </div>
-                {/* HORIZONTAL TIMELINE OFFSET UI */}
                 <div className="flex items-center gap-4">
                   <span className="text-[9px] font-mono text-[#555] uppercase w-16">Start Bar</span>
                   <div className="flex-1 flex items-center gap-3">
