@@ -8,10 +8,7 @@ import { supabase } from "../../lib/supabase";
 export default function Room08_Bank() {
   const { userSession, setActiveRoom, addToast, clearMatrix } = useMatrixStore();
   
-  // Tab State
   const [activeTab, setActiveTab] = useState<"ledger" | "vault">("ledger");
-
-  // Bank State
   const [status, setStatus] = useState<"evaluating" | "deal_ready" | "standard_payout" | "distributed">("evaluating");
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   
@@ -22,7 +19,6 @@ export default function Room08_Bank() {
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [trackScore, setTrackScore] = useState<number>(0);
 
-  // Vault & Rollout State
   const [vaultTracks, setVaultTracks] = useState<any[]>([]);
   const [isLoadingVault, setIsLoadingVault] = useState(false);
   const [isGeneratingRollout, setIsGeneratingRollout] = useState<string | null>(null);
@@ -34,7 +30,6 @@ export default function Room08_Bank() {
 
   useEffect(() => {
     fetchLedger();
-    // Check for returning Stripe URLs
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('rollout_purchased') === 'true') {
@@ -190,6 +185,7 @@ export default function Room08_Bank() {
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
+      else throw new Error("Failed to generate secure Stripe link.");
     } catch (err: any) {
       if(addToast) addToast(err.message, "error");
       setIsWithdrawing(false);
@@ -281,7 +277,7 @@ export default function Room08_Bank() {
                   <button onClick={handleAcceptDeal} className="w-full bg-yellow-500 text-black py-5 font-oswald text-lg font-bold uppercase hover:bg-yellow-400 transition-all flex items-center justify-center gap-3">Sign Deal & Route Advance <Lock size={18} /></button>
                 </div>
                 <div className="bg-[#050505] border border-[#222] p-8 flex flex-col justify-between">
-                  <h4 className="font-oswald text-lg uppercase font-bold text-[#555] mb-6 flex items-center gap-2"><AlertTriangle size={18} className="text-yellow-600" /> PROTECTIONS</h4>
+                  <h4 className="font-oswald text-lg uppercase tracking-widest font-bold text-[#555] mb-6 flex items-center gap-2"><AlertTriangle size={18} className="text-yellow-600" /> PROTECTIONS</h4>
                   <p className="text-[10px] text-[#888] uppercase font-mono leading-relaxed mb-4">Advance is strictly for deployment on TikTok Ads and Spotify Marquee APIs.</p>
                   <button onClick={handleInitializeNewTrack} className="w-full border border-red-900/30 text-[#444] py-3 text-[10px] uppercase font-bold hover:text-white hover:border-white transition-all"><PlusCircle size={14} className="inline mr-2"/> Start New Project</button>
                 </div>

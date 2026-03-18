@@ -35,7 +35,7 @@ export default function Room06_Mastering() {
   const { audioData, vocalStems, generatedLyrics, setActiveRoom, addToast, finalMaster, setFinalMaster, userSession } = useMatrixStore();
   
   const [lufs, setLufs] = useState(-14); 
-  const [actualLUFS, setActualLUFS] = useState(-20); // Measuring the REAL buffer
+  const [actualLUFS, setActualLUFS] = useState(-20); 
   const [status, setStatus] = useState<"idle" | "processing" | "uploading" | "success">(finalMaster ? "success" : "idle");
   const [isZipping, setIsZipping] = useState(false);
   const [hasToken, setHasToken] = useState(false);
@@ -54,7 +54,6 @@ export default function Room06_Mastering() {
 
   const handlePurchaseToken = async () => {
     if(addToast) addToast("Routing to Secure Payment...", "info");
-    // Simulate return from Stripe checkout
     setTimeout(() => {
       setHasToken(true);
       if(addToast) addToast("Mastering Token Acquired.", "success");
@@ -62,7 +61,7 @@ export default function Room06_Mastering() {
   };
 
   const handleMastering = async () => {
-    if (!audioData?.url) { addToast("No instrumental beat detected.", "error"); return; }
+    if (!audioData?.url) { if(addToast) addToast("No instrumental beat detected.", "error"); return; }
     if (!hasToken) return;
     
     setStatus("processing");
@@ -98,7 +97,9 @@ export default function Room06_Mastering() {
 
       const offlineCtx = new OfflineAudioContext(2, tmpCtx.sampleRate * maxDuration, tmpCtx.sampleRate);
       const mixBus = offlineCtx.createGain();
-      mixBus.gain.value = Math.pow(10, ((lufs - (-MeasuredDB)) / 20)); // Normalized target
+      
+      // THE FIX: Corrected variable case 'measuredDB' and math (target - current)
+      mixBus.gain.value = Math.pow(10, (lufs - measuredDB) / 20); 
 
       const limiter = offlineCtx.createDynamicsCompressor();
       limiter.threshold.value = -0.5; limiter.knee.value = 0; limiter.ratio.value = 20; 
@@ -188,7 +189,6 @@ export default function Room06_Mastering() {
 
       <div className="w-full max-w-xl bg-[#050505] border border-[#222] p-10 flex flex-col items-center rounded-lg relative overflow-hidden group">
         
-        {/* ANALOG LUFS METER */}
         <div className="w-48 h-24 overflow-hidden relative mb-8 flex justify-center items-end border-b-2 border-[#333] bg-[#0a0a0a] rounded-t-full">
            <div className="absolute w-full h-full rounded-t-full border-t-[8px] border-l-[8px] border-r-[8px] border-[#222] z-10"></div>
            <div 
