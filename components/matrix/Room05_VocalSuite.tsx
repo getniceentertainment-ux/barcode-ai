@@ -14,7 +14,6 @@ const VOCAL_CHAINS = [
   { id: "fusion_eq", name: "Fusion EQ", desc: "Latin / Grime Wall of Sound", color: "text-green-500", comp: { ratio: 2, attack: 0.030, release: 0.250, knee: 40, threshold: -22 }, eq: [0, 0, 2, 0, 1, 2, 2, 0, 0, 0], presence: 20, reverb: 20 },
 ];
 
-// Creates a mathematically dense impulse response for the arena reverb
 function createReverb(audioCtx: BaseAudioContext, duration: number, decay: number) {
   const length = audioCtx.sampleRate * duration;
   const impulse = audioCtx.createBuffer(2, length, audioCtx.sampleRate);
@@ -28,7 +27,7 @@ function createReverb(audioCtx: BaseAudioContext, duration: number, decay: numbe
   return impulse;
 }
 
-// Creates a non-linear distortion curve for the "Vocal Presence / Saturation" node
+// NEW: Creates a non-linear distortion curve for the "Vocal Presence / Saturation" node
 function makeDistortionCurve(amount: number) {
   const k = amount;
   const n_samples = 44100;
@@ -112,7 +111,7 @@ export default function Room05_VocalSuite() {
       const compressor = ctx.createDynamicsCompressor();
       compRef.current = compressor;
 
-      // New: Native Web Audio Saturation (Waveshaper)
+      // NEW: Native Web Audio Saturation (Waveshaper)
       const saturation = ctx.createWaveShaper();
       saturation.curve = makeDistortionCurve(VOCAL_CHAINS[0].presence / 2);
       saturation.oversample = '4x';
@@ -251,7 +250,7 @@ export default function Room05_VocalSuite() {
       offlineComp.release.value = preset.comp.release;
       offlineComp.knee.value = preset.comp.knee;
       offlineComp.threshold.value = preset.comp.threshold;
-      
+
       const offlineSaturation = offlineCtx.createWaveShaper();
       offlineSaturation.curve = makeDistortionCurve(presenceIntensity / 2);
       offlineSaturation.oversample = '4x';

@@ -50,11 +50,6 @@ interface MatrixState {
   finalMaster: FinalMaster | null;
   setFinalMaster: (master: FinalMaster | null) => void;
 
-  playbackMode: "session" | "radio";
-  setPlaybackMode: (mode: "session" | "radio") => void;
-  radioTrack: { url: string; title: string; artist: string; score: number } | null;
-  setRadioTrack: (track: { url: string; title: string; artist: string; score: number } | null) => void;
-
   mdxJobId: string | null;
   setMdxJobId: (id: string | null) => void;
   mdxStatus: "idle" | "processing" | "success" | "failed";
@@ -97,9 +92,6 @@ export const useMatrixStore = create<MatrixState>()(
       vocalStems: [],
       finalMaster: null,
       
-      playbackMode: "session",
-      radioTrack: null,
-      
       mdxJobId: null,
       mdxStatus: "idle",
       
@@ -130,8 +122,6 @@ export const useMatrixStore = create<MatrixState>()(
       })),
 
       setFinalMaster: (master) => set({ finalMaster: master }),
-      setPlaybackMode: (mode) => set({ playbackMode: mode }),
-      setRadioTrack: (track) => set({ radioTrack: track }),
       setMdxJobId: (id) => set({ mdxJobId: id }),
       setMdxStatus: (status) => set({ mdxStatus: status }),
       
@@ -149,8 +139,7 @@ export const useMatrixStore = create<MatrixState>()(
       clearMatrix: () => set({
         audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
         gwTitle: "", gwPrompt: "", gwStyle: "getnice_flow", gwGender: "male", gwUseSlang: true, gwUseIntel: true, 
-        finalMaster: null, mdxJobId: null, mdxStatus: "idle", isFinalized: false,
-        playbackMode: "session", radioTrack: null
+        finalMaster: null, mdxJobId: null, mdxStatus: "idle", isFinalized: false
       })
     }),
     {
@@ -166,8 +155,6 @@ export const useMatrixStore = create<MatrixState>()(
         gwStyle: state.gwStyle,
         gwUseSlang: state.gwUseSlang,
         gwUseIntel: state.gwUseIntel,
-        playbackMode: state.playbackMode,
-        radioTrack: state.radioTrack,
         mdxJobId: state.mdxJobId,
         mdxStatus: state.mdxStatus,
         isFinalized: state.isFinalized,

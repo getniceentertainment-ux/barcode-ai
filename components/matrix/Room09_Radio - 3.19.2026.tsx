@@ -14,15 +14,8 @@ interface ApprovedTrack {
   created_at: string;
 }
 
-// SEED TRACKS: Fills the radio if the database is empty
-const SEED_TRACKS: ApprovedTrack[] = [
-  { id: "seed_1", title: "NEON BLOOD (MASTER)", audio_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", hit_score: 98, user_id: "GETNICE_ADM", created_at: new Date().toISOString() },
-  { id: "seed_2", title: "GHOST PROTOCOL", audio_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", hit_score: 95, user_id: "SYSTEM_NODE", created_at: new Date().toISOString() },
-  { id: "seed_3", title: "SILICON SOUL", audio_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", hit_score: 91, user_id: "AURA_SYNTH", created_at: new Date().toISOString() },
-];
-
 export default function Room09_Radio() {
-  const { radioTrack, setRadioTrack, setPlaybackMode, playbackMode } = useMatrixStore();
+  const { setAudioData, audioData } = useMatrixStore();
   const [tracks, setTracks] = useState<ApprovedTrack[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -39,24 +32,16 @@ export default function Room09_Radio() {
         .order('hit_score', { ascending: false });
 
       if (error) throw error;
-      
-      // AUTO-SEED: Use the database tracks, but fallback to seeds if empty!
-      const finalTracks = (data && data.length > 0) ? data : SEED_TRACKS;
-      setTracks(finalTracks);
-      
+      setTracks(data || []);
     } catch (err) {
       console.error("Failed to load Radio:", err);
-      setTracks(SEED_TRACKS); // Ultimate fallback
     } finally {
       setIsLoading(false);
     }
   };
 
   const playRadioTrack = (track: ApprovedTrack) => {
-    // THE FIX: Uses the dedicated radio state, leaving the user's Room 01 DSP session 100% safe!
-    setRadioTrack({ url: track.audio_url, title: track.title, artist: track.user_id.substring(0,8), score: track.hit_score });
-    setPlaybackMode('radio');
-    
+    setAudioData({ url: track.audio_url, fileName: track.title, bpm: 0, totalBars: 0 });
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent('matrix-global-seek', { detail: 0 }));
       window.dispatchEvent(new Event('matrix-global-play'));
@@ -97,7 +82,7 @@ export default function Room09_Radio() {
         ) : (
           <div className="space-y-4">
             {tracks.map((track, index) => {
-              const isPlaying = playbackMode === 'radio' && radioTrack?.url === track.audio_url;
+              const isPlaying = audioData?.url === track.audio_url;
               const isHeavyRotation = track.hit_score >= 95;
 
               return (
