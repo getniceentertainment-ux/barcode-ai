@@ -35,8 +35,7 @@ export default function Room03_Ghostwriter() {
 
   const calculateTotalBars = () => blueprint.reduce((acc, section) => acc + section.bars, 0);
 
-  // AUTOMATED TIMELINE RETENTION
-  // Assigns absolute startBars initially. If a block is deleted, remaining blocks retain their offset!
+  // THE FIX: Automatically assign and track 'startBar' so blocks remember their absolute position
   useEffect(() => {
     let currentBar = 0;
     let hasChanges = false;
@@ -104,7 +103,8 @@ export default function Room03_Ghostwriter() {
           gender: gwGender,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
-          blueprint: blueprint.map(b => ({ type: b.type, bars: b.bars }))
+          // PASS ABSOLUTE OFFSETS TO BACKEND
+          blueprint: blueprint.map(b => ({ type: b.type, bars: b.bars, startBar: (b as any).startBar || 0 }))
         })
       });
 
@@ -121,7 +121,7 @@ export default function Room03_Ghostwriter() {
         else setUxState("Synthesizing Bars...");
 
         try {
-          const statusRes = await fetch(`/api/ghostwriter?jobId=${jobId}&t=${Date.now()}`);
+          const statusRes = await fetch(`/api/ghostwriter?jobId=${jobId}`);
           const statusData = await statusRes.json();
 
           if (statusData.status === 'COMPLETED') {
@@ -156,6 +156,11 @@ export default function Room03_Ghostwriter() {
       const token = session?.access_token;
       if (!token) throw new Error("Security Exception: Missing Session Token.");
 
+      // THE FIX: Strip the generated (0:10) time prefix so TALON only rewrites the lyric itself
+      const timestampMatch = selectedLine.match(/^\(\d+:\d+\)\s*/);
+      const timestampPrefix = timestampMatch ? timestampMatch[0] : '';
+      const cleanOriginalLine = selectedLine.replace(/^\(\d+:\d+\)\s*/, '');
+
       const res = await fetch('/api/ghostwriter/refine', {
         method: 'POST',
         headers: { 
@@ -164,7 +169,7 @@ export default function Room03_Ghostwriter() {
         },
         body: JSON.stringify({ 
           userId: userSession?.id,
-          originalLine: selectedLine, 
+          originalLine: cleanOriginalLine, 
           instruction: refineInstruction,
           style: gwStyle 
         })
@@ -173,7 +178,11 @@ export default function Room03_Ghostwriter() {
       if (!res.ok) throw new Error("Refinement API Error");
 
       const data = await res.json();
-      const updatedLyrics = lyrics.replace(selectedLine, data.refinedLine);
+      
+      // Re-attach the timestamp prefix to the newly rewritten lyric
+      const finalRefinedLine = timestampPrefix + data.refinedLine;
+      const updatedLyrics = lyrics.replace(selectedLine, finalRefinedLine);
+      
       setLyrics(updatedLyrics);
       setGeneratedLyrics(updatedLyrics);
       setRefineInstruction("");
@@ -281,7 +290,7 @@ export default function Room03_Ghostwriter() {
            </div>
         </div>
 
-        {/* BLUEPRINT BLOCK BUILDER (With Absolute Offsets) */}
+        {/* BLUEPRINT BLOCK BUILDER (With Absolute Positioning) */}
         <div className="h-44 bg-black border-b border-[#222] overflow-x-auto flex items-center px-8 gap-4 shrink-0 custom-scrollbar shadow-[inset_0_-10px_20px_rgba(0,0,0,0.5)]">
           {blueprint.map((block, index) => (
             <div key={block.id} className="w-40 shrink-0 bg-[#050505] border border-[#333] p-4 flex flex-col justify-between h-32 group relative hover:border-[#E60000] transition-colors">
@@ -293,8 +302,8 @@ export default function Room03_Ghostwriter() {
                 <h4 className="font-oswald text-lg uppercase tracking-widest text-white">{block.type}</h4>
                 <p className="font-mono text-[10px] text-[#E60000] font-bold">{block.bars} BARS</p>
               </div>
-
-              {/* TIMELINE OFFSET CONTROLS */}
+              
+              {/* THE TIMELINE OFFSET CONTROLS */}
               <div className="flex justify-between items-center mt-2 border-t border-[#333] pt-2">
                 <span className="text-[9px] font-mono text-[#555] uppercase tracking-widest">Start Bar</span>
                 <div className="flex items-center gap-2">
@@ -307,6 +316,7 @@ export default function Room03_Ghostwriter() {
                    />
                 </div>
               </div>
+
             </div>
           ))}
           <div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2">
@@ -339,50 +349,22 @@ export default function Room03_Ghostwriter() {
                 <Cpu size={32} className="text-[#E60000] opacity-50" />
               </div>
 
-              {/* RENDERED TEXT: Timeline Synced View */}
-              {(() => {
-                 let currentBlockIndex = -1;
-                 let barOffsetWithinBlock = 0;
-                 
-                 return lyrics.split('\n').map((line, i) => {
-                   const text = line.trim();
-                   if (!text) return null;
-
-                   if (text.startsWith('[')) {
-                      currentBlockIndex++;
-                      barOffsetWithinBlock = 0; // Reset for new block
-                      return <p key={i} className="text-[#E60000] font-bold mt-8 mb-4 tracking-widest text-xs">{text}</p>;
-                   }
-                   
-                   // Extract exact start bar from the Matrix Blueprint array
-                   let blockStartBar = 0;
-                   if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
-                       const block = blueprint[currentBlockIndex];
-                       if ((block as any).startBar !== undefined) blockStartBar = (block as any).startBar;
-                       else { for(let b=0; b<currentBlockIndex; b++) blockStartBar += blueprint[b].bars; }
-                   }
-
-                   const absoluteBar = blockStartBar + barOffsetWithinBlock;
-                   const startTimeSec = absoluteBar * secondsPerBar;
-                   const mins = Math.floor(startTimeSec / 60);
-                   const secs = Math.floor(startTimeSec % 60).toString().padStart(2, '0');
-                   const timestamp = `(${mins}:${secs})`;
-                   
-                   barOffsetWithinBlock++;
-                   
-                   return (
-                     <div 
-                        key={i} 
-                        onClick={() => setSelectedLine(text)} // Use raw text for editing
-                        className={`flex items-start gap-3 transition-all font-mono text-sm cursor-pointer rounded p-1
-                          ${selectedLine === text ? 'bg-[#E60000]/20 border-l-2 border-[#E60000] pl-3 text-white font-bold' : 'text-gray-300 hover:text-white hover:bg-[#111]'}`}
-                     >
-                        <span className="text-[9px] text-[#555] mt-1 shrink-0 select-none">{timestamp}</span>
-                        <span className="flex-1">{text}</span>
-                     </div>
-                   );
-                 });
-              })()}
+              {/* RENDERED TEXT: Simple Stacked View */}
+              {lyrics.split('\n').map((line, i) => {
+                const isHeader = line.startsWith('[');
+                return (
+                  <p 
+                    key={i} 
+                    onClick={() => !isHeader && setSelectedLine(line)}
+                    className={`font-mono text-sm transition-all
+                      ${isHeader ? 'text-[#E60000] font-bold mt-8 mb-4 tracking-widest text-xs' : 'text-gray-300 hover:text-white cursor-pointer hover:bg-[#111] p-1 rounded'}
+                      ${selectedLine === line ? 'bg-[#E60000]/20 border-l-2 border-[#E60000] pl-3 text-white font-bold' : ''}
+                    `}
+                  >
+                    {line}
+                  </p>
+                )
+              })}
 
               <div className="pt-12 flex justify-end">
                 <button onClick={() => setActiveRoom("04")} className="bg-white text-black px-8 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center gap-2">

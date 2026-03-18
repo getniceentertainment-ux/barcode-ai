@@ -29,14 +29,13 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
 }
 
 export default function Room04_Booth() {
-  const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, setActiveRoom } = useMatrixStore();
+  // THE FIX: Extracted blueprint from the store to map the absolute timestamps
+  const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, setActiveRoom, blueprint } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  
-  // THE FIX: Added timestamp to the UI state tracking
-  const [lyricLines, setLyricLines] = useState<{text: string, timestamp?: string, startTime: number, endTime: number, isHeader: boolean}[]>([]);
+  const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean, timestamp?: string}[]>([]);
   
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
 
@@ -112,67 +111,50 @@ export default function Room04_Booth() {
   useEffect(() => {
     if (!generatedLyrics) return;
     const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5; 
+    const parsed = [];
     const lines = generatedLyrics.split('\n');
-    const parsed: any[] = [];
-
+    
+    let currentBlockIndex = -1;
+    let barOffsetWithinBlock = 0; 
+    
     for (let i = 0; i < lines.length; i++) {
       const text = lines[i].trim();
       if (!text) continue;
-
+      
       if (text.startsWith('[')) {
-         parsed.push({ text, timestamp: "", startTime: 0, endTime: 0, isHeader: true });
+         currentBlockIndex++;
+         barOffsetWithinBlock = 0; // Reset physical counter for new block
+         parsed.push({ text, startTime: 0, isHeader: true, timestamp: "" });
       } else {
-         // Search the line for the absolute (M:SS) timestamp injected by the Ghostwriter
-         const timeMatch = text.match(/^\((\d+):(\d{2})\)\s*(.*)/);
-
-         if (timeMatch) {
-           const mins = parseInt(timeMatch[1], 10);
-           const secs = parseInt(timeMatch[2], 10);
-           const cleanText = timeMatch[3];
-           const startTime = (mins * 60) + secs;
-
-           parsed.push({
-             text: cleanText,
-             timestamp: `(${timeMatch[1]}:${timeMatch[2]})`,
-             startTime: startTime,
-             endTime: startTime + secondsPerBar, 
-             isHeader: false
-           });
-         } else {
-           // Fallback if someone manually deletes a timestamp
-           const lastBlock = parsed.length > 0 ? parsed[parsed.length - 1] : null;
-           const fallbackStart = lastBlock && !lastBlock.isHeader ? lastBlock.endTime : 0;
-           parsed.push({
-             text: text,
-             timestamp: "",
-             startTime: fallbackStart,
-             endTime: fallbackStart + secondsPerBar,
-             isHeader: false
-           });
+         // Determine absolute bar using the Blueprint stored in the Matrix
+         let blockStartBar = 0;
+         if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
+            const block = blueprint[currentBlockIndex];
+            if ((block as any).startBar !== undefined) {
+                blockStartBar = (block as any).startBar;
+            } else {
+                // Fallback: sum previous blocks if matrix memory is empty
+                for(let b=0; b<currentBlockIndex; b++) blockStartBar += blueprint[b].bars;
+            }
          }
+         
+         const absoluteBar = blockStartBar + barOffsetWithinBlock;
+         const startTimeSec = absoluteBar * secondsPerBar;
+         
+         const mins = Math.floor(startTimeSec / 60);
+         const secs = Math.floor(startTimeSec % 60).toString().padStart(2, '0');
+         
+         parsed.push({ 
+            text, 
+            startTime: startTimeSec, 
+            isHeader: false,
+            timestamp: `(${mins}:${secs})`
+         });
+         barOffsetWithinBlock++; 
       }
     }
-
-    // Pass 2: Clean up end times so highlighting smoothly flows into the next line
-    for (let i = 0; i < parsed.length; i++) {
-      if (!parsed[i].isHeader) {
-        let nextLyric = null;
-        for (let j = i + 1; j < parsed.length; j++) {
-          if (!parsed[j].isHeader) {
-            nextLyric = parsed[j];
-            break;
-          }
-        }
-        if (nextLyric) {
-          // Cap duration so it doesn't stay highlighted over massive gaps (like a skipped hook)
-          const duration = nextLyric.startTime - parsed[i].startTime;
-          parsed[i].endTime = parsed[i].startTime + Math.min(duration, secondsPerBar * 2);
-        }
-      }
-    }
-
     setLyricLines(parsed);
-  }, [generatedLyrics, audioData]);
+  }, [generatedLyrics, audioData, blueprint]);
 
   const togglePlayback = () => {
     if (!wavesurferRef.current) return;
@@ -355,7 +337,15 @@ export default function Room04_Booth() {
             lyricLines.map((line, i) => {
               let isActive = false;
               if (!line.isHeader && (isPlaying || isRecording)) {
-                 isActive = currentTime >= line.startTime && currentTime < line.endTime;
+                 const nextLine = lyricLines.slice(i + 1).find(l => !l.isHeader);
+                 const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5; 
+                 let endTime = nextLine ? nextLine.startTime : line.startTime + secondsPerBar;
+                 
+                 // Cap duration to 2 bars max so it doesn't stay lit over massive empty gaps
+                 if (endTime - line.startTime > secondsPerBar * 2) {
+                     endTime = line.startTime + secondsPerBar * 2;
+                 }
+                 isActive = currentTime >= line.startTime && currentTime < endTime;
               }
               return (
                 <div key={i} className={`
