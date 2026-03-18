@@ -29,11 +29,9 @@ export default function Room08_Bank() {
   const marketingAdvance = 1000.00;
 
   useEffect(() => {
-    // Check for returning Stripe URLs (Rollouts or Bank Onboarding)
+    // Check for successful Stripe Return from an Exec Rollout purchase
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      
-      // 1. Returning from an Exec Rollout purchase
       if (params.get('rollout_purchased') === 'true') {
         const trackId = params.get('track_id');
         if (trackId) {
@@ -42,15 +40,8 @@ export default function Room08_Bank() {
           generateExecRollout(trackId);
         }
       }
-
-      // 2. Returning from Linking a Bank Account
-      if (params.get('connect') === 'success') {
-        window.history.replaceState({}, document.title, window.location.pathname);
-        if (addToast) addToast("Stripe Account Linked! You may now withdraw funds.", "success");
-        setNeedsOnboarding(false);
-      }
     }
-  }, [userSession]); 
+  }, [userSession]); // Depend on userSession to ensure auth token is ready
 
   useEffect(() => {
     const evaluateLedger = async () => {
@@ -129,6 +120,7 @@ export default function Room08_Bank() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
 
+        // Update local state and show the modal!
         setVaultTracks(prev => prev.map(t => t.id === trackId ? { ...t, exec_rollout: data.rollout } : t));
         setActiveRollout(data.rollout);
         if(addToast) addToast("Exec Rollout Strategy Generated.", "success");

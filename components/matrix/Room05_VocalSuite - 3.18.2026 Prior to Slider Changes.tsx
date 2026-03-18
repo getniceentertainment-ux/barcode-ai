@@ -7,14 +7,13 @@ import { useMatrixStore } from "../../store/useMatrixStore";
 const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
 const VOCAL_CHAINS = [
-  { id: "getnice_eq", name: "GetNice EQ", desc: "Signature Introspective, Vocal-Forward", color: "text-[#E60000]", comp: { ratio: 2, attack: 0.030, release: 0.125, knee: 40, threshold: -24 }, eq: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5], presence: 30, reverb: 25 },
-  { id: "foundation_eq", name: "Foundation EQ", desc: "Boom Bap / Golden Age Gritty Punch", color: "text-yellow-500", comp: { ratio: 4, attack: 0.012, release: 0.045, knee: 0, threshold: -28 }, eq: [3, 3, 0, 0, 0, 0, 0, -1, -2, -4], presence: 10, reverb: 15 },
-  { id: "gangsta_eq", name: "Gangsta EQ", desc: "Trap / Southern 808 Heavy", color: "text-purple-500", comp: { ratio: 3, attack: 0.035, release: 0.100, knee: 0, threshold: -26 }, eq: [4, 0, 0, -3, 0, 0, 0, 0, 1.5, 3], presence: 60, reverb: 30 },
-  { id: "modern_eq", name: "Modern EQ", desc: "Drill / Hyper-Controlled & Scooped", color: "text-blue-500", comp: { ratio: 5, attack: 0.003, release: 0.050, knee: 0, threshold: -30 }, eq: [0, 2, 0, 0, -2, 0, 0, 2, 0, 0], presence: 40, reverb: 45 },
-  { id: "fusion_eq", name: "Fusion EQ", desc: "Latin / Grime Wall of Sound", color: "text-green-500", comp: { ratio: 2, attack: 0.030, release: 0.250, knee: 40, threshold: -22 }, eq: [0, 0, 2, 0, 1, 2, 2, 0, 0, 0], presence: 20, reverb: 20 },
+  { id: "getnice_eq", name: "GetNice EQ", desc: "Signature Introspective, Vocal-Forward", color: "text-[#E60000]", comp: { ratio: 2, attack: 0.030, release: 0.125, knee: 40, threshold: -24 }, eq: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5], pitch: 50, reverb: 25 },
+  { id: "foundation_eq", name: "Foundation EQ", desc: "Boom Bap / Golden Age Gritty Punch", color: "text-yellow-500", comp: { ratio: 4, attack: 0.012, release: 0.045, knee: 0, threshold: -28 }, eq: [3, 3, 0, 0, 0, 0, 0, -1, -2, -4], pitch: 10, reverb: 15 },
+  { id: "gangsta_eq", name: "Gangsta EQ", desc: "Trap / Southern 808 Heavy", color: "text-purple-500", comp: { ratio: 3, attack: 0.035, release: 0.100, knee: 0, threshold: -26 }, eq: [4, 0, 0, -3, 0, 0, 0, 0, 1.5, 3], pitch: 80, reverb: 30 },
+  { id: "modern_eq", name: "Modern EQ", desc: "Drill / Hyper-Controlled & Scooped", color: "text-blue-500", comp: { ratio: 5, attack: 0.003, release: 0.050, knee: 0, threshold: -30 }, eq: [0, 2, 0, 0, -2, 0, 0, 2, 0, 0], pitch: 90, reverb: 45 },
+  { id: "fusion_eq", name: "Fusion EQ", desc: "Latin / Grime Wall of Sound", color: "text-green-500", comp: { ratio: 2, attack: 0.030, release: 0.250, knee: 40, threshold: -22 }, eq: [0, 0, 2, 0, 1, 2, 2, 0, 0, 0], pitch: 40, reverb: 20 },
 ];
 
-// Creates a mathematically dense impulse response for the arena reverb
 function createReverb(audioCtx: BaseAudioContext, duration: number, decay: number) {
   const length = audioCtx.sampleRate * duration;
   const impulse = audioCtx.createBuffer(2, length, audioCtx.sampleRate);
@@ -26,19 +25,6 @@ function createReverb(audioCtx: BaseAudioContext, duration: number, decay: numbe
     right[i] = (Math.random() * 2 - 1) * Math.pow(n, decay);
   }
   return impulse;
-}
-
-// Creates a non-linear distortion curve for the "Vocal Presence / Saturation" node
-function makeDistortionCurve(amount: number) {
-  const k = amount;
-  const n_samples = 44100;
-  const curve = new Float32Array(n_samples);
-  const deg = Math.PI / 180;
-  for (let i = 0; i < n_samples; ++i) {
-    const x = (i * 2) / n_samples - 1;
-    curve[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
-  }
-  return curve;
 }
 
 function audioBufferToWav(buffer: AudioBuffer) {
@@ -66,7 +52,7 @@ export default function Room05_VocalSuite() {
   const { vocalStems, addVocalStem, removeVocalStem, setActiveRoom, addToast } = useMatrixStore();
   
   const [activeChain, setActiveChain] = useState(VOCAL_CHAINS[0].id);
-  const [presenceIntensity, setPresenceIntensity] = useState(VOCAL_CHAINS[0].presence);
+  const [pitchIntensity, setPitchIntensity] = useState(VOCAL_CHAINS[0].pitch);
   const [reverbMix, setReverbMix] = useState(VOCAL_CHAINS[0].reverb);
   const [status, setStatus] = useState<"idle" | "processing" | "success">("idle");
   const [audioReady, setAudioReady] = useState(false);
@@ -79,11 +65,10 @@ export default function Room05_VocalSuite() {
   const dryGainRef = useRef<GainNode | null>(null);
   const eqBandsRef = useRef<BiquadFilterNode[]>([]);
   const compRef = useRef<DynamicsCompressorNode | null>(null);
-  const saturationRef = useRef<WaveShaperNode | null>(null);
 
   const handleSelectChain = (chain: typeof VOCAL_CHAINS[0]) => {
     setActiveChain(chain.id);
-    setPresenceIntensity(chain.presence); // Snap sliders to the preset's baseline
+    setPitchIntensity(chain.pitch);
     setReverbMix(chain.reverb);
   };
 
@@ -112,23 +97,17 @@ export default function Room05_VocalSuite() {
       const compressor = ctx.createDynamicsCompressor();
       compRef.current = compressor;
 
-      // New: Native Web Audio Saturation (Waveshaper)
-      const saturation = ctx.createWaveShaper();
-      saturation.curve = makeDistortionCurve(VOCAL_CHAINS[0].presence / 2);
-      saturation.oversample = '4x';
-      saturationRef.current = saturation;
-
       masterGain.connect(dryGain);
       let prevNode: AudioNode = dryGain;
       eqBandsRef.current.forEach(band => { prevNode.connect(band); prevNode = band; });
       prevNode.connect(compressor);
-      compressor.connect(saturation);
-      saturation.connect(ctx.destination);
+      compressor.connect(ctx.destination);
 
       masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(ctx.destination);
 
       vocalStems.forEach(stem => {
         const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
+        // FIX: strict check to prevent React double-render crash on media element routing
         if (el && !(el as any)._routed) {
           try {
             const source = ctx.createMediaElementSource(el);
@@ -143,15 +122,12 @@ export default function Room05_VocalSuite() {
     return () => { if (audioCtxRef.current?.state !== 'closed') { audioCtxRef.current?.close(); audioCtxRef.current = null; }};
   }, [vocalStems]);
 
-  // LIVE OVERRIDE OBSERVER: Instantly pipes user slider changes to the live audio graph
   useEffect(() => {
     if (wetGainRef.current && dryGainRef.current) {
       wetGainRef.current.gain.value = reverbMix / 100;
       dryGainRef.current.gain.value = 1 - (reverbMix / 100);
     }
     const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
-    
-    // Lock the complex EQ & Comp to the CEO Preset
     if (eqBandsRef.current.length === 10) {
       eqBandsRef.current.forEach((band, i) => { band.gain.value = preset.eq[i]; });
     }
@@ -162,12 +138,7 @@ export default function Room05_VocalSuite() {
       compRef.current.knee.value = preset.comp.knee;
       compRef.current.threshold.value = preset.comp.threshold;
     }
-    
-    // Wire the Saturation override to the user's manual slider state
-    if (saturationRef.current) {
-      saturationRef.current.curve = makeDistortionCurve(presenceIntensity / 2);
-    }
-  }, [reverbMix, presenceIntensity, activeChain]);
+  }, [reverbMix, pitchIntensity, activeChain]);
 
   useEffect(() => {
     vocalStems.forEach(stem => {
@@ -239,8 +210,6 @@ export default function Room05_VocalSuite() {
       convolver.buffer = createReverb(offlineCtx, 2.5, 2.0);
       
       const wetGain = offlineCtx.createGain(); const dryGain = offlineCtx.createGain();
-      
-      // BAKE OVERRIDE: Applies the exact user-defined state to the final audio block
       wetGain.gain.value = reverbMix / 100; dryGain.gain.value = 1 - (reverbMix / 100);
 
       const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
@@ -251,10 +220,6 @@ export default function Room05_VocalSuite() {
       offlineComp.release.value = preset.comp.release;
       offlineComp.knee.value = preset.comp.knee;
       offlineComp.threshold.value = preset.comp.threshold;
-      
-      const offlineSaturation = offlineCtx.createWaveShaper();
-      offlineSaturation.curve = makeDistortionCurve(presenceIntensity / 2);
-      offlineSaturation.oversample = '4x';
 
       masterGain.connect(dryGain);
       let prevOfflineNode: AudioNode = dryGain;
@@ -269,8 +234,7 @@ export default function Room05_VocalSuite() {
       });
 
       prevOfflineNode.connect(offlineComp);
-      offlineComp.connect(offlineSaturation);
-      offlineSaturation.connect(offlineCtx.destination);
+      offlineComp.connect(offlineCtx.destination);
       masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(offlineCtx.destination);
 
       decodedBuffers.forEach(buf => {
@@ -366,14 +330,10 @@ export default function Room05_VocalSuite() {
             <div className="space-y-8">
               <div>
                 <div className="flex justify-between items-center mb-3">
-                  <label className="text-[10px] font-mono uppercase text-[#888] tracking-widest">Vocal Presence / Saturation</label>
-                  <span className="text-xs font-mono text-white">{presenceIntensity}%</span>
+                  <label className="text-[10px] font-mono uppercase text-[#888] tracking-widest">Presence / Autotune Shift</label>
+                  <span className="text-xs font-mono text-white">{pitchIntensity}%</span>
                 </div>
-                <input type="range" min="0" max="100" value={presenceIntensity} onChange={(e) => setPresenceIntensity(Number(e.target.value))} disabled={status !== "idle"} className="w-full h-1 bg-[#333] appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-[#E60000] disabled:opacity-30" />
-                <div className="flex justify-between text-[8px] font-mono text-[#555] uppercase mt-1">
-                  <span>Clean</span>
-                  <span>Saturated</span>
-                </div>
+                <input type="range" min="0" max="100" value={pitchIntensity} onChange={(e) => setPitchIntensity(Number(e.target.value))} disabled={status !== "idle"} className="w-full h-1 bg-[#333] appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-[#E60000] disabled:opacity-30" />
               </div>
               <div>
                 <div className="flex justify-between items-center mb-3">
@@ -381,10 +341,6 @@ export default function Room05_VocalSuite() {
                   <span className="text-xs font-mono text-white">{reverbMix}%</span>
                 </div>
                 <input type="range" min="0" max="100" value={reverbMix} onChange={(e) => setReverbMix(Number(e.target.value))} disabled={status !== "idle"} className="w-full h-1 bg-[#333] appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-[#E60000] disabled:opacity-30" />
-                <div className="flex justify-between text-[8px] font-mono text-[#555] uppercase mt-1">
-                  <span>Dry (Booth)</span>
-                  <span>Wet (Arena)</span>
-                </div>
               </div>
             </div>
           </div>
