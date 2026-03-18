@@ -15,10 +15,14 @@ interface MatrixState {
   
   activeProjectId: string | null;
   isProjectFinalized: boolean;
+
+  playbackMode: 'session' | 'radio';
+  radioTrack: { url: string; title: string; artist: string; score: number } | null;
+  setPlaybackMode: (mode: 'session' | 'radio') => void;
+  setRadioTrack: (track: { url: string; title: string; artist: string; score: number } | null) => void;
   
   grantAccess: (session: UserSession) => void;
   setActiveRoom: (roomId: string) => void;
-  setActiveProject: (id: string | null, isFinalized: boolean) => void;
 
   audioData: AudioAnalysis | null;
   setAudioData: (data: AudioAnalysis) => void;
@@ -54,6 +58,19 @@ interface MatrixState {
   finalMaster: FinalMaster | null;
   setFinalMaster: (master: FinalMaster | null) => void;
 
+  playbackMode: "session" | "radio";
+  setPlaybackMode: (mode: "session" | "radio") => void;
+  radioTrack: { url: string; title: string; artist: string; score: number } | null;
+  setRadioTrack: (track: { url: string; title: string; artist: string; score: number } | null) => void;
+
+  mdxJobId: string | null;
+  setMdxJobId: (id: string | null) => void;
+  mdxStatus: "idle" | "processing" | "success" | "failed";
+  setMdxStatus: (status: "idle" | "processing" | "success" | "failed") => void;
+
+  isFinalized: boolean;
+  setIsFinalized: (val: boolean) => void;
+
   toasts: ToastMessage[];
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
   removeToast: (id: string) => void;
@@ -68,33 +85,43 @@ export const useMatrixStore = create<MatrixState>()(
       activeRoom: "01",
       userSession: null,
       
-      activeProjectId: null,
-      isProjectFinalized: false,
-      
       audioData: null,
       flowDNA: null,
       
       gwTitle: "",
       gwPrompt: "",
-      gwStyle: "getnice_hybrid",
+      gwStyle: "getnice_flow", 
       gwGender: "male",
       gwUseSlang: true,
       gwUseIntel: true,
 
       blueprint: [
-        { id: "1", type: "INTRO", bars: 4 },
-        { id: "2", type: "HOOK", bars: 8 },
-        { id: "3", type: "VERSE", bars: 16 }
-      ],
-      generatedLyrics: null,
+    { id: "1", type: "INTRO", bars: 4 },
+    { id: "2", type: "HOOK", bars: 8 },
+    { id: "3", type: "VERSE", bars: 16 }
+  ],
+  generatedLyrics: null,
+  
+  playbackMode: 'session',
+  radioTrack: null,
+  setPlaybackMode: (mode) => set({ playbackMode: mode }),
+  setRadioTrack: (track) => set({ radioTrack: track }),
+
+  vocalStems: [],
+  finalMaster: null,
       
-      vocalStems: [],
-      finalMaster: null,
+      playbackMode: "session",
+      radioTrack: null,
+      
+      mdxJobId: null,
+      mdxStatus: "idle",
+      
+      isFinalized: false,
+
       toasts: [],
 
       grantAccess: (session) => set({ hasAccess: true, userSession: session }),
       setActiveRoom: (roomId) => set({ activeRoom: roomId }),
-      setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
       
       setAudioData: (data) => set({ audioData: data }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
@@ -116,6 +143,12 @@ export const useMatrixStore = create<MatrixState>()(
       })),
 
       setFinalMaster: (master) => set({ finalMaster: master }),
+      setPlaybackMode: (mode) => set({ playbackMode: mode }),
+      setRadioTrack: (track) => set({ radioTrack: track }),
+      setMdxJobId: (id) => set({ mdxJobId: id }),
+      setMdxStatus: (status) => set({ mdxStatus: status }),
+      
+      setIsFinalized: (val) => set({ isFinalized: val }),
 
       addToast: (message, type) => {
         const id = Math.random().toString(36).substring(7);
@@ -126,12 +159,12 @@ export const useMatrixStore = create<MatrixState>()(
       },
       removeToast: (id) => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })),
 
-      clearMatrix: () => set({
-        audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
-        gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
-        userSession: null, hasAccess: false // THE FIX: Wipes the zombie session
-      })
-    }),
+  clearMatrix: () => set({
+    audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
+    gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
+    userSession: null, hasAccess: false, playbackMode: 'session', radioTrack: null
+  })
+}),
     {
       name: 'barcode-matrix-storage', 
       storage: createJSONStorage(() => localStorage),
@@ -143,9 +176,14 @@ export const useMatrixStore = create<MatrixState>()(
         gwTitle: state.gwTitle,
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
-        activeProjectId: state.activeProjectId,
-        isProjectFinalized: state.isProjectFinalized
-        // Notice we purposely leave out userSession here so it requires a fresh DB fetch on hard refresh
+        gwUseSlang: state.gwUseSlang,
+        gwUseIntel: state.gwUseIntel,
+        playbackMode: state.playbackMode,
+        radioTrack: state.radioTrack,
+        mdxJobId: state.mdxJobId,
+        mdxStatus: state.mdxStatus,
+        isFinalized: state.isFinalized,
+        finalMaster: state.finalMaster ? { url: state.finalMaster.url, blob: "" as any } : null
       }),
     }
   )
