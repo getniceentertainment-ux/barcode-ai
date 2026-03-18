@@ -1,17 +1,34 @@
 "use client";
 
-import React, { useState, useRef } from "react";
-import { UploadCloud, FileAudio, Loader2, CheckCircle2, AlertTriangle, ShieldCheck, Music, ArrowRight } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { UploadCloud, FileAudio, Loader2, CheckCircle2, AlertTriangle, ShieldCheck, Music, ArrowRight, Zap } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
+import { supabase } from "../../lib/supabase";
 
 export default function Room01_Lab() {
-  const { setAudioData, setActiveRoom, addToast } = useMatrixStore();
+  const { audioData, setAudioData, setActiveRoom, addToast, userSession } = useMatrixStore();
   
   const [dragActive, setDragActive] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">("idle");
+  const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">(audioData ? "success" : "idle");
   const [isDisclaimerAccepted, setIsDisclaimerAccepted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Catch returning Stripe redirects for purchased leases
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('beat_purchased') === 'true') {
+        const beatUrl = params.get('beat_url');
+        const beatName = params.get('beat_name');
+        if (beatUrl && beatName) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setIsDisclaimerAccepted(true);
+          handlePurchasedBeatDSP(beatUrl, beatName);
+        }
+      }
+    }
+  }, []);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -19,42 +36,6 @@ export default function Room01_Lab() {
     if (!isDisclaimerAccepted) return; // Block drag visuals if not accepted
     if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
     else if (e.type === "dragleave") setDragActive(false);
-  };
-
-  const processFile = async (selectedFile: File) => {
-    if (!selectedFile.type.includes("audio/")) {
-      if (addToast) addToast("Invalid artifact. Audio files only.", "error");
-      return;
-    }
-    
-    setFile(selectedFile);
-    setStatus("uploading");
-
-    // 1. Simulate secure upload to Supabase Storage
-    await new Promise(r => setTimeout(r, 1500));
-    setStatus("analyzing");
-
-    // 2. Simulate DSP Handoff to RunPod Serverless
-    await new Promise(r => setTimeout(r, 2000));
-    
-    // 3. DSP Success & Store Update
-    const mockDSP = {
-      url: URL.createObjectURL(selectedFile),
-      fileName: selectedFile.name,
-      bpm: Math.floor(Math.random() * (140 - 85 + 1) + 85), // Random BPM between 85-140
-      key: ["C Min", "G Min", "F# Maj", "A Min"][Math.floor(Math.random() * 4)],
-      duration: 180, // 3 minutes
-      totalBars: 64
-    };
-    
-    setAudioData(mockDSP);
-    setStatus("success");
-    if (addToast) addToast("DSP extraction complete. Blueprint generated.", "success");
-
-    // 4. Auto-route to Brain Train
-    setTimeout(() => {
-      setActiveRoom("02");
-    }, 1500);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -68,44 +49,169 @@ export default function Room01_Lab() {
     }
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0]);
+      processRealFile(e.dataTransfer.files[0]);
     }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
     if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
+      processRealFile(e.target.files[0]);
     }
   };
 
-  const marketplaceBeats = [
-    { id: 1, title: "NEON BLOOD", producer: "GetNice", bpm: 120, key: "C Min" },
-    { id: 2, title: "GHOST PROTOCOL", producer: "Vex", bpm: 142, key: "F# Min" },
-    { id: 3, title: "SILICON SOUL", producer: "GetNice", bpm: 95, key: "A Min" }
-  ];
+  // THE LIVE DSP INGESTION PIPELINE
+  const processRealFile = async (selectedFile: File) => {
+    if (!selectedFile || !userSession?.id) return;
 
-  const handleMarketplaceSelect = (beat: any) => {
+    if (!selectedFile.type.includes("audio/")) {
+      if (addToast) addToast("Invalid artifact. Audio files only.", "error");
+      return;
+    }
+
+    if (selectedFile.size > 20 * 1024 * 1024) {
+      if (addToast) addToast("Payload Exceeds 20MB Limit. Please compress audio file.", "error");
+      return;
+    }
+    
+    setFile(selectedFile);
+    setStatus("uploading");
+
+    try {
+      // 1. Upload to Secure Supabase Bucket
+      const filePath = `${userSession.id}/${Date.now()}_${selectedFile.name.replace(/\s+/g, '_')}`;
+      const { error: uploadError } = await supabase.storage.from('audio_raw').upload(filePath, selectedFile);
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage.from('audio_raw').getPublicUrl(filePath);
+      const currentCloudUrl = publicUrlData.publicUrl;
+
+      // 2. Fetch Secure JWT Token
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Security Exception: Valid JWT Token required.");
+
+      setStatus("analyzing");
+
+      // 3. DSP Forensics Call (RunPod Worker 2)
+      const res = await fetch('/api/dsp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ file_url: currentCloudUrl })
+      });
+
+      const analysis = await res.json();
+
+      if (!res.ok) {
+        await supabase.storage.from('audio_raw').remove([filePath]);
+        throw new Error(analysis.error || "DSP Processing failed");
+      }
+
+      // 4. Save to Global Matrix Store
+      setAudioData({
+        url: currentCloudUrl,
+        fileName: selectedFile.name,
+        bpm: analysis.bpm || 120,
+        totalBars: analysis.total_bars || 64,
+        key: analysis.key || "Unknown",
+        grid: analysis.grid || []
+      });
+
+      setStatus("success");
+      if (addToast) addToast("Audio imported & analyzed successfully", "success");
+
+      // 5. Auto-route to Brain Train
+      setTimeout(() => {
+        setActiveRoom("02");
+      }, 1500);
+
+    } catch (err: any) {
+      console.error("DSP Pipeline Error:", err);
+      if (addToast) addToast(err.message || "Error processing audio.", "error");
+      setStatus("idle");
+    }
+  };
+
+  // STRIPE BEAT LEASING
+  const handleMarketplaceSelect = async (beat: any) => {
     if (!isDisclaimerAccepted) {
       if (addToast) addToast("Please accept the IP & Licensing Declaration below first.", "error");
       return;
     }
 
-    // Mocking a marketplace selection
-    setStatus("analyzing");
-    setTimeout(() => {
-      setAudioData({
-        url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", // Safe placeholder audio
-        fileName: `${beat.title} (Prod. ${beat.producer}).mp3`,
-        bpm: beat.bpm,
-        key: beat.key,
-        duration: 210,
-        totalBars: 88
+    setStatus("analyzing"); // Briefly show loading while Stripe handshake happens
+    try {
+      const res = await fetch('/api/stripe/beat-lease', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          beatName: beat.title,
+          beatUrl: beat.url,
+          price: beat.price,
+          userId: userSession?.id
+        })
       });
-      setStatus("success");
-      setTimeout(() => setActiveRoom("02"), 1000);
-    }, 1500);
+
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url; // Bounce to Stripe Checkout
+      } else {
+        throw new Error(data.error || "Failed to initialize Stripe.");
+      }
+    } catch (err: any) {
+      console.error("Marketplace Error:", err);
+      if (addToast) addToast(err.message, "error");
+      setStatus("idle");
+    }
   };
+
+  // HANDLE RETURNING USERS AFTER SUCCESSFUL STRIPE LEASE
+  const handlePurchasedBeatDSP = async (beatUrl: string, beatName: string) => {
+    setStatus("analyzing");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      
+      const res = await fetch('/api/dsp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ file_url: beatUrl })
+      });
+      
+      const analysis = await res.json();
+      if (!res.ok) throw new Error(analysis.error || "DSP Processing failed");
+
+      setAudioData({
+        url: beatUrl,
+        fileName: beatName,
+        bpm: analysis.bpm || 120,
+        totalBars: analysis.total_bars || 64,
+        key: analysis.key || "Unknown",
+        grid: analysis.grid || []
+      });
+
+      setStatus("success");
+      if (addToast) addToast("Beat Licensed & Analyzed Successfully", "success");
+      setTimeout(() => setActiveRoom("02"), 1500);
+
+    } catch (err: any) {
+      console.error("Purchased Beat DSP Error:", err);
+      if (addToast) addToast("Failed to analyze beat: " + err.message, "error");
+      setStatus("idle");
+    }
+  };
+
+  const marketplaceBeats = [
+    { id: 1, title: "NEON BLOOD", producer: "GetNice", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", price: 49.99, bpm: 120, key: "C Min" },
+    { id: 2, title: "GHOST PROTOCOL", producer: "Vex", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", price: 99.99, bpm: 142, key: "F# Min" },
+    { id: 3, title: "SILICON SOUL", producer: "GetNice", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", price: 29.99, bpm: 95, key: "A Min" }
+  ];
 
   return (
     <div className="h-full flex flex-col lg:flex-row gap-8 animate-in fade-in duration-500">
@@ -139,12 +245,17 @@ export default function Room01_Lab() {
           <input ref={fileInputRef} type="file" accept="audio/*" onChange={handleChange} className="hidden" />
 
           {status === "idle" && (
-            <div className={`text-center flex flex-col items-center animate-in zoom-in transition-opacity ${!isDisclaimerAccepted ? 'opacity-40' : 'opacity-100'}`}>
+            <div className={`text-center flex flex-col items-center animate-in zoom-in transition-opacity w-full ${!isDisclaimerAccepted ? 'opacity-40' : 'opacity-100'}`}>
+              <div className="absolute top-4 right-4 bg-[#111] border border-[#333] px-3 py-1 flex items-center gap-2 rounded-full">
+                <Zap size={12} className="text-[#E60000]" />
+                <span className="text-[9px] font-mono uppercase tracking-widest text-[#888]">Cost: 1 Credit</span>
+              </div>
+
               <div className="w-20 h-20 bg-black border border-[#333] rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
                 <FileAudio size={32} className="text-[#E60000]" />
               </div>
               <h3 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-2">Drop Artifact Here</h3>
-              <p className="font-mono text-xs text-[#555] uppercase tracking-widest mb-6">WAV / MP3 / FLAC (MAX 50MB)</p>
+              <p className="font-mono text-xs text-[#555] uppercase tracking-widest mb-6">WAV / MP3 / FLAC (MAX 20MB)</p>
               <button 
                 className={`px-8 py-3 font-bold text-[10px] uppercase tracking-widest transition-colors ${!isDisclaimerAccepted ? 'bg-[#333] text-[#888]' : 'bg-white text-black hover:bg-[#E60000] hover:text-white'}`}
               >
@@ -233,10 +344,10 @@ export default function Room01_Lab() {
               <button 
                 onClick={() => handleMarketplaceSelect(beat)}
                 disabled={status !== "idle" || !isDisclaimerAccepted}
-                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:cursor-not-allowed
-                  ${!isDisclaimerAccepted ? 'bg-[#111] text-[#333]' : 'bg-[#111] text-[#555] group-hover:bg-[#E60000] group-hover:text-white'}`}
+                className={`w-auto px-4 h-8 rounded-full flex items-center justify-center font-bold text-[9px] uppercase tracking-widest transition-all disabled:cursor-not-allowed
+                  ${!isDisclaimerAccepted ? 'bg-[#111] text-[#333]' : 'bg-[#111] text-[#555] hover:bg-[#E60000] hover:text-white'}`}
               >
-                <ArrowRight size={14} />
+                ${beat.price} Lease
               </button>
             </div>
           ))}
