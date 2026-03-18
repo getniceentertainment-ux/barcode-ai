@@ -59,12 +59,20 @@ export default function ArtistProfilePage({ params }: { params: { stageName: str
   const fetchProfileData = async () => {
     setIsLoading(true);
     try {
+      // 1. Catch the literal string "undefined" caused by old cached user sessions
+      if (decodedStageName === "undefined" || !decodedStageName) {
+        setProfile(null);
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Use .maybeSingle() instead of .single() to prevent 406 HTTP Crashes when 0 rows are found
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('id, stage_name, bio, avatar_url, tier, mogul_score, total_referrals, created_at')
         .ilike('stage_name', decodedStageName)
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (profileError || !profileData) {
         setProfile(null);
@@ -174,7 +182,6 @@ export default function ArtistProfilePage({ params }: { params: { stageName: str
   };
 
   const handleShareProfile = () => {
-    // Locks the share link to the strict production domain
     const url = `https://bar-code.ai/${encodeURIComponent(decodedStageName)}`;
     navigator.clipboard.writeText(url);
     setCopiedLink(true);
