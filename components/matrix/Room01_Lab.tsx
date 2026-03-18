@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { UploadCloud, FileAudio, Loader2, CheckCircle2, AlertTriangle, ShieldCheck, Music, ArrowRight, Zap, Activity } from "lucide-react";
+import { UploadCloud, FileAudio, Loader2, CheckCircle2, AlertTriangle, ShieldCheck, Music, ArrowRight, Zap, Activity, Network, Play, Pause } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -12,14 +12,28 @@ export default function Room01_Lab() {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">(audioData ? "success" : "idle");
   const [isDisclaimerAccepted, setIsDisclaimerAccepted] = useState(false);
+  const [pollingAttempts, setPollingAttempts] = useState(0);
+  
+  // Audio Preview State
+  const [playingPreview, setPlayingPreview] = useState<string | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement>(null);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Hardcoded premium beats + state for dynamic Supabase beats
-  const [beats, setBeats] = useState<any[]>([
-    { id: "gn1", title: "NEON BLOOD", producer: "GetNice", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", leasePrice: 29.99, exclusivePrice: 500.00, bpm: 120, key: "C Min" },
-    { id: "gn2", title: "GHOST PROTOCOL", producer: "Vex", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", leasePrice: 49.99, exclusivePrice: 500.00, bpm: 142, key: "F# Min" },
-    { id: "gn3", title: "SILICON SOUL", producer: "GetNice", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", leasePrice: 29.99, exclusivePrice: 500.00, bpm: 95, key: "A Min" }
-  ]);
+  // Hardcoded beats removed - relying purely on Supabase Fetch
+  const [beats, setBeats] = useState<any[]>([]);
+
+  // Clean up polling intervals and audio on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current.src = "";
+      }
+    };
+  }, []);
 
   // FETCH REAL BEATS FROM SUPABASE BUCKET
   useEffect(() => {
@@ -32,28 +46,24 @@ export default function Room01_Lab() {
           const fetchedBeats = data
             .filter(file => file.name.endsWith('.mp3') || file.name.endsWith('.wav'))
             .map((file, index) => {
-              // Extract BPM from filename (e.g., "Dark_Trap_142BPM.mp3")
               const bpmMatch = file.name.match(/_?(\d+)\s*BPM/i);
               const bpm = bpmMatch ? parseInt(bpmMatch[1]) : 120;
               
-              // Dynamic Pricing Logic based on BPM intensity for Leases
               let calculatedLeasePrice = 29.99;
               if (bpm >= 140) calculatedLeasePrice = 149.99;
               else if (bpm >= 125) calculatedLeasePrice = 99.99;
               else if (bpm >= 110) calculatedLeasePrice = 49.99;
 
               const { data: urlData } = supabase.storage.from('marketplace_beats').getPublicUrl(file.name);
-              
-              // Clean up the title for the UI
               const cleanTitle = file.name.replace(/\.(mp3|wav)$/i, '').replace(/_?\d+\s*BPM/i, '').replace(/_/g, ' ').trim();
 
               return { 
                 id: `supa_${index}`, 
                 title: cleanTitle || file.name, 
-                producer: "Network Node", 
+                producer: "GetNice Node", 
                 url: urlData.publicUrl, 
                 leasePrice: calculatedLeasePrice,
-                exclusivePrice: 500.00, // Fixed Full Buyout Price mapped from Monetization Strategy
+                exclusivePrice: 500.00, 
                 bpm: bpm,
                 key: "Unknown"
               };
@@ -84,7 +94,7 @@ export default function Room01_Lab() {
         const beatName = params.get('beat_name');
         if (beatUrl && beatName) {
           window.history.replaceState({}, document.title, window.location.pathname);
-          setIsDisclaimerAccepted(true); // Auto-accept to prevent blocking the returning user
+          setIsDisclaimerAccepted(true); 
           handlePurchasedBeatDSP(beatUrl, beatName);
         }
       }
@@ -121,6 +131,69 @@ export default function Room01_Lab() {
     }
   };
 
+  // --- AUDIO PREVIEW LOGIC (60s Limit) ---
+  const togglePreview = (url: string) => {
+    if (playingPreview === url) {
+      previewAudioRef.current?.pause();
+      setPlayingPreview(null);
+    } else {
+      setPlayingPreview(url);
+      if (previewAudioRef.current) {
+        previewAudioRef.current.src = url;
+        previewAudioRef.current.currentTime = 0;
+        previewAudioRef.current.play().catch(e => console.error("Preview play failed:", e));
+      }
+    }
+  };
+
+  const handlePreviewTimeUpdate = () => {
+    if (previewAudioRef.current && previewAudioRef.current.currentTime >= 60) {
+      previewAudioRef.current.pause();
+      setPlayingPreview(null);
+      if (addToast) addToast("Preview limited to 60 seconds. Secure a lease to unlock.", "info");
+    }
+  };
+
+  // --- THE ASYNC POLLING LOGIC ---
+  const pollDSPJob = (jobId: string, cloudUrl: string, fileName: string) => {
+    let attempts = 0;
+    
+    pollIntervalRef.current = setInterval(async () => {
+      attempts++;
+      setPollingAttempts(attempts);
+      
+      try {
+        const statusRes = await fetch(`/api/dsp?jobId=${jobId}&t=${Date.now()}`);
+        const statusData = await statusRes.json();
+
+        if (statusData.status === 'COMPLETED') {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          
+          setAudioData({
+            url: cloudUrl,
+            fileName: fileName,
+            bpm: statusData.output.bpm || 120,
+            totalBars: statusData.output.total_bars || 64,
+            key: statusData.output.key || "Unknown",
+            grid: statusData.output.grid || []
+          });
+
+          setStatus("success");
+          if (addToast) addToast("Smart Analysis Complete. Blueprint Primed.", "success");
+          
+          // REMOVED: Auto-advancing to Room 02. The user must manually review and advance.
+
+        } else if (statusData.status === 'FAILED') {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setStatus("idle");
+          if (addToast) addToast("RunPod DSP Execution Failed.", "error");
+        }
+      } catch (pollErr) {
+        console.error("DSP Polling Error", pollErr);
+      }
+    }, 3000);
+  };
+
   // THE LIVE DSP INGESTION PIPELINE
   const processRealFile = async (selectedFile: File) => {
     if (!selectedFile || !userSession?.id) return;
@@ -139,7 +212,6 @@ export default function Room01_Lab() {
     setStatus("uploading");
 
     try {
-      // 1. Upload to Secure Supabase Bucket
       const filePath = `${userSession.id}/${Date.now()}_${selectedFile.name.replace(/\s+/g, '_')}`;
       const { error: uploadError } = await supabase.storage.from('audio_raw').upload(filePath, selectedFile);
       if (uploadError) throw uploadError;
@@ -147,14 +219,13 @@ export default function Room01_Lab() {
       const { data: publicUrlData } = supabase.storage.from('audio_raw').getPublicUrl(filePath);
       const currentCloudUrl = publicUrlData.publicUrl;
 
-      // 2. Fetch Secure JWT Token
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (!token) throw new Error("Security Exception: Valid JWT Token required.");
 
       setStatus("analyzing");
+      setPollingAttempts(0);
 
-      // 3. DSP Forensics Call
       const res = await fetch('/api/dsp', {
         method: 'POST',
         headers: {
@@ -164,25 +235,19 @@ export default function Room01_Lab() {
         body: JSON.stringify({ file_url: currentCloudUrl })
       });
 
-      const analysis = await res.json();
+      const initData = await res.json();
 
       if (!res.ok) {
         await supabase.storage.from('audio_raw').remove([filePath]);
-        throw new Error(analysis.error || "DSP Processing failed");
+        throw new Error(initData.error || "DSP Initialization failed");
       }
 
-      // 4. Save to Global Matrix Store
-      setAudioData({
-        url: currentCloudUrl,
-        fileName: selectedFile.name,
-        bpm: analysis.bpm || 120,
-        totalBars: analysis.total_bars || 64,
-        key: analysis.key || "Unknown",
-        grid: analysis.grid || []
-      });
-
-      setStatus("success");
-      if (addToast) addToast("Audio imported & analyzed successfully", "success");
+      // Initiate Polling with the real Job ID
+      if (initData.jobId) {
+        pollDSPJob(initData.jobId, currentCloudUrl, selectedFile.name);
+      } else {
+        throw new Error("No DSP Job ID returned from worker.");
+      }
 
     } catch (err: any) {
       console.error("DSP Pipeline Error:", err);
@@ -197,6 +262,10 @@ export default function Room01_Lab() {
       if (addToast) addToast("Please accept the IP & Licensing Declaration below first.", "error");
       return;
     }
+    
+    // Stop preview if it's playing
+    if (previewAudioRef.current) previewAudioRef.current.pause();
+    setPlayingPreview(null);
 
     const price = licenseType === 'lease' ? beat.leasePrice : beat.exclusivePrice;
     const beatNameLabel = licenseType === 'lease' ? `${beat.title} (Lease)` : `${beat.title} (Exclusive Buyout)`;
@@ -230,6 +299,8 @@ export default function Room01_Lab() {
   // HANDLE RETURNING USERS AFTER SUCCESSFUL STRIPE LEASE
   const handlePurchasedBeatDSP = async (beatUrl: string, beatName: string) => {
     setStatus("analyzing");
+    setPollingAttempts(0);
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
@@ -243,20 +314,14 @@ export default function Room01_Lab() {
         body: JSON.stringify({ file_url: beatUrl })
       });
       
-      const analysis = await res.json();
-      if (!res.ok) throw new Error(analysis.error || "DSP Processing failed");
+      const initData = await res.json();
+      if (!res.ok) throw new Error(initData.error || "DSP Processing failed");
 
-      setAudioData({
-        url: beatUrl,
-        fileName: beatName,
-        bpm: analysis.bpm || 120,
-        totalBars: analysis.total_bars || 64,
-        key: analysis.key || "Unknown",
-        grid: analysis.grid || []
-      });
-
-      setStatus("success");
-      if (addToast) addToast("Beat Licensed & Analyzed Successfully", "success");
+      if (initData.jobId) {
+        pollDSPJob(initData.jobId, beatUrl, beatName);
+      } else {
+        throw new Error("No DSP Job ID returned.");
+      }
 
     } catch (err: any) {
       console.error("Purchased Beat DSP Error:", err);
@@ -268,6 +333,14 @@ export default function Room01_Lab() {
   return (
     <div className="h-full flex flex-col lg:flex-row gap-8 animate-in fade-in duration-500">
       
+      {/* Hidden audio player for 60s beat previews */}
+      <audio 
+        ref={previewAudioRef} 
+        onTimeUpdate={handlePreviewTimeUpdate}
+        onEnded={() => setPlayingPreview(null)}
+        className="hidden" 
+      />
+
       {/* LEFT COLUMN: UPLOAD & DSP */}
       <div className="flex-1 flex flex-col">
         <div className="mb-6">
@@ -330,7 +403,10 @@ export default function Room01_Lab() {
                 <Music size={24} className="text-[#E60000] animate-pulse" />
               </div>
               <h3 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-2">Running DSP Analysis</h3>
-              <p className="font-mono text-xs text-[#888] uppercase tracking-widest">Extracting BPM, Key, and Structural Bars...</p>
+              <p className="font-mono text-xs text-[#888] uppercase tracking-widest">Polling RunPod Serverless Architecture...</p>
+              <div className="mt-4 flex items-center gap-2 text-[10px] font-mono text-[#E60000] border border-[#E60000]/30 bg-[#E60000]/10 px-3 py-1">
+                <Network size={12} className="animate-pulse" /> Compute Attempt: {pollingAttempts}
+              </div>
             </div>
           )}
 
@@ -339,7 +415,7 @@ export default function Room01_Lab() {
               <Activity size={48} className="mx-auto mb-4 text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full bg-green-500/10 p-2" />
               <h2 className="font-oswald text-3xl uppercase tracking-widest mb-6 font-bold text-white">Smart Analysis Complete</h2>
               
-              <div className="bg-black border border-green-500/30 p-6 w-full max-w-sm mb-8 space-y-4 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+              <div className="bg-black border border-green-500/30 p-6 w-full max-w-sm mb-8 space-y-4 shadow-[0_0_20px_rgba(0,0,0,0.5)] text-left">
                 <div className="flex justify-between items-center border-b border-[#222] pb-2">
                   <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Detected BPM</span>
                   <span className="text-lg font-oswald text-green-500 font-bold">{Math.round(audioData.bpm)}</span>
@@ -348,9 +424,15 @@ export default function Room01_Lab() {
                   <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Extracted Key</span>
                   <span className="text-lg font-oswald text-green-500 font-bold">{audioData.key || "Unknown"}</span>
                 </div>
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center border-b border-[#222] pb-2">
                   <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Structural Length</span>
                   <span className="text-lg font-oswald text-green-500 font-bold">{audioData.totalBars} Bars</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Algorithm Routing</span>
+                  <span className="text-[10px] font-mono text-green-500 font-bold tracking-widest flex items-center gap-1">
+                     <ArrowRight size={10} /> Primed for Room 02
+                  </span>
                 </div>
               </div>
 
@@ -360,13 +442,6 @@ export default function Room01_Lab() {
                   className="w-full bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)] flex items-center justify-center gap-2"
                 >
                   Advance to Brain Train <ArrowRight size={18} />
-                </button>
-                
-                <button 
-                  onClick={() => setStatus("idle")}
-                  className="w-full border border-[#333] text-[#888] py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#111] hover:text-white transition-all"
-                >
-                  Analyze New Track
                 </button>
               </div>
             </div>
@@ -413,13 +488,28 @@ export default function Room01_Lab() {
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
-          {beats.map((beat) => (
+          {beats.length === 0 ? (
+            <div className="text-center text-[#555] font-mono text-[9px] uppercase tracking-widest mt-10">
+              <Loader2 size={16} className="animate-spin mx-auto mb-2" />
+              Syncing Ledger...
+            </div>
+          ) : beats.map((beat) => (
             <div key={beat.id} className={`bg-black border p-4 transition-all group flex flex-col justify-between ${!isDisclaimerAccepted ? 'border-[#111] opacity-50' : 'border-[#222] hover:border-[#E60000]'}`}>
-              <div className="mb-4">
-                <h4 className={`font-oswald text-sm uppercase tracking-widest font-bold transition-colors ${!isDisclaimerAccepted ? 'text-[#888]' : 'text-white group-hover:text-[#E60000]'}`}>{beat.title}</h4>
-                <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mt-1">
-                  PROD: {beat.producer} // {beat.bpm} BPM // {beat.key}
-                </p>
+              <div className="mb-4 flex items-center gap-3">
+                <button 
+                  onClick={() => togglePreview(beat.url)}
+                  disabled={!isDisclaimerAccepted}
+                  className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-all disabled:cursor-not-allowed
+                    ${playingPreview === beat.url ? 'bg-[#E60000] text-white shadow-[0_0_15px_rgba(230,0,0,0.5)] animate-pulse' : 'bg-[#111] text-[#888] hover:text-white hover:bg-[#222]'}`}
+                >
+                  {playingPreview === beat.url ? <Pause size={14} /> : <Play size={14} className="ml-1" />}
+                </button>
+                <div>
+                  <h4 className={`font-oswald text-sm uppercase tracking-widest font-bold transition-colors ${!isDisclaimerAccepted ? 'text-[#888]' : 'text-white group-hover:text-[#E60000]'}`}>{beat.title}</h4>
+                  <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mt-1">
+                    PROD: {beat.producer}
+                  </p>
+                </div>
               </div>
               
               <div className="flex flex-col gap-2 shrink-0">
