@@ -18,7 +18,7 @@ interface MatrixState {
   
   grantAccess: (session: UserSession) => void;
   setActiveRoom: (roomId: string) => void;
-  setActiveProject: (id: string | null, isProjectFinalized: boolean) => void;
+  setActiveProject: (id: string | null, isFinalized: boolean) => void;
 
   audioData: AudioAnalysis | null;
   setAudioData: (data: AudioAnalysis) => void;
@@ -94,7 +94,7 @@ export const useMatrixStore = create<MatrixState>()(
 
       grantAccess: (session) => set({ hasAccess: true, userSession: session }),
       setActiveRoom: (roomId) => set({ activeRoom: roomId }),
-      setActiveProject: (id, isProjectFinalized) => set({ activeProjectId: id, isProjectFinalized: isProjectFinalized }),
+      setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
       
       setAudioData: (data) => set({ audioData: data }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
