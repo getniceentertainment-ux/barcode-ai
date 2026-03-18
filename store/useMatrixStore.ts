@@ -14,13 +14,12 @@ interface MatrixState {
   userSession: UserSession | null;
   activeProjectId: string | null;
   isProjectFinalized: boolean;
-  grantAccess: (session: UserSession) => void;
-  setActiveRoom: (roomId: string) => void;
-  setActiveProject: (id: string | null, isFinalized: boolean) => void;
+  
   audioData: AudioAnalysis | null;
   setAudioData: (data: AudioAnalysis) => void;
   flowDNA: FlowDNA | null;
   setFlowDNA: (dna: FlowDNA) => void;
+
   gwTitle: string;
   gwPrompt: string;
   gwStyle: string;
@@ -33,20 +32,27 @@ interface MatrixState {
   setGwGender: (g: string) => void;
   setGwUseSlang: (b: boolean) => void;
   setGwUseIntel: (b: boolean) => void;
+
   blueprint: BlueprintSection[];
   setBlueprint: (blueprint: BlueprintSection[]) => void;
   generatedLyrics: string | null;
   setGeneratedLyrics: (lyrics: string) => void;
+
   vocalStems: VocalStem[];
   addVocalStem: (stem: VocalStem) => void;
   removeVocalStem: (id: string) => void;
   updateStemVolume: (id: string, volume: number) => void;
-  updateStemOffset: (id: string, offsetBars: number) => void; // NEW
+  updateStemOffset: (id: string, offsetBars: number) => void;
+
   finalMaster: FinalMaster | null;
   setFinalMaster: (master: FinalMaster | null) => void;
+
   toasts: ToastMessage[];
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
   removeToast: (id: string) => void;
+
+  grantAccess: (session: UserSession) => void;
+  setActiveRoom: (roomId: string) => void;
   clearMatrix: () => void;
 }
 
@@ -75,9 +81,9 @@ export const useMatrixStore = create<MatrixState>()(
       vocalStems: [],
       finalMaster: null,
       toasts: [],
+
       grantAccess: (session) => set({ hasAccess: true, userSession: session }),
       setActiveRoom: (roomId) => set({ activeRoom: roomId }),
-      setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
       setAudioData: (data) => set({ audioData: data }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
       setGwTitle: (gwTitle) => set({ gwTitle }),
@@ -88,6 +94,7 @@ export const useMatrixStore = create<MatrixState>()(
       setGwUseIntel: (gwUseIntel) => set({ gwUseIntel }),
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
+      
       addVocalStem: (stem) => set((state) => ({ vocalStems: [...state.vocalStems, stem] })),
       removeVocalStem: (id) => set((state) => ({ vocalStems: state.vocalStems.filter(s => s.id !== id) })),
       updateStemVolume: (id, volume) => set((state) => ({
@@ -96,6 +103,7 @@ export const useMatrixStore = create<MatrixState>()(
       updateStemOffset: (id, offsetBars) => set((state) => ({
         vocalStems: state.vocalStems.map(s => s.id === id ? { ...s, offsetBars } : s)
       })),
+
       setFinalMaster: (master) => set({ finalMaster: master }),
       addToast: (message, type) => {
         const id = Math.random().toString(36).substring(7);
@@ -103,6 +111,7 @@ export const useMatrixStore = create<MatrixState>()(
         setTimeout(() => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })), 4000);
       },
       removeToast: (id) => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })),
+
       clearMatrix: () => set({
         audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
         gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
@@ -120,7 +129,7 @@ export const useMatrixStore = create<MatrixState>()(
         gwTitle: state.gwTitle,
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
-        activeProjectId: state.activeProjectId,
+        vocalStems: state.vocalStems, // Persist timeline layers
         isProjectFinalized: state.isProjectFinalized
       }),
     }

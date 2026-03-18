@@ -95,7 +95,7 @@ export default function Room04_Booth() {
         const el = document.getElementById(`booth-stem-${s.id}`) as HTMLAudioElement;
         if (el) {
           el.currentTime = Math.max(0, time - (s.offsetBars * secondsPerBar));
-          if (time >= (s.offsetBars * secondsPerBar)) el.play();
+          if (time >= (s.offsetBars * secondsPerBar)) el.play().catch(() => {});
         }
       });
     } else {
@@ -186,7 +186,6 @@ export default function Room04_Booth() {
                   <span className={`text-[9px] uppercase font-bold tracking-widest px-2 py-1 ${s.type === 'Lead' ? 'bg-[#E60000] text-white' : 'bg-[#222] text-[#888]'}`}>{s.type}</span>
                   <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
                 </div>
-                {/* HORIZONTAL OFFSET SLIDER */}
                 <div className="flex items-center gap-4">
                   <span className="text-[9px] font-mono text-[#555] uppercase w-16">Start Bar</span>
                   <div className="flex-1 flex items-center gap-3">
