@@ -16,9 +16,9 @@ export default function Room01_Lab() {
 
   // Hardcoded premium beats + state for dynamic Supabase beats
   const [beats, setBeats] = useState<any[]>([
-    { id: "gn1", title: "NEON BLOOD", producer: "GetNice", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", price: 49.99, bpm: 120, key: "C Min" },
-    { id: "gn2", title: "GHOST PROTOCOL", producer: "Vex", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", price: 99.99, bpm: 142, key: "F# Min" },
-    { id: "gn3", title: "SILICON SOUL", producer: "GetNice", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", price: 29.99, bpm: 95, key: "A Min" }
+    { id: "gn1", title: "NEON BLOOD", producer: "GetNice", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", leasePrice: 29.99, exclusivePrice: 500.00, bpm: 120, key: "C Min" },
+    { id: "gn2", title: "GHOST PROTOCOL", producer: "Vex", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", leasePrice: 49.99, exclusivePrice: 500.00, bpm: 142, key: "F# Min" },
+    { id: "gn3", title: "SILICON SOUL", producer: "GetNice", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", leasePrice: 29.99, exclusivePrice: 500.00, bpm: 95, key: "A Min" }
   ]);
 
   // FETCH REAL BEATS FROM SUPABASE BUCKET
@@ -36,11 +36,11 @@ export default function Room01_Lab() {
               const bpmMatch = file.name.match(/_?(\d+)\s*BPM/i);
               const bpm = bpmMatch ? parseInt(bpmMatch[1]) : 120;
               
-              // Dynamic Pricing Logic based on BPM intensity
-              let calculatedPrice = 29.99;
-              if (bpm >= 140) calculatedPrice = 149.99;
-              else if (bpm >= 125) calculatedPrice = 99.99;
-              else if (bpm >= 110) calculatedPrice = 49.99;
+              // Dynamic Pricing Logic based on BPM intensity for Leases
+              let calculatedLeasePrice = 29.99;
+              if (bpm >= 140) calculatedLeasePrice = 149.99;
+              else if (bpm >= 125) calculatedLeasePrice = 99.99;
+              else if (bpm >= 110) calculatedLeasePrice = 49.99;
 
               const { data: urlData } = supabase.storage.from('marketplace_beats').getPublicUrl(file.name);
               
@@ -52,7 +52,8 @@ export default function Room01_Lab() {
                 title: cleanTitle || file.name, 
                 producer: "Network Node", 
                 url: urlData.publicUrl, 
-                price: calculatedPrice,
+                leasePrice: calculatedLeasePrice,
+                exclusivePrice: 500.00, // Fixed Full Buyout Price mapped from Monetization Strategy
                 bpm: bpm,
                 key: "Unknown"
               };
@@ -190,12 +191,15 @@ export default function Room01_Lab() {
     }
   };
 
-  // STRIPE BEAT LEASING
-  const handleMarketplaceSelect = async (beat: any) => {
+  // STRIPE BEAT LEASING & BUYOUT
+  const handleMarketplaceSelect = async (beat: any, licenseType: 'lease' | 'exclusive') => {
     if (!isDisclaimerAccepted) {
       if (addToast) addToast("Please accept the IP & Licensing Declaration below first.", "error");
       return;
     }
+
+    const price = licenseType === 'lease' ? beat.leasePrice : beat.exclusivePrice;
+    const beatNameLabel = licenseType === 'lease' ? `${beat.title} (Lease)` : `${beat.title} (Exclusive Buyout)`;
 
     setStatus("analyzing"); 
     try {
@@ -203,9 +207,9 @@ export default function Room01_Lab() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          beatName: beat.title,
+          beatName: beatNameLabel,
           beatUrl: beat.url,
-          price: beat.price,
+          price: price,
           userId: userSession?.id
         })
       });
@@ -410,21 +414,32 @@ export default function Room01_Lab() {
 
         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
           {beats.map((beat) => (
-            <div key={beat.id} className={`bg-black border p-4 transition-all group flex items-center justify-between ${!isDisclaimerAccepted ? 'border-[#111] opacity-50' : 'border-[#222] hover:border-[#E60000]'}`}>
-              <div>
+            <div key={beat.id} className={`bg-black border p-4 transition-all group flex flex-col justify-between ${!isDisclaimerAccepted ? 'border-[#111] opacity-50' : 'border-[#222] hover:border-[#E60000]'}`}>
+              <div className="mb-4">
                 <h4 className={`font-oswald text-sm uppercase tracking-widest font-bold transition-colors ${!isDisclaimerAccepted ? 'text-[#888]' : 'text-white group-hover:text-[#E60000]'}`}>{beat.title}</h4>
                 <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mt-1">
                   PROD: {beat.producer} // {beat.bpm} BPM // {beat.key}
                 </p>
               </div>
-              <button 
-                onClick={() => handleMarketplaceSelect(beat)}
-                disabled={status !== "idle" || !isDisclaimerAccepted}
-                className={`w-auto px-4 h-8 rounded-full flex items-center justify-center font-bold text-[9px] uppercase tracking-widest transition-all disabled:cursor-not-allowed
-                  ${!isDisclaimerAccepted ? 'bg-[#111] text-[#333]' : 'bg-[#111] text-[#555] hover:bg-[#E60000] hover:text-white'}`}
-              >
-                ${beat.price} Lease
-              </button>
+              
+              <div className="flex flex-col gap-2 shrink-0">
+                <button 
+                  onClick={() => handleMarketplaceSelect(beat, 'lease')}
+                  disabled={status !== "idle" || !isDisclaimerAccepted}
+                  className={`w-full px-4 py-2 flex items-center justify-center font-bold text-[9px] uppercase tracking-widest transition-all disabled:cursor-not-allowed
+                    ${!isDisclaimerAccepted ? 'bg-[#111] text-[#333]' : 'bg-[#111] text-[#888] hover:bg-white hover:text-black'}`}
+                >
+                  ${beat.leasePrice.toFixed(2)} Lease
+                </button>
+                <button 
+                  onClick={() => handleMarketplaceSelect(beat, 'exclusive')}
+                  disabled={status !== "idle" || !isDisclaimerAccepted}
+                  className={`w-full px-4 py-2 flex items-center justify-center font-bold text-[9px] uppercase tracking-widest transition-all disabled:cursor-not-allowed
+                    ${!isDisclaimerAccepted ? 'bg-[#111] text-[#333]' : 'border border-yellow-500/50 text-yellow-500 hover:bg-yellow-500 hover:text-black'}`}
+                >
+                  ${beat.exclusivePrice.toFixed(2)} Exclusive Buyout
+                </button>
+              </div>
             </div>
           ))}
         </div>
