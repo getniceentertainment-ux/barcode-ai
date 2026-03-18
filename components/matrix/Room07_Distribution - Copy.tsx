@@ -6,7 +6,7 @@ import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
 export default function Room07_Distribution() {
-  const { setActiveRoom, userSession, finalMaster, generatedLyrics, addToast, setIsFinalized, audioData } = useMatrixStore();
+  const { setActiveRoom, userSession, finalMaster, generatedLyrics, addToast, setIsFinalized } = useMatrixStore();
   const [trackTitle, setTrackTitle] = useState("");
   const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">("idle");
   const [hitScore, setHitScore] = useState<number>(0);
@@ -27,11 +27,7 @@ export default function Room07_Distribution() {
       const analyzeRes = await fetch('/api/distribution/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          title: trackTitle, 
-          lyrics: generatedLyrics || "No lyrics provided",
-          bpm: audioData?.bpm 
-        })
+        body: JSON.stringify({ title: trackTitle, lyrics: generatedLyrics || "No lyrics provided" })
       });
       
       const analyzeData = await analyzeRes.json();
