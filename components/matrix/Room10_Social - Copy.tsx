@@ -1,16 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User } from "lucide-react";
-import Link from "next/link";
+import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import CreditHustle from "./CreditHustle";
 
 interface RosterNode {
   id: string;
-  stage_name: string;
-  avatar_url: string | null;
+  email: string;
   mogul_score: number;
   total_referrals: number;
 }
@@ -23,7 +21,7 @@ const MOCK_CHAT = [
 ];
 
 export default function Room10_Social() {
-  const { userSession, addToast } = useMatrixStore();
+  const { userSession } = useMatrixStore();
   
   const [activeTab, setActiveTab] = useState<"brokerage" | "chat">("brokerage");
   const [searchQuery, setSearchQuery] = useState("");
@@ -53,9 +51,9 @@ export default function Room10_Social() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, stage_name, avatar_url, mogul_score, total_referrals')
+        .select('id, email, mogul_score, total_referrals')
         .order('mogul_score', { ascending: false })
-        .limit(20);
+        .limit(10);
 
       if (error) throw error;
       setRoster(data || []);
@@ -78,7 +76,7 @@ export default function Room10_Social() {
     
     setChat(prev => [...prev, { 
       id: Date.now(),
-      user: userSession?.stageName || "GUEST_NODE", 
+      user: userSession?.id ? `NODE_${userSession.id.substring(0,6)}` : "GUEST_NODE", 
       msg: chatInput,
       isPlatform: false
     }]);
@@ -87,10 +85,6 @@ export default function Room10_Social() {
 
   const basePrice = selectedNode ? Math.max(100, Math.floor(selectedNode.mogul_score / 2)) : 0;
   const platformFee = basePrice * 0.15;
-
-  const filteredRoster = roster.filter(node => 
-    (node.stage_name || node.id).toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   return (
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 overflow-hidden">
@@ -119,7 +113,7 @@ export default function Room10_Social() {
                <Disc3 size={32} className="animate-spin text-[#E60000] mb-4" />
                <p className="font-mono text-[9px] uppercase tracking-widest">Syncing Matrix Hierarchy...</p>
             </div>
-          ) : filteredRoster.map((node, index) => (
+          ) : roster.map((node, index) => (
             <div 
               key={node.id} 
               onClick={() => { setSelectedNode(node); setEscrowStatus("idle"); setActiveTab("brokerage"); }}
@@ -131,33 +125,23 @@ export default function Room10_Social() {
                   <div className={`font-oswald text-xl font-bold w-6 text-center ${index < 3 ? 'text-yellow-500' : 'text-[#444]'}`}>
                     #{index + 1}
                   </div>
-                  
-                  {/* Dynamic Avatar */}
-                  <div className="w-10 h-10 bg-[#111] border border-[#333] overflow-hidden shrink-0">
-                    {node.avatar_url ? (
-                      <img src={node.avatar_url} alt="Avatar" className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-[#555]"><User size={16} /></div>
-                    )}
-                  </div>
-
                   <div>
-                    <h3 className="font-oswald text-lg uppercase tracking-widest text-white group-hover:text-[#E60000] transition-colors truncate max-w-[120px]">
-                      {node.stage_name || `NODE_${node.id.substring(0, 4)}`}
+                    <h3 className="font-oswald text-xl uppercase tracking-widest text-white group-hover:text-[#E60000] transition-colors">
+                      NODE_{node.id.substring(0, 8)}
                     </h3>
                     <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest">Recruits: {node.total_referrals}</p>
                   </div>
                 </div>
                 <div className="flex flex-col items-end">
                   <span className="text-[8px] font-mono text-[#E60000] uppercase tracking-widest mb-1">Mogul Score</span>
-                  <div className="text-xl font-oswald font-bold text-white tracking-tighter">{node.mogul_score}</div>
+                  <div className="text-2xl font-oswald font-bold text-white tracking-tighter">{node.mogul_score}</div>
                 </div>
               </div>
-              <div className="flex gap-4 mt-2 pt-3 border-t border-[#111]">
+              <div className="flex gap-4 mt-2 pt-4 border-t border-[#111]">
                  <span className="text-[9px] font-mono text-[#444] uppercase tracking-widest">EST. FEATURE: <span className="text-white">${Math.max(100, Math.floor(node.mogul_score / 2))}</span></span>
                  <div className="ml-auto flex items-center gap-2">
                     <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
-                    <span className="text-[8px] font-mono uppercase text-[#444]">Active</span>
+                    <span className="text-[8px] font-mono uppercase text-[#444]">Node Active</span>
                  </div>
               </div>
             </div>
@@ -200,28 +184,14 @@ export default function Room10_Social() {
               </div>
             ) : (
               <div className="p-8 flex flex-col h-full animate-in slide-in-from-right-8">
-                
-                {/* NEW: Dynamic Profile Link Header */}
-                <div className="mb-8 flex flex-col md:flex-row md:items-start justify-between gap-4 border-b border-[#222] pb-6">
-                  <div>
-                    <div className="inline-flex items-center gap-2 bg-[#110000] text-[#E60000] border border-[#330000] px-3 py-1 text-[9px] uppercase font-bold tracking-widest mb-4">
-                      <ShieldCheck size={12} /> Syndicate Artist
-                    </div>
-                    <h2 className="font-oswald text-3xl md:text-4xl uppercase tracking-widest font-bold text-white">
-                      {selectedNode.stage_name || `NODE_${selectedNode.id.substring(0, 8)}`}
-                    </h2>
+                <div className="mb-8">
+                  <div className="inline-flex items-center gap-2 bg-[#110000] text-[#E60000] border border-[#330000] px-3 py-1 text-[9px] uppercase font-bold tracking-widest mb-4">
+                    <ShieldCheck size={12} /> Syndicate Artist
                   </div>
-                  
-                  <Link 
-                    href={`/${encodeURIComponent(selectedNode.stage_name || selectedNode.id)}`}
-                    target="_blank"
-                    className="bg-[#111] border border-[#333] text-white px-6 py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-colors flex items-center justify-center gap-2 shrink-0"
-                  >
-                    View Public Profile <ExternalLink size={14} />
-                  </Link>
+                  <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white">NODE_{selectedNode.id.substring(0, 8)}</h2>
                 </div>
 
-                <div className="flex gap-2 mb-8">
+                <div className="flex gap-2 mb-8 border-b border-[#222] pb-6">
                   <button onClick={() => setInteractionType("feature")} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'feature' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555] hover:text-white hover:border-white'}`}>Request Verse</button>
                   <button onClick={() => setInteractionType("booking")} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'booking' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555] hover:text-white hover:border-white'}`}>Live Booking</button>
                 </div>
@@ -256,7 +226,7 @@ export default function Room10_Social() {
                     <div className="flex-1 flex flex-col items-center justify-center text-center animate-in zoom-in">
                       <ShieldCheck size={64} className="text-green-500 mb-6 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" />
                       <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-2">Funds Secured</h3>
-                      <p className="font-mono text-xs text-green-500 uppercase tracking-widest mb-6">Request sent to {selectedNode.stage_name}.</p>
+                      <p className="font-mono text-xs text-green-500 uppercase tracking-widest mb-6">Request sent to NODE_{selectedNode.id.substring(0,6)}.</p>
                       <p className="font-mono text-[9px] text-[#888] uppercase leading-relaxed max-w-xs mx-auto border border-[#222] bg-[#111] p-4 mb-6">
                         If the artist fails to deliver the verse/performance within 14 days, the contract voids and funds return to your wallet.
                       </p>
@@ -297,7 +267,7 @@ export default function Room10_Social() {
             <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
               {chat.map((c) => (
                 <div key={c.id} className={`text-sm font-mono leading-relaxed ${c.isPlatform ? 'bg-[#110000] border border-[#330000] p-4 rounded-sm shadow-sm' : 'bg-black border border-[#111] p-3 rounded-sm'}`}>
-                  <span className={`font-bold mr-3 tracking-widest text-[10px] uppercase ${c.isPlatform ? 'text-[#E60000]' : c.user === userSession?.stageName ? 'text-green-500' : 'text-[#888]'}`}>
+                  <span className={`font-bold mr-3 tracking-widest text-[10px] uppercase ${c.isPlatform ? 'text-[#E60000]' : c.user.includes(userSession?.id?.substring(0,6) || "GUEST") ? 'text-green-500' : 'text-[#888]'}`}>
                     {c.user}:
                   </span>
                   <span className={c.isPlatform ? 'text-[#E60000] font-bold' : 'text-gray-300'}>{c.msg}</span>
