@@ -53,6 +53,7 @@ export default function Room04_Booth() {
         setCurrentTime(time);
         window.dispatchEvent(new CustomEvent('booth-seek', { detail: time }));
       });
+      wavesurferRef.current.on('finish', () => stopEverything());
     }
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
@@ -108,7 +109,7 @@ export default function Room04_Booth() {
 
   const stopEverything = () => {
     wavesurferRef.current?.pause(); wavesurferRef.current?.seekTo(0);
-    vocalStems.forEach(s => { const el = document.getElementById(`booth-stem-${s.id}`) as HTMLAudioElement; if(el) { el.pause(); el.currentTime = 0; }});
+    vocalStems.forEach(stem => { const el = document.getElementById(`booth-stem-${stem.id}`) as HTMLAudioElement; if(el) { el.pause(); el.currentTime = 0; }});
     if (isRecording && workletNodeRef.current && audioCtxRef.current) {
       workletNodeRef.current.disconnect();
       mediaStreamRef.current?.getTracks().forEach(t => t.stop());
@@ -117,7 +118,10 @@ export default function Room04_Booth() {
       let offset = 0;
       for (let chunk of recordedChunksRef.current) { merged.set(chunk, offset); offset += chunk.length; }
       const wavBlob = encodeWAV(merged, audioCtxRef.current.sampleRate);
+      
+      // FIXED: Added offsetBars: 0 to fix build error
       addVocalStem({ id: `TAKE_${Date.now()}`, type: vocalStems.length === 0 ? "Lead" : "Adlib", url: URL.createObjectURL(wavBlob), blob: wavBlob, volume: 0, offsetBars: 0 });
+      
       audioCtxRef.current.close(); audioCtxRef.current = null;
     }
     setIsPlaying(false); setIsRecording(false); setCurrentTime(0);
@@ -196,6 +200,7 @@ export default function Room04_Booth() {
                   <span className={`text-[9px] uppercase font-bold tracking-widest px-2 py-1 ${s.type === 'Lead' ? 'bg-[#E60000] text-white' : 'bg-[#222] text-[#888]'}`}>{s.type}</span>
                   <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
                 </div>
+                {/* HORIZONTAL TIMELINE SLIDERS */}
                 <div className="flex items-center gap-4">
                   <span className="text-[9px] font-mono text-[#555] uppercase w-16">Start Bar</span>
                   <div className="flex-1 flex items-center gap-3">

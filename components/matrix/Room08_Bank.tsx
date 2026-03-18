@@ -45,6 +45,14 @@ export default function Room08_Bank() {
     evaluate();
   }, [userSession, activeTab]);
 
+  useEffect(() => {
+    if (activeTab === "vault") {
+      setIsLoadingVault(true);
+      supabase.from('submissions').select('*').eq('user_id', userSession?.id).order('created_at', { ascending: false })
+      .then(({ data }) => { if (data) setVaultTracks(data); setIsLoadingVault(false); });
+    }
+  }, [userSession, activeTab]);
+
   const handleAcceptDeal = async () => {
     const { error } = await supabase.from('profiles').update({ marketing_credits: marketingCredits + marketingAdvance }).eq('id', userSession?.id);
     if (!error) { 

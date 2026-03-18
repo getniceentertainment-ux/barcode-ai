@@ -56,7 +56,7 @@ interface MatrixState {
   addVocalStem: (stem: VocalStem) => void;
   removeVocalStem: (id: string) => void;
   updateStemVolume: (id: string, volume: number) => void;
-  updateStemOffset: (id: string, offsetBars: number) => void; // V4 Timeline
+  updateStemOffset: (id: string, offsetBars: number) => void; // V4 Timeline Logic
 
   finalMaster: FinalMaster | null;
   setFinalMaster: (master: FinalMaster | null) => void;
@@ -111,6 +111,7 @@ export const useMatrixStore = create<MatrixState>()(
       setGwUseIntel: (b) => set({ gwUseIntel: b }),
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
+      
       addVocalStem: (stem) => set((state) => ({ vocalStems: [...state.vocalStems, stem] })),
       removeVocalStem: (id) => set((state) => ({ vocalStems: state.vocalStems.filter(s => s.id !== id) })),
       updateStemVolume: (id, volume) => set((state) => ({
@@ -119,6 +120,7 @@ export const useMatrixStore = create<MatrixState>()(
       updateStemOffset: (id, offsetBars) => set((state) => ({
         vocalStems: state.vocalStems.map(s => s.id === id ? { ...s, offsetBars } : s)
       })),
+
       setFinalMaster: (master) => set({ finalMaster: master }),
       addToast: (message, type) => {
         const id = Math.random().toString(36).substring(7);
@@ -126,6 +128,7 @@ export const useMatrixStore = create<MatrixState>()(
         setTimeout(() => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })), 4000);
       },
       removeToast: (id) => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })),
+
       clearMatrix: () => set({
         audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
         gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,

@@ -13,8 +13,8 @@ export interface AudioAnalysis {
   fileName: string;
   bpm: number;
   totalBars: number;
-  key?: string; // NEW: The extracted musical key
   grid?: number[];
+  key?: string;
 }
 
 export interface FlowDNA {
@@ -35,16 +35,10 @@ export interface VocalStem {
   url: string;
   blob?: Blob;
   volume: number; 
+  offsetBars: number; // MANDATORY: For V4 Sliding Timeline
 }
 
 export interface FinalMaster {
   url: string;
   blob: Blob;
-}
-
-export interface MatrixProject {
-  id: string;
-  name: string;
-  is_finalized: boolean;
-  created_at: string;
 }
