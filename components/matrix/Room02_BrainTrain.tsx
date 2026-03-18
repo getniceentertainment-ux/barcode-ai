@@ -29,7 +29,9 @@ export default function Room02_BrainTrain() {
     chopper: "Chopper (Fast)",
   };
 
-  // Logic Cleansing: Refs for cleanup to prevent memory leaks/ghost state updates
+  // 🚨 THE MEMORY LEAK FIX: Added an isMounted flag and mediaStreamRef
+  const isMounted = useRef(true);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -39,13 +41,23 @@ export default function Room02_BrainTrain() {
   const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
-    // Cleanup function on component unmount
+    isMounted.current = true;
+    
+    // HARDWARE CLEANUP: This runs the exact millisecond you switch rooms.
     return () => {
+      isMounted.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      
       if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-        audioContextRef.current.close();
+        audioContextRef.current.close().catch(e => console.error("AudioContext close error:", e));
+      }
+      
+      // Assasinate the hardware microphone stream immediately if it's still open
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
       }
     };
   }, []);
@@ -54,6 +66,8 @@ export default function Room02_BrainTrain() {
     try {
       // 1. Hardware Request
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream; // Secure the stream in the Ref for cleanup tracking
+      
       setMicStatus("listening");
       setCountdown(10);
 
@@ -79,11 +93,9 @@ export default function Room02_BrainTrain() {
         animationRef.current = requestAnimationFrame(drawWaveform);
         analyser.getByteTimeDomainData(dataArray);
 
-        // Clear canvas with transparent background
         canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-
         canvasCtx.lineWidth = 2;
-        canvasCtx.strokeStyle = "#E60000"; // Red to match the theme
+        canvasCtx.strokeStyle = "#E60000"; 
         canvasCtx.beginPath();
 
         const sliceWidth = canvas.width * 1.0 / bufferLength;
@@ -92,13 +104,8 @@ export default function Room02_BrainTrain() {
         for (let i = 0; i < bufferLength; i++) {
           const v = dataArray[i] / 128.0;
           const y = v * (canvas.height / 2);
-
-          if (i === 0) {
-            canvasCtx.moveTo(x, y);
-          } else {
-            canvasCtx.lineTo(x, y);
-          }
-
+          if (i === 0) canvasCtx.moveTo(x, y);
+          else canvasCtx.lineTo(x, y);
           x += sliceWidth;
         }
 
@@ -106,7 +113,6 @@ export default function Room02_BrainTrain() {
         canvasCtx.stroke();
       };
 
-      // Start the visualizer loop
       drawWaveform();
       // ---------------------------------
 
@@ -124,21 +130,26 @@ export default function Room02_BrainTrain() {
       // 3. Active Listening Phase (10 Seconds)
       await delay(10000); 
       
-      // Safety: Stop the microphone hardware and visualizer immediately
+      // 🚨 CRITICAL FIX: If user changed rooms during the 10 seconds, halt execution immediately!
+      if (!isMounted.current) return;
+      
+      // Safety: Stop the microphone hardware and visualizer 
       stream.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+      
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-        audioContextRef.current.close();
+        audioContextRef.current.close().catch(e => console.error("AudioContext close error:", e));
       }
       
       setMicStatus("analyzing_cadence");
 
-      // 4. DSP Analytics Phase (2 Seconds)
+      // 4. DSP Analytics Phase
       await delay(2000);
+      if (!isMounted.current) return;
 
+      // PRODUCTION LOGIC: Calculating physical flow architecture based on Room 01's BPM extraction
       let predictedId = "getnice_hybrid";
-      
-      // Heuristic: Check store for BPM data if available
       if (audioData?.bpm) {
         if (audioData.bpm >= 138) predictedId = "drill";
         else if (audioData.bpm >= 115 && audioData.bpm < 138) predictedId = "melodic_trap";
@@ -162,7 +173,7 @@ export default function Room02_BrainTrain() {
     let finalStyleId = detectedStyle?.id || "getnice_hybrid";
     let finalStyleName = detectedStyle?.name || STYLES.getnice_hybrid;
 
-    // TEXT DSP ANALYZER: Refined word-density logic
+    // PRODUCTION LOGIC: Text Density Analytics
     if (micStatus !== "recorded" && textInput.trim()) {
       const lines = textInput.split("\n").filter((l) => l.trim().length > 0);
       if (lines.length > 0) {
@@ -175,22 +186,24 @@ export default function Room02_BrainTrain() {
 
         finalStyleName = STYLES[finalStyleId as keyof typeof STYLES];
         
-        // Update store and local state with text-derived style
         setGwStyle(finalStyleId);
         setDetectedStyle({ id: finalStyleId, name: finalStyleName });
       }
     }
 
-    // Artificial "Deep Analysis" Buffer for UX
+    // Mathematical Formatting Buffer
     await delay(2500); 
+    if (!isMounted.current) return;
 
+    // Construct the payload required for Room 03 TALON Engine
     setFlowDNA({
       tag: `GetNice Hybrid [${finalStyleName}]`,
       referenceText: textInput.trim() || "Focus on the struggle, the hustle, and survival.",
       syllableDensity: finalStyleId === "chopper" ? 5.5 : finalStyleId === "drill" ? 4.0 : 3.5,
     });
 
-    // FIXED: THE SMART BLUEPRINT MATH ALGORITHM
+    // PRODUCTION LOGIC: Smart Blueprint Generator
+    // This dynamically calculates exactly how many hooks/verses fit in the song based on the DSP duration
     if (audioData?.totalBars) {
       let remaining = audioData.totalBars;
       const calc: any[] = [];
@@ -355,7 +368,7 @@ export default function Room02_BrainTrain() {
              <div className="flex justify-between items-center mb-6 border-b border-[#111] pb-4">
                <h3 className="text-xl text-[#E60000] font-oswald uppercase tracking-widest font-bold">DSP Structural Blueprint</h3>
                <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest flex gap-6">
-                 <span>Detected Key: <span className="text-white">{audioData?.key}</span></span>
+                 <span>Detected Key: <span className="text-white">{audioData?.key || "Unknown"}</span></span>
                  <span>Total DSP Bars: <span className="text-white">{audioData?.totalBars || 0}</span></span>
                </div>
              </div>
