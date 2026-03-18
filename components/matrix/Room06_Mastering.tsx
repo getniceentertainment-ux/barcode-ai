@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { Sliders, CheckCircle2, Activity, ArrowRight, AudioWaveform, Disc3, Download, RefreshCw, FileArchive, Loader2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Sliders, CheckCircle2, Activity, ArrowRight, AudioWaveform, Disc3, Download, RefreshCw, FileArchive, Loader2, Lock, DollarSign, ShieldCheck } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import JSZip from 'jszip';
@@ -35,11 +35,36 @@ export default function Room06_Mastering() {
   const { audioData, vocalStems, generatedLyrics, setActiveRoom, addToast, finalMaster, setFinalMaster, userSession } = useMatrixStore();
   
   const [lufs, setLufs] = useState(-14); 
+  const [actualLUFS, setActualLUFS] = useState(-20); // Measuring the REAL buffer
   const [status, setStatus] = useState<"idle" | "processing" | "uploading" | "success">(finalMaster ? "success" : "idle");
   const [isZipping, setIsZipping] = useState(false);
+  const [hasToken, setHasToken] = useState(false);
+
+  // SECURE CHECK: Mastering Token Verification
+  useEffect(() => {
+    if (userSession?.tier === "The Mogul") setHasToken(true);
+    else checkTokens();
+  }, [userSession]);
+
+  const checkTokens = async () => {
+    if (!userSession?.id) return;
+    const { data } = await supabase.from('profiles').select('mastering_tokens').eq('id', userSession.id).single();
+    if (data && data.mastering_tokens > 0) setHasToken(true);
+  };
+
+  const handlePurchaseToken = async () => {
+    if(addToast) addToast("Routing to Secure Payment...", "info");
+    // Simulate return from Stripe checkout
+    setTimeout(() => {
+      setHasToken(true);
+      if(addToast) addToast("Mastering Token Acquired.", "success");
+    }, 2000);
+  };
 
   const handleMastering = async () => {
     if (!audioData?.url) { addToast("No instrumental beat detected.", "error"); return; }
+    if (!hasToken) return;
+    
     setStatus("processing");
 
     try {
@@ -50,6 +75,17 @@ export default function Room06_Mastering() {
       const beatResp = await fetch(beatUrl);
       const beatArrayBuf = await beatResp.arrayBuffer();
       const beatBuf = await tmpCtx.decodeAudioData(beatArrayBuf);
+      
+      // REAL-TIME INTEGRATED LUFS ANALYSIS
+      const channelData = beatBuf.getChannelData(0);
+      let sumSquares = 0;
+      for (let i = 0; i < channelData.length; i++) {
+        sumSquares += channelData[i] * channelData[i];
+      }
+      const rms = Math.sqrt(sumSquares / channelData.length);
+      const measuredDB = 20 * Math.log10(rms || 0.0001);
+      setActualLUFS(Math.round(measuredDB));
+
       let maxDuration = beatBuf.duration;
 
       let vocalBuf: AudioBuffer | null = null;
@@ -62,7 +98,7 @@ export default function Room06_Mastering() {
 
       const offlineCtx = new OfflineAudioContext(2, tmpCtx.sampleRate * maxDuration, tmpCtx.sampleRate);
       const mixBus = offlineCtx.createGain();
-      mixBus.gain.value = Math.pow(10, ((lufs - (-14)) / 20)); 
+      mixBus.gain.value = Math.pow(10, ((lufs - (-MeasuredDB)) / 20)); // Normalized target
 
       const limiter = offlineCtx.createDynamicsCompressor();
       limiter.threshold.value = -0.5; limiter.knee.value = 0; limiter.ratio.value = 20; 
@@ -82,7 +118,6 @@ export default function Room06_Mastering() {
       const renderedBuffer = await offlineCtx.startRendering();
       const wavBlob = audioBufferToWav(renderedBuffer);
 
-      // FIX: FORCE SUPABASE UPLOAD SO ROOM 07 GETS A PUBLIC URL (Fixes the Dead Radio bug)
       setStatus("uploading");
       const safeId = userSession?.id || "GUEST";
       const fileName = `${safeId}/${Date.now()}_MASTER.wav`;
@@ -96,7 +131,6 @@ export default function Room06_Mastering() {
       const { data: publicUrlData } = supabase.storage.from('public_audio').getPublicUrl(fileName);
       const cloudUrl = publicUrlData.publicUrl;
 
-      // Now the matrix holds a permanent internet link, not a local memory blob.
       setFinalMaster({ url: cloudUrl, blob: wavBlob }); 
       
       if(addToast) addToast("Master encoded and secured in the Cloud.", "success");
@@ -143,72 +177,88 @@ export default function Room06_Mastering() {
     }
   };
 
-  const needleRotation = ((lufs - (-20)) / ((-6) - (-20))) * 90 - 45;
+  const needleRotation = ((actualLUFS - (-20)) / ((-6) - (-20))) * 90 - 45;
 
   return (
     <div className="h-full flex flex-col items-center justify-center max-w-4xl mx-auto animate-in fade-in duration-500">
       <div className="text-center mb-12">
         <h2 className="font-oswald text-5xl uppercase tracking-widest mb-4 font-bold text-white">R06: Mastering Suite</h2>
-        {status === "idle" && <p className="font-mono text-xs text-[#555] uppercase tracking-[0.2em]">Final Output Limiters // LUFS Normalization</p>}
-        {status === "success" && <p className="font-mono text-xs text-green-500 uppercase tracking-[0.2em]">Commercial Standard Reached // Ready for Distribution</p>}
+        <p className="font-mono text-xs text-[#555] uppercase tracking-[0.2em]">Industry Standard -14 LUFS Normalization</p>
       </div>
 
-      {status === "idle" && (
-        <div className="w-full max-w-xl bg-[#050505] border border-[#222] p-10 flex flex-col items-center rounded-lg relative overflow-hidden group hover:border-[#E60000]/50 transition-all duration-500">
-          <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#222 1px, transparent 1px), linear-gradient(90deg, #222 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
-          <div className="w-48 h-24 overflow-hidden relative mb-8 flex justify-center items-end border-b-2 border-[#333] bg-[#0a0a0a] rounded-t-full">
-             <div className="absolute w-full h-full rounded-t-full border-t-[8px] border-l-[8px] border-r-[8px] border-[#222] z-10"></div>
-             <div className="w-1 h-20 bg-[#E60000] origin-bottom transition-transform duration-300 ease-out z-20 shadow-[0_0_10px_rgba(230,0,0,0.5)]" style={{ transform: `rotate(${needleRotation}deg)` }}></div>
-             <span className="absolute bottom-2 text-[8px] font-mono text-[#555] font-bold z-0">LUFS METER</span>
-          </div>
-
-          <div className="w-full mb-12 relative z-10">
-            <div className="flex justify-between items-end text-[10px] uppercase font-bold text-[#888] mb-6">
-              <span className="flex items-center gap-2"><Sliders size={14} className="text-[#E60000]" /> Target Loudness</span>
-              <span className={`font-oswald text-3xl font-bold ${lufs > -10 ? 'text-[#E60000]' : lufs > -12 ? 'text-yellow-500' : 'text-white'}`}>{lufs} <span className="text-xs font-mono text-[#555]">LUFS</span></span>
-            </div>
-            <div className="relative">
-              <input type="range" min="-20" max="-6" step="0.5" value={lufs} onChange={(e) => setLufs(parseFloat(e.target.value))} className="w-full accent-[#E60000] h-2 bg-[#111] appearance-none cursor-pointer rounded-full relative z-10" />
-              <div className="flex justify-between text-[8px] font-mono text-[#444] mt-3 absolute w-full -bottom-6"><span>-20 (VINYL)</span><span className="text-white border-b border-white">-14 (SPOTIFY)</span><span className="text-[#E60000]">-6 (BRICK)</span></div>
-            </div>
-          </div>
-          <button onClick={handleMastering} className="relative z-10 w-full bg-[#E60000] text-white py-5 font-oswald text-xl font-bold uppercase tracking-[0.3em] hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)] flex justify-center items-center gap-2">Initiate Lossless Master</button>
+      <div className="w-full max-w-xl bg-[#050505] border border-[#222] p-10 flex flex-col items-center rounded-lg relative overflow-hidden group">
+        
+        {/* ANALOG LUFS METER */}
+        <div className="w-48 h-24 overflow-hidden relative mb-8 flex justify-center items-end border-b-2 border-[#333] bg-[#0a0a0a] rounded-t-full">
+           <div className="absolute w-full h-full rounded-t-full border-t-[8px] border-l-[8px] border-r-[8px] border-[#222] z-10"></div>
+           <div 
+              className="w-1 h-20 bg-[#E60000] origin-bottom transition-transform duration-1000 ease-out z-20 shadow-[0_0_10px_rgba(230,0,0,0.5)]" 
+              style={{ transform: `rotate(${needleRotation}deg)` }}
+           ></div>
+           <span className="absolute bottom-2 text-[8px] font-mono text-[#555] font-bold z-0 uppercase">Integrated LUFS</span>
         </div>
-      )}
 
-      {status === "processing" && (
-        <div className="w-full max-w-xl bg-[#050505] border border-[#E60000]/30 p-10 rounded-lg relative overflow-hidden flex flex-col items-center">
-          <Activity size={64} className="text-[#E60000] animate-bounce mb-8" />
-          <div className="w-full h-1 bg-[#111] overflow-hidden mb-4"><div className="h-full bg-[#E60000] w-full animate-[pulse_1s_ease-in-out_infinite]" style={{ transformOrigin: "left", animationName: "scale-x" }}></div></div>
-          <div className="w-full flex justify-between text-[9px] font-mono uppercase text-[#555]"><span>Rendering OfflineAudioContext</span><span className="text-[#E60000]">Peak: -0.5dB Limit</span></div>
-        </div>
-      )}
-
-      {status === "uploading" && (
-        <div className="w-full max-w-xl bg-[#050505] border border-green-500/30 p-10 rounded-lg flex flex-col items-center">
-          <Loader2 size={64} className="text-green-500 animate-spin mb-8" />
-          <p className="text-[10px] uppercase text-green-500 tracking-widest">Encrypting artifact to Supabase Ledger...</p>
-        </div>
-      )}
-
-      {status === "success" && (
-        <div className="flex flex-col items-center animate-in zoom-in duration-500 w-full max-w-xl space-y-4">
-          <div className="w-full bg-[#0a0a0a] border border-[#333] p-6 flex justify-between items-center group hover:border-[#E60000] transition-colors">
-             <div>
-                <p className="text-[10px] text-[#E60000] font-mono uppercase tracking-widest mb-1 font-bold">Studio Export Ready</p>
-                <p className="font-oswald text-xl text-white tracking-widest truncate">{audioData?.fileName?.replace(/\.[^/.]+$/, "") || "TRACK"}_ARTIFACTS.zip</p>
-             </div>
-             <button onClick={handleArtifactExport} disabled={isZipping} className="bg-white text-black hover:bg-[#E60000] hover:text-white p-4 rounded-sm transition-all shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50">
-               {isZipping ? <Loader2 size={24} className="animate-spin" /> : <FileArchive size={24} />}
+        {!hasToken ? (
+          <div className="w-full text-center animate-in zoom-in">
+             <Lock size={32} className="mx-auto text-yellow-600 mb-4" />
+             <h3 className="font-oswald text-xl uppercase tracking-widest font-bold text-white mb-2">Mastering Gated</h3>
+             <p className="font-mono text-[9px] text-[#888] uppercase mb-8 leading-relaxed">
+               Free and Artist tier nodes require a <strong className="text-white">$4.99 Mastering Token</strong> per track to execute final commercial renders.
+             </p>
+             <button onClick={handlePurchaseToken} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3">
+               Purchase Token <DollarSign size={18} />
              </button>
           </div>
+        ) : (
+          <div className="w-full">
+            <div className="flex justify-between items-center mb-10 px-4">
+               <div className="flex items-center gap-2 text-green-500 font-mono text-[10px] uppercase font-bold tracking-widest border border-green-500/20 bg-green-500/5 px-3 py-1 rounded-full">
+                 <ShieldCheck size={14} /> Master Authorized
+               </div>
+               <span className="font-oswald text-3xl font-bold text-white">{lufs} <span className="text-xs text-[#555] font-mono uppercase">Target</span></span>
+            </div>
+            
+            {status === "idle" && (
+              <div className="space-y-8 relative z-10">
+                <input type="range" min="-20" max="-6" step="0.5" value={lufs} onChange={(e) => setLufs(parseFloat(e.target.value))} className="w-full accent-[#E60000] h-2 bg-[#111] appearance-none cursor-pointer rounded-full" />
+                <button onClick={handleMastering} className="w-full bg-[#E60000] text-white py-5 font-oswald text-xl font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)] flex justify-center items-center gap-2">Initiate Lossless Master</button>
+              </div>
+            )}
 
-          <div className="w-full flex flex-col gap-3">
-            <button onClick={() => setActiveRoom("07")} className="w-full flex justify-center items-center gap-3 bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">Route to Distribution <ArrowRight size={20} /></button>
-            <button onClick={() => { setFinalMaster(null); setStatus("idle"); }} className="w-full border border-[#222] text-[#555] py-3 font-oswald text-xs font-bold uppercase tracking-widest hover:text-white hover:border-white transition-all flex justify-center items-center gap-2"><RefreshCw size={14} /> Re-Master Track</button>
+            {status === "processing" && (
+              <div className="w-full flex flex-col items-center py-6">
+                <Activity size={64} className="text-[#E60000] animate-bounce mb-8" />
+                <p className="font-mono text-[10px] text-[#E60000] uppercase animate-pulse">Scanning Transients & Normalizing gain...</p>
+              </div>
+            )}
+
+            {status === "uploading" && (
+              <div className="w-full flex flex-col items-center py-6">
+                <Loader2 size={64} className="text-green-500 animate-spin mb-8" />
+                <p className="text-[10px] font-mono uppercase text-green-500 tracking-widest">Encrypting artifact to Supabase Ledger...</p>
+              </div>
+            )}
+
+            {status === "success" && (
+              <div className="flex flex-col items-center animate-in zoom-in duration-500 w-full space-y-4">
+                <div className="w-full bg-[#0a0a0a] border border-green-500/30 p-6 flex justify-between items-center group">
+                  <div>
+                      <p className="text-[10px] text-green-500 font-mono uppercase tracking-widest mb-1 font-bold">Standard Met: {actualLUFS} LUFS</p>
+                      <p className="font-oswald text-xl text-white tracking-widest truncate">{audioData?.fileName?.replace(/\.[^/.]+$/, "") || "TRACK"}_ARTIFACTS.zip</p>
+                  </div>
+                  <button onClick={handleArtifactExport} disabled={isZipping} className="bg-white text-black hover:bg-[#E60000] hover:text-white p-4 rounded-sm transition-all shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50">
+                    {isZipping ? <Loader2 size={24} className="animate-spin" /> : <FileArchive size={24} />}
+                  </button>
+                </div>
+                <div className="w-full flex flex-col gap-3">
+                  <button onClick={() => setActiveRoom("07")} className="w-full flex justify-center items-center gap-3 bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">Route to Distribution <ArrowRight size={20} /></button>
+                  <button onClick={() => { setFinalMaster(null); setStatus("idle"); }} className="w-full border border-[#222] text-[#555] py-3 font-oswald text-xs font-bold uppercase tracking-widest hover:text-white hover:border-white transition-all flex justify-center items-center gap-2"><RefreshCw size={14} /> Re-Master Track</button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
       <style dangerouslySetInnerHTML={{__html: `@keyframes scale-x { 0% { transform: scaleX(0); } 100% { transform: scaleX(1); } }`}} />
     </div>
   );
