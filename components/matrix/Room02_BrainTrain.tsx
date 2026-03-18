@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic2, Activity, CheckCircle2, BrainCircuit, ArrowRight, Info, AudioWaveform, Plus, Minus } from "lucide-react";
+import { Mic2, Activity, CheckCircle2, BrainCircuit, ArrowRight, Info, AudioWaveform, Plus, Minus, RefreshCw } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { BlueprintSection } from "../../lib/types";
 
@@ -9,10 +9,11 @@ import { BlueprintSection } from "../../lib/types";
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 export default function Room02_BrainTrain() {
-  const { setFlowDNA, setActiveRoom, audioData, setGwStyle, blueprint, setBlueprint } = useMatrixStore();
+  // THE FIX: Destructure flowDNA from the store to check if we already completed this room!
+  const { flowDNA, setFlowDNA, setActiveRoom, audioData, setGwStyle, blueprint, setBlueprint } = useMatrixStore();
 
-  // Primary States
-  const [status, setStatus] = useState<"idle" | "analyzing" | "success">("idle");
+  // THE FIX: If flowDNA already exists in our Matrix session, jump straight to "success"
+  const [status, setStatus] = useState<"idle" | "analyzing" | "success">(flowDNA ? "success" : "idle");
   const [micStatus, setMicStatus] = useState<"idle" | "listening" | "analyzing_cadence" | "recorded">("idle");
   const [textInput, setTextInput] = useState("");
   const [detectedStyle, setDetectedStyle] = useState<{ id: string; name: string } | null>(null);
@@ -29,13 +30,11 @@ export default function Room02_BrainTrain() {
     chopper: "Chopper (Fast)",
   };
 
-  // 🚨 THE MEMORY LEAK FIX: Added an isMounted flag and mediaStreamRef
   const isMounted = useRef(true);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Web Audio API Refs for Waveform Visualizer
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -50,14 +49,16 @@ export default function Room02_BrainTrain() {
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       
+      // 🚨 THE BLUE DOT FIX: Assassinate the hardware microphone stream BEFORE touching the AudioContext
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => {
+          track.stop();
+        });
+        mediaStreamRef.current = null;
+      }
+
       if (audioContextRef.current && audioContextRef.current.state !== "closed") {
         audioContextRef.current.close().catch(e => console.error("AudioContext close error:", e));
-      }
-      
-      // Assasinate the hardware microphone stream immediately if it's still open
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-        mediaStreamRef.current = null;
       }
     };
   }, []);
@@ -66,6 +67,14 @@ export default function Room02_BrainTrain() {
     try {
       // 1. Hardware Request
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // 🚨 THE PROMISE RACE FIX: If they clicked record and instantly switched rooms 
+      // before this promise resolved, kill the mic immediately.
+      if (!isMounted.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
+
       mediaStreamRef.current = stream; // Secure the stream in the Ref for cleanup tracking
       
       setMicStatus("listening");
@@ -130,7 +139,6 @@ export default function Room02_BrainTrain() {
       // 3. Active Listening Phase (10 Seconds)
       await delay(10000); 
       
-      // 🚨 CRITICAL FIX: If user changed rooms during the 10 seconds, halt execution immediately!
       if (!isMounted.current) return;
       
       // Safety: Stop the microphone hardware and visualizer 
@@ -356,9 +364,11 @@ export default function Room02_BrainTrain() {
           <div className="text-center mb-8 border-b border-[#222] pb-8">
             <CheckCircle2 size={64} className="text-green-500 mx-auto mb-4 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" />
             <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">DNA & Blueprint Locked</h2>
-            {detectedStyle && (
+            
+            {/* THE FIX: Read from the global flowDNA state so it stays alive when returning */}
+            {flowDNA?.tag && (
               <p className="font-mono text-[10px] text-green-500 uppercase tracking-widest mb-4 border border-green-500/20 bg-green-500/5 py-2 inline-block px-4 mt-4">
-                Architecture Matrix: {detectedStyle.name}
+                Architecture Matrix: {flowDNA.tag}
               </p>
             )}
           </div>
@@ -401,12 +411,25 @@ export default function Room02_BrainTrain() {
              </div>
           </div>
 
-          <button
-            onClick={() => setActiveRoom("03")}
-            className="flex items-center justify-center gap-3 w-full bg-white text-black py-5 font-oswald font-bold text-lg uppercase tracking-[0.2em] hover:bg-[#E60000] hover:text-white transition-colors"
-          >
-            Enter Ghostwriter Suite <ArrowRight size={20} />
-          </button>
+          <div className="w-full flex flex-col gap-3">
+            <button
+              onClick={() => setActiveRoom("03")}
+              className="flex items-center justify-center gap-3 w-full bg-white text-black py-5 font-oswald font-bold text-lg uppercase tracking-[0.2em] hover:bg-[#E60000] hover:text-white transition-colors"
+            >
+              Enter Ghostwriter Suite <ArrowRight size={20} />
+            </button>
+            
+            {/* THE FIX: Provide an intuitive way to erase the DNA and start over without breaking the store */}
+            <button 
+              onClick={() => {
+                setStatus("idle");
+                setMicStatus("idle");
+              }}
+              className="w-full border border-[#333] text-[#888] py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#111] hover:text-white transition-all flex items-center justify-center gap-2"
+            >
+              <RefreshCw size={14} /> Re-Configure Flow DNA
+            </button>
+          </div>
         </div>
       )}
     </div>
