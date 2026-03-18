@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon, Globe } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
+import Link from "next/link"; // THE FIX: Added missing Link import
 
 export default function Room07_Distribution() {
   const { setActiveRoom, userSession, generatedLyrics, addToast, audioData, finalMaster } = useMatrixStore();
@@ -169,7 +170,7 @@ export default function Room07_Distribution() {
              <div className="flex flex-col gap-3 max-w-sm mx-auto">
                <button 
                   onClick={() => setActiveRoom("08")}
-                  className="flex items-center justify-center gap-3 bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-gray-200 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+                  className="w-full flex justify-center items-center gap-3 bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-gray-200 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
                 >
                   Proceed to Bank <ArrowRight size={20} />
                 </button>
