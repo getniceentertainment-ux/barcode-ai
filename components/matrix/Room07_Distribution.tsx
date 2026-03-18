@@ -1,24 +1,25 @@
 "use client";
 
 import React, { useState } from "react";
-import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon } from "lucide-react";
+import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon, Globe } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
+import { supabase } from "../../lib/supabase";
 
 export default function Room07_Distribution() {
-  // THE FIX: Removed setIsFinalized from this list because it no longer exists in the store
-  const { setActiveRoom, userSession, generatedLyrics, addToast, audioData } = useMatrixStore();
+  const { setActiveRoom, userSession, generatedLyrics, addToast, audioData, finalMaster } = useMatrixStore();
   
   const [trackTitle, setTrackTitle] = useState("");
-  const [status, setStatus] = useState<"idle" | "analyzing" | "success">("idle");
+  const [status, setStatus] = useState<"idle" | "analyzing" | "submitting" | "success">("idle");
   const [hitScore, setHitScore] = useState<number>(0);
   const [coverUrl, setCoverUrl] = useState<string>("");
+  const [tiktokSnippet, setTiktokSnippet] = useState<string>("");
 
-  const handleSubmit = async () => {
+  const handleAnalyze = async () => {
     if (!trackTitle.trim()) return;
     setStatus("analyzing");
 
     try {
-      // PROPRIETARY A&R SCANNER (LIVE)
+      // 1. Trigger the Proprietary A&R Neural Scan
       const analyzeRes = await fetch('/api/distribution/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -33,18 +34,46 @@ export default function Room07_Distribution() {
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
       setHitScore(analyzeData.hitScore);
-      if (analyzeData.coverUrl) setCoverUrl(analyzeData.coverUrl);
+      setCoverUrl(analyzeData.coverUrl);
+      setTiktokSnippet(analyzeData.tiktokSnippet);
       
-      setStatus("success");
+      // 2. Automatically move to the final confirmation
+      handleFinalSubmit(analyzeData);
     } catch (error: any) {
-      console.error("Distribution Submission Error:", error);
       if (addToast) addToast(error.message, "error");
       setStatus("idle");
     }
   };
 
-  const handleProceed = () => {
-    setActiveRoom("08");
+  const handleFinalSubmit = async (aAndRData: any) => {
+    setStatus("submitting");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      // 3. Write the Artifact to the Global Ledger
+      const res = await fetch('/api/distribution/submit', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({
+          title: trackTitle,
+          audioUrl: finalMaster?.url,
+          coverUrl: aAndRData.coverUrl,
+          hitScore: aAndRData.hitScore,
+          tiktokSnippet: aAndRData.tiktokSnippet
+        })
+      });
+
+      if (!res.ok) throw new Error("Failed to secure artifact in Ledger.");
+
+      setStatus("success");
+      if (addToast) addToast("Artifact secured. Check your Public Profile.", "success");
+    } catch (err: any) {
+      if (addToast) addToast(err.message, "error");
+      setStatus("idle");
+    }
   };
 
   return (
@@ -52,15 +81,13 @@ export default function Room07_Distribution() {
       <div className={`bg-[#050505] border p-12 rounded-lg text-center relative overflow-hidden transition-all duration-500
         ${status === 'success' ? 'border-[#E60000] shadow-[0_0_30px_rgba(230,0,0,0.15)]' : 'border-[#222]'}`}>
         
-        {/* Animated Background Overlay */}
-        {status === "analyzing" && (
+        {status === "analyzing" || status === "submitting" ? (
           <div className="absolute inset-0 bg-[#E60000]/5 animate-pulse pointer-events-none" />
-        )}
+        ) : null}
 
-        {/* Dynamic Header Icon */}
         <div className="relative z-10 mb-8">
           {status === "idle" && <Send size={64} className="mx-auto text-[#444]" />}
-          {status === "analyzing" && <Loader2 size={64} className="mx-auto text-[#E60000] animate-spin" />}
+          {(status === "analyzing" || status === "submitting") && <Loader2 size={64} className="mx-auto text-[#E60000] animate-spin" />}
           {status === "success" && <CheckCircle2 size={64} className="mx-auto text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" />}
         </div>
         
@@ -68,7 +95,6 @@ export default function Room07_Distribution() {
           R07: Distribution Node
         </h2>
         
-        {/* IDLE STATE: Form Input */}
         {status === "idle" && (
           <div className="max-w-md mx-auto space-y-6 relative z-10">
             <div className="text-left">
@@ -85,56 +111,50 @@ export default function Room07_Distribution() {
             </div>
             
             <button 
-              onClick={handleSubmit} 
-              disabled={!trackTitle.trim()}
+              onClick={handleAnalyze} 
+              disabled={!trackTitle.trim() || !finalMaster}
               className="w-full bg-[#E60000] disabled:opacity-30 disabled:cursor-not-allowed text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]"
             >
-              Submit for A&R Review
+              {!finalMaster ? "Master Required" : "Submit for A&R Review"}
             </button>
             
             <div className="flex items-start gap-3 mt-6 p-4 bg-[#110000] border border-[#330000]">
               <ShieldAlert size={16} className="text-[#E60000] shrink-0 mt-0.5" />
               <p className="text-[9px] text-[#888] uppercase font-mono text-left leading-relaxed">
-                By submitting, the AI A&R algorithm will analyze your master to calculate its commercial viability. High Hit Scores unlock algorithmic advances in The Bank.
+                Tracks are instantly added to your Public Node Profile. High Hit Scores unlock algorithmic advances in The Bank.
               </p>
             </div>
           </div>
         )}
 
-        {/* ANALYZING STATE: Loading UI */}
         {status === "analyzing" && (
           <div className="space-y-6 py-10 relative z-10">
-            <p className="font-oswald text-2xl text-[#E60000] uppercase tracking-widest font-bold">
-              A&R Neural Scan in Progress...
-            </p>
+            <p className="font-oswald text-2xl text-[#E60000] uppercase tracking-widest font-bold">A&R Neural Scan In Progress...</p>
             <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest space-y-2">
-              <p>Extracting sonic features & syllable density...</p>
-              <p>Evaluating repetitive hooks & viral cadence...</p>
+              <p>Extracting sonic features...</p>
+              <p>Evaluating cadence rhythm...</p>
               <p>Generating Cover Art via DALL-E 3...</p>
             </div>
           </div>
         )}
 
-        {/* SUCCESS STATE: Hit Score & Routing */}
+        {status === "submitting" && (
+          <div className="space-y-6 py-10 relative z-10">
+            <p className="font-oswald text-2xl text-white uppercase tracking-widest font-bold">Securing Artifact...</p>
+            <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest">
+              Writing metadata to Supabase Ledger...
+            </div>
+          </div>
+        )}
+
         {status === "success" && (
           <div className="py-6 animate-in zoom-in relative z-10">
-             <h3 className="font-oswald text-3xl uppercase tracking-widest mb-8 text-white">Transmission Received</h3>
+             <h3 className="font-oswald text-3xl uppercase tracking-widest mb-8 text-white">Project Finalized</h3>
              
              <div className="flex flex-col md:flex-row items-center justify-center gap-8 mb-10">
-               
-               {/* Cover Art Display */}
                <div className="w-48 h-48 bg-[#111] border border-[#333] relative overflow-hidden shadow-xl shrink-0">
-                 {coverUrl ? (
-                   <img src={coverUrl} alt="Cover Art" className="w-full h-full object-cover" />
-                 ) : (
-                   <div className="absolute inset-0 flex flex-col items-center justify-center text-[#555]">
-                     <ImageIcon size={32} className="mb-2" />
-                     <span className="text-[8px] font-mono uppercase tracking-widest">No Artwork</span>
-                   </div>
-                 )}
+                 {coverUrl ? <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" /> : <ImageIcon size={32} className="m-auto text-[#333]" />}
                </div>
-
-               {/* Hit Score Display */}
                <div className="w-48 h-48 bg-black border border-[#222] p-6 flex flex-col items-center justify-center shrink-0">
                  <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 flex items-center gap-2">
                    <BarChart size={14} className="text-[#E60000]" /> A&R Score
@@ -143,19 +163,23 @@ export default function Room07_Distribution() {
                    ${hitScore >= 85 ? 'text-green-500' : hitScore >= 70 ? 'text-yellow-500' : 'text-[#E60000]'}`}>
                    {hitScore}
                  </div>
-                 <p className="text-[9px] font-mono uppercase mt-2 text-[#555] text-center">
-                   {hitScore >= 85 ? 'Commercial Smash Detected' : hitScore >= 70 ? 'Solid Potential' : 'Underground Appeal'}
-                 </p>
                </div>
-
              </div>
 
-             <button 
-                onClick={handleProceed}
-                className="flex items-center mx-auto gap-3 bg-white text-black px-12 py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-gray-200 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-              >
-                Proceed to The Bank <ArrowRight size={20} />
-              </button>
+             <div className="flex flex-col gap-3 max-w-sm mx-auto">
+               <button 
+                  onClick={() => setActiveRoom("08")}
+                  className="flex items-center justify-center gap-3 bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-gray-200 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+                >
+                  Proceed to Bank <ArrowRight size={20} />
+                </button>
+                <Link 
+                  href={`/${encodeURIComponent(userSession?.stageName || "")}`}
+                  className="flex items-center justify-center gap-3 border border-[#333] text-[#888] py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:text-white hover:border-white transition-all"
+                >
+                  View on My Profile <Globe size={16} />
+                </Link>
+             </div>
           </div>
         )}
       </div>
