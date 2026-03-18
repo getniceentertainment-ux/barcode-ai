@@ -14,7 +14,23 @@ interface MatrixState {
   userSession: UserSession | null;
   activeProjectId: string | null;
   isProjectFinalized: boolean;
+
+  // RADIO STATE
+  playbackMode: 'session' | 'radio';
+  radioTrack: { url: string; title: string; artist: string; score: number } | null;
+  setPlaybackMode: (mode: 'session' | 'radio') => void;
+  setRadioTrack: (track: { url: string; title: string; artist: string; score: number } | null) => void;
   
+  // MDX NEURAL STATE
+  mdxJobId: string | null;
+  setMdxJobId: (id: string | null) => void;
+  mdxStatus: "idle" | "processing" | "success" | "failed";
+  setMdxStatus: (status: "idle" | "processing" | "success" | "failed") => void;
+
+  grantAccess: (session: UserSession) => void;
+  setActiveRoom: (roomId: string) => void;
+  setActiveProject: (id: string | null, isFinalized: boolean) => void;
+
   audioData: AudioAnalysis | null;
   setAudioData: (data: AudioAnalysis) => void;
   flowDNA: FlowDNA | null;
@@ -51,8 +67,6 @@ interface MatrixState {
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
   removeToast: (id: string) => void;
 
-  grantAccess: (session: UserSession) => void;
-  setActiveRoom: (roomId: string) => void;
   clearMatrix: () => void;
 }
 
@@ -64,6 +78,17 @@ export const useMatrixStore = create<MatrixState>()(
       userSession: null,
       activeProjectId: null,
       isProjectFinalized: false,
+
+      playbackMode: 'session',
+      radioTrack: null,
+      setPlaybackMode: (mode) => set({ playbackMode: mode }),
+      setRadioTrack: (track) => set({ radioTrack: track }),
+
+      mdxJobId: null,
+      mdxStatus: "idle",
+      setMdxJobId: (id) => set({ mdxJobId: id }),
+      setMdxStatus: (status) => set({ mdxStatus: status }),
+
       audioData: null,
       flowDNA: null,
       gwTitle: "",
@@ -72,6 +97,7 @@ export const useMatrixStore = create<MatrixState>()(
       gwGender: "male",
       gwUseSlang: true,
       gwUseIntel: true,
+
       blueprint: [
         { id: "1", type: "INTRO", bars: 4 },
         { id: "2", type: "HOOK", bars: 8 },
@@ -84,6 +110,7 @@ export const useMatrixStore = create<MatrixState>()(
 
       grantAccess: (session) => set({ hasAccess: true, userSession: session }),
       setActiveRoom: (roomId) => set({ activeRoom: roomId }),
+      setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
       setAudioData: (data) => set({ audioData: data }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
       setGwTitle: (gwTitle) => set({ gwTitle }),
@@ -115,7 +142,8 @@ export const useMatrixStore = create<MatrixState>()(
       clearMatrix: () => set({
         audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
         gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
-        userSession: null, hasAccess: false 
+        userSession: null, hasAccess: false, playbackMode: 'session', radioTrack: null,
+        mdxJobId: null, mdxStatus: "idle"
       })
     }),
     {
@@ -129,7 +157,9 @@ export const useMatrixStore = create<MatrixState>()(
         gwTitle: state.gwTitle,
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
-        vocalStems: state.vocalStems, // Persist timeline layers
+        vocalStems: state.vocalStems,
+        playbackMode: state.playbackMode,
+        radioTrack: state.radioTrack,
         isProjectFinalized: state.isProjectFinalized
       }),
     }
