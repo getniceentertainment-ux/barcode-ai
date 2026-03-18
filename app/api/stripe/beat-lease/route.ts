@@ -27,8 +27,8 @@ export async function POST(req: Request) {
       }],
       mode: 'payment',
       // CRITICAL: We pass the beat data in the return URL so the Matrix knows to analyze it upon successful payment!
-      success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}?beat_purchased=true&beat_url=${encodeURIComponent(beatUrl)}&beat_name=${encodeURIComponent(beatName)}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}?canceled=true`,
+      success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://bar-code.ai'}?beat_purchased=true&beat_url=${encodeURIComponent(beatUrl)}&beat_name=${encodeURIComponent(beatName)}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://bar-code.ai'}?canceled=true`,
       metadata: {
         userId: userId || 'guest',
         beatName: beatName

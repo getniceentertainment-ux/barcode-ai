@@ -26,8 +26,8 @@ export async function POST(req: Request) {
       }],
       mode: 'payment',
       // Send the trackId back in the URL so Room 08 knows exactly which track to generate!
-      success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}?rollout_purchased=true&track_id=${trackId}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}?canceled=true`,
+      success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://bar-code.ai'}?rollout_purchased=true&track_id=${trackId}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://bar-code.ai'}?canceled=true`,
       metadata: {
         userId: userId,
         trackId: trackId,
