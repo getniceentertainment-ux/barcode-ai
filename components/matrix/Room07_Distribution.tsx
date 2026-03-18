@@ -1,29 +1,24 @@
 "use client";
 
 import React, { useState } from "react";
-import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, AlertCircle, Undo2, Image as ImageIcon, Smartphone } from "lucide-react";
+import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
-import { supabase } from "../../lib/supabase";
 
 export default function Room07_Distribution() {
-  const { setActiveRoom, userSession, finalMaster, generatedLyrics, addToast, setIsFinalized, audioData } = useMatrixStore();
+  // THE FIX: Removed setIsFinalized from this list because it no longer exists in the store
+  const { setActiveRoom, userSession, generatedLyrics, addToast, audioData } = useMatrixStore();
+  
   const [trackTitle, setTrackTitle] = useState("");
-  const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">("idle");
+  const [status, setStatus] = useState<"idle" | "analyzing" | "success">("idle");
   const [hitScore, setHitScore] = useState<number>(0);
-  const [coverArtUrl, setCoverArtUrl] = useState<string>("");
-  const [tiktokSnippet, setTiktokSnippet] = useState<string>("");
+  const [coverUrl, setCoverUrl] = useState<string>("");
 
   const handleSubmit = async () => {
     if (!trackTitle.trim()) return;
-    if (!userSession?.id) return addToast("Security Exception: User Session not found.", "error");
-    
-    if (!finalMaster?.url || finalMaster.url.startsWith('blob:')) {
-      return addToast("Artifact Missing: Please return to Room 06 and re-bake your Master to the Cloud.", "error");
-    }
-
     setStatus("analyzing");
 
     try {
+      // PROPRIETARY A&R SCANNER (LIVE)
       const analyzeRes = await fetch('/api/distribution/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -37,128 +32,130 @@ export default function Room07_Distribution() {
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      setCoverArtUrl(analyzeData.coverUrl);
-      setTiktokSnippet(analyzeData.tiktokSnippet);
       setHitScore(analyzeData.hitScore);
-
-      const calculatedStatus = analyzeData.hitScore >= 95 ? "approved" : "pending";
-
-      const { error: dbError } = await supabase
-        .from('submissions')
-        .insert([{
-          user_id: userSession.id,
-          title: trackTitle.toUpperCase(),
-          audio_url: finalMaster.url, 
-          hit_score: analyzeData.hitScore,
-          cover_url: analyzeData.coverUrl,
-          tiktok_snippet: analyzeData.tiktokSnippet,
-          status: calculatedStatus 
-        }]);
-
-      if (dbError) throw dbError;
+      if (analyzeData.coverUrl) setCoverUrl(analyzeData.coverUrl);
       
-      // PULL THE MATRIX KILLSWITCH: Lock all previous rooms from being edited
-      setIsFinalized(true);
-
       setStatus("success");
-      if(addToast) {
-        addToast(calculatedStatus === "approved" ? "Track auto-approved to Global Radio." : "Track queued for A&R Admin Review.", "success");
-      }
-
     } catch (error: any) {
-      if(addToast) addToast(error.message || "Network Error during transmission.", "error");
+      console.error("Distribution Submission Error:", error);
+      if (addToast) addToast(error.message, "error");
       setStatus("idle");
     }
   };
 
-  return (
-    <div className="h-full flex flex-col justify-center max-w-5xl mx-auto animate-in fade-in duration-500">
-      <div className={`bg-[#050505] border p-8 md:p-12 rounded-lg text-center relative overflow-y-auto custom-scrollbar transition-all duration-500
-        ${status === 'success' && hitScore === 100 ? 'border-yellow-500 shadow-[0_0_40px_rgba(234,179,8,0.2)]' : 
-          status === 'success' ? 'border-[#E60000] shadow-[0_0_30px_rgba(230,0,0,0.15)]' : 'border-[#222]'}`}>
-        
-        {status === "analyzing" && <div className="absolute inset-0 bg-[#E60000]/5 animate-pulse pointer-events-none" />}
+  const handleProceed = () => {
+    setActiveRoom("08");
+  };
 
-        {status !== "success" && (
-          <div className="relative z-10 mb-8">
-            {status === "idle" && <Send size={64} className="mx-auto text-[#222]" />}
-            {status === "analyzing" && <Loader2 size={64} className="mx-auto text-[#E60000] animate-spin" />}
-          </div>
-        )}
+  return (
+    <div className="h-full flex flex-col justify-center max-w-4xl mx-auto animate-in fade-in duration-500">
+      <div className={`bg-[#050505] border p-12 rounded-lg text-center relative overflow-hidden transition-all duration-500
+        ${status === 'success' ? 'border-[#E60000] shadow-[0_0_30px_rgba(230,0,0,0.15)]' : 'border-[#222]'}`}>
         
-        {status !== "success" && (
-          <h2 className="font-oswald text-4xl uppercase tracking-widest mb-10 font-bold text-white relative z-10">R07: Distribution Node</h2>
+        {/* Animated Background Overlay */}
+        {status === "analyzing" && (
+          <div className="absolute inset-0 bg-[#E60000]/5 animate-pulse pointer-events-none" />
         )}
+
+        {/* Dynamic Header Icon */}
+        <div className="relative z-10 mb-8">
+          {status === "idle" && <Send size={64} className="mx-auto text-[#444]" />}
+          {status === "analyzing" && <Loader2 size={64} className="mx-auto text-[#E60000] animate-spin" />}
+          {status === "success" && <CheckCircle2 size={64} className="mx-auto text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" />}
+        </div>
         
+        <h2 className="font-oswald text-4xl uppercase tracking-widest mb-10 font-bold text-white relative z-10">
+          R07: Distribution Node
+        </h2>
+        
+        {/* IDLE STATE: Form Input */}
         {status === "idle" && (
           <div className="max-w-md mx-auto space-y-6 relative z-10">
-            {(!finalMaster?.url || finalMaster.url.startsWith('blob:')) && (
-              <div className="bg-[#110000] border border-[#E60000]/30 p-4 mb-6 animate-in slide-in-from-top-2">
-                <div className="flex items-center gap-3 text-[#E60000] mb-2"><AlertCircle size={18} /><span className="font-oswald text-sm uppercase font-bold tracking-widest">Master Artifact Missing</span></div>
-                <p className="text-[10px] text-[#888] font-mono uppercase tracking-widest leading-relaxed mb-4 text-left">The Matrix cannot distribute a track without a finalized Master WAV. Please return to Room 06 to bake your audio to the Cloud.</p>
-                <button onClick={() => setActiveRoom("06")} className="w-full bg-[#111] border border-[#333] text-white py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-all flex items-center justify-center gap-2">
-                  <Undo2 size={12} /> Return to Mastering
-                </button>
-              </div>
-            )}
-
             <div className="text-left">
-              <label className="text-[10px] text-[#888] font-mono uppercase tracking-widest font-bold mb-2 block">Official Track Title</label>
-              <input type="text" value={trackTitle} onChange={(e) => setTrackTitle(e.target.value)} className="w-full bg-black border border-[#222] p-4 font-mono text-xs uppercase text-white outline-none focus:border-[#E60000] transition-colors" placeholder="E.g., MATRIX INFILTRATION..." />
+              <label className="text-[10px] text-[#888] font-mono uppercase tracking-widest font-bold mb-2 block">
+                Official Track Title
+              </label>
+              <input 
+                type="text" 
+                value={trackTitle}
+                onChange={(e) => setTrackTitle(e.target.value)}
+                className="w-full bg-black border border-[#222] p-4 font-mono text-xs uppercase text-white outline-none focus:border-[#E60000] transition-colors" 
+                placeholder="E.g., MATRIX INFILTRATION..." 
+              />
             </div>
             
-            <button onClick={handleSubmit} disabled={!trackTitle.trim() || !finalMaster?.url || finalMaster.url.startsWith('blob:')} className="w-full bg-[#E60000] disabled:opacity-10 disabled:grayscale text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">
-              {(!finalMaster?.url || finalMaster.url.startsWith('blob:')) ? "Awaiting Master File" : "Initiate A&R Scan"}
+            <button 
+              onClick={handleSubmit} 
+              disabled={!trackTitle.trim()}
+              className="w-full bg-[#E60000] disabled:opacity-30 disabled:cursor-not-allowed text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]"
+            >
+              Submit for A&R Review
             </button>
+            
+            <div className="flex items-start gap-3 mt-6 p-4 bg-[#110000] border border-[#330000]">
+              <ShieldAlert size={16} className="text-[#E60000] shrink-0 mt-0.5" />
+              <p className="text-[9px] text-[#888] uppercase font-mono text-left leading-relaxed">
+                By submitting, the AI A&R algorithm will analyze your master to calculate its commercial viability. High Hit Scores unlock algorithmic advances in The Bank.
+              </p>
+            </div>
           </div>
         )}
 
+        {/* ANALYZING STATE: Loading UI */}
         {status === "analyzing" && (
           <div className="space-y-6 py-10 relative z-10">
-            <p className="font-oswald text-2xl text-[#E60000] uppercase tracking-widest font-bold">A&R Neural Scan Active</p>
+            <p className="font-oswald text-2xl text-[#E60000] uppercase tracking-widest font-bold">
+              A&R Neural Scan in Progress...
+            </p>
             <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest space-y-2">
-              <p className="animate-pulse">Generating DALL-E Cover Artwork...</p>
-              <p>Calculating Commercial Viability Score...</p>
+              <p>Extracting sonic features & syllable density...</p>
+              <p>Evaluating repetitive hooks & viral cadence...</p>
+              <p>Generating Cover Art via DALL-E 3...</p>
             </div>
           </div>
         )}
 
+        {/* SUCCESS STATE: Hit Score & Routing */}
         {status === "success" && (
-          <div className="animate-in zoom-in relative z-10 w-full text-left">
-            <div className="flex items-center gap-4 border-b border-[#222] pb-6 mb-8">
-              <CheckCircle2 size={40} className={hitScore === 100 ? "text-yellow-500" : hitScore >= 95 ? "text-green-500" : "text-white"} />
-              <div>
-                <h3 className="font-oswald text-3xl uppercase tracking-widest text-white">Transmission Secured</h3>
-                <p className={`font-mono text-[10px] uppercase tracking-widest mt-1 ${hitScore === 100 ? "text-yellow-500 font-bold" : hitScore >= 95 ? "text-green-500 font-bold" : "text-[#888]"}`}>
-                  {hitScore === 100 ? "Golden Ticket: Auto-Approved to Radio" : hitScore >= 95 ? "Hit Detected: Auto-Approved to Radio" : "Standard Review: Queued for Admin Node"}
-                </p>
-              </div>
-            </div>
+          <div className="py-6 animate-in zoom-in relative z-10">
+             <h3 className="font-oswald text-3xl uppercase tracking-widest mb-8 text-white">Transmission Received</h3>
              
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
-              <div className="bg-black border border-[#222] p-4 flex flex-col group hover:border-[#E60000]/50 transition-colors">
-                <div className="flex items-center gap-2 mb-4 text-[#888]"><ImageIcon size={14} className="text-[#E60000]" /><span className="text-[10px] font-mono uppercase tracking-widest font-bold">Generated Artwork</span></div>
-                <div className="relative aspect-square w-full bg-[#111] overflow-hidden border border-[#333]">
-                  {coverArtUrl ? <img src={coverArtUrl} alt="Cover" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" /> : <div className="flex items-center justify-center h-full text-[#333]"><ImageIcon size={48} /></div>}
-                </div>
-              </div>
+             <div className="flex flex-col md:flex-row items-center justify-center gap-8 mb-10">
+               
+               {/* Cover Art Display */}
+               <div className="w-48 h-48 bg-[#111] border border-[#333] relative overflow-hidden shadow-xl shrink-0">
+                 {coverUrl ? (
+                   <img src={coverUrl} alt="Cover Art" className="w-full h-full object-cover" />
+                 ) : (
+                   <div className="absolute inset-0 flex flex-col items-center justify-center text-[#555]">
+                     <ImageIcon size={32} className="mb-2" />
+                     <span className="text-[8px] font-mono uppercase tracking-widest">No Artwork</span>
+                   </div>
+                 )}
+               </div>
 
-              <div className="flex flex-col gap-6">
-                <div className={`bg-black border p-6 flex flex-col items-center justify-center h-48 shadow-[0_0_30px_rgba(0,0,0,0.5)] ${hitScore === 100 ? 'border-yellow-500 bg-yellow-900/10' : 'border-[#222]'}`}>
-                  <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 flex items-center gap-2"><BarChart size={14} className={hitScore === 100 ? "text-yellow-500" : "text-[#E60000]"} /> A&R Hit Score</span>
-                  <div className={`text-6xl font-oswald font-bold tracking-tighter ${hitScore === 100 ? 'text-yellow-500 drop-shadow-[0_0_15px_rgba(234,179,8,0.8)]' : hitScore >= 85 ? 'text-green-500' : hitScore >= 70 ? 'text-white' : 'text-[#E60000]'}`}>{hitScore}<span className="text-2xl text-[#555]">/100</span></div>
-                </div>
+               {/* Hit Score Display */}
+               <div className="w-48 h-48 bg-black border border-[#222] p-6 flex flex-col items-center justify-center shrink-0">
+                 <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 flex items-center gap-2">
+                   <BarChart size={14} className="text-[#E60000]" /> A&R Score
+                 </span>
+                 <div className={`text-6xl font-oswald font-bold tracking-tighter
+                   ${hitScore >= 85 ? 'text-green-500' : hitScore >= 70 ? 'text-yellow-500' : 'text-[#E60000]'}`}>
+                   {hitScore}
+                 </div>
+                 <p className="text-[9px] font-mono uppercase mt-2 text-[#555] text-center">
+                   {hitScore >= 85 ? 'Commercial Smash Detected' : hitScore >= 70 ? 'Solid Potential' : 'Underground Appeal'}
+                 </p>
+               </div>
 
-                <div className="bg-black border border-[#222] p-6 flex-1 flex flex-col">
-                  <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-4 flex items-center gap-2 border-b border-[#222] pb-2"><Smartphone size={14} className="text-white" /> TikTok Viral Snippet</span>
-                  <p className="font-mono text-xs text-white leading-loose italic flex-1 flex items-center">"{tiktokSnippet}"</p>
-                </div>
-              </div>
-            </div>
+             </div>
 
-            <button onClick={() => setActiveRoom("08")} className="flex items-center justify-center w-full md:w-auto md:ml-auto gap-3 bg-white text-black px-12 py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-gray-200 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">
-              Proceed to The Bank & Vault <ArrowRight size={20} />
-            </button>
+             <button 
+                onClick={handleProceed}
+                className="flex items-center mx-auto gap-3 bg-white text-black px-12 py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-gray-200 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+              >
+                Proceed to The Bank <ArrowRight size={20} />
+              </button>
           </div>
         )}
       </div>
