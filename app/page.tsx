@@ -222,7 +222,6 @@ export default function MatrixController() {
                  {isProjectFinalized ? 'Matrix Locked' : 'Active Matrix'}
                </span>
              </div>
-           </div>
         </div>
         
         <div className="flex-1 overflow-hidden relative z-10">
