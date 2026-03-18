@@ -25,9 +25,22 @@ import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
 
 export default function MatrixController() {
-  const store = useMatrixStore();
-  const [isBoosting, setIsBoosting] = useState(false);
-  
+  const { 
+    hasAccess, 
+    activeRoom, 
+    setActiveRoom, 
+    userSession, 
+    clearMatrix, 
+    audioData, 
+    isProjectFinalized, // <-- THE FIX: Changed from isFinalized
+    playbackMode, 
+    setPlaybackMode, 
+    radioTrack, 
+    setRadioTrack 
+  } = useMatrixStore();
+
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);  
   // Audio Player State
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -262,7 +275,7 @@ export default function MatrixController() {
 
              {/* Matrix Status Indicator */}
              <div className="flex items-center gap-2 border-l border-[#222] pl-4 sm:pl-6">
-               <div className={`w-1.5 h-1.5 rounded-full ${store.isFinalized ? 'bg-yellow-500' : 'bg-[#E60000] animate-pulse'}`} />
+               <div className={`w-1.5 h-1.5 rounded-full ${isProjectFinalized ? 'bg-yellow-500' : 'bg-[#E60000] animate-pulse'}`} />
                <span className={`text-[8px] uppercase font-bold tracking-widest hidden sm:inline ${store.isFinalized ? 'text-yellow-500' : 'text-[#E60000]'}`}>
                  {store.isFinalized ? 'Matrix Locked' : 'Active Matrix'}
                </span>
