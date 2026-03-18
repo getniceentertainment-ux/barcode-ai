@@ -112,7 +112,7 @@ export default function MatrixController() {
   const renderActiveRoom = () => {
     // SECURITY LOCK: If the project is finalized, lock out the creation rooms (01-06)
     const lockedRooms = ["01", "02", "03", "04", "05", "06"];
-    if (isFinalized && lockedRooms.includes(activeRoom)) {
+    if (isProjectFinalized && lockedRooms.includes(activeRoom)) {
       return (
         <div className="h-full flex flex-col items-center justify-center text-center animate-in zoom-in duration-500">
           <div className="bg-[#110000] border border-[#E60000]/30 p-12 rounded-lg flex flex-col items-center max-w-xl">
@@ -177,7 +177,7 @@ export default function MatrixController() {
         <nav className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar">
           <div className="space-y-1 mb-8">
             {rooms.map((room) => {
-              const isLocked = isFinalized && ["01", "02", "03", "04", "05", "06"].includes(room.id);
+              const isLocked = isProjectFinalized && ["01", "02", "03", "04", "05", "06"].includes(room.id);
               return (
                 <button
                   key={room.id}
@@ -215,11 +215,11 @@ export default function MatrixController() {
            <span className="font-mono text-[9px] text-[#444] uppercase tracking-[0.4em]">
              Facility // Room {activeRoom} // {rooms.find(r => r.id === activeRoom)?.name.toUpperCase()}
            </span>
-           <div className="flex items-center gap-6">
-             <div className="flex items-center gap-2">
-               <div className={`w-1.5 h-1.5 rounded-full ${isFinalized ? 'bg-yellow-500' : 'bg-[#E60000] animate-pulse'}`} />
-               <span className={`text-[8px] uppercase font-bold tracking-widest ${isFinalized ? 'text-yellow-500' : 'text-[#E60000]'}`}>
-                 {isFinalized ? 'Matrix Locked' : 'Active Matrix'}
+             {/* Matrix Status Indicator */}
+             <div className="flex items-center gap-2 border-l border-[#222] pl-4 sm:pl-6">
+               <div className={`w-1.5 h-1.5 rounded-full ${isProjectFinalized ? 'bg-yellow-500' : 'bg-[#E60000] animate-pulse'}`} />
+               <span className={`text-[8px] uppercase font-bold tracking-widest hidden sm:inline ${isProjectFinalized ? 'text-yellow-500' : 'text-[#E60000]'}`}>
+                 {isProjectFinalized ? 'Matrix Locked' : 'Active Matrix'}
                </span>
              </div>
            </div>
