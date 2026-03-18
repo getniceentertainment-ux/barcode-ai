@@ -35,7 +35,7 @@ export interface VocalStem {
   url: string;
   blob?: Blob;
   volume: number; 
-  offsetBars: number; // MANDATORY: For V4 Sliding Timeline
+  offsetBars: number; // MANDATORY: Required for Timeline Sliding
 }
 
 export interface FinalMaster {

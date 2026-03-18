@@ -15,11 +15,13 @@ interface MatrixState {
   activeProjectId: string | null;
   isProjectFinalized: boolean;
 
+  // RADIO PLAYER STATE
   playbackMode: 'session' | 'radio';
   radioTrack: { url: string; title: string; artist: string; score: number } | null;
   setPlaybackMode: (mode: 'session' | 'radio') => void;
   setRadioTrack: (track: { url: string; title: string; artist: string; score: number } | null) => void;
   
+  // MDX NEURAL STATUS
   mdxJobId: string | null;
   setMdxJobId: (id: string | null) => void;
   mdxStatus: "idle" | "processing" | "success" | "failed";
@@ -56,7 +58,7 @@ interface MatrixState {
   addVocalStem: (stem: VocalStem) => void;
   removeVocalStem: (id: string) => void;
   updateStemVolume: (id: string, volume: number) => void;
-  updateStemOffset: (id: string, offsetBars: number) => void; // V4 Timeline Logic
+  updateStemOffset: (id: string, offsetBars: number) => void;
 
   finalMaster: FinalMaster | null;
   setFinalMaster: (master: FinalMaster | null) => void;
@@ -88,7 +90,11 @@ export const useMatrixStore = create<MatrixState>()(
       gwGender: "male",
       gwUseSlang: true,
       gwUseIntel: true,
-      blueprint: [],
+      blueprint: [
+        { id: "1", type: "INTRO", bars: 4 },
+        { id: "2", type: "HOOK", bars: 8 },
+        { id: "3", type: "VERSE", bars: 16 }
+      ],
       generatedLyrics: null,
       vocalStems: [],
       finalMaster: null,
@@ -143,9 +149,13 @@ export const useMatrixStore = create<MatrixState>()(
         flowDNA: state.flowDNA,
         blueprint: state.blueprint, 
         generatedLyrics: state.generatedLyrics,
+        gwTitle: state.gwTitle,
+        gwPrompt: state.gwPrompt,
+        gwStyle: state.gwStyle,
         vocalStems: state.vocalStems,
         playbackMode: state.playbackMode,
         radioTrack: state.radioTrack,
+        activeProjectId: state.activeProjectId,
         isProjectFinalized: state.isProjectFinalized
       }),
     }

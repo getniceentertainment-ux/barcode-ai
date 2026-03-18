@@ -10,10 +10,10 @@ import {
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
 
-// The Gateway
+// Gateway
 import EntryGateway from "../components/matrix/EntryGateway";
 
-// The 10 Matrix Rooms
+// Rooms
 import Room01_Lab from "../components/matrix/Room01_Lab";
 import Room02_BrainTrain from "../components/matrix/Room02_BrainTrain";
 import Room03_Ghostwriter from "../components/matrix/Room03_Ghostwriter";
@@ -58,6 +58,15 @@ export default function MatrixController() {
       setCurrentTime(time);
       window.dispatchEvent(new CustomEvent('matrix-global-timeupdate', { detail: time }));
     }
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!audioRef.current) return;
+    const bounds = e.currentTarget.getBoundingClientRect();
+    const percent = (e.clientX - bounds.left) / bounds.width;
+    const newTime = percent * duration;
+    audioRef.current.currentTime = newTime;
+    window.dispatchEvent(new CustomEvent('matrix-global-sys-seek', { detail: newTime }));
   };
 
   const toggleRadioMode = () => {
@@ -148,6 +157,7 @@ export default function MatrixController() {
         <div className="flex-1 overflow-y-auto p-4 md:p-10 custom-scrollbar">{renderActiveRoom()}</div>
       </main>
 
+      {/* PERSISTENT AUDIO PLAYER WITH RADIO SWITCHER */}
       <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-4 md:px-10 justify-between">
         <audio 
           ref={audioRef} 
@@ -181,14 +191,7 @@ export default function MatrixController() {
           </div>
           <div className="w-full max-w-md flex items-center gap-3">
             <span className="text-[9px] font-mono text-[#888]">{formatTime(currentTime)}</span>
-            <div className="flex-1 h-1.5 bg-[#222] rounded-full overflow-hidden relative cursor-pointer" onClick={(e) => {
-               if (!audioRef.current) return;
-               const bounds = e.currentTarget.getBoundingClientRect();
-               const percent = (e.clientX - bounds.left) / bounds.width;
-               const newTime = percent * duration;
-               audioRef.current.currentTime = newTime;
-               window.dispatchEvent(new CustomEvent('matrix-global-sys-seek', { detail: newTime }));
-            }}>
+            <div className="flex-1 h-1.5 bg-[#222] rounded-full overflow-hidden relative cursor-pointer" onClick={handleSeek}>
               <div className="absolute top-0 left-0 h-full bg-[#E60000]" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}></div>
             </div>
             <span className="text-[9px] font-mono text-[#888]">{formatTime(duration)}</span>
