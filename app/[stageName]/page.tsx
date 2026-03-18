@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, use } from "react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import { 
@@ -29,15 +29,19 @@ interface TrackData {
   created_at: string;
 }
 
-export default function ArtistProfilePage({ params }: { params: { stageName: string } }) {
+// THE FIX: Tell TypeScript that params is a Promise
+export default function ArtistProfilePage({ params }: { params: Promise<{ stageName: string }> }) {
   const { userSession, addToast } = useMatrixStore();
-  const decodedStageName = decodeURIComponent(params.stageName);
+  
+  // THE FIX: Unwrap the Promise using React.use() to expose the actual URL string
+  const resolvedParams = use(params);
+  const decodedStageName = decodeURIComponent(resolvedParams.stageName);
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [tracks, setTracks] = useState<TrackData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Edit State (Only available to the owner)
+  // Edit State
   const [isEditing, setIsEditing] = useState(false);
   const [editBio, setEditBio] = useState("");
   const [isUploading, setIsUploading] = useState(false);
@@ -47,7 +51,6 @@ export default function ArtistProfilePage({ params }: { params: { stageName: str
   const [playbackProgress, setPlaybackProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Social State
   const [copiedLink, setCopiedLink] = useState(false);
 
   const isOwner = userSession?.id === profile?.id;
@@ -59,14 +62,12 @@ export default function ArtistProfilePage({ params }: { params: { stageName: str
   const fetchProfileData = async () => {
     setIsLoading(true);
     try {
-      // 1. Catch the literal string "undefined" caused by old cached user sessions
       if (decodedStageName === "undefined" || !decodedStageName) {
         setProfile(null);
         setIsLoading(false);
         return;
       }
 
-      // 2. Use .maybeSingle() instead of .single() to prevent 406 HTTP Crashes when 0 rows are found
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('id, stage_name, bio, avatar_url, tier, mogul_score, total_referrals, created_at')
