@@ -131,7 +131,7 @@ def init_model():
     _ = model.generate(**dummy, max_new_tokens=5)
     print("Deep Burn-In Complete. Worker Ready.")
 
-# --- THE ARCHITECTURE ROUTER ---
+# --- THE ARCHITECTURE ROUTER (March 9th Logic Restored) ---
 
 def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
@@ -219,7 +219,7 @@ Previous lyrics context (Continue the rhyme scheme):
     
     clean_lines = [line.strip() for line in response.split('\n') if line.strip() and not line.strip().startswith(('+', '-'))]
     
-    # 💥 THE PHANTOM STACK
+    # 💥 THE PHANTOM STACK: Translates the AI's math into the clean UI you requested
     stacked_lines = []
     for line in clean_lines:
         if '|' in line:
@@ -228,6 +228,7 @@ Previous lyrics context (Continue the rhyme scheme):
         else:
             stacked_lines.append(line)
             
+    # We don't enforce a brutal slice anymore, let the art breathe
     return "\n".join(stacked_lines)
 
 def handler(event):
@@ -240,11 +241,6 @@ def handler(event):
     use_slang = job_input.get("useSlang", True)
     use_intel = job_input.get("useIntel", True)
     
-    # 🚨 TIMELINE SYNC: MATHEMATICAL BEAT CALCULATION 🚨
-    bpm = float(job_input.get("bpm", 120))
-    if bpm <= 0: bpm = 120
-    seconds_per_bar = (60.0 / bpm) * 4.0
-    
     system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel)
     
     if task_type == "generate":
@@ -252,51 +248,23 @@ def handler(event):
         final_lyrics = ""
         context_lyrics = ""
         saved_hook = None
-        current_cumulative_bar = 0
         
         for section in blueprint:
             sec_type = section.get("type", "VERSE").upper()
             bars = section.get("bars", 16)
             
-            # Lock onto the absolute start bar defined by the UI (Supports intentional gaps!)
-            start_bar = section.get("startBar", current_cumulative_bar)
-            
-            # Calculate the human-readable timestamp header
-            time_sec = start_bar * seconds_per_bar
-            mins = int(time_sec // 60)
-            secs = int(time_sec % 60)
-            
-            final_lyrics += f"\n[{sec_type} - {bars} BARS | STARTS @ {mins}:{secs:02d} (BAR {start_bar})]\n"
+            final_lyrics += f"\n[{sec_type} - {bars} BARS]\n"
             
             if sec_type == "HOOK" and saved_hook is not None:
-                raw_section_text = saved_hook
+                section_text = saved_hook
             else:
-                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic)
+                section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic)
                 if sec_type == "HOOK":
-                    saved_hook = raw_section_text
+                    saved_hook = section_text
             
-            # 🚨 LIVE TIMELINE TRACKING: Prepend absolute timestamps to EVERY generated line
-            section_lines = raw_section_text.split("\n")
-            timed_lines = []
-            line_bar = start_bar
-            
-            for line in section_lines:
-                if not line.strip(): 
-                    continue
-                
-                line_time = line_bar * seconds_per_bar
-                l_mins = int(line_time // 60)
-                l_secs = int(line_time % 60)
-                
-                # We use (0:10) instead of to safely avoid crashing Room 04's Teleprompter Header Regex
-                timed_lines.append(f"({l_mins}:{l_secs:02d}) {line}")
-                line_bar += 1 # Assume 1 written line = 1 mathematical bar
-            
-            final_lyrics += "\n".join(timed_lines) + "\n"
-            
-            # Feed ONLY the raw text back into the LLM context so the AI isn't confused by timestamps
-            context_lyrics = "\n".join((context_lyrics + "\n" + raw_section_text).strip().split("\n")[-8:])
-            current_cumulative_bar = start_bar + bars
+            final_lyrics += section_text + "\n"
+            # Maintain rolling context for rhythm matching
+            context_lyrics = "\n".join((context_lyrics + "\n" + section_text).strip().split("\n")[-8:])
             
         return {"lyrics": final_lyrics.strip()}
         

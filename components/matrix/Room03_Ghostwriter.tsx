@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Layout, ShieldCheck, Cpu, Activity, ArrowRight } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
@@ -29,10 +29,42 @@ export default function Room03_Ghostwriter() {
     { id: "chopper", name: "Chopper (Fast/Tech)" }
   ];
 
+  // THE MATH: Calculate seconds per bar based on the precise DSP tempo
+  const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
+  const formatTime = (s: number) => `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;
+
   const calculateTotalBars = () => blueprint.reduce((acc, section) => acc + section.bars, 0);
 
+  // THE FIX: Automatically assign and track 'startBar' so blocks remember their absolute position
+  useEffect(() => {
+    let currentBar = 0;
+    let hasChanges = false;
+    const updatedBlueprint = blueprint.map((block) => {
+      if ((block as any).startBar === undefined) {
+        hasChanges = true;
+        const newBlock = { ...block, startBar: currentBar };
+        currentBar += block.bars;
+        return newBlock;
+      } else {
+        currentBar = (block as any).startBar + block.bars;
+        return block;
+      }
+    });
+    if (hasChanges) {
+      setBlueprint(updatedBlueprint);
+    }
+  }, [blueprint, setBlueprint]);
+
+  const updateBlueprintStartBar = (index: number, newStart: number) => {
+    const newBp = [...blueprint];
+    (newBp[index] as any).startBar = Math.max(0, newStart);
+    setBlueprint(newBp);
+  };
+
   const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
-    setBlueprint([...blueprint, { id: Math.random().toString(), type, bars }]);
+    const lastBlock = blueprint[blueprint.length - 1] as any;
+    const nextStartBar = lastBlock && lastBlock.startBar !== undefined ? lastBlock.startBar + lastBlock.bars : 0;
+    setBlueprint([...blueprint, { id: Math.random().toString(), type, bars, startBar: nextStartBar } as any]);
   };
   
   const removeSection = (id: string) => {
@@ -71,7 +103,8 @@ export default function Room03_Ghostwriter() {
           gender: gwGender,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
-          blueprint: blueprint.map(b => ({ type: b.type, bars: b.bars }))
+          // PASS ABSOLUTE OFFSETS TO BACKEND
+          blueprint: blueprint.map(b => ({ type: b.type, bars: b.bars, startBar: (b as any).startBar || 0 }))
         })
       });
 
@@ -123,6 +156,11 @@ export default function Room03_Ghostwriter() {
       const token = session?.access_token;
       if (!token) throw new Error("Security Exception: Missing Session Token.");
 
+      // THE FIX: Strip the generated (0:10) time prefix so TALON only rewrites the lyric itself
+      const timestampMatch = selectedLine.match(/^\(\d+:\d+\)\s*/);
+      const timestampPrefix = timestampMatch ? timestampMatch[0] : '';
+      const cleanOriginalLine = selectedLine.replace(/^\(\d+:\d+\)\s*/, '');
+
       const res = await fetch('/api/ghostwriter/refine', {
         method: 'POST',
         headers: { 
@@ -131,7 +169,7 @@ export default function Room03_Ghostwriter() {
         },
         body: JSON.stringify({ 
           userId: userSession?.id,
-          originalLine: selectedLine, 
+          originalLine: cleanOriginalLine, 
           instruction: refineInstruction,
           style: gwStyle 
         })
@@ -140,7 +178,11 @@ export default function Room03_Ghostwriter() {
       if (!res.ok) throw new Error("Refinement API Error");
 
       const data = await res.json();
-      const updatedLyrics = lyrics.replace(selectedLine, data.refinedLine);
+      
+      // Re-attach the timestamp prefix to the newly rewritten lyric
+      const finalRefinedLine = timestampPrefix + data.refinedLine;
+      const updatedLyrics = lyrics.replace(selectedLine, finalRefinedLine);
+      
       setLyrics(updatedLyrics);
       setGeneratedLyrics(updatedLyrics);
       setRefineInstruction("");
@@ -248,10 +290,10 @@ export default function Room03_Ghostwriter() {
            </div>
         </div>
 
-        {/* BLUEPRINT BLOCK BUILDER */}
-        <div className="h-40 bg-black border-b border-[#222] overflow-x-auto flex items-center px-8 gap-4 shrink-0 custom-scrollbar shadow-[inset_0_-10px_20px_rgba(0,0,0,0.5)]">
+        {/* BLUEPRINT BLOCK BUILDER (With Absolute Positioning) */}
+        <div className="h-44 bg-black border-b border-[#222] overflow-x-auto flex items-center px-8 gap-4 shrink-0 custom-scrollbar shadow-[inset_0_-10px_20px_rgba(0,0,0,0.5)]">
           {blueprint.map((block, index) => (
-            <div key={block.id} className="w-36 shrink-0 bg-[#050505] border border-[#333] p-4 flex flex-col justify-between h-24 group relative hover:border-[#E60000] transition-colors">
+            <div key={block.id} className="w-40 shrink-0 bg-[#050505] border border-[#333] p-4 flex flex-col justify-between h-32 group relative hover:border-[#E60000] transition-colors">
               <button onClick={() => removeSection(block.id)} className="absolute -top-2 -right-2 bg-red-900 text-white w-5 h-5 rounded-full text-[10px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-lg">×</button>
               <div className="text-[9px] font-mono text-[#888] uppercase tracking-widest flex justify-between">
                 <span>Block {index + 1}</span>
@@ -260,9 +302,24 @@ export default function Room03_Ghostwriter() {
                 <h4 className="font-oswald text-lg uppercase tracking-widest text-white">{block.type}</h4>
                 <p className="font-mono text-[10px] text-[#E60000] font-bold">{block.bars} BARS</p>
               </div>
+              
+              {/* THE TIMELINE OFFSET CONTROLS */}
+              <div className="flex justify-between items-center mt-2 border-t border-[#333] pt-2">
+                <span className="text-[9px] font-mono text-[#555] uppercase tracking-widest">Start Bar</span>
+                <div className="flex items-center gap-2">
+                   <span className="text-[9px] text-[#E60000] font-mono">{formatTime(((block as any).startBar || 0) * secondsPerBar)}</span>
+                   <input 
+                     type="number" 
+                     value={(block as any).startBar ?? 0}
+                     onChange={(e) => updateBlueprintStartBar(index, parseInt(e.target.value) || 0)}
+                     className="w-10 bg-black border border-[#444] text-white text-xs text-center font-mono outline-none focus:border-[#E60000]"
+                   />
+                </div>
+              </div>
+
             </div>
           ))}
-          <div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-24 gap-2">
+          <div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2">
             <p className="text-[8px] font-mono text-[#555] uppercase text-center tracking-widest">Add Structure</p>
             <div className="flex gap-1 justify-center">
               <button onClick={() => addSection("HOOK", 8)} className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors">Hook</button>
