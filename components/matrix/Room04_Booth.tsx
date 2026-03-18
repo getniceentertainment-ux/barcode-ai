@@ -28,7 +28,7 @@ export default function Room04_Booth() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean, timestamp?: string}[]>([]);
+  const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean}[]>([]);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
 
   const waveformRef = useRef<HTMLDivElement>(null);
@@ -53,7 +53,6 @@ export default function Room04_Booth() {
         setCurrentTime(time);
         window.dispatchEvent(new CustomEvent('booth-seek', { detail: time }));
       });
-      wavesurferRef.current.on('finish', () => stopEverything());
     }
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
@@ -74,7 +73,7 @@ export default function Room04_Booth() {
     const lines = generatedLyrics.split('\n');
     let currentBlockIndex = -1; let barOffsetWithinBlock = 0; 
     const parsed = lines.filter(l => l.trim()).map((text) => {
-      if (text.startsWith('[')) { currentBlockIndex++; barOffsetWithinBlock = 0; return { text, startTime: 0, isHeader: true, timestamp: "" }; }
+      if (text.startsWith('[')) { currentBlockIndex++; barOffsetWithinBlock = 0; return { text, startTime: 0, isHeader: true }; }
       let blockStartBar = 0;
       if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
          blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
@@ -82,7 +81,7 @@ export default function Room04_Booth() {
       const absoluteBar = blockStartBar + barOffsetWithinBlock;
       const startTimeSec = absoluteBar * secondsPerBar;
       barOffsetWithinBlock++;
-      return { text, startTime: startTimeSec, isHeader: false, timestamp: `(${Math.floor(startTimeSec / 60)}:${Math.floor(startTimeSec % 60).toString().padStart(2, '0')})` };
+      return { text, startTime: startTimeSec, isHeader: false };
     });
     setLyricLines(parsed);
   }, [generatedLyrics, audioData, blueprint]);
@@ -149,13 +148,12 @@ export default function Room04_Booth() {
         if (el) { el.currentTime = Math.max(0, currentWS_Time - (stem.offsetBars * secondsPerBar)); el.play().catch(() => {}); }
       });
       setIsRecording(true); setIsPlaying(true);
-    } catch (err) { alert("Hardware microphone access is required."); }
+    } catch (err) { alert("Hardware microphone access required."); }
   };
 
   return (
     <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500">
       {vocalStems.map(s => <audio key={s.id} id={`booth-stem-${s.id}`} src={s.url} muted={mutedStems.has(s.id)} className="hidden" />)}
-      
       <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative">
         <div className="p-8 pb-4 border-b border-[#111] flex justify-between items-center">
            <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
@@ -166,14 +164,12 @@ export default function Room04_Booth() {
             const isActive = !line.isHeader && isPlaying && currentTime >= line.startTime && currentTime < (line.startTime + secondsPerBar);
             return (
               <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActive ? 'text-white text-lg font-bold bg-[#E60000]/20 py-1 px-3 border-l-2 border-[#E60000] translate-x-2' : ''}`}>
-                {!line.isHeader && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
                 <span className="flex-1">{line.text}</span>
               </div>
             );
           })}
         </div>
       </div>
-
       <div className="flex-1 flex flex-col relative bg-black">
         <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10">
           <div className="flex items-center gap-4">
@@ -188,11 +184,9 @@ export default function Room04_Booth() {
             {Math.floor(currentTime / 60).toString().padStart(2, '0')}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
           </div>
         </div>
-
         <div className="p-6 border-b border-[#222] bg-[#050505]">
            <div ref={waveformRef} className="w-full h-20 bg-black border border-[#111] rounded-lg"></div>
         </div>
-
         <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
           <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Timeline Layers</h4>
           <div className="space-y-3">
@@ -217,7 +211,6 @@ export default function Room04_Booth() {
             ))}
           </div>
         </div>
-
         <div className="h-16 bg-black border-t border-[#222] flex items-center justify-end px-10">
           <button onClick={() => setActiveRoom("05")} disabled={vocalStems.length === 0} className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all">
             Engineering Suite <ArrowRight size={16} />
