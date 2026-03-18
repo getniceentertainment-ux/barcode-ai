@@ -13,7 +13,7 @@ export interface AudioAnalysis {
   fileName: string;
   bpm: number;
   totalBars: number;
-  key?: string; 
+  key?: string; // NEW: The extracted musical key
   grid?: number[];
 }
 
@@ -35,7 +35,6 @@ export interface VocalStem {
   url: string;
   blob?: Blob;
   volume: number; 
-  offsetBars: number; // NEW: Horizontal timeline position
 }
 
 export interface FinalMaster {
