@@ -15,6 +15,8 @@ interface MatrixState {
   userSession: UserSession | null;
   activeProjectId: string | null;
   isProjectFinalized: boolean;
+  isUpgrading: boolean;
+  setIsUpgrading: (status: boolean) => void;
 
   // 💳 TRANSACTION ENGINE
   spendCredit: (amount?: number) => Promise<boolean>;
@@ -80,6 +82,8 @@ interface MatrixState {
 export const useMatrixStore = create<MatrixState>()(
   persist(
     (set, get) => ({
+      isUpgrading: false,
+      setIsUpgrading: (status) => set({ isUpgrading: status }),
       hasAccess: false,
       activeRoom: "01",
       userSession: null,
