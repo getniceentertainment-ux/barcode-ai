@@ -170,31 +170,6 @@ export const useMatrixStore = create<MatrixState>()(
         }
       },
 
-    // 🔥 REAL-TIME DB CHECK: No cached state, check the truth.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('mastering_tokens')
-      .eq('id', session.id)
-      .single();
-
-    if (!profile || profile.mastering_tokens < 1) {
-      get().addToast("Insufficient Mastering Tokens.", "error");
-      return false; 
-    }
-
-    // 🌪️ ATOMIC BURN: Subtraction happens BEFORE the mastering result is returned.
-    const { error } = await supabase
-      .from('profiles')
-      .update({ mastering_tokens: profile.mastering_tokens - 1 })
-      .eq('id', session.id);
-
-    if (error) throw error;
-    return true; 
-  } catch (err) {
-    return false;
-  }
-},
-
       // --- 🛡️ PROTECTED SETTERS ---
       setAudioData: async (data) => {
         const success = await get().spendCredit(1);
