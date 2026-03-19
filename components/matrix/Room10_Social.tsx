@@ -78,6 +78,8 @@ export default function Room10_Social() {
       const { data, error } = await supabase
         .from('profiles')
         .select('id, stage_name, avatar_url, mogul_score, total_referrals')
+        // 🔒 THE UPSELL GATE: Only paying $99/mo Moguls appear on the roster
+        .eq('tier', 'The Mogul') 
         .order('mogul_score', { ascending: false })
         .limit(20);
 
@@ -85,6 +87,7 @@ export default function Room10_Social() {
       setRoster(data || []);
     } catch (err) {
       console.error("Syndicate Load Failure:", err);
+      if (addToast) addToast("Failed to load the Mogul directory.", "error");
     } finally {
       setIsLoading(false);
     }
@@ -214,6 +217,17 @@ export default function Room10_Social() {
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-[#020202]">
           <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest mb-2 border-b border-[#111] pb-2">Global Leaderboard // Mogul Score</p>
+          
+          {/* THE UPSELL BANNER */}
+          {userSession?.tier !== "The Mogul" && (
+            <div className="bg-[#110000] border border-[#E60000]/50 p-4 mb-4 flex items-center justify-between group cursor-pointer hover:bg-[#E60000] transition-colors">
+              <div>
+                <p className="font-oswald text-sm text-[#E60000] group-hover:text-white uppercase tracking-widest font-bold">Not on the Roster?</p>
+                <p className="font-mono text-[9px] text-[#888] group-hover:text-red-200 uppercase tracking-widest mt-1">Upgrade to Mogul to list your services.</p>
+              </div>
+              <ArrowRight size={16} className="text-[#E60000] group-hover:text-white" />
+            </div>
+          )}
           
           {isLoading ? (
             <div className="flex flex-col items-center justify-center h-64 opacity-30">
