@@ -209,10 +209,10 @@ export default function Room06_Mastering() {
               </div>
               <input type="range" min="-20" max="-6" step="0.5" value={lufs} onChange={(e) => setLufs(parseFloat(e.target.value))} className="w-full accent-[#E60000] h-2 bg-[#111] appearance-none cursor-pointer rounded-full" />
               <PremiumButton 
- 	 cost={0} // Handled by spendMasteringToken inside the function instead
- 	 isMogulOnly={true} // Only Moguls get unlimited mastering, Artists pay per token
- 	 onConfirm={handleFinalRender} 
-	  className="w-full bg-[#E60000] text-white py-6 font-oswald text-2xl font-bold uppercase tracking-widest 	hover:bg-red-700 shadow-[0_0_30px_rgba(230,0,0,0.3)]"
+ 	 cost={0} 
+ 	 isMogulOnly={true} 
+  	onConfirm={handleStartMastering} // ✅ Change this to match your function name
+ 	 className="..."
 	>
   	Finalize & Master Artifact
 	</PremiumButton>
