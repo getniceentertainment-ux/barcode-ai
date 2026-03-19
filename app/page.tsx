@@ -5,7 +5,7 @@ import Link from "next/link";
 import { 
   UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, 
   Send, Wallet, Radio, Users, ShieldAlert, LogOut,
-  Play, Pause, SkipBack, SkipForward, Volume2, Lock, User, Zap, Loader2
+  Play, Pause, SkipBack, SkipForward, Volume2, Lock, User, Zap, Loader2, Terminal
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
@@ -13,7 +13,7 @@ import { supabase } from "../lib/supabase";
 // The Gateway
 import EntryGateway from "../components/matrix/EntryGateway";
 
-// The 10 Matrix Rooms
+// The Matrix Rooms
 import Room01_Lab from "../components/matrix/Room01_Lab";
 import Room02_BrainTrain from "../components/matrix/Room02_BrainTrain";
 import Room03_Ghostwriter from "../components/matrix/Room03_Ghostwriter";
@@ -24,6 +24,9 @@ import Room07_Distribution from "../components/matrix/Room07_Distribution";
 import Room08_Bank from "../components/matrix/Room08_Bank";
 import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
+
+// --- 🚨 NEW IMPORT: PORTAL GATED INSIDE THE MATRIX 🚨 ---
+import B2BDeveloperPortal from "./dev-portal/page"; 
 
 export default function MatrixController() {
   const { 
@@ -42,22 +45,16 @@ export default function MatrixController() {
 
   // --- 🚨 THE AUTO-SAVE GUARDIAN (HARDENED) 🚨 ---
   useEffect(() => {
-    // Only set up the interval if the user is actually inside the Matrix
     if (!hasAccess) return;
 
     const autoSaveInterval = setInterval(async () => {
-      // 1. DYNAMIC FETCH: Pull the latest session data directly from Zustand
       const state = useMatrixStore.getState();
       const currentUserId = state.userSession?.id;
 
-      // 2. FIREWALL: If the user logged out or ID is missing, ABORT the network call
-      if (!currentUserId || currentUserId === 'undefined') {
-        console.warn("🛡️ Sync Blocked: No active Operator ID detected.");
-        return;
-      }
+      if (!currentUserId || currentUserId === 'undefined') return;
 
       try {
-        const { error } = await supabase
+        await supabase
           .from('profiles')
           .update({
             matrix_state: {
@@ -70,17 +67,14 @@ export default function MatrixController() {
             },
             last_saved: new Date().toISOString()
           })
-          .eq('id', currentUserId); // Uses the verified local variable
-        
-        if (error) throw error;
-        console.log("📡 Matrix Ledger Updated Successfully.");
+          .eq('id', currentUserId);
       } catch (error) {
         console.error("❌ Auto-save sync failed:", error);
       }
-    }, 30000); // 30-second heartbeat
+    }, 30000);
 
     return () => clearInterval(autoSaveInterval);
-  }, [hasAccess]); // Only re-runs if global access status changes
+  }, [hasAccess]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -159,6 +153,7 @@ export default function MatrixController() {
 
   if (!hasAccess) return <EntryGateway />;
 
+  // --- 🚨 UPDATED ROOMS LIST 🚨 ---
   const rooms = [
     { id: "01", name: "The Lab", icon: <UploadCloud size={16} /> },
     { id: "02", name: "Brain Train", icon: <Cpu size={16} /> },
@@ -170,10 +165,12 @@ export default function MatrixController() {
     { id: "08", name: "The Bank & Vault", icon: <Wallet size={16} /> },
     { id: "09", name: "The Radio", icon: <Radio size={16} /> },
     { id: "10", name: "Social Syndicate", icon: <Users size={16} /> },
+    { id: "11", name: "GetNice API / B2B", icon: <Terminal size={16} /> }, // Added B2B to Sidebar
   ];
 
   const renderActiveRoom = () => {
     const lockedRooms = ["01", "02", "03", "04", "05", "06"];
+    // API Portal (Room 11) is never locked, even if project is finalized
     if (isProjectFinalized && lockedRooms.includes(activeRoom)) {
       return (
         <div className="h-full flex flex-col items-center justify-center text-center animate-in zoom-in duration-500">
@@ -202,6 +199,7 @@ export default function MatrixController() {
       case "05": return <Room05_VocalSuite />; case "06": return <Room06_Mastering />;
       case "07": return <Room07_Distribution />; case "08": return <Room08_Bank />;
       case "09": return <Room09_Radio />; case "10": return <Room10_Social />;
+      case "11": return <B2BDeveloperPortal />; // Renders the portal inside the UI
       default: return <div />;
     }
   };

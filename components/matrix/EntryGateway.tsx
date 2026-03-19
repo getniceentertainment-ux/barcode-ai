@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Mail, Loader2, Lock, User as UserIcon, ArrowRight, Terminal } from "lucide-react";
-import Link from "next/link";
+import { CheckCircle2, Mail, Loader2, Lock, User as UserIcon, ArrowRight } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { AccessTier, UserSession } from "../../lib/types";
 import { supabase } from "../../lib/supabase";
@@ -15,7 +14,7 @@ export default function EntryGateway() {
   const [stageName, setStageName] = useState("");
   
   const [loading, setLoading] = useState(false);
-  const [authMode, setAuthMode] = useState<"login" | "signup" | "b2b">("login");
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [authStep, setAuthStep] = useState<"auth" | "verify_email" | "select_tier">("auth");
   const [userProfile, setUserProfile] = useState<any>(null);
 
@@ -24,9 +23,6 @@ export default function EntryGateway() {
       const params = new URLSearchParams(window.location.search);
       const refCode = params.get('ref');
       if (refCode) localStorage.setItem('barcode_referral', refCode);
-      
-      // If they refresh and the hash is #b2b, set the mode automatically
-      if (window.location.hash === "#b2b") setAuthMode("b2b");
     }
 
     const checkUser = async () => {
@@ -47,18 +43,9 @@ export default function EntryGateway() {
 
     if (profile) {
       setUserProfile({ ...user, ...profile });
-      
-      // --- 🚨 REDIRECT ENGINE 🚨 ---
-      // Check if the user intends to enter the B2B Portal
-      const isB2BIntent = authMode === "b2b" || window.location.hash === "#b2b";
 
-      if (isB2BIntent) {
-        window.location.hash = ""; // Clear the hash
-        window.location.href = "/dev-portal"; // Teleport to Portal
-        return;
-      }
-
-      // Standard Matrix Logic
+      // If they are already paid or have a role, grant access to the Matrix
+      // The B2B Portal (Room 11) is now waiting for them inside.
       if (profile.tier !== 'Free Loader') {
         const session: UserSession = {
           id: profile.id,
@@ -98,7 +85,6 @@ export default function EntryGateway() {
         } else if (data.session) {
           await processUserSession(data.user);
         }
-        
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -180,62 +166,36 @@ export default function EntryGateway() {
           <div className="flex gap-4 mb-8 border-b border-[#222] pb-4">
              <button onClick={() => setAuthMode("login")} className={`flex-1 font-oswald text-[10px] uppercase tracking-widest font-bold ${authMode === 'login' ? 'text-[#E60000]' : 'text-[#555]'}`}>Operator Login</button>
              <button onClick={() => setAuthMode("signup")} className={`flex-1 font-oswald text-[10px] uppercase tracking-widest font-bold ${authMode === 'signup' ? 'text-[#E60000]' : 'text-[#555]'}`}>New Node</button>
-             <button onClick={() => setAuthMode("b2b")} className={`flex-1 font-oswald text-[10px] uppercase tracking-widest font-bold ${authMode === 'b2b' ? 'text-green-500' : 'text-[#555]'}`}>B2B Terminal</button>
           </div>
 
-          {authMode !== "b2b" ? (
-            <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
-              {authMode === "signup" && (
-                <div>
-                  <label className="text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 block">Artist / Stage Name</label>
-                  <div className="relative">
-                    <UserIcon size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
-                    <input type="text" required value={stageName} onChange={(e) => setStageName(e.target.value)} placeholder="Enter your moniker..." className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
-                  </div>
-                </div>
-              )}
+          <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
+            {authMode === "signup" && (
               <div>
-                <label className="text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 block">Email Address</label>
+                <label className="text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 block">Artist / Stage Name</label>
                 <div className="relative">
-                  <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
-                  <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="operator@domain.com" className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
+                  <UserIcon size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
+                  <input type="text" required value={stageName} onChange={(e) => setStageName(e.target.value)} placeholder="Enter your moniker..." className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
                 </div>
               </div>
-              <div>
-                <label className="text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 block">Secure Password</label>
-                <div className="relative">
-                  <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
-                  <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
-                </div>
+            )}
+            <div>
+              <label className="text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 block">Email Address</label>
+              <div className="relative">
+                <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
+                <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="operator@domain.com" className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
               </div>
-              <button type="submit" disabled={loading} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2">
-                {loading ? <Loader2 size={20} className="animate-spin" /> : <>{authMode === "login" ? "Initialize Matrix" : "Create Profile"} <ArrowRight size={18} /></>}
-              </button>
-            </form>
-          ) : (
-            <div className="space-y-6 animate-in fade-in zoom-in duration-300">
-              <div className="bg-[#051105] border border-green-500/30 p-6 text-center shadow-[inset_0_0_20px_rgba(34,197,94,0.1)]">
-                <Terminal size={32} className="text-green-500 mx-auto mb-4 animate-pulse" />
-                <h3 className="font-oswald text-lg text-white uppercase tracking-widest mb-2">Developer Terminal</h3>
-                <p className="font-mono text-[9px] text-green-500/70 uppercase leading-relaxed">
-                  GETNICE/BAR-CODE.AI GHOSTWRITER ENGINE . . . <br/>
-                  ACCESS RESTRICTED TO REGISTERED DEVELOPERS
-                </p>
-              </div>
-              <p className="text-[9px] font-mono text-[#555] text-center uppercase tracking-widest leading-relaxed">
-                Access your API Keys, metered billing, and metered usage stats by signing into your developer account.
-              </p>
-              <button 
-                onClick={() => {
-                  setAuthMode("login");
-                  window.location.hash = "b2b"; // PINS THE INTENT
-                }}
-                className="w-full bg-transparent border border-green-500 text-green-500 py-4 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-green-500 hover:text-black transition-all flex items-center justify-center gap-2"
-              >
-                Sign In as Developer <ArrowRight size={18} />
-              </button>
             </div>
-          )}
+            <div>
+              <label className="text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 block">Secure Password</label>
+              <div className="relative">
+                <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
+                <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
+              </div>
+            </div>
+            <button type="submit" disabled={loading} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2">
+              {loading ? <Loader2 size={20} className="animate-spin" /> : <>{authMode === "login" ? "Initialize Matrix" : "Create Profile"} <ArrowRight size={18} /></>}
+            </button>
+          </form>
         </div>
       )}
 
