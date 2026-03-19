@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Terminal, Key, ShieldCheck, Zap, Copy, ExternalLink, Activity, Server, CreditCard, CheckCircle2 } from "lucide-react";
+import { Terminal, Key, ShieldCheck, Zap, Copy, ExternalLink, Activity, Server, CreditCard, CheckCircle2, Loader2 } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -11,6 +11,9 @@ export default function B2BDeveloperPortal() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [usageStats, setUsageStats] = useState({ calls: 0, cost: 0 });
+  
+  // New state for the portal loading button
+  const [isPortalLoading, setIsPortalLoading] = useState(false);
 
   // Fetch existing key on mount
   useEffect(() => {
@@ -57,6 +60,32 @@ export default function B2BDeveloperPortal() {
     navigator.clipboard.writeText(apiKey);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // The function that calls our new Stripe Portal backend route
+  const handleManageBilling = async () => {
+    if (!userSession?.id) return;
+    setIsPortalLoading(true);
+    
+    try {
+      const res = await fetch('/api/stripe/portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userSession.id })
+      });
+      
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url; // Bounces them securely to Stripe
+      } else {
+        alert(data.error || "Failed to load billing portal.");
+      }
+    } catch (err) {
+      console.error("Portal error:", err);
+      alert("A network error occurred.");
+    } finally {
+      setIsPortalLoading(false);
+    }
   };
 
   return (
@@ -111,9 +140,9 @@ export default function B2BDeveloperPortal() {
                  <button 
                    onClick={generateNewKey}
                    disabled={isGenerating}
-                   className="bg-[#E60000] text-white px-8 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-colors"
+                   className="bg-[#E60000] text-white px-8 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-colors flex items-center justify-center gap-2 mx-auto"
                  >
-                   {isGenerating ? "Generating..." : "Generate Production Key"}
+                   {isGenerating ? <><Loader2 size={16} className="animate-spin" /> Generating...</> : "Generate Production Key"}
                  </button>
                </div>
              )}
@@ -136,8 +165,14 @@ export default function B2BDeveloperPortal() {
                 <span className="font-oswald text-3xl font-bold text-[#E60000]">${usageStats.cost.toFixed(2)}</span>
               </div>
             </div>
-            <button className="w-full mt-4 border border-[#333] text-[#888] py-4 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-colors">
-              Manage Stripe Payment Method
+            
+            {/* The newly wired billing portal button */}
+            <button 
+              onClick={handleManageBilling}
+              disabled={isPortalLoading}
+              className="w-full mt-4 border border-[#333] text-[#888] py-4 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isPortalLoading ? <><Loader2 size={16} className="animate-spin" /> Securing Portal...</> : "Manage Stripe Payment Method"}
             </button>
           </div>
         </div>
