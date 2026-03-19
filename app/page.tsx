@@ -25,7 +25,7 @@ import Room08_Bank from "../components/matrix/Room08_Bank";
 import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
 
-// --- 🚨 NEW IMPORT: PORTAL GATED INSIDE THE MATRIX 🚨 ---
+// --- 🛡️ PORTAL GATED INSIDE THE MATRIX 🛡️ ---
 import B2BDeveloperPortal from "./dev-portal/page"; 
 
 export default function MatrixController() {
@@ -43,7 +43,7 @@ export default function MatrixController() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
 
-  // --- 🚨 THE AUTO-SAVE GUARDIAN (HARDENED) 🚨 ---
+  // --- 🚨 THE SANITIZED SYNC GUARDIAN (FINAL FIX) 🚨 ---
   useEffect(() => {
     if (!hasAccess) return;
 
@@ -51,27 +51,40 @@ export default function MatrixController() {
       const state = useMatrixStore.getState();
       const currentUserId = state.userSession?.id;
 
+      // Firewall: Stop if ID is missing
       if (!currentUserId || currentUserId === 'undefined') return;
 
       try {
-        await supabase
+        // SANITIZATION: Ensure JSONB columns never receive 'undefined'
+        const sanitizedMatrixState = {
+          audioData: state.audioData || null,
+          vocalStems: (state.vocalStems || []).map(s => ({ 
+            id: s.id, 
+            type: s.type, 
+            offsetBars: s.offsetBars || 0, 
+            volume: s.volume ?? 1 // Nullish coalescing prevents 400 errors
+          })),
+          generatedLyrics: state.generatedLyrics || "",
+          blueprint: state.blueprint || {}
+        };
+
+        const { error } = await supabase
           .from('profiles')
           .update({
-            matrix_state: {
-              audioData: state.audioData,
-              vocalStems: state.vocalStems.map(s => ({ 
-                id: s.id, type: s.type, offsetBars: s.offsetBars, volume: s.volume 
-              })),
-              generatedLyrics: state.generatedLyrics,
-              blueprint: state.blueprint
-            },
+            matrix_state: sanitizedMatrixState,
             last_saved: new Date().toISOString()
           })
           .eq('id', currentUserId);
-      } catch (error) {
-        console.error("❌ Auto-save sync failed:", error);
+        
+        if (error) {
+          console.error("❌ Schema Sync Error:", error.message);
+        } else {
+          console.log("📡 Ledger Sync: Success");
+        }
+      } catch (err) {
+        console.error("❌ Sync Hardware Failure:", err);
       }
-    }, 30000);
+    }, 30000); 
 
     return () => clearInterval(autoSaveInterval);
   }, [hasAccess]);
@@ -153,7 +166,6 @@ export default function MatrixController() {
 
   if (!hasAccess) return <EntryGateway />;
 
-  // --- 🚨 UPDATED ROOMS LIST 🚨 ---
   const rooms = [
     { id: "01", name: "The Lab", icon: <UploadCloud size={16} /> },
     { id: "02", name: "Brain Train", icon: <Cpu size={16} /> },
@@ -165,12 +177,11 @@ export default function MatrixController() {
     { id: "08", name: "The Bank & Vault", icon: <Wallet size={16} /> },
     { id: "09", name: "The Radio", icon: <Radio size={16} /> },
     { id: "10", name: "Social Syndicate", icon: <Users size={16} /> },
-    { id: "11", name: "GetNice API / B2B", icon: <Terminal size={16} /> }, // Added B2B to Sidebar
+    { id: "11", name: "B2B Terminal", icon: <Terminal size={16} /> }, // Room 11 Added
   ];
 
   const renderActiveRoom = () => {
     const lockedRooms = ["01", "02", "03", "04", "05", "06"];
-    // API Portal (Room 11) is never locked, even if project is finalized
     if (isProjectFinalized && lockedRooms.includes(activeRoom)) {
       return (
         <div className="h-full flex flex-col items-center justify-center text-center animate-in zoom-in duration-500">
@@ -178,13 +189,13 @@ export default function MatrixController() {
             <Lock size={64} className="text-[#E60000] mb-6 shadow-[0_0_30px_rgba(230,0,0,0.5)] rounded-full" />
             <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-4">ARTIFACT LOCKED</h2>
             <p className="font-mono text-xs text-[#888] uppercase tracking-widest mb-8 leading-relaxed">
-              This track has been submitted to the A&R ledger and permanently locked. Prior structural rooms can no longer be edited.
+              This track has been submitted to the A&R ledger and permanently locked.
             </p>
             <div className="flex gap-4 w-full">
               <button onClick={() => setActiveRoom("08")} className="flex-1 bg-black border border-[#333] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:bg-[#111] hover:border-white transition-colors">
                 View in Vault
               </button>
-              <button onClick={() => { clearMatrix(); setActiveRoom("01"); }} className="flex-1 bg-[#E60000] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:bg-red-700 transition-colors shadow-[0_0_15px_rgba(230,0,0,0.3)]">
+              <button onClick={() => { clearMatrix(); setActiveRoom("01"); }} className="flex-1 bg-[#E60000] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:bg-red-700 transition-colors">
                 Initialize New Track
               </button>
             </div>
@@ -194,18 +205,23 @@ export default function MatrixController() {
     }
 
     switch (activeRoom) {
-      case "01": return <Room01_Lab />; case "02": return <Room02_BrainTrain />;
-      case "03": return <Room03_Ghostwriter />; case "04": return <Room04_Booth />;
-      case "05": return <Room05_VocalSuite />; case "06": return <Room06_Mastering />;
-      case "07": return <Room07_Distribution />; case "08": return <Room08_Bank />;
-      case "09": return <Room09_Radio />; case "10": return <Room10_Social />;
-      case "11": return <B2BDeveloperPortal />; // Renders the portal inside the UI
+      case "01": return <Room01_Lab />;
+      case "02": return <Room02_BrainTrain />;
+      case "03": return <Room03_Ghostwriter />;
+      case "04": return <Room04_Booth />;
+      case "05": return <Room05_VocalSuite />;
+      case "06": return <Room06_Mastering />;
+      case "07": return <Room07_Distribution />;
+      case "08": return <Room08_Bank />;
+      case "09": return <Room09_Radio />;
+      case "10": return <Room10_Social />;
+      case "11": return <B2BDeveloperPortal />; // Internalized B2B Gating
       default: return <div />;
     }
   };
 
   return (
-    <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-24">
+    <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-24 font-oswald">
       
       {/* SIDEBAR */}
       <aside className="w-72 bg-black border-r border-[#111] flex flex-col shrink-0 hidden md:flex z-20 shadow-2xl">
@@ -225,7 +241,7 @@ export default function MatrixController() {
               
               <div className="flex justify-between items-end mt-3 pt-2 border-t border-[#111]">
                 <p className="font-mono text-[9px] text-green-500 uppercase font-bold tracking-widest">{userSession.tier}</p>
-                <button onClick={handleDisconnect} className="text-[#555] hover:text-[#E60000] transition-colors flex items-center gap-1 text-[9px] font-mono uppercase" title="Secure Logout">
+                <button onClick={handleDisconnect} className="text-[#555] hover:text-[#E60000] transition-colors flex items-center gap-1 text-[9px] font-mono uppercase">
                   <LogOut size={10} /> Disconnect
                 </button>
               </div>
@@ -235,63 +251,32 @@ export default function MatrixController() {
         
         <nav className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar">
           <div className="space-y-1 mb-8">
-            {rooms.map((room) => {
-              const isLocked = isProjectFinalized && ["01", "02", "03", "04", "05", "06"].includes(room.id);
-              return (
-                <button
-                  key={room.id} onClick={() => setActiveRoom(room.id)}
-                  className={`w-full flex items-center gap-3 px-5 py-4 text-left transition-all rounded-lg group relative ${activeRoom === room.id ? "bg-[#E60000] text-white shadow-[0_4px_15px_rgba(230,0,0,0.2)]" : "text-[#444] hover:bg-[#0a0a0a] hover:text-white"}`}
-                >
-                  <span className={`${activeRoom === room.id ? 'text-white' : 'text-[#888] group-hover:text-[#E60000]'} ${isLocked ? 'opacity-30' : ''}`}>{room.icon}</span>
-                  <span className={`font-oswald text-sm uppercase tracking-widest font-bold ${isLocked ? 'opacity-30 line-through' : ''}`}>R{room.id} - {room.name}</span>
-                  {isLocked && <Lock size={10} className="absolute right-4 text-[#E60000]" />}
-                </button>
-              );
-            })}
-          </div>
-          
-          <div className="pt-4 border-t border-[#111]">
-            <Link href="/admin-node" className="w-full flex items-center gap-3 px-5 py-4 text-left text-yellow-600 hover:text-yellow-500 hover:bg-[#111] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold">
-              <ShieldAlert size={16} /> Admin Node
-            </Link>
+            {rooms.map((room) => (
+              <button
+                key={room.id} 
+                onClick={() => setActiveRoom(room.id)}
+                className={`w-full flex items-center gap-3 px-5 py-4 text-left transition-all rounded-lg group ${activeRoom === room.id ? "bg-[#E60000] text-white shadow-[0_4px_15px_rgba(230,0,0,0.2)]" : "text-[#444] hover:bg-[#0a0a0a] hover:text-white"}`}
+              >
+                <span>{room.icon}</span>
+                <span className="font-oswald text-sm uppercase tracking-widest font-bold">R{room.id} - {room.name}</span>
+              </button>
+            ))}
           </div>
         </nav>
       </aside>
 
       <main className="flex-1 relative flex flex-col bg-black overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none opacity-10" style={{ backgroundImage: 'linear-gradient(#111 1px, transparent 1px), linear-gradient(90deg, #111 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-        
-        {/* HUD */}
         <div className="h-14 border-b border-[#111] bg-black/80 backdrop-blur-md flex items-center justify-between px-6 md:px-10 z-10 shrink-0">
            <span className="font-mono text-[9px] text-[#444] uppercase tracking-[0.4em] hidden sm:block">
              Facility // Room {activeRoom} // {rooms.find(r => r.id === activeRoom)?.name.toUpperCase()}
            </span>
-           
            <div className="flex items-center gap-4 sm:gap-6 ml-auto">
              {userSession && (
                <div className="flex items-center gap-2 bg-[#110000] border border-[#330000] pl-3 pr-1 py-1 rounded-full shadow-[inset_0_0_10px_rgba(230,0,0,0.1)]">
-                 <Zap size={12} className={userSession.creditsRemaining === 0 ? "text-[#555]" : "text-yellow-500"} />
-                 <span className="font-mono text-[10px] text-white uppercase tracking-widest font-bold flex items-center gap-1">
-                   {userSession.creditsRemaining} <span className="text-[#888] hidden sm:inline">CRD</span>
-                 </span>
-                 
-                 {userSession.tier !== "The Mogul" && (
-                   <button 
-                     onClick={handleBoostPack} disabled={isBoosting}
-                     className="ml-2 bg-[#E60000] text-white px-3 py-1 text-[9px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors rounded-full flex items-center gap-1"
-                   >
-                     {isBoosting ? <Loader2 size={10} className="animate-spin" /> : "Top Up"}
-                   </button>
-                 )}
+                 <Zap size={12} className="text-yellow-500" />
+                 <span className="font-mono text-[10px] text-white font-bold">{userSession.creditsRemaining} CRD</span>
                </div>
              )}
-
-             <div className="flex items-center gap-2 border-l border-[#222] pl-4 sm:pl-6">
-               <div className={`w-1.5 h-1.5 rounded-full ${isProjectFinalized ? 'bg-yellow-500' : 'bg-[#E60000] animate-pulse'}`} />
-               <span className={`text-[8px] uppercase font-bold tracking-widest hidden sm:inline ${isProjectFinalized ? 'text-yellow-500' : 'text-[#E60000]'}`}>
-                 {isProjectFinalized ? 'Matrix Locked' : 'Active Matrix'}
-               </span>
-             </div>
            </div>
         </div>
         
@@ -300,8 +285,8 @@ export default function MatrixController() {
         </div>
       </main>
 
-      {/* AUDIO PLAYER */}
-      <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-4 md:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
+      {/* PERSISTENT AUDIO PLAYER */}
+      <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-4 md:px-10 justify-between">
         <audio 
           ref={audioRef} 
           src={playbackMode === 'radio' && radioTrack ? radioTrack.url : audioData?.url || ""} 
@@ -314,41 +299,25 @@ export default function MatrixController() {
         />
 
         <div className="w-1/3 flex items-center gap-4">
-          <button 
-            onClick={toggleRadioMode}
-            className={`w-12 h-12 flex items-center justify-center border transition-all ${playbackMode === 'radio' ? 'bg-[#E60000] border-[#E60000] shadow-[0_0_15px_rgba(230,0,0,0.4)]' : 'bg-black border-[#333] hover:bg-white hover:text-black hover:border-white'}`}
-            title="Toggle Global Radio / Studio Session"
-          >
-            <Radio size={18} className={playbackMode === 'radio' ? "text-white animate-pulse" : "text-[#555]"} />
+          <button onClick={toggleRadioMode} className={`w-12 h-12 flex items-center justify-center border transition-all ${playbackMode === 'radio' ? 'bg-[#E60000] border-[#E60000]' : 'bg-black border-[#333]'}`}>
+            <Radio size={18} />
           </button>
           <div className="overflow-hidden hidden sm:block">
             <p className="font-oswald text-sm uppercase tracking-widest font-bold text-white truncate">
-              {playbackMode === 'radio' && radioTrack ? radioTrack.title : (audioData?.fileName || "NO TRACK LOADED")}
-            </p>
-            <p className={`font-mono text-[9px] uppercase tracking-widest mt-1 ${playbackMode === 'radio' ? 'text-[#E60000]' : 'text-[#555]'}`}>
-              {playbackMode === 'radio' ? `FM BROADCAST` : `STUDIO SESSION`}
+              {playbackMode === 'radio' && radioTrack ? radioTrack.title : (audioData?.fileName || "IDLE")}
             </p>
           </div>
         </div>
 
         <div className="flex-1 flex flex-col items-center">
-          <div className="flex items-center gap-6 mb-2">
-            <button onClick={togglePlay} className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_10px_rgba(255,255,255,0.2)]">
-              {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-1" />}
-            </button>
-          </div>
-          <div className="w-full max-w-md flex items-center gap-3">
-            <span className="text-[9px] font-mono text-[#888]">{formatTime(currentTime)}</span>
-            <div className="flex-1 h-1.5 bg-[#222] rounded-full overflow-hidden relative cursor-pointer" onClick={handleSeek}>
-              <div className="absolute top-0 left-0 h-full bg-[#E60000]" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}></div>
-            </div>
-            <span className="text-[9px] font-mono text-[#888]">{formatTime(duration)}</span>
-          </div>
+          <button onClick={togglePlay} className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center">
+            {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-1" />}
+          </button>
         </div>
 
         <div className="w-1/3 flex justify-end items-center gap-3">
-          <Volume2 size={14} className="text-[#888] hidden sm:block" />
-          <input type="range" min="0" max="1" step="0.01" value={volume} onChange={(e) => { setVolume(parseFloat(e.target.value)); if(audioRef.current) audioRef.current.volume = parseFloat(e.target.value); }} className="w-16 md:w-24 h-1.5 accent-[#E60000] bg-[#222] rounded-full appearance-none hidden sm:block cursor-pointer" />
+          <Volume2 size={14} className="text-[#888]" />
+          <input type="range" min="0" max="1" step="0.01" value={volume} onChange={(e) => { setVolume(parseFloat(e.target.value)); if(audioRef.current) audioRef.current.volume = parseFloat(e.target.value); }} className="w-24 accent-[#E60000]" />
         </div>
       </div>
     </div>
