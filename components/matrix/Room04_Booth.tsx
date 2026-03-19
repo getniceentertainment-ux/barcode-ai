@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, ArrowRight, Activity, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX } from "lucide-react";
+import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 
@@ -46,6 +46,9 @@ export default function Room04_Booth() {
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Float32Array[]>([]);
+  
+  // NEW: Track if the worklet is already injected into the context
+  const workletLoadedRef = useRef(false);
 
   const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
 
@@ -139,7 +142,9 @@ export default function Room04_Booth() {
       wavesurferRef.current.play();
 
       // Clear old sources
-      activeSourcesRef.current.forEach(src => src.disconnect());
+      activeSourcesRef.current.forEach(src => {
+          try { src.disconnect() } catch(e){}
+      });
       activeSourcesRef.current = [];
 
       // Create new BufferSources for all active stems
@@ -219,16 +224,18 @@ export default function Room04_Booth() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
       mediaStreamRef.current = stream;
       
-      // Calculate padding needed to align recorded audio with the playhead
       const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
-      const LATENCY_OFFSET = 0.05; // Tightened expected latency
+      const LATENCY_OFFSET = 0.05; 
       let padTime = Math.max(0, currentWS_Time - LATENCY_OFFSET);
       recordedChunksRef.current = [new Float32Array(Math.floor(padTime * audioCtxRef.current.sampleRate))];
       
-      // Define and load the AudioWorklet
-      const workletCode = `class RecorderWorklet extends AudioWorkletProcessor { process(inputs) { if (inputs[0][0]) this.port.postMessage(inputs[0][0]); return true; } } registerProcessor('recorder-worklet', RecorderWorklet);`;
-      const blob = new Blob([workletCode], { type: 'application/javascript' });
-      await audioCtxRef.current.audioWorklet.addModule(URL.createObjectURL(blob));
+      // FIX: Only inject the AudioWorklet if it hasn't been loaded yet!
+      if (!workletLoadedRef.current) {
+        const workletCode = `class RecorderWorklet extends AudioWorkletProcessor { process(inputs) { if (inputs[0][0]) this.port.postMessage(inputs[0][0]); return true; } } registerProcessor('recorder-worklet', RecorderWorklet);`;
+        const blob = new Blob([workletCode], { type: 'application/javascript' });
+        await audioCtxRef.current.audioWorklet.addModule(URL.createObjectURL(blob));
+        workletLoadedRef.current = true;
+      }
       
       const workletNode = new AudioWorkletNode(audioCtxRef.current, 'recorder-worklet');
       workletNodeRef.current = workletNode;
@@ -240,7 +247,6 @@ export default function Room04_Booth() {
       
       setIsRecording(true); 
       
-      // Trigger synchronized playback
       if (!isPlaying) {
         togglePlayback();
       }
