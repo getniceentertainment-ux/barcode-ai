@@ -200,8 +200,14 @@ export default function Room02_BrainTrain() {
   };
 
   const handleSynthesize = async () => {
-    setStatus("analyzing");
-
+  // Add Guardrail
+  const hasCredits = await consumeCredits(1); 
+  if (!hasCredits) {
+    addToast("Insufficient GPU Tokens. Upgrade or Top-up.", "error");
+    return;
+  }
+  setStatus("analyzing");
+  
     let finalStyleId = detectedStyle?.id || "getnice_hybrid";
     let finalStyleName = detectedStyle?.name || STYLES.getnice_hybrid;
 
