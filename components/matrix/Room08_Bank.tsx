@@ -14,11 +14,8 @@ export default function Room08_Bank() {
   // Bank State
   const [status, setStatus] = useState<"evaluating" | "deal_ready" | "standard_payout" | "distributed">("evaluating");
   const [isWithdrawing, setIsWithdrawing] = useState(false);
-  
-  // DUAL LEDGER STATE
   const [royaltyBalance, setRoyaltyBalance] = useState(userSession?.walletBalance || 0);
-  const [marketingCredits, setMarketingCredits] = useState(0);
-  
+  const [marketingCredits, setMarketingCredits] = useState(0); // DUAL LEDGER
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [trackScore, setTrackScore] = useState<number>(0);
 
@@ -28,8 +25,6 @@ export default function Room08_Bank() {
   const [isGeneratingRollout, setIsGeneratingRollout] = useState<string | null>(null);
   const [activeRollout, setActiveRollout] = useState<string | null>(null);
 
-  const artistSplit = 60;
-  const labelSplit = 40;
   const marketingAdvance = 1000.00;
 
   useEffect(() => {
@@ -325,10 +320,10 @@ export default function Room08_Bank() {
 
             {status === "distributed" && (
               <div className="bg-[#050505] border border-green-500/30 p-16 flex flex-col items-center justify-center text-center rounded-lg animate-in zoom-in">
-                <CheckCircle2 size={80} className="text-green-500 mb-8" />
+                <CheckCircle2 size={80} className="text-green-500 mb-8 shadow-[0_0_30px_rgba(34,197,94,0.3)] rounded-full" />
                 <h3 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-8">Artifact Signed</h3>
-                <button onClick={() => setActiveRoom("09")} className="bg-white text-black px-12 py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center gap-3">
-                  Enter Radio <ArrowRight size={20} />
+                <button onClick={() => setActiveRoom("09")} className="bg-white text-black px-12 py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center gap-3 shadow-[0_0_20px_rgba(255,255,255,0.2)]">
+                  Enter Live Radio <ArrowRight size={20} />
                 </button>
               </div>
             )}

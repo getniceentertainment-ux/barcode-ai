@@ -90,11 +90,7 @@ export const useMatrixStore = create<MatrixState>()(
       gwGender: "male",
       gwUseSlang: true,
       gwUseIntel: true,
-      blueprint: [
-        { id: "1", type: "INTRO", bars: 4 },
-        { id: "2", type: "HOOK", bars: 8 },
-        { id: "3", type: "VERSE", bars: 16 }
-      ],
+      blueprint: [],
       generatedLyrics: null,
       vocalStems: [],
       finalMaster: null,
