@@ -54,31 +54,29 @@ export default function MatrixController() {
       if (!currentUserId || currentUserId === 'undefined') return;
 
       try {
-        const sanitizedState = {
-          audioData: state.audioData || null,
-          vocalStems: (state.vocalStems || []).map(s => ({ 
-            id: s.id, type: s.type, offsetBars: s.offsetBars || 0, volume: s.volume ?? 1 
-          })),
-          generatedLyrics: state.generatedLyrics || "",
-          blueprint: state.blueprint || {}
-        };
-
-        // We update 'profiles' - the SQL trigger handles mirroring it to 'matrix_states'
+        // We only send 'matrix_state' - nothing else. 
+        // This prevents "Column Not Found" errors.
         const { error } = await supabase
           .from('profiles')
           .update({
-            matrix_state: sanitizedState,
-            updated_at: new Date().toISOString() // Using the verified standard column
+            matrix_state: {
+              audioData: state.audioData || null,
+              vocalStems: (state.vocalStems || []).map(s => ({ 
+                id: s.id, type: s.type, offsetBars: s.offsetBars || 0, volume: s.volume ?? 1 
+              })),
+              generatedLyrics: state.generatedLyrics || "",
+              blueprint: state.blueprint || {}
+            }
           })
           .eq('id', currentUserId);
         
         if (error) {
-          console.error("❌ Sync Error:", error.message);
+          console.error("❌ Profile Sync Error:", error.message);
         } else {
-          console.log("📡 Matrix Ledger: Synced & Mirrored.");
+          console.log("📡 Ledger Synced.");
         }
       } catch (err) {
-        console.error("❌ Hardware Failure:", err);
+        console.error("❌ Sync Hardware Failure:", err);
       }
     }, 30000); 
 
