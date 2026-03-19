@@ -79,6 +79,10 @@ export async function POST(req: Request) {
     }
 
     // --- RATE LIMITING ---
+    if (!userId) {
+      return NextResponse.json({ error: "Access Denied: User ID resolution failed" }, { status: 401 });
+    }
+    
     const { success } = await ratelimit.limit(userId);
     if (!success) return NextResponse.json({ error: "Rate Limit Exceeded. Please hold." }, { status: 429 });
 
