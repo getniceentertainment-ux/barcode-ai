@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User } from "lucide-react";
+import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
@@ -15,56 +15,58 @@ interface RosterNode {
   total_referrals: number;
 }
 
-// Initial System Message to anchor the chat
-const SYSTEM_INIT_MSG = { 
-  id: "sys_init", 
-  user: "SYSTEM", 
-  msg: "Global Syndicate Comms initialized. End-to-end encryption active.", 
-  isPlatform: true 
-};
+interface ChatMessage {
+  id: string;
+  stage_name: string;
+  message: string;
+  is_platform: boolean;
+  created_at: string;
+}
 
 export default function Room10_Social() {
   const { userSession, addToast } = useMatrixStore();
   
+  // Rules Gateway State
+  const [hasAcceptedRules, setHasAcceptedRules] = useState(false);
+  const [rulesChecked, setRulesChecked] = useState(false);
+
+  // Layout & Roster State
   const [activeTab, setActiveTab] = useState<"brokerage" | "chat">("brokerage");
   const [searchQuery, setSearchQuery] = useState("");
   const [roster, setRoster] = useState<RosterNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState<RosterNode | null>(null);
   
+  // Escrow State
   const [interactionType, setInteractionType] = useState<"feature" | "booking">("feature");
   const [escrowStatus, setEscrowStatus] = useState<"idle" | "processing" | "locked">("idle");
 
-  // Chat State
-  const [chat, setChat] = useState<any[]>([SYSTEM_INIT_MSG]);
+  // Persistent Chat State
+  const [chat, setChat] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const commsChannelRef = useRef<any>(null); // Ref to hold the Supabase channel
 
+  // Initialize Matrix Data ONLY after rules are accepted
   useEffect(() => {
+    if (!hasAcceptedRules) return;
+
     fetchLeaderboard();
+    fetchChatHistory();
 
-    // --- 🚨 SUPABASE REALTIME BROADCAST WIRING 🚨 ---
-    const channel = supabase.channel('global_comms', {
-      config: { broadcast: { self: true } } // self: true allows sender to see their own msg instantly
-    });
-
-    channel.on('broadcast', { event: 'new_message' }, (payload) => {
-      setChat(prev => [...prev, payload.payload]);
-    }).subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log("Connected to Global Syndicate.");
-      }
-    });
-
-    commsChannelRef.current = channel;
+    // The Persistent Realtime Subscription
+    const channel = supabase
+      .channel('public:global_messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'global_messages' }, (payload) => {
+        setChat((prev) => [...prev, payload.new as ChatMessage]);
+      })
+      .subscribe();
 
     return () => {
-      // Clean up the subscription when leaving the room
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [hasAcceptedRules]);
 
+  // Auto-scroll chat to bottom on new message
   useEffect(() => {
     if (activeTab === "chat") {
       chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -88,6 +90,24 @@ export default function Room10_Social() {
     }
   };
 
+  const fetchChatHistory = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('global_messages')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      if (data) {
+        // Reverse array so the oldest is at the top, newest at the bottom
+        setChat(data.reverse() as ChatMessage[]);
+      }
+    } catch (err) {
+      console.error("Failed to load chat history:", err);
+    }
+  };
+
   const handleInitiateEscrow = () => {
     if (!selectedNode) return;
     setEscrowStatus("processing");
@@ -96,23 +116,24 @@ export default function Room10_Social() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || !commsChannelRef.current) return;
+    if (!chatInput.trim() || !userSession?.id) return;
     
-    const newMessage = { 
-      id: Date.now().toString(),
-      user: userSession?.stageName || "GUEST_NODE", 
-      msg: chatInput,
-      isPlatform: false
-    };
+    const messageText = chatInput.trim();
+    setChatInput(""); // Clear input optimistically
 
-    // Broadcast to all active nodes in Room 10
-    await commsChannelRef.current.send({
-      type: 'broadcast',
-      event: 'new_message',
-      payload: newMessage,
-    });
+    try {
+      const { error } = await supabase.from('global_messages').insert({
+        user_id: userSession.id,
+        stage_name: userSession.stageName || "GUEST_NODE",
+        message: messageText,
+        is_platform: false
+      });
 
-    setChatInput("");
+      if (error) throw error;
+    } catch (err) {
+      console.error("Failed to broadcast message:", err);
+      if (addToast) addToast("Transmission failed.", "error");
+    }
   };
 
   const basePrice = selectedNode ? Math.max(100, Math.floor(selectedNode.mogul_score / 2)) : 0;
@@ -122,6 +143,56 @@ export default function Room10_Social() {
     (node.stage_name || node.id).toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // --- THE RULES GATEWAY INTERCEPTOR ---
+  if (!hasAcceptedRules) {
+    return (
+      <div className="h-full flex items-center justify-center bg-[#050505] p-6 animate-in zoom-in duration-500">
+        <div className="max-w-2xl w-full bg-black border border-[#330000] shadow-[0_0_50px_rgba(230,0,0,0.15)] flex flex-col">
+          <div className="p-8 border-b border-[#222] flex items-center gap-4">
+            <ShieldAlert size={40} className="text-[#E60000]" />
+            <div>
+              <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white">Syndicate Clearance Required</h2>
+              <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-[0.2em] mt-1">End-to-End Comms Monitoring Active</p>
+            </div>
+          </div>
+          
+          <div className="p-8 space-y-6 font-mono text-[10px] text-[#888] uppercase tracking-widest leading-relaxed">
+            <p>Access to the Global Syndicate and Brokerage Matrix is a privilege reserved for verified nodes. By entering Room 10, you are accessing the internal GetNice Records network.</p>
+            <ul className="space-y-3 border-l-2 border-[#E60000] pl-4 text-gray-300">
+              <li>1. No unauthorized solicitation of un-cleared instrumental leases.</li>
+              <li>2. Fraudulent escrow requests will result in an immediate hardware ban.</li>
+              <li>3. All communications are logged to the persistent ledger for security audits.</li>
+              <li>4. Maintain professional operational standards. Disrespect to the syndicate is prohibited.</li>
+            </ul>
+          </div>
+
+          <div className="p-8 bg-[#0a0a0a] border-t border-[#222] flex flex-col gap-6">
+            <label className="flex items-start gap-4 cursor-pointer group">
+              <input 
+                type="checkbox" 
+                checked={rulesChecked} 
+                onChange={(e) => setRulesChecked(e.target.checked)} 
+                className="accent-[#E60000] w-5 h-5 shrink-0 mt-1 cursor-pointer" 
+              />
+              <span className="font-oswald text-sm text-[#555] uppercase tracking-widest group-hover:text-white transition-colors">
+                I cryptographically sign and agree to the GetNice Records network operational standards.
+              </span>
+            </label>
+            
+            <button 
+              onClick={() => setHasAcceptedRules(true)}
+              disabled={!rulesChecked}
+              className="w-full bg-[#E60000] disabled:opacity-20 disabled:cursor-not-allowed text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-3 shadow-[0_0_20px_rgba(230,0,0,0.2)]"
+            >
+              Unlock Network Matrix <Lock size={18} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- STANDARD ROOM 10 MATRIX ---
   return (
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 overflow-hidden">
       
@@ -307,7 +378,7 @@ export default function Room10_Social() {
           </div>
         )}
 
-        {/* TAB CONTENT: GLOBAL COMMS (CHAT) */}
+        {/* TAB CONTENT: GLOBAL COMMS (PERSISTENT DB CHAT) */}
         {activeTab === "chat" && (
           <div className="flex-1 flex flex-col animate-in slide-in-from-left-8 h-full bg-[#020202]">
             <div className="p-6 border-b border-[#111] flex items-center justify-between shadow-md shrink-0">
@@ -315,21 +386,21 @@ export default function Room10_Social() {
                 <h3 className="font-oswald text-xl uppercase tracking-widest font-bold text-white flex items-center gap-2">
                   <MessageSquare size={18} className="text-[#E60000]" /> Global Comms
                 </h3>
-                <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mt-1">Encrypted Node-to-Node Chat</p>
+                <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mt-1">Encrypted Node-to-Node Ledger</p>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                <span className="font-mono text-[9px] text-green-500 uppercase tracking-widest font-bold">Online</span>
+                <span className="font-mono text-[9px] text-green-500 uppercase tracking-widest font-bold">Live DB Sync</span>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
               {chat.map((c) => (
-                <div key={c.id} className={`text-sm font-mono leading-relaxed ${c.isPlatform ? 'bg-[#110000] border border-[#330000] p-4 rounded-sm shadow-sm' : 'bg-black border border-[#111] p-3 rounded-sm'}`}>
-                  <span className={`font-bold mr-3 tracking-widest text-[10px] uppercase ${c.isPlatform ? 'text-[#E60000]' : c.user === userSession?.stageName ? 'text-green-500' : 'text-[#888]'}`}>
-                    {c.user}:
+                <div key={c.id} className={`text-sm font-mono leading-relaxed ${c.is_platform ? 'bg-[#110000] border border-[#330000] p-4 rounded-sm shadow-sm' : 'bg-black border border-[#111] p-3 rounded-sm'}`}>
+                  <span className={`font-bold mr-3 tracking-widest text-[10px] uppercase ${c.is_platform ? 'text-[#E60000]' : c.stage_name === userSession?.stageName ? 'text-green-500' : 'text-[#888]'}`}>
+                    {c.stage_name}:
                   </span>
-                  <span className={c.isPlatform ? 'text-[#E60000] font-bold' : 'text-gray-300'}>{c.msg}</span>
+                  <span className={c.is_platform ? 'text-[#E60000] font-bold' : 'text-gray-300'}>{c.message}</span>
                 </div>
               ))}
               <div ref={chatEndRef} />
@@ -341,7 +412,7 @@ export default function Room10_Social() {
                   type="text" 
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Broadcast to global syndicate..." 
+                  placeholder="Commit to permanent global ledger..." 
                   className="flex-1 bg-[#111] border border-[#333] px-4 py-4 text-xs text-white outline-none focus:border-[#E60000] font-mono transition-colors"
                 />
                 <button 
