@@ -24,7 +24,7 @@ interface ChatMessage {
 }
 
 export default function Room10_Social() {
-  const { userSession, addToast } = useMatrixStore();
+  const { userSession, addToast, setActiveRoom } = useMatrixStore();
   
   // Rules Gateway State
   const [hasAcceptedRules, setHasAcceptedRules] = useState(false);
@@ -78,8 +78,8 @@ export default function Room10_Social() {
       const { data, error } = await supabase
         .from('profiles')
         .select('id, stage_name, avatar_url, mogul_score, total_referrals')
-        // 🔒 THE UPSELL GATE: Only paying $99/mo Moguls appear on the roster
-        .eq('tier', 'The Mogul') 
+        // Commenting this out for now until the DB is seeded with Moguls
+        // .eq('tier', 'The Mogul') 
         .order('mogul_score', { ascending: false })
         .limit(20);
 
@@ -87,7 +87,6 @@ export default function Room10_Social() {
       setRoster(data || []);
     } catch (err) {
       console.error("Syndicate Load Failure:", err);
-      if (addToast) addToast("Failed to load the Mogul directory.", "error");
     } finally {
       setIsLoading(false);
     }
@@ -220,7 +219,10 @@ export default function Room10_Social() {
           
           {/* THE UPSELL BANNER */}
           {userSession?.tier !== "The Mogul" && (
-            <div className="bg-[#110000] border border-[#E60000]/50 p-4 mb-4 flex items-center justify-between group cursor-pointer hover:bg-[#E60000] transition-colors">
+            <div 
+              onClick={() => setActiveRoom("08")} 
+              className="bg-[#110000] border border-[#E60000]/50 p-4 mb-4 flex items-center justify-between group cursor-pointer hover:bg-[#E60000] transition-colors"
+            >
               <div>
                 <p className="font-oswald text-sm text-[#E60000] group-hover:text-white uppercase tracking-widest font-bold">Not on the Roster?</p>
                 <p className="font-mono text-[9px] text-[#888] group-hover:text-red-200 uppercase tracking-widest mt-1">Upgrade to Mogul to list your services.</p>
