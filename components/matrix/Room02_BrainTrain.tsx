@@ -201,8 +201,16 @@ export default function Room02_BrainTrain() {
   };
 
   const handleSynthesize = async () => {
-    setStatus("analyzing");
+    // 1. The Real Guardrail
+    if (consumeCredits) {
+      const hasCredits = await consumeCredits(1); 
+      if (!hasCredits) {
+        if (addToast) addToast("Insufficient GPU Tokens. Upgrade or Top-up.", "error");
+        return; // Stops the execution so they don't burn your GPU
+      }
+    }
 
+    setStatus("analyzing");
     let finalStyleId = detectedStyle?.id || "getnice_hybrid";
     let finalStyleName = detectedStyle?.name || STYLES.getnice_hybrid;
 
