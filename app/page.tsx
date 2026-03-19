@@ -30,7 +30,7 @@ export default function MatrixController() {
     hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix, 
     audioData, isProjectFinalized, playbackMode, setPlaybackMode, 
     radioTrack, setRadioTrack, addToast,
-    vocalStems, generatedLyrics, blueprint // Pulled for Auto-Save logic
+    vocalStems, generatedLyrics, blueprint
   } = useMatrixStore();
 
   const [isBoosting, setIsBoosting] = useState(false);
@@ -40,47 +40,47 @@ export default function MatrixController() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
 
-  // --- 🚨 THE AUTO-SAVE GUARDIAN 🚨 ---
-  // This logic prevents the "id=eq.undefined" error by checking the ID inside the interval
+  // --- 🚨 THE AUTO-SAVE GUARDIAN (HARDENED) 🚨 ---
   useEffect(() => {
-  // GATE 1: Don't even start the interval if we don't have basic access
-  if (!hasAccess || !userSession?.id) return;
+    // Only set up the interval if the user is actually inside the Matrix
+    if (!hasAccess) return;
 
-  const autoSaveInterval = setInterval(async () => {
-    const state = useMatrixStore.getState();
-    
-    // GATE 2: Defensive check - if ID dropped to undefined mid-loop, ABORT
-    if (!state.userSession?.id) {
-      console.warn("Auto-sync blocked: Session ID unavailable.");
-      return;
-    }
+    const autoSaveInterval = setInterval(async () => {
+      // 1. DYNAMIC FETCH: Pull the latest session data directly from Zustand
+      const state = useMatrixStore.getState();
+      const currentUserId = state.userSession?.id;
 
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          matrix_state: {
-            audioData: state.audioData,
-            vocalStems: state.vocalStems.map(s => ({ 
-              id: s.id, type: s.type, offsetBars: s.offsetBars, volume: s.volume 
-            })),
-            generatedLyrics: state.generatedLyrics,
-            blueprint: state.blueprint
-          },
-          last_saved: new Date().toISOString()
-        })
-        // GATE 3: Final check to ensure we never pass "undefined" to the URL
-        .eq('id', state.userSession.id);
+      // 2. FIREWALL: If the user logged out or ID is missing, ABORT the network call
+      if (!currentUserId || currentUserId === 'undefined') {
+        console.warn("🛡️ Sync Blocked: No active Operator ID detected.");
+        return;
+      }
+
+      try {
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            matrix_state: {
+              audioData: state.audioData,
+              vocalStems: state.vocalStems.map(s => ({ 
+                id: s.id, type: s.type, offsetBars: s.offsetBars, volume: s.volume 
+              })),
+              generatedLyrics: state.generatedLyrics,
+              blueprint: state.blueprint
+            },
+            last_saved: new Date().toISOString()
+          })
+          .eq('id', currentUserId); // Uses the verified local variable
         
-      if (error) throw error;
-      console.log("Matrix Sync Successful.");
-    } catch (error) {
-      console.error("Auto-save sync failed:", error);
-    }
-  }, 30000); 
+        if (error) throw error;
+        console.log("📡 Matrix Ledger Updated Successfully.");
+      } catch (error) {
+        console.error("❌ Auto-save sync failed:", error);
+      }
+    }, 30000); // 30-second heartbeat
 
-  return () => clearInterval(autoSaveInterval);
-}, [hasAccess, userSession?.id]);
+    return () => clearInterval(autoSaveInterval);
+  }, [hasAccess]); // Only re-runs if global access status changes
 
   const togglePlay = () => {
     if (!audioRef.current) return;
