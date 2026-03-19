@@ -327,13 +327,12 @@ export default function Room02_BrainTrain() {
                     </div>
                   ) : (
                     <button
-                      onClick={micStatus === "recorded" ? togglePreviewPlayback : handleRecordCadence}
-                      disabled={micStatus === "analyzing_cadence"}
-                      className={`w-24 h-24 rounded-full border-2 flex items-center justify-center transition-all duration-300
-                      ${micStatus === "recorded" 
-                        ? (isPlayingPreview ? "bg-[#E60000] border-[#E60000] text-white animate-pulse" : "bg-green-500/10 border-green-500 text-green-500 hover:bg-green-500 hover:text-black") 
-                        : "bg-black border-[#222] text-[#444] group-hover:text-white group-hover:border-white"}`}
-                    >
+  onClick={micStatus === "recorded" ? togglePreviewPlayback : handleRecordCadence}
+  className={`w-24 h-24 rounded-full border-2 flex items-center justify-center transition-all duration-300
+  ${micStatus === "recorded" 
+    ? (isPlayingPreview ? "bg-[#E60000] border-[#E60000] text-white animate-pulse" : "bg-green-500/10 border-green-500 text-green-500 hover:bg-green-500 hover:text-black") 
+    : "bg-black border-[#222] text-[#444] group-hover:text-white group-hover:border-white"}`}
+>
                       {micStatus === "recorded" 
                         ? (isPlayingPreview ? <Pause size={40} /> : <Play size={40} className="ml-2" />) 
                         : <Mic2 size={40} />}
