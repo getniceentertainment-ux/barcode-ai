@@ -7,7 +7,6 @@ import { supabase } from "../../lib/supabase";
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
 
-// --- (audioBufferToWav helper remains identical) ---
 function audioBufferToWav(buffer: AudioBuffer) {
   let numOfChan = buffer.numberOfChannels, length = buffer.length * numOfChan * 2 + 44,
       bufferArray = new ArrayBuffer(length), view = new DataView(bufferArray),
@@ -47,18 +46,15 @@ export default function Room06_Mastering() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
-    // 🛡️ TIER GATE: Only Moguls get the "Authorized" green light by default
     if (userSession?.tier === "The Mogul") {
       setHasToken(true);
     } else {
-      // Free and Artist MUST check the ledger for a paid token
       checkTokens();
     }
   }, [userSession]);
 
   const checkTokens = async () => {
     if (!userSession?.id) return;
-
     const { data } = await supabase
       .from('profiles')
       .select('mastering_tokens, tier')
@@ -66,61 +62,51 @@ export default function Room06_Mastering() {
       .single();
 
     if (data) {
-      // 🚨 CRITICAL: Check both the Token count AND the Tier
       const isMogul = (data as any).tier === "The Mogul";
       const tokenBalance = (data as any).mastering_tokens || 0;
-
-      // Access is ONLY granted if they are a Mogul OR have a token
       setHasToken(isMogul || tokenBalance > 0);
     }
   };
 
-    // --- 🏦 STRIPE BRIDGE ---
-    // In production, you'll redirect to /api/stripe/checkout-mastering
-    // For now, this updates the ledger to unblock your testing:
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ mastering_tokens: 1 })
-        .eq('id', userSession.id);
+  const handlePurchaseToken = async () => {
+    if (!userSession?.id) return;
+    if(addToast) addToast("Routing to Secure Payment...", "info");
+    
+    // Logic for testing/unblocking - replace with Stripe redirect in prod
+    const { error } = await supabase
+      .from('profiles')
+      .update({ mastering_tokens: 1 })
+      .eq('id', userSession.id);
 
-      if (error) throw error;
-
+    if (!error) {
       setHasToken(true);
       if(addToast) addToast("Mastering Token Acquired.", "success");
-    } catch (err) {
-      if(addToast) addToast("Transaction link severed.", "error");
     }
   };
-  const handleMastering = async () => {
-    // 1. GESTAPO CHECK: Ask the store for permission (Burn token first)
-    const authorized = await spendMasteringToken();
 
-    // 🛡️ CRITICAL GATE: If unauthorized, kill the function immediately.
+  const handleMastering = async () => {
+    if (isProcessing || !audioData?.url) return;
+
+    // 🛡️ THE BOUNCER: Burn token in DB BEFORE rendering
+    const authorized = await spendMasteringToken();
     if (!authorized) {
       setStatus("idle");
-      setIsProcessing(false);
-      return; 
+      return;
     }
 
-    // 2. Immediate UI Lock
     setIsProcessing(true);
     setStatus("processing");
 
     try {
       const tmpCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      
-      // Line 92: This is where your build was failing
-      const beatResp = await fetch(audioData!.url);
+      const beatResp = await fetch(audioData.url);
       const beatArrayBuf = await beatResp.arrayBuffer();
       const beatBuf = await tmpCtx.decodeAudioData(beatArrayBuf);
       let maxDuration = beatBuf.duration;
 
       const channelData = beatBuf.getChannelData(0);
       let sumSquares = 0;
-      for (let i = 0; i < channelData.length; i++) { 
-        sumSquares += channelData[i] * channelData[i]; 
-      }
+      for (let i = 0; i < channelData.length; i++) { sumSquares += channelData[i] * channelData[i]; }
       const measuredDB = 20 * Math.log10(Math.sqrt(sumSquares / channelData.length) || 0.0001);
       setActualLUFS(Math.round(measuredDB));
 
@@ -129,8 +115,7 @@ export default function Room06_Mastering() {
       mixBus.gain.value = Math.pow(10, ((lufs - measuredDB) / 20)); 
 
       const limiter = offlineCtx.createDynamicsCompressor();
-      limiter.threshold.value = -0.5; 
-      limiter.ratio.value = 20; 
+      limiter.threshold.value = -0.5; limiter.ratio.value = 20; 
 
       mixBus.connect(limiter);
       limiter.connect(offlineCtx.destination);
@@ -140,7 +125,6 @@ export default function Room06_Mastering() {
       beatSource.connect(mixBus); 
       beatSource.start(0);
 
-      // Line 117: Finalizing the render
       const renderedBuffer = await offlineCtx.startRendering();
       const wavBlob = audioBufferToWav(renderedBuffer);
       const finalUrl = URL.createObjectURL(wavBlob);
@@ -182,7 +166,9 @@ export default function Room06_Mastering() {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(zipBlob);
       a.download = `${trackName}_STUDIO_ARTIFACTS.zip`;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       if(addToast) addToast("ZIP Artifact Ready.", "success");
     } catch (err) {
       if(addToast) addToast("Export failed.", "error");
@@ -212,7 +198,7 @@ export default function Room06_Mastering() {
                <Lock size={32} className="mx-auto text-yellow-600 mb-4" />
                <h3 className="font-oswald text-xl uppercase font-bold text-white mb-2">Mastering Gated</h3>
                <p className="font-mono text-[9px] text-[#888] uppercase mb-8">Node requires a <strong className="text-white">$4.99 Token</strong> per track.</p>
-               <button onClick={handlePurchaseToken} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all">Purchase Token <DollarSign size={18} className="inline ml-2" /></button>
+               <button onClick={handlePurchaseToken} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-2">Purchase Token <DollarSign size={18} /></button>
             </div>
           ) : (
             <div className="w-full mb-12 relative z-10">
@@ -250,7 +236,7 @@ export default function Room06_Mastering() {
              </div>
              {isZipping ? <Loader2 size={24} className="animate-spin" /> : <FileArchive size={24} />}
           </button>
-          <button onClick={() => setActiveRoom("07")} className="w-full bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all">Route to Distribution <ArrowRight size={20} className="inline ml-2" /></button>
+          <button onClick={() => setActiveRoom("07")} className="w-full bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2">Route to Distribution <ArrowRight size={20} /></button>
           <button onClick={() => { setFinalMaster(null); setStatus("idle"); }} className="text-[#555] text-xs font-bold uppercase tracking-widest hover:text-white flex items-center gap-2"><RefreshCw size={14} /> Re-Master Track</button>
         </div>
       )}
