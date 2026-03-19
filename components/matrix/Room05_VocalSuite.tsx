@@ -38,7 +38,7 @@ function audioBufferToWav(buffer: AudioBuffer) {
 }
 
 export default function Room05_VocalSuite() {
-  const { vocalStems, addVocalStem, removeVocalStem, setActiveRoom, addToast } = useMatrixStore();
+  const { vocalStems, addVocalStem, removeVocalStem, setActiveRoom, addToast, spendCredit } = useMatrixStore();
   
   const [activeChain, setActiveChain] = useState(VOCAL_CHAINS[0].id);
   const [presenceIntensity, setPresenceIntensity] = useState(VOCAL_CHAINS[0].presence);
@@ -166,6 +166,10 @@ export default function Room05_VocalSuite() {
   };
 
   const handleApplyEngineering = async () => {
+    // 🛡️ THE CREDIT GUARDRAIL
+    const hasCredits = await spendCredit(1);
+    if (!hasCredits) return; // Stop if they have 0 credits
+
     setIsPreviewPlaying(false);
     vocalStems.forEach(stem => (document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement)?.pause());
     

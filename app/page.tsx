@@ -256,16 +256,33 @@ export default function MatrixController() {
         
         <nav className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar">
           <div className="space-y-1 mb-8">
-            {rooms.map((room) => (
-              <button
-                key={room.id} 
-                onClick={() => setActiveRoom(room.id)}
-                className={`w-full flex items-center gap-3 px-5 py-4 text-left transition-all rounded-lg group ${activeRoom === room.id ? "bg-[#E60000] text-white shadow-[0_4px_15px_rgba(230,0,0,0.2)]" : "text-[#444] hover:bg-[#0a0a0a] hover:text-white"}`}
-              >
-                <span>{room.icon}</span>
-                <span className="font-oswald text-sm uppercase tracking-widest font-bold">R{room.id} - {room.name}</span>
-              </button>
-            ))}
+            {rooms.map((room) => {
+              // 🔒 TIER ENFORCEMENT: Identify Mogul-only rooms
+              const isMogulRoom = ["06", "07", "09", "10", "11"].includes(room.id);
+              // Notice we leave "08" out of the lock, so everyone can visit the Bank to buy credits!
+              const isLocked = isMogulRoom && userSession?.tier !== "The Mogul";
+
+              return (
+                <button
+                  key={room.id} 
+                  onClick={() => {
+                    if (isLocked) {
+                      setIsUpgrading(true); // Pop the upgrade modal
+                    } else {
+                      setActiveRoom(room.id); // Allow entry
+                    }
+                  }}
+                  className={`w-full flex items-center justify-between px-5 py-4 text-left transition-all rounded-lg group ${activeRoom === room.id ? "bg-[#E60000] text-white shadow-[0_4px_15px_rgba(230,0,0,0.2)]" : "text-[#444] hover:bg-[#0a0a0a] hover:text-white"}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span>{room.icon}</span>
+                    <span className="font-oswald text-sm uppercase tracking-widest font-bold">R{room.id} - {room.name}</span>
+                  </div>
+                  {/* Visual indicator that the room is locked */}
+                  {isLocked && <Lock size={14} className="text-[#E60000] opacity-50 group-hover:opacity-100" />}
+                </button>
+              );
+            })}
           </div>
         </nav>
       </aside>
