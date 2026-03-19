@@ -221,7 +221,7 @@ export default function Room10_Social() {
           {/* THE UPSELL BANNER */}
           {userSession?.tier !== "The Mogul" && (
             <div 
-              onClick={() => setActiveRoom("EntryGateway")} 
+              onClick={() => setIsUpgrading(true)} 
               className="bg-[#110000] border border-[#E60000]/50 p-4 mb-4 flex items-center justify-between group cursor-pointer hover:bg-[#E60000] transition-colors"
             >
               <div>
