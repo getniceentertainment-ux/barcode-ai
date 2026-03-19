@@ -135,11 +135,39 @@ export const useMatrixStore = create<MatrixState>()(
 
       // --- 📀 MASTERING TOKEN HANDLER ---
       spendMasteringToken: async () => {
-  const session = get().userSession;
-  if (!session) return false;
-  if (session.tier === "The Mogul") return true;
+        const session = get().userSession;
+        if (!session) return false;
 
-  try {
+        // 🎖️ The Mogul Exception (Defined in your doc: Automated DSP mastering included)
+        if (session.tier === "The Mogul") return true;
+
+        try {
+          // Verify the actual DB state for Free/Artist
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('mastering_tokens, tier')
+            .eq('id', session.id)
+            .single();
+
+          // 🛑 REJECTION: If they aren't a Mogul and have 0 tokens
+          if (!profile || profile.mastering_tokens < 1) {
+            get().addToast("Mastering Token Required ($4.99).", "error");
+            return false;
+          }
+
+          // 🌪️ ATOMIC BURN: Deduct for Free/Artist
+          const { error } = await supabase
+            .from('profiles')
+            .update({ mastering_tokens: profile.mastering_tokens - 1 })
+            .eq('id', session.id);
+
+          if (error) throw error;
+          return true;
+        } catch (err) {
+          return false;
+        }
+      },
+
     // 🔥 REAL-TIME DB CHECK: No cached state, check the truth.
     const { data: profile } = await supabase
       .from('profiles')

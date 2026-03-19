@@ -47,22 +47,33 @@ export default function Room06_Mastering() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
-    if (userSession?.tier === "The Mogul") setHasToken(true);
-    else checkTokens();
+    // 🛡️ TIER GATE: Only Moguls get the "Authorized" green light by default
+    if (userSession?.tier === "The Mogul") {
+      setHasToken(true);
+    } else {
+      // Free and Artist MUST check the ledger for a paid token
+      checkTokens();
+    }
   }, [userSession]);
 
   const checkTokens = async () => {
     if (!userSession?.id) return;
-    const { data } = await supabase.from('profiles').select('mastering_tokens').eq('id', userSession.id).single();
-    if (data && (data as any).mastering_tokens > 0) setHasToken(true);
-  };
-const handlePurchaseToken = async () => {
-    if (!userSession?.id) {
-      if(addToast) addToast("Please sign in to purchase tokens.", "error");
-      return;
+
+    const { data } = await supabase
+      .from('profiles')
+      .select('mastering_tokens, tier')
+      .eq('id', userSession.id)
+      .single();
+
+    if (data) {
+      // 🚨 CRITICAL: Check both the Token count AND the Tier
+      const isMogul = (data as any).tier === "The Mogul";
+      const tokenBalance = (data as any).mastering_tokens || 0;
+
+      // Access is ONLY granted if they are a Mogul OR have a token
+      setHasToken(isMogul || tokenBalance > 0);
     }
-    
-    if(addToast) addToast("Routing to Secure Payment...", "info");
+  };
 
     // --- 🏦 STRIPE BRIDGE ---
     // In production, you'll redirect to /api/stripe/checkout-mastering
