@@ -211,7 +211,7 @@ export default function Room06_Mastering() {
               <PremiumButton 
  	 cost={0} 
  	 isMogulOnly={true} 
-  	onConfirm={handleStartMastering} // ✅ Change this to match your function name
+  	onConfirm={handleMastering} // ✅ Change this to match your function name
  	 className="..."
 	>
   	Finalize & Master Artifact
