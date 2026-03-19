@@ -259,9 +259,9 @@ export default function EntryGateway() {
       <div className="absolute bottom-8 left-0 w-full flex justify-center z-20 animate-in fade-in delay-500">
         <Link 
           href="/dev-portal" 
-          className="flex items-center gap-2 text-[10px] font-mono text-[#555] uppercase tracking-widest hover:text-white transition-colors bg-black border border-[#222] hover:border-[#E60000] px-6 py-3 shadow-[0_0_15px_rgba(0,0,0,0.5)]"
+          className="flex items-center gap-2 text-[10px] font-mono text-green-500 font-bold uppercase tracking-widest transition-all bg-black border border-green-500/50 hover:border-[#00FF00] hover:text-[#00FF00] hover:bg-[#001100] px-6 py-3 shadow-[0_0_20px_rgba(34,197,94,0.3)] animate-pulse"
         >
-          <Terminal size={14} className="text-[#E60000]" /> TALON B2B API Access
+          <Terminal size={14} className="text-green-500" /> GETNICE/BAR-CODE.AI GHOSTWRITER . . .
         </Link>
       </div>
 
