@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, ArrowRight, Activity, Save, Trash2, ListMusic, ChevronLeft, ChevronRight } from "lucide-react";
+import { Mic, Square, Play, Pause, ArrowRight, Activity, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 
@@ -133,8 +133,7 @@ export default function Room04_Booth() {
       for (let chunk of recordedChunksRef.current) { merged.set(chunk, offset); offset += chunk.length; }
       const wavBlob = encodeWAV(merged, audioCtxRef.current.sampleRate);
       
-      // FIXED: Build error solved by passing offsetBars: 0
-      addVocalStem({ id: `TAKE_${Date.now()}`, type: vocalStems.length === 0 ? "Lead" : "Adlib", url: URL.createObjectURL(wavBlob), blob: wavBlob, volume: 0, offsetBars: 0 });
+      addVocalStem({ id: `TAKE_${Date.now()}`, type: vocalStems.length === 0 ? "Lead" : "Adlib", url: URL.createObjectURL(wavBlob), blob: wavBlob, volume: 1, offsetBars: 0 });
       
       audioCtxRef.current.close(); audioCtxRef.current = null;
     }
@@ -170,6 +169,14 @@ export default function Room04_Booth() {
     } catch (err) { alert("Hardware microphone access required."); }
   };
 
+  const toggleMute = (id: string) => {
+    setMutedStems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500">
       {vocalStems.map(s => <audio key={s.id} id={`booth-stem-${s.id}`} src={s.url} muted={mutedStems.has(s.id)} className="hidden" />)}
@@ -198,6 +205,9 @@ export default function Room04_Booth() {
             <button onClick={togglePlayback} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all">
               {isPlaying && !isRecording ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
             </button>
+            <button onClick={stopEverything} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all text-[#888]">
+              <Square size={20} />
+            </button>
             <button onClick={isRecording ? stopEverything : startHardwareRecording} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse' : 'bg-[#111] border border-[#333] text-white hover:text-[#E60000]'}`}>
               <Mic size={24} />
             </button>
@@ -214,29 +224,55 @@ export default function Room04_Booth() {
         <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
           <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Timeline Layers</h4>
           <div className="space-y-3">
-            {vocalStems.map(s => (
-              <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group">
+            {vocalStems.map(s => {
+              const isMuted = mutedStems.has(s.id);
+              return (
+              <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
                 <div className="flex justify-between items-center mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[9px] uppercase font-bold tracking-widest px-2 py-1 ${s.type === 'Lead' ? 'bg-[#E60000] text-white' : 'bg-[#222] text-[#888]'}`}>{s.type}</span>
+                  <div className="flex items-center gap-4">
+                    <select 
+                      defaultValue={s.type} 
+                      className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white"
+                    >
+                      <option value="Lead">Lead</option>
+                      <option value="Adlib">Adlib</option>
+                      <option value="Dub">Dub</option>
+                      <option value="Harm">Harmony</option>
+                    </select>
                     <span className="font-mono text-[10px] text-[#444]">{s.id.substring(5, 12)}</span>
                   </div>
-                  <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
+                  
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 mr-4">
+                      <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>
+                        {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                      </button>
+                      <input 
+                        type="range" min="0" max="1" step="0.05" defaultValue="1" 
+                        onChange={(e) => {
+                          const el = document.getElementById(`booth-stem-${s.id}`) as HTMLAudioElement;
+                          if (el) el.volume = parseFloat(e.target.value);
+                        }} 
+                        className="w-16 h-1 bg-[#222] rounded-full appearance-none accent-[#E60000] cursor-pointer"
+                      />
+                    </div>
+                    <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
+                  </div>
                 </div>
-                {/* HORIZONTAL TIMELINE OFFSET UI */}
+
                 <div className="flex items-center gap-4">
                   <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Start Bar</span>
                   <div className="flex-1 flex items-center gap-3">
                     <button onClick={() => updateStemOffset(s.id, Math.max(0, (s.offsetBars||0) - 1))} className="text-[#444] hover:text-white"><ChevronLeft size={16}/></button>
                     <div className="flex-1 h-1 bg-[#111] rounded-full relative">
-                       <div className="absolute h-full bg-[#E60000]" style={{ width: `${((s.offsetBars||0) / 64) * 100}%` }}></div>
+                       <div className="absolute h-full bg-[#E60000] transition-all" style={{ width: `${((s.offsetBars||0) / 64) * 100}%` }}></div>
                     </div>
                     <button onClick={() => updateStemOffset(s.id, (s.offsetBars||0) + 1)} className="text-[#444] hover:text-white"><ChevronRight size={16}/></button>
                   </div>
                   <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{s.offsetBars || 0}</span>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         </div>
 
@@ -244,7 +280,7 @@ export default function Room04_Booth() {
           <div className="flex items-center gap-2 text-[10px] font-mono text-green-500 uppercase tracking-widest opacity-80">
             {vocalStems.length > 0 && <><Save size={14} /> Matrix Synced</>}
           </div>
-          <button onClick={() => { stopEverything(); setActiveRoom("05"); }} disabled={vocalStems.length === 0} className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all">
+          <button onClick={() => { stopEverything(); setActiveRoom("05"); }} disabled={vocalStems.length === 0} className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed">
             Engineering Suite <ArrowRight size={16} />
           </button>
         </div>
