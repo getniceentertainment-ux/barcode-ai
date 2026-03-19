@@ -24,7 +24,8 @@ interface ChatMessage {
 }
 
 export default function Room10_Social() {
-  const { userSession, addToast, setActiveRoom } = useMatrixStore();
+  // Pull the new setter from the store
+  const { userSession, addToast, setIsUpgrading } = useMatrixStore();
   
   // Rules Gateway State
   const [hasAcceptedRules, setHasAcceptedRules] = useState(false);

@@ -158,7 +158,16 @@ export default function MatrixController() {
     window.location.reload();
   };
 
-  if (!hasAccess) return <EntryGateway />;
+  if (!hasAccess || isUpgrading) {
+    return <EntryGateway />;
+  }
+
+  // Otherwise, render the main Matrix
+  return (
+    <div className="matrix-layout">
+       {/* Your active rooms render here */}
+    </div>
+  )
 
   const rooms = [
     { id: "01", name: "The Lab", icon: <UploadCloud size={16} /> },
