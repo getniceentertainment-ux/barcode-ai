@@ -70,21 +70,23 @@ export default function Room06_Mastering() {
   };
 
   const handleMastering = async () => {
-    // 🛡️ ANTI-SPAM GUARD: Prevent multiple clicks
-    if (isProcessing || status === "processing") return;
-    if (!audioData?.url) { addToast("Audio analysis required.", "error"); return; }
+  // 1. GESTAPO CHECK: Ask the store for permission.
+  const authorized = await spendMasteringToken();
 
-    setIsProcessing(true);
-    setStatus("processing");
+  // 🛡️ CRITICAL GATE: If unauthorized, kill the function immediately.
+  if (!authorized) {
+    setStatus("idle");
+    return; // <--- This 'return' is what stops the leak.
+  }
 
-    try {
-      // 💳 MONETIZATION GUARD: Secure token burn via Zustand Store
-      const authorized = await spendMasteringToken();
-      if (!authorized) {
-        setStatus("idle");
-        setIsProcessing(false);
-        return;
-      }
+  // 2. Only now do we start the CPU-heavy mastering logic.
+  setStatus("processing");
+  try {
+     // Your audio mastering code goes here...
+  } catch (err) {
+     setStatus("idle");
+  }
+};
 
       const tmpCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const beatResp = await fetch(audioData.url);
