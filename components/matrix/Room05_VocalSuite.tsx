@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Sliders, PlayCircle, Loader2, CheckCircle2, Waves, Settings2, ArrowRight, Volume2, ListMusic } from "lucide-react";
+import { Sliders, PlayCircle, Loader2, CheckCircle2, Waves, Settings2, ArrowRight, Volume2, ListMusic, Play, Pause } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 
 const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -39,10 +39,14 @@ function audioBufferToWav(buffer: AudioBuffer) {
 
 export default function Room05_VocalSuite() {
   const { vocalStems, addVocalStem, removeVocalStem, setActiveRoom, addToast } = useMatrixStore();
+  
   const [activeChain, setActiveChain] = useState(VOCAL_CHAINS[0].id);
   const [presenceIntensity, setPresenceIntensity] = useState(VOCAL_CHAINS[0].presence);
   const [reverbMix, setReverbMix] = useState(VOCAL_CHAINS[0].reverb);
+  const [eqGains, setEqGains] = useState<number[]>([...VOCAL_CHAINS[0].eq]);
+  
   const [status, setStatus] = useState<"idle" | "processing" | "success">("idle");
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const wetGainRef = useRef<GainNode | null>(null);
@@ -51,82 +55,332 @@ export default function Room05_VocalSuite() {
   const compRef = useRef<DynamicsCompressorNode | null>(null);
   const saturationRef = useRef<WaveShaperNode | null>(null);
 
+  // Initialize Audio Graph
   useEffect(() => {
     if (!vocalStems.length) return;
-    const ctx = new AudioContext(); audioCtxRef.current = ctx;
-    const masterGain = ctx.createGain(); const convolver = ctx.createConvolver(); convolver.buffer = createReverb(ctx, 2.5, 2.0);
-    const wetGain = ctx.createGain(); const dryGain = ctx.createGain(); wetGainRef.current = wetGain; dryGainRef.current = dryGain;
-    eqBandsRef.current = FREQUENCIES.map((freq, i) => { const band = ctx.createBiquadFilter(); band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; band.frequency.value = freq; return band; });
-    const compressor = ctx.createDynamicsCompressor(); compRef.current = compressor;
-    const saturation = ctx.createWaveShaper(); saturation.curve = makeDistortionCurve(presenceIntensity / 2); saturation.oversample = '4x'; saturationRef.current = saturation;
-    masterGain.connect(dryGain); let prevNode: AudioNode = dryGain; eqBandsRef.current.forEach(band => { prevNode.connect(band); prevNode = band; }); prevNode.connect(compressor); compressor.connect(saturation); saturation.connect(ctx.destination);
-    masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(ctx.destination);
-    vocalStems.forEach(stem => { const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement; if (el && !(el as any)._routed) { try { ctx.createMediaElementSource(el).connect(masterGain); (el as any)._routed = true; } catch(e) {}}});
-    return () => { if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close(); };
+    const ctx = new window.AudioContext(); 
+    audioCtxRef.current = ctx;
+    
+    const masterGain = ctx.createGain(); 
+    const convolver = ctx.createConvolver(); 
+    convolver.buffer = createReverb(ctx, 2.5, 2.0);
+    const wetGain = ctx.createGain(); 
+    const dryGain = ctx.createGain(); 
+    
+    wetGainRef.current = wetGain; 
+    dryGainRef.current = dryGain;
+
+    eqBandsRef.current = FREQUENCIES.map((freq, i) => { 
+      const band = ctx.createBiquadFilter(); 
+      band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; 
+      band.frequency.value = freq; 
+      return band; 
+    });
+    
+    const compressor = ctx.createDynamicsCompressor(); 
+    compRef.current = compressor;
+    
+    const saturation = ctx.createWaveShaper(); 
+    saturation.curve = makeDistortionCurve(presenceIntensity / 2); 
+    saturation.oversample = '4x'; 
+    saturationRef.current = saturation;
+    
+    masterGain.connect(dryGain); 
+    let prevNode: AudioNode = dryGain; 
+    eqBandsRef.current.forEach(band => { prevNode.connect(band); prevNode = band; }); 
+    prevNode.connect(compressor); 
+    compressor.connect(saturation); 
+    saturation.connect(ctx.destination);
+    
+    masterGain.connect(convolver); 
+    convolver.connect(wetGain); 
+    wetGain.connect(ctx.destination);
+    
+    vocalStems.forEach(stem => { 
+      const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement; 
+      if (el && !(el as any)._routed) { 
+        try { 
+          ctx.createMediaElementSource(el).connect(masterGain); 
+          (el as any)._routed = true; 
+        } catch(e) {}
+      }
+    });
+    
+    return () => { 
+      if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close(); 
+    };
   }, [vocalStems]);
 
+  // Sync Preset Selection to Local State
   useEffect(() => {
-    if (wetGainRef.current && dryGainRef.current) { wetGainRef.current.gain.value = reverbMix / 100; dryGainRef.current.gain.value = 1 - (reverbMix / 100); }
     const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
-    if (eqBandsRef.current.length === 10) eqBandsRef.current.forEach((band, i) => { band.gain.value = preset.eq[i]; });
-    if (compRef.current) { compRef.current.ratio.value = preset.comp.ratio; compRef.current.attack.value = preset.comp.attack; compRef.current.release.value = preset.comp.release; compRef.current.knee.value = preset.comp.knee; compRef.current.threshold.value = preset.comp.threshold; }
+    setEqGains([...preset.eq]);
+    setPresenceIntensity(preset.presence);
+    setReverbMix(preset.reverb);
+  }, [activeChain]);
+
+  // Apply State Changes to Audio Graph Nodes dynamically
+  useEffect(() => {
+    if (wetGainRef.current && dryGainRef.current) { 
+      wetGainRef.current.gain.value = reverbMix / 100; 
+      dryGainRef.current.gain.value = 1 - (reverbMix / 100); 
+    }
+    if (eqBandsRef.current.length === 10) {
+      eqBandsRef.current.forEach((band, i) => { band.gain.value = eqGains[i]; });
+    }
+    const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
+    if (compRef.current) { 
+      compRef.current.ratio.value = preset.comp.ratio; 
+      compRef.current.attack.value = preset.comp.attack; 
+      compRef.current.release.value = preset.comp.release; 
+      compRef.current.knee.value = preset.comp.knee; 
+      compRef.current.threshold.value = preset.comp.threshold; 
+    }
     if (saturationRef.current) saturationRef.current.curve = makeDistortionCurve(presenceIntensity / 2);
-  }, [reverbMix, presenceIntensity, activeChain]);
+  }, [reverbMix, presenceIntensity, eqGains, activeChain]);
+
+  const togglePreviewPlayback = () => {
+    if (audioCtxRef.current?.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
+    const willPlay = !isPreviewPlaying;
+    setIsPreviewPlaying(willPlay);
+    
+    vocalStems.forEach(stem => {
+      const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
+      if (el) {
+        if (willPlay) {
+          el.currentTime = 0;
+          el.play().catch(()=>{});
+        } else {
+          el.pause();
+        }
+      }
+    });
+  };
+
+  const updateEqBand = (index: number, val: number) => {
+    const newGains = [...eqGains];
+    newGains[index] = val;
+    setEqGains(newGains);
+  };
 
   const handleApplyEngineering = async () => {
+    setIsPreviewPlaying(false);
+    vocalStems.forEach(stem => (document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement)?.pause());
+    
     setStatus("processing");
     try {
-      const tmpCtx = new AudioContext(); const decodedBuffers: AudioBuffer[] = []; const activeStemIds: string[] = []; let maxDuration = 0;
-      for (const stem of vocalStems) { const resp = await fetch(stem.url); const audioBuf = await tmpCtx.decodeAudioData(await resp.arrayBuffer()); decodedBuffers.push(audioBuf); activeStemIds.push(stem.id); if (audioBuf.duration > maxDuration) maxDuration = audioBuf.duration; }
+      const tmpCtx = new window.AudioContext(); 
+      const decodedBuffers: AudioBuffer[] = []; 
+      const activeStemIds: string[] = []; 
+      let maxDuration = 0;
+      
+      for (const stem of vocalStems) { 
+        const resp = await fetch(stem.url); 
+        const audioBuf = await tmpCtx.decodeAudioData(await resp.arrayBuffer()); 
+        decodedBuffers.push(audioBuf); 
+        activeStemIds.push(stem.id); 
+        if (audioBuf.duration > maxDuration) maxDuration = audioBuf.duration; 
+      }
+      
       const offlineCtx = new OfflineAudioContext(2, tmpCtx.sampleRate * maxDuration, tmpCtx.sampleRate);
-      const masterGain = offlineCtx.createGain(); const convolver = offlineCtx.createConvolver(); convolver.buffer = createReverb(offlineCtx, 2.5, 2.0);
-      const wetGain = offlineCtx.createGain(); const dryGain = offlineCtx.createGain(); wetGain.gain.value = reverbMix / 100; dryGain.gain.value = 1 - (reverbMix / 100);
+      const masterGain = offlineCtx.createGain(); 
+      const convolver = offlineCtx.createConvolver(); 
+      convolver.buffer = createReverb(offlineCtx, 2.5, 2.0);
+      
+      const wetGain = offlineCtx.createGain(); 
+      const dryGain = offlineCtx.createGain(); 
+      wetGain.gain.value = reverbMix / 100; 
+      dryGain.gain.value = 1 - (reverbMix / 100);
+      
       const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
-      const offlineComp = offlineCtx.createDynamicsCompressor(); offlineComp.ratio.value = preset.comp.ratio; offlineComp.attack.value = preset.comp.attack; offlineComp.release.value = preset.comp.release; offlineComp.knee.value = preset.comp.knee; offlineComp.threshold.value = preset.comp.threshold;
-      const offlineSaturation = offlineCtx.createWaveShaper(); offlineSaturation.curve = makeDistortionCurve(presenceIntensity / 2);
-      masterGain.connect(dryGain); let prevOfflineNode: AudioNode = dryGain; FREQUENCIES.forEach((freq, i) => { const band = offlineCtx.createBiquadFilter(); band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; band.frequency.value = freq; band.gain.value = preset.eq[i]; prevOfflineNode.connect(band); prevOfflineNode = band; });
-      prevOfflineNode.connect(offlineComp); offlineComp.connect(offlineSaturation); offlineSaturation.connect(offlineCtx.destination);
-      masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(offlineCtx.destination);
-      decodedBuffers.forEach(buf => { const source = offlineCtx.createBufferSource(); source.buffer = buf; source.connect(masterGain); source.start(0); });
+      const offlineComp = offlineCtx.createDynamicsCompressor(); 
+      offlineComp.ratio.value = preset.comp.ratio; 
+      offlineComp.attack.value = preset.comp.attack; 
+      offlineComp.release.value = preset.comp.release; 
+      offlineComp.knee.value = preset.comp.knee; 
+      offlineComp.threshold.value = preset.comp.threshold;
+      
+      const offlineSaturation = offlineCtx.createWaveShaper(); 
+      offlineSaturation.curve = makeDistortionCurve(presenceIntensity / 2);
+      
+      masterGain.connect(dryGain); 
+      let prevOfflineNode: AudioNode = dryGain; 
+      
+      FREQUENCIES.forEach((freq, i) => { 
+        const band = offlineCtx.createBiquadFilter(); 
+        band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; 
+        band.frequency.value = freq; 
+        band.gain.value = eqGains[i]; // Using customized state, not raw preset!
+        prevOfflineNode.connect(band); 
+        prevOfflineNode = band; 
+      });
+      
+      prevOfflineNode.connect(offlineComp); 
+      offlineComp.connect(offlineSaturation); 
+      offlineSaturation.connect(offlineCtx.destination);
+      masterGain.connect(convolver); 
+      convolver.connect(wetGain); 
+      wetGain.connect(offlineCtx.destination);
+      
+      decodedBuffers.forEach(buf => { 
+        const source = offlineCtx.createBufferSource(); 
+        source.buffer = buf; 
+        source.connect(masterGain); 
+        source.start(0); 
+      });
+      
       const renderedBuffer = await offlineCtx.startRendering();
       activeStemIds.forEach(id => removeVocalStem(id));
       
-      // FIXED BUILD ERROR: Added offsetBars: 0
       addVocalStem({ id: `MIXED_STEM_${Date.now()}`, type: "Lead", url: URL.createObjectURL(audioBufferToWav(renderedBuffer)), blob: audioBufferToWav(renderedBuffer), volume: 0, offsetBars: 0 });
       
       setStatus("success");
-    } catch (err: any) { setStatus("idle"); if(addToast) addToast(err.message, "error"); }
+    } catch (err: any) { 
+      setStatus("idle"); 
+      if(addToast) addToast(err.message, "error"); 
+    }
   };
 
   return (
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 border border-[#222]">
-      {vocalStems.map(s => <audio key={s.id} id={`audio-stem-${s.id}`} src={s.url} crossOrigin="anonymous" className="hidden" />)}
+      {vocalStems.map((s, idx) => (
+        <audio 
+          key={s.id} 
+          id={`audio-stem-${s.id}`} 
+          src={s.url} 
+          crossOrigin="anonymous" 
+          className="hidden" 
+          onEnded={() => { if (idx === 0) setIsPreviewPlaying(false); }}
+        />
+      ))}
+      
+      {/* LEFT COLUMN: PRESETS */}
       <div className="w-full md:w-1/3 border-r border-[#222] flex flex-col bg-black">
-        <div className="p-6 border-b border-[#222]"><h2 className="font-oswald text-2xl uppercase font-bold text-white flex items-center gap-3"><Settings2 size={24} className="text-[#E60000]" /> Engineering</h2></div>
+        <div className="p-6 border-b border-[#222]">
+          <h2 className="font-oswald text-2xl uppercase font-bold text-white flex items-center gap-3">
+            <Settings2 size={24} className="text-[#E60000]" /> Engineering
+          </h2>
+        </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {VOCAL_CHAINS.map(c => (
-            <button key={c.id} onClick={() => { setActiveChain(c.id); setPresenceIntensity(c.presence); setReverbMix(c.reverb); }} className={`w-full text-left p-4 border transition-all ${activeChain === c.id ? 'border-[#E60000] bg-[#110000]' : 'border-[#222] bg-[#0a0a0a] hover:border-[#555]'}`}>
+            <button key={c.id} onClick={() => setActiveChain(c.id)} className={`w-full text-left p-4 border transition-all ${activeChain === c.id ? 'border-[#E60000] bg-[#110000]' : 'border-[#222] bg-[#0a0a0a] hover:border-[#555]'}`}>
               <span className={`font-oswald text-lg uppercase font-bold ${activeChain === c.id ? 'text-white' : 'text-gray-400'}`}>{c.name}</span>
               <span className="font-mono text-[9px] text-[#888] block mt-1">{c.desc}</span>
             </button>
           ))}
         </div>
       </div>
-      <div className="flex-1 flex flex-col p-12 relative overflow-hidden bg-black">
+
+      {/* RIGHT COLUMN: RACK */}
+      <div className="flex-1 flex flex-col p-6 lg:p-12 relative overflow-y-auto custom-scrollbar bg-black">
         <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none"><Waves size={400} /></div>
-        <div className="relative z-10 max-w-xl mx-auto w-full flex-1 flex flex-col">
-          <div className="bg-black/40 backdrop-blur-sm border border-[#222] p-8 mb-8">
-            <h3 className="font-oswald text-lg uppercase text-[#E60000] mb-6 border-b border-[#222] pb-3 flex items-center gap-2"><Sliders size={16} /> Macro Adjustments</h3>
-            <div className="space-y-10">
-              <div><div className="flex justify-between items-center mb-3"><label className="text-[10px] font-mono uppercase text-[#888]">Presence / Saturation</label><span className="text-xs font-mono text-white">{presenceIntensity}%</span></div><input type="range" min="0" max="100" value={presenceIntensity} onChange={(e) => setPresenceIntensity(Number(e.target.value))} className="w-full accent-[#E60000]" /></div>
-              <div><div className="flex justify-between items-center mb-3"><label className="text-[10px] font-mono uppercase text-[#888]">Vocal Space (Reverb)</label><span className="text-xs font-mono text-white">{reverbMix}%</span></div><input type="range" min="0" max="100" value={reverbMix} onChange={(e) => setReverbMix(Number(e.target.value))} className="w-full accent-[#E60000]" /></div>
+        
+        <div className="relative z-10 max-w-2xl mx-auto w-full flex-1 flex flex-col gap-6">
+          
+          {/* PLAYBACK PREVIEW HEADER */}
+          <div className="flex items-center justify-between bg-[#111] border border-[#222] p-4 rounded-sm">
+             <div className="flex items-center gap-4">
+                <button 
+                  onClick={togglePreviewPlayback}
+                  disabled={vocalStems.length === 0 || status !== "idle"}
+                  className={`w-12 h-12 flex items-center justify-center rounded-full transition-all disabled:opacity-50 ${isPreviewPlaying ? 'bg-[#E60000] text-white animate-pulse' : 'bg-white text-black hover:bg-[#E60000] hover:text-white'}`}
+                >
+                  {isPreviewPlaying ? <Pause size={20} /> : <Play size={20} className="ml-1" />}
+                </button>
+                <div>
+                  <p className="font-oswald text-sm text-white uppercase tracking-widest font-bold">Live Vocal Preview</p>
+                  <p className="font-mono text-[9px] text-[#888] uppercase tracking-widest mt-1">Audition chain before baking</p>
+                </div>
+             </div>
+             <div className="flex items-center gap-2">
+                <Volume2 size={16} className={isPreviewPlaying ? "text-[#E60000]" : "text-[#444]"} />
+             </div>
+          </div>
+
+          {/* 10-BAND EQ UI */}
+          <div className="bg-black/80 backdrop-blur-sm border border-[#222] p-6 lg:p-8 rounded-sm">
+            <h3 className="font-oswald text-lg uppercase text-white mb-6 border-b border-[#222] pb-3 flex items-center justify-between">
+              <span className="flex items-center gap-2"><Sliders size={16} className="text-[#E60000]" /> Parametric EQ</span>
+              <span className="text-[10px] font-mono text-[#E60000] tracking-widest">±12dB</span>
+            </h3>
+            
+            <div className="flex justify-between items-end h-48 gap-1 sm:gap-2 mb-2">
+              {FREQUENCIES.map((freq, i) => (
+                <div key={freq} className="flex flex-col items-center flex-1 group">
+                  <span className="text-[9px] font-mono text-[#E60000] mb-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {eqGains[i] > 0 ? '+' : ''}{eqGains[i].toFixed(1)}
+                  </span>
+                  <input
+                    type="range"
+                    min="-12" max="12" step="0.5"
+                    value={eqGains[i]}
+                    onChange={(e) => updateEqBand(i, parseFloat(e.target.value))}
+                    className="w-2 h-32 appearance-none bg-[#222] outline-none accent-[#E60000] hover:bg-[#333] transition-colors rounded-full cursor-pointer"
+                    style={{ WebkitAppearance: 'slider-vertical' }}
+                  />
+                  <span className="text-[8px] font-mono text-[#888] mt-4 font-bold">
+                    {freq >= 1000 ? `${freq/1000}k` : freq}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="mt-auto">
-            {status === "idle" && <button onClick={handleApplyEngineering} disabled={vocalStems.length === 0} className="w-full bg-[#E60000] text-white py-6 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-3">Bake & Apply Chain <PlayCircle size={20} /></button>}
-            {status === "processing" && <div className="bg-[#110000] border-2 border-[#E60000] p-10 flex flex-col items-center animate-pulse"><Loader2 size={32} className="text-[#E60000] animate-spin mb-4" /><p className="font-oswald text-xl uppercase font-bold text-white">Rendering Matrix...</p></div>}
-            {status === "success" && <div className="bg-green-950/20 border-2 border-green-500/50 p-10 flex flex-col items-center animate-in zoom-in"><CheckCircle2 size={32} className="text-green-500 mb-4" /><p className="font-oswald text-xl uppercase font-bold text-white mb-6">Vocals Engineered</p><button onClick={() => setActiveRoom("06")} className="w-full bg-white text-black py-4 font-oswald text-md font-bold uppercase transition-all flex justify-center items-center gap-3">Proceed to Mastering <ArrowRight size={18} /></button></div>}
+
+          {/* MACRO ADJUSTMENTS */}
+          <div className="bg-black/80 backdrop-blur-sm border border-[#222] p-6 lg:p-8 rounded-sm mb-8">
+            <div className="space-y-8">
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <label className="text-[10px] font-mono uppercase text-[#888] font-bold">Presence / Saturation</label>
+                  <span className="text-xs font-mono text-white">{presenceIntensity}%</span>
+                </div>
+                <input type="range" min="0" max="100" value={presenceIntensity} onChange={(e) => setPresenceIntensity(Number(e.target.value))} className="w-full accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
+              </div>
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <label className="text-[10px] font-mono uppercase text-[#888] font-bold">Vocal Space (Reverb Size)</label>
+                  <span className="text-xs font-mono text-white">{reverbMix}%</span>
+                </div>
+                <input type="range" min="0" max="100" value={reverbMix} onChange={(e) => setReverbMix(Number(e.target.value))} className="w-full accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
+              </div>
+            </div>
           </div>
+
+          {/* ACTION BUTTONS */}
+          <div className="mt-auto shrink-0">
+            {status === "idle" && (
+              <button 
+                onClick={handleApplyEngineering} 
+                disabled={vocalStems.length === 0} 
+                className="w-full bg-[#E60000] text-white py-6 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-3 disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(230,0,0,0.2)]"
+              >
+                Bake & Apply Chain <PlayCircle size={20} />
+              </button>
+            )}
+            
+            {status === "processing" && (
+              <div className="bg-[#110000] border-2 border-[#E60000] p-10 flex flex-col items-center animate-pulse rounded-sm">
+                <Loader2 size={32} className="text-[#E60000] animate-spin mb-4" />
+                <p className="font-oswald text-xl uppercase font-bold text-white tracking-widest">Rendering Matrix...</p>
+              </div>
+            )}
+            
+            {status === "success" && (
+              <div className="bg-green-950/20 border-2 border-green-500/50 p-10 flex flex-col items-center animate-in zoom-in rounded-sm">
+                <CheckCircle2 size={32} className="text-green-500 mb-4" />
+                <p className="font-oswald text-xl uppercase font-bold text-white mb-6 tracking-widest">Vocals Engineered</p>
+                <button 
+                  onClick={() => setActiveRoom("06")} 
+                  className="w-full bg-white text-black py-4 font-oswald text-md font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex justify-center items-center gap-3"
+                >
+                  Proceed to Mastering <ArrowRight size={18} />
+                </button>
+              </div>
+            )}
+          </div>
+          
         </div>
       </div>
     </div>

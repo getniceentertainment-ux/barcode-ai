@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic2, Activity, CheckCircle2, BrainCircuit, ArrowRight, Info, AudioWaveform, Plus, Minus, RefreshCw } from "lucide-react";
+import { Mic2, Activity, CheckCircle2, BrainCircuit, ArrowRight, Info, AudioWaveform, Plus, Minus, RefreshCw, Play, Pause } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { BlueprintSection } from "../../lib/types";
 
@@ -9,15 +9,18 @@ import { BlueprintSection } from "../../lib/types";
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 export default function Room02_BrainTrain() {
-  // THE FIX: Destructure flowDNA from the store to check if we already completed this room!
   const { flowDNA, setFlowDNA, setActiveRoom, audioData, setGwStyle, blueprint, setBlueprint } = useMatrixStore();
 
-  // THE FIX: If flowDNA already exists in our Matrix session, jump straight to "success"
   const [status, setStatus] = useState<"idle" | "analyzing" | "success">(flowDNA ? "success" : "idle");
   const [micStatus, setMicStatus] = useState<"idle" | "listening" | "analyzing_cadence" | "recorded">("idle");
   const [textInput, setTextInput] = useState("");
   const [detectedStyle, setDetectedStyle] = useState<{ id: string; name: string } | null>(null);
   
+  // Audio Preview States
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
+  const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const previewAudioRef = useRef<HTMLAudioElement>(null);
+
   // UI States
   const [countdown, setCountdown] = useState(10);
 
@@ -42,14 +45,12 @@ export default function Room02_BrainTrain() {
   useEffect(() => {
     isMounted.current = true;
     
-    // HARDWARE CLEANUP: This runs the exact millisecond you switch rooms.
     return () => {
       isMounted.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       
-      // 🚨 THE BLUE DOT FIX: Assassinate the hardware microphone stream BEFORE touching the AudioContext
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach(track => {
           track.stop();
@@ -60,23 +61,37 @@ export default function Room02_BrainTrain() {
       if (audioContextRef.current && audioContextRef.current.state !== "closed") {
         audioContextRef.current.close().catch(e => console.error("AudioContext close error:", e));
       }
+
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+      }
     };
   }, []);
 
   const handleRecordCadence = async () => {
     try {
-      // 1. Hardware Request
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // 🚨 THE PROMISE RACE FIX: If they clicked record and instantly switched rooms 
-      // before this promise resolved, kill the mic immediately.
       if (!isMounted.current) {
         stream.getTracks().forEach(track => track.stop());
         return;
       }
 
-      mediaStreamRef.current = stream; // Secure the stream in the Ref for cleanup tracking
+      mediaStreamRef.current = stream; 
       
+      // --- SETUP MEDIA RECORDER FOR PLAYBACK ---
+      const mediaRecorder = new MediaRecorder(stream);
+      const audioChunks: BlobPart[] = [];
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        setRecordedAudioUrl(URL.createObjectURL(audioBlob));
+      };
+      mediaRecorder.start();
+      // -----------------------------------------
+
       setMicStatus("listening");
       setCountdown(10);
 
@@ -125,7 +140,6 @@ export default function Room02_BrainTrain() {
       drawWaveform();
       // ---------------------------------
 
-      // 2. Start Visual Countdown
       countdownIntervalRef.current = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
@@ -136,12 +150,11 @@ export default function Room02_BrainTrain() {
         });
       }, 1000);
 
-      // 3. Active Listening Phase (10 Seconds)
       await delay(10000); 
       
       if (!isMounted.current) return;
       
-      // Safety: Stop the microphone hardware and visualizer 
+      mediaRecorder.stop();
       stream.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
       
@@ -152,11 +165,9 @@ export default function Room02_BrainTrain() {
       
       setMicStatus("analyzing_cadence");
 
-      // 4. DSP Analytics Phase
       await delay(2000);
       if (!isMounted.current) return;
 
-      // PRODUCTION LOGIC: Calculating physical flow architecture based on Room 01's BPM extraction
       let predictedId = "getnice_hybrid";
       if (audioData?.bpm) {
         if (audioData.bpm >= 138) predictedId = "drill";
@@ -175,13 +186,25 @@ export default function Room02_BrainTrain() {
     }
   };
 
+  const togglePreviewPlayback = () => {
+    if (!previewAudioRef.current || !recordedAudioUrl) return;
+    
+    if (isPlayingPreview) {
+      previewAudioRef.current.pause();
+      setIsPlayingPreview(false);
+    } else {
+      previewAudioRef.current.currentTime = 0;
+      previewAudioRef.current.play();
+      setIsPlayingPreview(true);
+    }
+  };
+
   const handleSynthesize = async () => {
     setStatus("analyzing");
 
     let finalStyleId = detectedStyle?.id || "getnice_hybrid";
     let finalStyleName = detectedStyle?.name || STYLES.getnice_hybrid;
 
-    // PRODUCTION LOGIC: Text Density Analytics
     if (micStatus !== "recorded" && textInput.trim()) {
       const lines = textInput.split("\n").filter((l) => l.trim().length > 0);
       if (lines.length > 0) {
@@ -199,25 +222,21 @@ export default function Room02_BrainTrain() {
       }
     }
 
-    // Mathematical Formatting Buffer
     await delay(2500); 
     if (!isMounted.current) return;
 
-    // Construct the payload required for Room 03 TALON Engine
     setFlowDNA({
       tag: `GetNice Hybrid [${finalStyleName}]`,
       referenceText: textInput.trim() || "Focus on the struggle, the hustle, and survival.",
       syllableDensity: finalStyleId === "chopper" ? 5.5 : finalStyleId === "drill" ? 4.0 : 3.5,
     });
 
-    // PRODUCTION LOGIC: Smart Blueprint Generator
-    // This dynamically calculates exactly how many hooks/verses fit in the song based on the DSP duration
     if (audioData?.totalBars) {
       let remaining = audioData.totalBars;
       const calc: any[] = [];
       
       if (remaining >= 4) { calc.push({ id: "intro", type: "INTRO", bars: 4 }); remaining -= 4; }
-      if (remaining >= 4) { remaining -= 4; } // Save 4 for outro
+      if (remaining >= 4) { remaining -= 4; }
 
       let idCounter = 1;
       while (remaining >= 24) {
@@ -247,12 +266,30 @@ export default function Room02_BrainTrain() {
     setBlueprint(newBp);
   };
 
+  const handleResetFlow = () => {
+    setStatus("idle");
+    setMicStatus("idle");
+    setRecordedAudioUrl(null);
+    setIsPlayingPreview(false);
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current.src = "";
+    }
+  };
+
   return (
     <div className="h-full flex flex-col items-center justify-center max-w-5xl mx-auto animate-in fade-in duration-500 py-10 overflow-y-auto custom-scrollbar">
       
+      {/* Hidden Audio Player for Cadence Preview */}
+      <audio 
+        ref={previewAudioRef} 
+        src={recordedAudioUrl || ""} 
+        onEnded={() => setIsPlayingPreview(false)} 
+        className="hidden" 
+      />
+
       {status === "idle" && (
         <div className="w-full">
-          {/* Header */}
           <div className="text-center mb-12">
             <h2 className="font-oswald text-4xl uppercase tracking-widest mb-4 font-bold flex items-center justify-center gap-4 text-white">
               <BrainCircuit className="text-[#E60000]" size={40} /> Brain Train Matrix
@@ -267,7 +304,7 @@ export default function Room02_BrainTrain() {
             {/* Column 1: Audio Cadence Capture */}
             <div
               className={`bg-[#050505] border p-8 flex flex-col items-center text-center rounded-lg group transition-all duration-300 relative overflow-hidden
-              ${micStatus === "listening" ? "border-[#E60000] shadow-[0_0_20px_rgba(230,0,0,0.1)]" : micStatus === "analyzing_cadence" ? "border-yellow-500/50" : "border-[#222] hover:border-[#E60000]/50"}`}
+              ${micStatus === "listening" ? "border-[#E60000] shadow-[0_0_20px_rgba(230,0,0,0.1)]" : micStatus === "analyzing_cadence" ? "border-yellow-500/50" : micStatus === "recorded" ? "border-green-500/30" : "border-[#222] hover:border-[#E60000]/50"}`}
             >
               <h3 className="font-oswald text-xl uppercase tracking-widest mb-8 font-bold text-white relative z-10">1. Audio Cadence</h3>
 
@@ -290,12 +327,16 @@ export default function Room02_BrainTrain() {
                     </div>
                   ) : (
                     <button
-                      onClick={handleRecordCadence}
-                      disabled={micStatus !== "idle"}
+                      onClick={micStatus === "recorded" ? togglePreviewPlayback : handleRecordCadence}
+                      disabled={micStatus === "analyzing_cadence"}
                       className={`w-24 h-24 rounded-full border-2 flex items-center justify-center transition-all duration-300
-                      ${micStatus === "recorded" ? "bg-green-500/10 border-green-500 text-green-500" : "bg-black border-[#222] text-[#444] group-hover:text-white group-hover:border-white"}`}
+                      ${micStatus === "recorded" 
+                        ? (isPlayingPreview ? "bg-[#E60000] border-[#E60000] text-white animate-pulse" : "bg-green-500/10 border-green-500 text-green-500 hover:bg-green-500 hover:text-black") 
+                        : "bg-black border-[#222] text-[#444] group-hover:text-white group-hover:border-white"}`}
                     >
-                      {micStatus === "recorded" ? <CheckCircle2 size={40} /> : <Mic2 size={40} />}
+                      {micStatus === "recorded" 
+                        ? (isPlayingPreview ? <Pause size={40} /> : <Play size={40} className="ml-2" />) 
+                        : <Mic2 size={40} />}
                     </button>
                   )}
                 </div>
@@ -303,9 +344,9 @@ export default function Room02_BrainTrain() {
 
               <div className="h-10 flex items-center justify-center w-full relative z-10">
                 {micStatus === "recorded" && detectedStyle ? (
-                  <div className="bg-green-500/10 border border-green-500/30 px-4 py-2 flex flex-col w-full animate-in zoom-in">
-                    <span className="text-[8px] font-mono text-green-500 uppercase tracking-widest font-bold">Vocal Match Detected</span>
-                    <span className="text-xs font-oswald text-white uppercase tracking-widest">{detectedStyle.name}</span>
+                  <div className="flex flex-col items-center animate-in zoom-in">
+                    <span className="text-[8px] font-mono text-green-500 uppercase tracking-widest font-bold mb-1 border border-green-500/30 px-2 py-0.5 bg-green-500/10">Match: {detectedStyle.name}</span>
+                    <span className="text-[9px] font-mono text-[#888] uppercase tracking-widest mt-2 flex items-center gap-1">Click to Audition Cadence</span>
                   </div>
                 ) : (
                   <span className="text-[9px] font-mono text-[#555] uppercase tracking-widest">
@@ -328,7 +369,6 @@ export default function Room02_BrainTrain() {
             </div>
           </div>
 
-          {/* Integration Info Box */}
           <div className="flex items-start gap-3 p-4 bg-[#110000] border border-[#E60000]/30 mb-8 max-w-2xl mx-auto">
             <Info className="text-[#E60000] shrink-0 mt-0.5" size={18} />
             <div>
@@ -342,14 +382,13 @@ export default function Room02_BrainTrain() {
           <button
             disabled={(micStatus === "idle" || micStatus === "listening") && textInput.trim() === ""}
             onClick={handleSynthesize}
-            className="w-full bg-[#E60000] disabled:opacity-20 disabled:cursor-not-allowed text-white py-6 font-oswald text-lg font-bold uppercase tracking-[0.4em] rounded transition-all hover:bg-red-700"
+            className="w-full bg-[#E60000] disabled:opacity-20 disabled:cursor-not-allowed text-white py-6 font-oswald text-lg font-bold uppercase tracking-[0.4em] rounded transition-all hover:bg-red-700 shadow-[0_0_20px_rgba(230,0,0,0.2)]"
           >
             Synthesize Hybrid Flow
           </button>
         </div>
       )}
 
-      {/* Analyzing Phase View */}
       {status === "analyzing" && (
         <div className="flex flex-col items-center">
           <Activity size={80} className="text-[#E60000] animate-spin mb-8" />
@@ -358,14 +397,12 @@ export default function Room02_BrainTrain() {
         </div>
       )}
 
-      {/* Result Phase View */}
       {status === "success" && (
         <div className="w-full animate-in zoom-in duration-500 max-w-2xl mx-auto">
           <div className="text-center mb-8 border-b border-[#222] pb-8">
             <CheckCircle2 size={64} className="text-green-500 mx-auto mb-4 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" />
             <h2 className="font-oswald text-3xl uppercase tracking-widest mb-2 font-bold text-white">DNA & Blueprint Locked</h2>
             
-            {/* THE FIX: Read from the global flowDNA state so it stays alive when returning */}
             {flowDNA?.tag && (
               <p className="font-mono text-[10px] text-green-500 uppercase tracking-widest mb-4 border border-green-500/20 bg-green-500/5 py-2 inline-block px-4 mt-4">
                 Architecture Matrix: {flowDNA.tag}
@@ -373,7 +410,6 @@ export default function Room02_BrainTrain() {
             )}
           </div>
 
-          {/* THE NEW STRUCTURAL MATH EDITOR */}
           <div className="bg-black border border-[#222] p-8 max-w-3xl mx-auto mb-8 shadow-lg">
              <div className="flex justify-between items-center mb-6 border-b border-[#111] pb-4">
                <h3 className="text-xl text-[#E60000] font-oswald uppercase tracking-widest font-bold">DSP Structural Blueprint</h3>
@@ -419,12 +455,8 @@ export default function Room02_BrainTrain() {
               Enter Ghostwriter Suite <ArrowRight size={20} />
             </button>
             
-            {/* THE FIX: Provide an intuitive way to erase the DNA and start over without breaking the store */}
             <button 
-              onClick={() => {
-                setStatus("idle");
-                setMicStatus("idle");
-              }}
+              onClick={handleResetFlow}
               className="w-full border border-[#333] text-[#888] py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#111] hover:text-white transition-all flex items-center justify-center gap-2"
             >
               <RefreshCw size={14} /> Re-Configure Flow DNA
