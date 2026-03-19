@@ -107,7 +107,7 @@ export default function EntryGateway() {
     // Background execution: Grant referral credits if they used an affiliate link
     const savedRef = localStorage.getItem('barcode_referral');
     if (savedRef && userProfile.id) {
-      fetch('/api/referrals', {
+      fetch('/api/referrals', { ... }{
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: userProfile.id, referralCode: savedRef })

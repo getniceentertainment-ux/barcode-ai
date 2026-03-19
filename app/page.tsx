@@ -43,17 +43,22 @@ export default function MatrixController() {
   // --- 🚨 THE AUTO-SAVE GUARDIAN 🚨 ---
   // This logic prevents the "id=eq.undefined" error by checking the ID inside the interval
   useEffect(() => {
-    if (!hasAccess || !userSession?.id) return;
+  // GATE 1: Don't even start the interval if we don't have basic access
+  if (!hasAccess || !userSession?.id) return;
 
-    const autoSaveInterval = setInterval(async () => {
-      // ALWAYS pull the freshest state directly from the store to avoid stale closures
-      const state = useMatrixStore.getState();
-      
-      // Safety Gate: Do not fire the request if the ID is missing
-      if (!state.userSession?.id || !state.hasAccess) return;
+  const autoSaveInterval = setInterval(async () => {
+    const state = useMatrixStore.getState();
+    
+    // GATE 2: Defensive check - if ID dropped to undefined mid-loop, ABORT
+    if (!state.userSession?.id) {
+      console.warn("Auto-sync blocked: Session ID unavailable.");
+      return;
+    }
 
-      try {
-        await supabase.from('profiles').update({
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
           matrix_state: {
             audioData: state.audioData,
             vocalStems: state.vocalStems.map(s => ({ 
@@ -63,16 +68,19 @@ export default function MatrixController() {
             blueprint: state.blueprint
           },
           last_saved: new Date().toISOString()
-        }).eq('id', state.userSession.id);
+        })
+        // GATE 3: Final check to ensure we never pass "undefined" to the URL
+        .eq('id', state.userSession.id);
         
-        console.log("Matrix State Synced to Ledger.");
-      } catch (error) {
-        console.error("Auto-save sync failed:", error);
-      }
-    }, 30000); // 30 second pulse
+      if (error) throw error;
+      console.log("Matrix Sync Successful.");
+    } catch (error) {
+      console.error("Auto-save sync failed:", error);
+    }
+  }, 30000); 
 
-    return () => clearInterval(autoSaveInterval);
-  }, [hasAccess, userSession?.id]);
+  return () => clearInterval(autoSaveInterval);
+}, [hasAccess, userSession?.id]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;
