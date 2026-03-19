@@ -18,6 +18,7 @@ interface MatrixState {
 
   // 💳 TRANSACTION ENGINE
   spendCredit: (amount?: number) => Promise<boolean>;
+  spendMasteringToken: () => Promise<boolean>;
 
   // RADIO PLAYER STATE
   playbackMode: 'session' | 'radio';
@@ -35,7 +36,7 @@ interface MatrixState {
   setActiveRoom: (roomId: string) => void;
   setActiveProject: (id: string | null, isFinalized: boolean) => void;
 
-  // 🛡️ PROTECTED SETTERS (Auto-burn credits)
+  // 🛡️ PROTECTED SETTERS
   audioData: AudioAnalysis | null;
   setAudioData: (data: AudioAnalysis) => Promise<void>;
   flowDNA: FlowDNA | null;
@@ -117,15 +118,12 @@ export const useMatrixStore = create<MatrixState>()(
         const newBalance = currentCredits - amount;
 
         try {
-          // Sync with Supabase profiles table
           const { error } = await supabase
             .from('profiles')
             .update({ credits: newBalance })
             .eq('id', session.id);
 
           if (error) throw error;
-
-          // Update local state HUD
           set({ userSession: { ...session, creditsRemaining: newBalance } });
           get().addToast(`Matrix Resource Accessed. -${amount} CRD`, "info");
           return true;
@@ -135,8 +133,42 @@ export const useMatrixStore = create<MatrixState>()(
         }
       },
 
+      // --- 📀 MASTERING TOKEN HANDLER ---
+      spendMasteringToken: async () => {
+        const session = get().userSession;
+        if (!session) return false;
+        if (session.tier === "The Mogul") return true;
+
+        try {
+          // Verify tokens in DB to prevent frontend spoofing
+          const { data: profile, error: fetchError } = await supabase
+            .from('profiles')
+            .select('mastering_tokens')
+            .eq('id', session.id)
+            .single();
+
+          if (fetchError || !profile || profile.mastering_tokens < 1) {
+            get().addToast("Mastering Token Required ($4.99).", "error");
+            return false;
+          }
+
+          // Atomically decrement token
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ mastering_tokens: profile.mastering_tokens - 1 })
+            .eq('id', session.id);
+
+          if (updateError) throw updateError;
+          
+          get().addToast("Mastering Token Verified & Burned.", "success");
+          return true;
+        } catch (err) {
+          get().addToast("Token Authorization Failed.", "error");
+          return false;
+        }
+      },
+
       // --- 🛡️ PROTECTED SETTERS ---
-      // These automatically charge the user before saving state
       setAudioData: async (data) => {
         const success = await get().spendCredit(1);
         if (success) set({ audioData: data });
@@ -182,7 +214,7 @@ export const useMatrixStore = create<MatrixState>()(
         set((state) => ({ toasts: [...state.toasts, { id, message, type }] }));
         setTimeout(() => set((state) => ({ toasts: get().toasts.filter(t => t.id !== id) })), 4000);
       },
-      removeToast: (id) => set((state) => ({ toasts: get().toasts.filter(t => t.id !== id) })),
+      removeToast: (id) => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })),
 
       clearMatrix: () => set({
         audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
@@ -206,7 +238,7 @@ export const useMatrixStore = create<MatrixState>()(
         radioTrack: state.radioTrack,
         activeProjectId: state.activeProjectId,
         isProjectFinalized: state.isProjectFinalized,
-        userSession: state.userSession // Ensures credits persist across sessions
+        userSession: state.userSession 
       }),
     }
   )
