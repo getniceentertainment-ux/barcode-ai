@@ -46,8 +46,10 @@ export default function EntryGateway() {
     if (profile) {
       setUserProfile({ ...user, ...profile });
       
-      // B2B REDIRECT LOGIC: If they logged in through the B2B tab, route them to the portal
-      if (authMode === "b2b") {
+      // 🚨 THE REDIRECT UPGRADE 🚨
+      // If the user is currently on the "B2B" tab OR the "Login" tab 
+      // but they originally clicked the B2B button, send them to the portal.
+      if (authMode === "b2b" || window.location.hash === "#b2b") {
         window.location.href = "/dev-portal";
         return;
       }
