@@ -15,12 +15,13 @@ interface RosterNode {
   total_referrals: number;
 }
 
-const MOCK_CHAT = [
-  { id: 1, user: "SYSTEM", msg: "Global Syndicate Comms initialized.", isPlatform: true },
-  { id: 2, user: "Ghost_Node", msg: "Anyone got a 140BPM drill beat?", isPlatform: false },
-  { id: 3, user: "Aura_Synth", msg: "Just uploaded one to the marketplace.", isPlatform: false },
-  { id: 4, user: "NeonBlood", msg: "Need a feature for this new track, hit my escrow.", isPlatform: false },
-];
+// Initial System Message to anchor the chat
+const SYSTEM_INIT_MSG = { 
+  id: "sys_init", 
+  user: "SYSTEM", 
+  msg: "Global Syndicate Comms initialized. End-to-end encryption active.", 
+  isPlatform: true 
+};
 
 export default function Room10_Social() {
   const { userSession, addToast } = useMatrixStore();
@@ -35,12 +36,33 @@ export default function Room10_Social() {
   const [escrowStatus, setEscrowStatus] = useState<"idle" | "processing" | "locked">("idle");
 
   // Chat State
-  const [chat, setChat] = useState(MOCK_CHAT);
+  const [chat, setChat] = useState<any[]>([SYSTEM_INIT_MSG]);
   const [chatInput, setChatInput] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const commsChannelRef = useRef<any>(null); // Ref to hold the Supabase channel
 
   useEffect(() => {
     fetchLeaderboard();
+
+    // --- 🚨 SUPABASE REALTIME BROADCAST WIRING 🚨 ---
+    const channel = supabase.channel('global_comms', {
+      config: { broadcast: { self: true } } // self: true allows sender to see their own msg instantly
+    });
+
+    channel.on('broadcast', { event: 'new_message' }, (payload) => {
+      setChat(prev => [...prev, payload.payload]);
+    }).subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log("Connected to Global Syndicate.");
+      }
+    });
+
+    commsChannelRef.current = channel;
+
+    return () => {
+      // Clean up the subscription when leaving the room
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -72,16 +94,24 @@ export default function Room10_Social() {
     setTimeout(() => setEscrowStatus("locked"), 2500);
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || !commsChannelRef.current) return;
     
-    setChat(prev => [...prev, { 
-      id: Date.now(),
+    const newMessage = { 
+      id: Date.now().toString(),
       user: userSession?.stageName || "GUEST_NODE", 
       msg: chatInput,
       isPlatform: false
-    }]);
+    };
+
+    // Broadcast to all active nodes in Room 10
+    await commsChannelRef.current.send({
+      type: 'broadcast',
+      event: 'new_message',
+      payload: newMessage,
+    });
+
     setChatInput("");
   };
 
@@ -201,7 +231,6 @@ export default function Room10_Social() {
             ) : (
               <div className="p-8 flex flex-col h-full animate-in slide-in-from-right-8">
                 
-                {/* NEW: Dynamic Profile Link Header */}
                 <div className="mb-8 flex flex-col md:flex-row md:items-start justify-between gap-4 border-b border-[#222] pb-6">
                   <div>
                     <div className="inline-flex items-center gap-2 bg-[#110000] text-[#E60000] border border-[#330000] px-3 py-1 text-[9px] uppercase font-bold tracking-widest mb-4">
