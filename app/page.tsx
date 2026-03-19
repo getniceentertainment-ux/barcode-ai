@@ -235,10 +235,10 @@ export default function MatrixController() {
             <div className="mt-4 p-3 bg-[#050505] border border-[#222]">
               <p className="font-mono text-[9px] text-[#555] uppercase mb-1">Active Operator:</p>
               <p className="font-mono text-[10px] text-white truncate font-bold tracking-widest">
-                NODE_{userSession.id.substring(0, 8).toUpperCase()}
-              </p>
-              
-              <Link href={`/${encodeURIComponent(userSession.stageName || "Artist")}`} className="mt-3 flex items-center justify-center gap-2 w-full bg-[#111] border border-[#333] hover:border-[#E60000] hover:text-[#E60000] text-[#888] py-1.5 text-[9px] font-mono uppercase tracking-widest transition-colors">
+                 NODE_{userSession?.id?.substring(0, 8).toUpperCase() || "UNKNOWN"}
+               </p>
+               
+               <Link href={`/${encodeURIComponent(userSession?.stageName || "Artist")}`} className="mt-3 flex items-center justify-center gap-2 w-full bg-[#111] border border-[#333] hover:border-[#E60000] hover:text-[#E60000] text-[#888] py-1.5 text-[9px] font-mono uppercase tracking-widest transition-colors">
                 <User size={10} /> View Public Profile
               </Link>
               
