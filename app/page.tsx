@@ -158,17 +158,6 @@ export default function MatrixController() {
     window.location.reload();
   };
 
-  if (!hasAccess || isUpgrading) {
-    return <EntryGateway />;
-  }
-
-  // Otherwise, render the main Matrix
-  return (
-    <div className="matrix-layout">
-       {/* Your active rooms render here */}
-    </div>
-  )
-
   const rooms = [
     { id: "01", name: "The Lab", icon: <UploadCloud size={16} /> },
     { id: "02", name: "Brain Train", icon: <Cpu size={16} /> },
@@ -180,7 +169,7 @@ export default function MatrixController() {
     { id: "08", name: "The Bank & Vault", icon: <Wallet size={16} /> },
     { id: "09", name: "The Radio", icon: <Radio size={16} /> },
     { id: "10", name: "Social Syndicate", icon: <Users size={16} /> },
-    { id: "11", name: "B2B Terminal", icon: <Terminal size={16} /> }, // Room 11 Added
+    { id: "11", name: "B2B Terminal", icon: <Terminal size={16} /> }, 
   ];
 
   const renderActiveRoom = () => {
@@ -218,11 +207,24 @@ export default function MatrixController() {
       case "08": return <Room08_Bank />;
       case "09": return <Room09_Radio />;
       case "10": return <Room10_Social />;
-      case "11": return <B2BDeveloperPortal />; // Internalized B2B Gating
+      case "11": return <B2BDeveloperPortal />; 
       default: return <div />;
     }
   };
 
+  function formatTime(t: number) {
+    if (isNaN(t)) return "00:00";
+    const m = Math.floor(t / 60).toString().padStart(2, '0');
+    const s = Math.floor(t % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  // --- 🛡️ THE GATEWAY INTERCEPTOR ---
+  if (!hasAccess || isUpgrading) {
+    return <EntryGateway />;
+  }
+
+  // --- 💻 MAIN MATRIX UI ---
   return (
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-24 font-oswald">
       
@@ -325,11 +327,4 @@ export default function MatrixController() {
       </div>
     </div>
   );
-
-  function formatTime(t: number) {
-    if (isNaN(t)) return "00:00";
-    const m = Math.floor(t / 60).toString().padStart(2, '0');
-    const s = Math.floor(t % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  }
 }
