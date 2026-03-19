@@ -57,46 +57,35 @@ export default function Room06_Mastering() {
     if (data && (data as any).mastering_tokens > 0) setHasToken(true);
   };
 
-  const handlePurchaseToken = async () => {
-    if(addToast) addToast("Routing to Secure Payment...", "info");
-    // Mock Stripe flow - in prod, redirect to /api/stripe/checkout-mastering
-    setTimeout(async () => {
-      if (userSession?.id) {
-        await supabase.from('profiles').update({ mastering_tokens: 1 }).eq('id', userSession.id);
-        setHasToken(true);
-        if(addToast) addToast("Mastering Token Acquired.", "success");
-      }
-    }, 2000);
-  };
-
   const handleMastering = async () => {
-  // 1. GESTAPO CHECK: Ask the store for permission.
-  const authorized = await spendMasteringToken();
+    // 1. GESTAPO CHECK: Ask the store for permission (Burn token first)
+    const authorized = await spendMasteringToken();
 
-  // 🛡️ CRITICAL GATE: If unauthorized, kill the function immediately.
-  if (!authorized) {
-    setStatus("idle");
-    return; // <--- This 'return' is what stops the leak.
-  }
+    // 🛡️ CRITICAL GATE: If unauthorized, kill the function immediately.
+    if (!authorized) {
+      setStatus("idle");
+      setIsProcessing(false);
+      return; 
+    }
 
-  // 2. Only now do we start the CPU-heavy mastering logic.
-  setStatus("processing");
-  try {
-     // Your audio mastering code goes here...
-  } catch (err) {
-     setStatus("idle");
-  }
-};
+    // 2. Immediate UI Lock
+    setIsProcessing(true);
+    setStatus("processing");
 
+    try {
       const tmpCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const beatResp = await fetch(audioData.url);
+      
+      // Line 92: This is where your build was failing
+      const beatResp = await fetch(audioData!.url);
       const beatArrayBuf = await beatResp.arrayBuffer();
       const beatBuf = await tmpCtx.decodeAudioData(beatArrayBuf);
       let maxDuration = beatBuf.duration;
 
       const channelData = beatBuf.getChannelData(0);
       let sumSquares = 0;
-      for (let i = 0; i < channelData.length; i++) { sumSquares += channelData[i] * channelData[i]; }
+      for (let i = 0; i < channelData.length; i++) { 
+        sumSquares += channelData[i] * channelData[i]; 
+      }
       const measuredDB = 20 * Math.log10(Math.sqrt(sumSquares / channelData.length) || 0.0001);
       setActualLUFS(Math.round(measuredDB));
 
@@ -105,7 +94,9 @@ export default function Room06_Mastering() {
       mixBus.gain.value = Math.pow(10, ((lufs - measuredDB) / 20)); 
 
       const limiter = offlineCtx.createDynamicsCompressor();
-      limiter.threshold.value = -0.5; limiter.ratio.value = 20; 
+      limiter.threshold.value = -0.5; 
+      limiter.ratio.value = 20; 
+
       mixBus.connect(limiter);
       limiter.connect(offlineCtx.destination);
 
@@ -114,6 +105,7 @@ export default function Room06_Mastering() {
       beatSource.connect(mixBus); 
       beatSource.start(0);
 
+      // Line 117: Finalizing the render
       const renderedBuffer = await offlineCtx.startRendering();
       const wavBlob = audioBufferToWav(renderedBuffer);
       const finalUrl = URL.createObjectURL(wavBlob);
