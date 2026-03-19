@@ -44,10 +44,11 @@ export default function Room04_Booth() {
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const recordedChunksRef = useRef<Float32Array[]>([]);
   
-  // NEW: Track if the worklet is already injected into the context
+  // FIX: Persistent Stream Refs to prevent sample rate drift
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const recordedChunksRef = useRef<Float32Array[]>([]);
   const workletLoadedRef = useRef(false);
 
   const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
@@ -56,12 +57,17 @@ export default function Room04_Booth() {
   useEffect(() => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     audioCtxRef.current = new AudioContextClass();
+    
     return () => {
+      // Clean up hardware stream when leaving the Booth entirely
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      }
       audioCtxRef.current?.close();
     };
   }, []);
 
-  // PRE-LOAD STEMS INTO AUDIO BUFFERS (Zero Latency Preparation)
+  // PRE-LOAD STEMS INTO AUDIO BUFFERS
   useEffect(() => {
     const loadBuffers = async () => {
       if (!audioCtxRef.current) return;
@@ -81,7 +87,7 @@ export default function Room04_Booth() {
     loadBuffers();
   }, [vocalStems]);
 
-  // WAVESURFER INITIALIZATION (Visuals & Instrumental Playback)
+  // WAVESURFER INITIALIZATION
   useEffect(() => {
     if (waveformRef.current && audioData?.url && !wavesurferRef.current) {
       wavesurferRef.current = WaveSurfer.create({
@@ -90,7 +96,6 @@ export default function Room04_Booth() {
       });
       wavesurferRef.current.load(audioData.url);
       
-      // Throttled UI Updates to prevent main-thread locking
       let lastRender = 0;
       wavesurferRef.current.on('audioprocess', (time) => {
         if (time - lastRender > 0.1) {
@@ -104,7 +109,7 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // PARSE LYRICS FOR TELEPROMPTER
+  // PARSE LYRICS
   useEffect(() => {
     if (!generatedLyrics) return;
     const lines = generatedLyrics.split('\n');
@@ -123,65 +128,46 @@ export default function Room04_Booth() {
     setLyricLines(parsed);
   }, [generatedLyrics, audioData, blueprint]);
 
-  // SAMPLE ACCURATE PLAYBACK ENGINE
+  // SAMPLE ACCURATE PLAYBACK
   const togglePlayback = () => {
     if (!wavesurferRef.current || !audioCtxRef.current) return;
-    
-    if (audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume();
-    }
+    if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
 
     const willPlay = !isPlaying;
     setIsPlaying(willPlay);
     const playheadTime = wavesurferRef.current.getCurrentTime();
 
     if (willPlay) {
-      // Schedule precise playback start slightly in the future
       const scheduleTime = audioCtxRef.current.currentTime + 0.05; 
-      
       wavesurferRef.current.play();
 
-      // Clear old sources
-      activeSourcesRef.current.forEach(src => {
-          try { src.disconnect() } catch(e){}
-      });
+      activeSourcesRef.current.forEach(src => { try { src.disconnect() } catch(e){} });
       activeSourcesRef.current = [];
 
-      // Create new BufferSources for all active stems
       vocalStems.forEach(stem => {
         if (mutedStems.has(stem.id)) return;
-        
         const buffer = stemBuffersRef.current.get(stem.id);
         if (buffer) {
           const source = audioCtxRef.current!.createBufferSource();
           const gainNode = audioCtxRef.current!.createGain();
-          
           source.buffer = buffer;
           gainNode.gain.value = stem.volume ?? 1;
-          
           source.connect(gainNode);
           gainNode.connect(audioCtxRef.current!.destination);
           
           const offsetSecs = (stem.offsetBars || 0) * secondsPerBar;
-          
           if (playheadTime < offsetSecs) {
-            // Stem starts in the future
             source.start(scheduleTime + (offsetSecs - playheadTime));
           } else {
-            // Stem is already playing, calculate where we are inside the buffer
             const bufferOffset = playheadTime - offsetSecs;
-            if (bufferOffset < buffer.duration) {
-              source.start(scheduleTime, bufferOffset);
-            }
+            if (bufferOffset < buffer.duration) source.start(scheduleTime, bufferOffset);
           }
           activeSourcesRef.current.push(source);
         }
       });
     } else {
       wavesurferRef.current.pause();
-      activeSourcesRef.current.forEach(src => {
-        try { src.stop(); src.disconnect(); } catch (e) {}
-      });
+      activeSourcesRef.current.forEach(src => { try { src.stop(); src.disconnect(); } catch (e) {} });
       activeSourcesRef.current = [];
     }
   };
@@ -190,14 +176,13 @@ export default function Room04_Booth() {
     wavesurferRef.current?.pause(); 
     wavesurferRef.current?.seekTo(0);
     
-    activeSourcesRef.current.forEach(src => {
-      try { src.stop(); src.disconnect(); } catch (e) {}
-    });
+    activeSourcesRef.current.forEach(src => { try { src.stop(); src.disconnect(); } catch (e) {} });
     activeSourcesRef.current = [];
 
     if (isRecording && workletNodeRef.current && audioCtxRef.current) {
+      // FIX: Disconnect nodes but KEEP the hardware stream open for the next take
       workletNodeRef.current.disconnect();
-      mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+      if (mediaSourceRef.current) mediaSourceRef.current.disconnect();
       
       const totalLength = recordedChunksRef.current.reduce((acc, val) => acc + val.length, 0);
       const merged = new Float32Array(totalLength);
@@ -215,23 +200,30 @@ export default function Room04_Booth() {
 
   const startHardwareRecording = async () => {
     if (!audioCtxRef.current) return;
-    
     try {
-      if (audioCtxRef.current.state === 'suspended') {
-        await audioCtxRef.current.resume();
-      }
+      if (audioCtxRef.current.state === 'suspended') await audioCtxRef.current.resume();
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-      mediaStreamRef.current = stream;
+      // FIX: Only request microphone access ONCE per session.
+      if (!mediaStreamRef.current) {
+        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+        mediaSourceRef.current = audioCtxRef.current.createMediaStreamSource(mediaStreamRef.current);
+      }
       
       const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
       const LATENCY_OFFSET = 0.05; 
       let padTime = Math.max(0, currentWS_Time - LATENCY_OFFSET);
       recordedChunksRef.current = [new Float32Array(Math.floor(padTime * audioCtxRef.current.sampleRate))];
       
-      // FIX: Only inject the AudioWorklet if it hasn't been loaded yet!
+      // FIX: Worklet script deeply copies the Float32Array to prevent mutation bugs
       if (!workletLoadedRef.current) {
-        const workletCode = `class RecorderWorklet extends AudioWorkletProcessor { process(inputs) { if (inputs[0][0]) this.port.postMessage(inputs[0][0]); return true; } } registerProcessor('recorder-worklet', RecorderWorklet);`;
+        const workletCode = `class RecorderWorklet extends AudioWorkletProcessor { 
+          process(inputs) { 
+            if (inputs[0] && inputs[0][0]) { 
+              this.port.postMessage(new Float32Array(inputs[0][0])); 
+            } 
+            return true; 
+          } 
+        } registerProcessor('recorder-worklet', RecorderWorklet);`;
         const blob = new Blob([workletCode], { type: 'application/javascript' });
         await audioCtxRef.current.audioWorklet.addModule(URL.createObjectURL(blob));
         workletLoadedRef.current = true;
@@ -241,15 +233,13 @@ export default function Room04_Booth() {
       workletNodeRef.current = workletNode;
       workletNode.port.onmessage = (e) => recordedChunksRef.current.push(new Float32Array(e.data));
       
-      const source = audioCtxRef.current.createMediaStreamSource(stream);
-      source.connect(workletNode);
+      // Connect persistent source to the new worklet node
+      if (mediaSourceRef.current) mediaSourceRef.current.connect(workletNode);
       workletNode.connect(audioCtxRef.current.destination);
       
       setIsRecording(true); 
+      if (!isPlaying) togglePlayback();
       
-      if (!isPlaying) {
-        togglePlayback();
-      }
     } catch (err) { 
       alert("Hardware microphone access required for Worklet processing."); 
     }
