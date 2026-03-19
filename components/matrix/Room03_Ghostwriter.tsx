@@ -260,11 +260,11 @@ export default function Room03_Ghostwriter() {
 
         <div className="p-6 border-t border-[#222] bg-black sticky bottom-0">
           <PremiumButton 
- 	 cost={1} 
- 	 onConfirm={handleGenerateGhostwriter} 
- 	 className="w-full bg-white text-black py-4 font-oswald font-bold uppercase tracking-widest hover:bg-	[#E60000] hover:text-white transition-colors"
+  	cost={1} 
+ 	 onConfirm={handleGenerate} // ✅ Matches your actual function name
+ 	 className="..."
 	>
- 	 Generate Ghostwriter Draft (1 CRD)
+	  Generate Ghostwriter Draft (1 CRD)
 	</PremiumButton>
         </div>
       </div>
