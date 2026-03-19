@@ -135,35 +135,37 @@ export const useMatrixStore = create<MatrixState>()(
 
       // --- 📀 MASTERING TOKEN HANDLER ---
       spendMasteringToken: async () => {
-        const session = get().userSession;
+        const state = get();
+        const session = state.userSession;
         if (!session) return false;
-
-        // 🎖️ The Mogul Exception (Defined in your doc: Automated DSP mastering included)
+        
+        // 🎖️ Mogul Exception (Automated DSP mastering included)
         if (session.tier === "The Mogul") return true;
 
         try {
-          // Verify the actual DB state for Free/Artist
-          const { data: profile } = await supabase
+          // 🔥 REAL-TIME DB CHECK
+          const { data: profile, error: fetchError } = await supabase
             .from('profiles')
-            .select('mastering_tokens, tier')
+            .select('mastering_tokens')
             .eq('id', session.id)
             .single();
 
-          // 🛑 REJECTION: If they aren't a Mogul and have 0 tokens
-          if (!profile || profile.mastering_tokens < 1) {
-            get().addToast("Mastering Token Required ($4.99).", "error");
+          if (fetchError || !profile || (profile.mastering_tokens || 0) < 1) {
+            state.addToast("Mastering Token Required ($4.99).", "error");
             return false;
           }
 
-          // 🌪️ ATOMIC BURN: Deduct for Free/Artist
-          const { error } = await supabase
+          // 🌪️ ATOMIC BURN
+          const { error: updateError } = await supabase
             .from('profiles')
             .update({ mastering_tokens: profile.mastering_tokens - 1 })
             .eq('id', session.id);
 
-          if (error) throw error;
+          if (updateError) throw updateError;
+          
           return true;
         } catch (err) {
+          console.error("Token Transaction Error:", err);
           return false;
         }
       },
