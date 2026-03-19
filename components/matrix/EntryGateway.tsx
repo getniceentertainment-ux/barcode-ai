@@ -15,12 +15,12 @@ export default function EntryGateway() {
   const [stageName, setStageName] = useState("");
   
   const [loading, setLoading] = useState(false);
-  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  // NEW STATE: Added "b2b" to the authMode toggle
+  const [authMode, setAuthMode] = useState<"login" | "signup" | "b2b">("login");
   const [authStep, setAuthStep] = useState<"auth" | "verify_email" | "select_tier">("auth");
   const [userProfile, setUserProfile] = useState<any>(null);
 
   useEffect(() => {
-    // Capture any referral codes in the URL before auth
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const refCode = params.get('ref');
@@ -37,7 +37,7 @@ export default function EntryGateway() {
   }, []);
 
   const processUserSession = async (user: any) => {
-    const { data: profile, error } = await supabase
+    const { data: profile } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', user.id)
@@ -46,7 +46,12 @@ export default function EntryGateway() {
     if (profile) {
       setUserProfile({ ...user, ...profile });
       
-      // UX UPGRADE: If they are already a paid user, skip the checkout screen entirely!
+      // B2B REDIRECT LOGIC: If they logged in through the B2B tab, route them to the portal
+      if (authMode === "b2b") {
+        window.location.href = "/dev-portal";
+        return;
+      }
+
       if (profile.tier !== 'Free Loader') {
         const session: UserSession = {
           id: profile.id,
@@ -74,13 +79,12 @@ export default function EntryGateway() {
           email, 
           password,
           options: {
-            data: { stage_name: stageName }, // Inject Stage Name securely
+            data: { stage_name: stageName },
             emailRedirectTo: window.location.origin
           }
         });
         if (error) throw error;
         
-        // STRICT EMAIL VERIFICATION CHECK
         if (data.user && !data.session) {
           setAuthStep("verify_email");
           if(addToast) addToast("Secure link dispatched to your inbox.", "success");
@@ -89,6 +93,7 @@ export default function EntryGateway() {
         }
         
       } else {
+        // This handles both 'login' and 'b2b' login attempts
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         if (data.user) await processUserSession(data.user);
@@ -100,13 +105,11 @@ export default function EntryGateway() {
     }
   };
 
-  // ASYNC STRIPE ROUTING RESTORED
   const handleTierSelection = async (tier: AccessTier) => {
-    if (!userProfile) return;
+    if (!userProfile?.id) return;
     
-    // Background execution: Grant referral credits if they used an affiliate link
     const savedRef = localStorage.getItem('barcode_referral');
-    if (savedRef && userProfile?.id) {
+    if (savedRef) {
       fetch('/api/referrals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -116,9 +119,7 @@ export default function EntryGateway() {
       .catch(console.error);
     }
 
-    // TIER ROUTING LOGIC
     if (tier === "Free Loader") {
-      // PRODUCTION RESTORE: Fallback strictly to 5 credits, not 500
       const session: UserSession = {
         id: userProfile.id,
         stageName: userProfile.stage_name || "Artist",
@@ -128,7 +129,6 @@ export default function EntryGateway() {
       };
       grantAccess(session);
     } else {
-      // TRIGGER THE SECURE STRIPE CHECKOUT
       setLoading(true);
       try {
         const res = await fetch('/api/stripe/checkout', {
@@ -139,7 +139,7 @@ export default function EntryGateway() {
         
         const data = await res.json();
         if (data.url) {
-          window.location.href = data.url; // Bounces user to actual Stripe portal
+          window.location.href = data.url;
         } else {
           throw new Error(data.error || "Failed to initialize Stripe.");
         }
@@ -150,7 +150,6 @@ export default function EntryGateway() {
     }
   };
 
-  // PRODUCTION RESTORE: Free Loader visually reverted to "5 Generations / Mo"
   const tiers: { name: AccessTier; price: string; features: string[]; isPro?: boolean }[] = [
     { name: "Free Loader", price: "0", features: ["5 Generations / Mo", "Standard Queue", "Watermarked Audio"] },
     { name: "The Artist", price: "39", features: ["100 Generations / Mo", "Uncompressed WAVs", "Commercial Rights"] },
@@ -172,39 +171,65 @@ export default function EntryGateway() {
         <div className="w-full max-w-md bg-[#050505] border border-[#222] p-8 relative z-10 animate-in zoom-in shadow-[0_0_50px_rgba(230,0,0,0.1)]">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#E60000] to-transparent opacity-50"></div>
           
+          {/* UPDATED TRIPLE TABS */}
           <div className="flex gap-4 mb-8 border-b border-[#222] pb-4">
-             <button onClick={() => setAuthMode("login")} className={`flex-1 font-oswald text-sm uppercase tracking-widest font-bold ${authMode === 'login' ? 'text-[#E60000]' : 'text-[#555]'}`}>Operator Login</button>
-             <button onClick={() => setAuthMode("signup")} className={`flex-1 font-oswald text-sm uppercase tracking-widest font-bold ${authMode === 'signup' ? 'text-[#E60000]' : 'text-[#555]'}`}>New Node</button>
+             <button onClick={() => setAuthMode("login")} className={`flex-1 font-oswald text-[10px] uppercase tracking-widest font-bold ${authMode === 'login' ? 'text-[#E60000]' : 'text-[#555]'}`}>Operator Login</button>
+             <button onClick={() => setAuthMode("signup")} className={`flex-1 font-oswald text-[10px] uppercase tracking-widest font-bold ${authMode === 'signup' ? 'text-[#E60000]' : 'text-[#555]'}`}>New Node</button>
+             <button onClick={() => setAuthMode("b2b")} className={`flex-1 font-oswald text-[10px] uppercase tracking-widest font-bold ${authMode === 'b2b' ? 'text-green-500' : 'text-[#555]'}`}>B2B Terminal</button>
           </div>
 
-          <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
-            {authMode === "signup" && (
+          {/* SHARED AUTH FORM (Works for Login and B2B) */}
+          {authMode !== "b2b" ? (
+            <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
+              {authMode === "signup" && (
+                <div>
+                  <label className="text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 block">Artist / Stage Name</label>
+                  <div className="relative">
+                    <UserIcon size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
+                    <input type="text" required value={stageName} onChange={(e) => setStageName(e.target.value)} placeholder="Enter your moniker..." className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
+                  </div>
+                </div>
+              )}
               <div>
-                <label className="text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 block">Artist / Stage Name</label>
+                <label className="text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 block">Email Address</label>
                 <div className="relative">
-                  <UserIcon size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
-                  <input type="text" required value={stageName} onChange={(e) => setStageName(e.target.value)} placeholder="Enter your moniker..." className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
+                  <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
+                  <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="operator@domain.com" className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
                 </div>
               </div>
-            )}
-            <div>
-              <label className="text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 block">Email Address</label>
-              <div className="relative">
-                <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
-                <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="operator@domain.com" className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
+              <div>
+                <label className="text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 block">Secure Password</label>
+                <div className="relative">
+                  <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
+                  <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
+                </div>
               </div>
-            </div>
-            <div>
-              <label className="text-[10px] text-[#555] font-bold uppercase tracking-widest mb-2 block">Secure Password</label>
-              <div className="relative">
-                <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
-                <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
+              <button type="submit" disabled={loading} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2">
+                {loading ? <Loader2 size={20} className="animate-spin" /> : <>{authMode === "login" ? "Initialize Matrix" : "Create Profile"} <ArrowRight size={18} /></>}
+              </button>
+            </form>
+          ) : (
+            /* B2B LANDING VIEW */
+            <div className="space-y-6 animate-in fade-in zoom-in duration-300">
+              <div className="bg-[#051105] border border-green-500/30 p-6 text-center shadow-[inset_0_0_20px_rgba(34,197,94,0.1)]">
+                <Terminal size={32} className="text-green-500 mx-auto mb-4 animate-pulse" />
+                <h3 className="font-oswald text-lg text-white uppercase tracking-widest mb-2">Developer Terminal</h3>
+                <p className="font-mono text-[9px] text-green-500/70 uppercase leading-relaxed">
+                  GETNICE/BAR-CODE.AI GHOSTWRITER ENGINE . . . <br/>
+                  ACCESS RESTRICTED TO REGISTERED DEVELOPERS
+                </p>
               </div>
+              <p className="text-[9px] font-mono text-[#555] text-center uppercase tracking-widest leading-relaxed">
+                Access your API Keys, metered billing, and metered usage stats by signing into your developer account.
+              </p>
+              <button 
+                onClick={() => setAuthMode("login")}
+                className="w-full bg-transparent border border-green-500 text-green-500 py-4 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-green-500 hover:text-black transition-all flex items-center justify-center gap-2"
+              >
+                Sign In as Developer <ArrowRight size={18} />
+              </button>
             </div>
-            <button type="submit" disabled={loading} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2">
-              {loading ? <Loader2 size={20} className="animate-spin" /> : <>{authMode === "login" ? "Initialize Matrix" : "Create Profile"} <ArrowRight size={18} /></>}
-            </button>
-          </form>
+          )}
         </div>
       )}
 
@@ -254,17 +279,6 @@ export default function EntryGateway() {
           </div>
         </div>
       )}
-
-      {/* --- B2B DEVELOPER PORTAL LINK --- */}
-      <div className="absolute bottom-8 left-0 w-full flex justify-center z-20 animate-in fade-in delay-500">
-        <Link 
-          href="/dev-portal" 
-          className="flex items-center gap-2 text-[10px] font-mono text-green-500 font-bold uppercase tracking-widest transition-all bg-black border border-green-500/50 hover:border-[#00FF00] hover:text-[#00FF00] hover:bg-[#001100] px-6 py-3 shadow-[0_0_20px_rgba(34,197,94,0.3)] animate-pulse"
-        >
-          <Terminal size={14} className="text-green-500" /> BAR-CODE.AI GHOSTWRITER API KEY FOR B2B
-        </Link>
-      </div>
-
     </div>
   );
 }
