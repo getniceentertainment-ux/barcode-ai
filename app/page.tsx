@@ -51,38 +51,34 @@ export default function MatrixController() {
       const state = useMatrixStore.getState();
       const currentUserId = state.userSession?.id;
 
-      // Firewall: Stop if ID is missing
       if (!currentUserId || currentUserId === 'undefined') return;
 
       try {
-        // SANITIZATION: Ensure JSONB columns never receive 'undefined'
-        const sanitizedMatrixState = {
+        const sanitizedState = {
           audioData: state.audioData || null,
           vocalStems: (state.vocalStems || []).map(s => ({ 
-            id: s.id, 
-            type: s.type, 
-            offsetBars: s.offsetBars || 0, 
-            volume: s.volume ?? 1 // Nullish coalescing prevents 400 errors
+            id: s.id, type: s.type, offsetBars: s.offsetBars || 0, volume: s.volume ?? 1 
           })),
           generatedLyrics: state.generatedLyrics || "",
           blueprint: state.blueprint || {}
         };
 
+        // We update 'profiles' - the SQL trigger handles mirroring it to 'matrix_states'
         const { error } = await supabase
           .from('profiles')
           .update({
-            matrix_state: sanitizedMatrixState,
-            last_saved: new Date().toISOString()
+            matrix_state: sanitizedState,
+            updated_at: new Date().toISOString() // Using the verified standard column
           })
           .eq('id', currentUserId);
         
         if (error) {
-          console.error("❌ Schema Sync Error:", error.message);
+          console.error("❌ Sync Error:", error.message);
         } else {
-          console.log("📡 Ledger Sync: Success");
+          console.log("📡 Matrix Ledger: Synced & Mirrored.");
         }
       } catch (err) {
-        console.error("❌ Sync Hardware Failure:", err);
+        console.error("❌ Hardware Failure:", err);
       }
     }, 30000); 
 
