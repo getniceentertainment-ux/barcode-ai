@@ -9,7 +9,7 @@ import { BlueprintSection } from "../../lib/types";
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 export default function Room02_BrainTrain() {
-  const { flowDNA, setFlowDNA, setActiveRoom, audioData, setGwStyle, blueprint, setBlueprint, ConsumeCredits, addToast } = useMatrixStore();
+  const { flowDNA, setFlowDNA, setActiveRoom, audioData, setGwStyle, blueprint, setBlueprint, spendCredit, addToast } = useMatrixStore();
 
   const [status, setStatus] = useState<"idle" | "analyzing" | "success">(flowDNA ? "success" : "idle");
   const [micStatus, setMicStatus] = useState<"idle" | "listening" | "analyzing_cadence" | "recorded">("idle");
@@ -201,16 +201,15 @@ export default function Room02_BrainTrain() {
   };
 
   const handleSynthesize = async () => {
-    // 1. The Real Guardrail
-    if (consumeCredits) {
-      const hasCredits = await consumeCredits(1); 
-      if (!hasCredits) {
-        if (addToast) addToast("Insufficient GPU Tokens. Upgrade or Top-up.", "error");
-        return; // Stops the execution so they don't burn your GPU
-      }
+    // 🛡️ The Real Guardrail
+    const hasCredits = await spendCredit(1); 
+    if (!hasCredits) {
+      // The store handles the toast, we just need to stop execution
+      return; 
     }
 
     setStatus("analyzing");
+
     let finalStyleId = detectedStyle?.id || "getnice_hybrid";
     let finalStyleName = detectedStyle?.name || STYLES.getnice_hybrid;
 
