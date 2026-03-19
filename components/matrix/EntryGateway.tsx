@@ -15,7 +15,6 @@ export default function EntryGateway() {
   const [stageName, setStageName] = useState("");
   
   const [loading, setLoading] = useState(false);
-  // NEW STATE: Added "b2b" to the authMode toggle
   const [authMode, setAuthMode] = useState<"login" | "signup" | "b2b">("login");
   const [authStep, setAuthStep] = useState<"auth" | "verify_email" | "select_tier">("auth");
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -25,6 +24,9 @@ export default function EntryGateway() {
       const params = new URLSearchParams(window.location.search);
       const refCode = params.get('ref');
       if (refCode) localStorage.setItem('barcode_referral', refCode);
+      
+      // If they refresh and the hash is #b2b, set the mode automatically
+      if (window.location.hash === "#b2b") setAuthMode("b2b");
     }
 
     const checkUser = async () => {
@@ -46,14 +48,17 @@ export default function EntryGateway() {
     if (profile) {
       setUserProfile({ ...user, ...profile });
       
-      // 🚨 THE REDIRECT UPGRADE 🚨
-      // If the user is currently on the "B2B" tab OR the "Login" tab 
-      // but they originally clicked the B2B button, send them to the portal.
-      if (authMode === "b2b" || window.location.hash === "#b2b") {
-        window.location.href = "/dev-portal";
+      // --- 🚨 REDIRECT ENGINE 🚨 ---
+      // Check if the user intends to enter the B2B Portal
+      const isB2BIntent = authMode === "b2b" || window.location.hash === "#b2b";
+
+      if (isB2BIntent) {
+        window.location.hash = ""; // Clear the hash
+        window.location.href = "/dev-portal"; // Teleport to Portal
         return;
       }
 
+      // Standard Matrix Logic
       if (profile.tier !== 'Free Loader') {
         const session: UserSession = {
           id: profile.id,
@@ -95,7 +100,6 @@ export default function EntryGateway() {
         }
         
       } else {
-        // This handles both 'login' and 'b2b' login attempts
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         if (data.user) await processUserSession(data.user);
@@ -173,14 +177,12 @@ export default function EntryGateway() {
         <div className="w-full max-w-md bg-[#050505] border border-[#222] p-8 relative z-10 animate-in zoom-in shadow-[0_0_50px_rgba(230,0,0,0.1)]">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#E60000] to-transparent opacity-50"></div>
           
-          {/* UPDATED TRIPLE TABS */}
           <div className="flex gap-4 mb-8 border-b border-[#222] pb-4">
              <button onClick={() => setAuthMode("login")} className={`flex-1 font-oswald text-[10px] uppercase tracking-widest font-bold ${authMode === 'login' ? 'text-[#E60000]' : 'text-[#555]'}`}>Operator Login</button>
              <button onClick={() => setAuthMode("signup")} className={`flex-1 font-oswald text-[10px] uppercase tracking-widest font-bold ${authMode === 'signup' ? 'text-[#E60000]' : 'text-[#555]'}`}>New Node</button>
              <button onClick={() => setAuthMode("b2b")} className={`flex-1 font-oswald text-[10px] uppercase tracking-widest font-bold ${authMode === 'b2b' ? 'text-green-500' : 'text-[#555]'}`}>B2B Terminal</button>
           </div>
 
-          {/* SHARED AUTH FORM (Works for Login and B2B) */}
           {authMode !== "b2b" ? (
             <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
               {authMode === "signup" && (
@@ -211,7 +213,6 @@ export default function EntryGateway() {
               </button>
             </form>
           ) : (
-            /* B2B LANDING VIEW */
             <div className="space-y-6 animate-in fade-in zoom-in duration-300">
               <div className="bg-[#051105] border border-green-500/30 p-6 text-center shadow-[inset_0_0_20px_rgba(34,197,94,0.1)]">
                 <Terminal size={32} className="text-green-500 mx-auto mb-4 animate-pulse" />
@@ -225,7 +226,10 @@ export default function EntryGateway() {
                 Access your API Keys, metered billing, and metered usage stats by signing into your developer account.
               </p>
               <button 
-                onClick={() => setAuthMode("login")}
+                onClick={() => {
+                  setAuthMode("login");
+                  window.location.hash = "b2b"; // PINS THE INTENT
+                }}
                 className="w-full bg-transparent border border-green-500 text-green-500 py-4 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-green-500 hover:text-black transition-all flex items-center justify-center gap-2"
               >
                 Sign In as Developer <ArrowRight size={18} />
