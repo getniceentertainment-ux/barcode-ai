@@ -6,6 +6,7 @@ import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
+import PremiumButton from "./PremiumButton";
 
 function audioBufferToWav(buffer: AudioBuffer) {
   let numOfChan = buffer.numberOfChannels, length = buffer.length * numOfChan * 2 + 44,
@@ -207,13 +208,14 @@ export default function Room06_Mastering() {
                  <span className="font-oswald text-3xl font-bold text-white">{lufs} <span className="text-xs font-mono text-[#555]">LUFS</span></span>
               </div>
               <input type="range" min="-20" max="-6" step="0.5" value={lufs} onChange={(e) => setLufs(parseFloat(e.target.value))} className="w-full accent-[#E60000] h-2 bg-[#111] appearance-none cursor-pointer rounded-full" />
-              <button 
-                onClick={handleMastering} 
-                disabled={isProcessing} 
-                className="mt-12 w-full bg-[#E60000] text-white py-5 font-oswald text-xl font-bold uppercase tracking-[0.3em] hover:bg-red-700 transition-all flex justify-center items-center gap-2 disabled:opacity-50"
-              >
-                {isProcessing ? <Loader2 className="animate-spin" /> : "Initiate Final Master"}
-              </button>
+              <PremiumButton 
+ 	 cost={0} // Handled by spendMasteringToken inside the function instead
+ 	 isMogulOnly={true} // Only Moguls get unlimited mastering, Artists pay per token
+ 	 onConfirm={handleFinalRender} 
+	  className="w-full bg-[#E60000] text-white py-6 font-oswald text-2xl font-bold uppercase tracking-widest 	hover:bg-red-700 shadow-[0_0_30px_rgba(230,0,0,0.3)]"
+	>
+  	Finalize & Master Artifact
+	</PremiumButton>
             </div>
           )}
         </div>
