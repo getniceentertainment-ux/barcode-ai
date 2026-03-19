@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Mail, Loader2, Lock, User as UserIcon, ArrowRight } from "lucide-react";
+import { CheckCircle2, Mail, Loader2, Lock, User as UserIcon, ArrowRight, Terminal } from "lucide-react";
+import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { AccessTier, UserSession } from "../../lib/types";
 import { supabase } from "../../lib/supabase";
@@ -253,6 +254,17 @@ export default function EntryGateway() {
           </div>
         </div>
       )}
+
+      {/* --- B2B DEVELOPER PORTAL LINK --- */}
+      <div className="absolute bottom-8 left-0 w-full flex justify-center z-20 animate-in fade-in delay-500">
+        <Link 
+          href="/dev-portal" 
+          className="flex items-center gap-2 text-[10px] font-mono text-[#555] uppercase tracking-widest hover:text-white transition-colors bg-black border border-[#222] hover:border-[#E60000] px-6 py-3 shadow-[0_0_15px_rgba(0,0,0,0.5)]"
+        >
+          <Terminal size={14} className="text-[#E60000]" /> TALON B2B API Access
+        </Link>
+      </div>
+
     </div>
   );
 }
