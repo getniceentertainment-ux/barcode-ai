@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Sliders, PlayCircle, Loader2, CheckCircle2, Waves, Settings2, ArrowRight, Volume2, ListMusic, Play, Pause } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
+import PremiumButton from "./PremiumButton";
 
 const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
@@ -355,13 +356,13 @@ export default function Room05_VocalSuite() {
           {/* ACTION BUTTONS */}
           <div className="mt-auto shrink-0">
             {status === "idle" && (
-              <button 
-                onClick={handleApplyEngineering} 
-                disabled={vocalStems.length === 0} 
-                className="w-full bg-[#E60000] text-white py-6 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-3 disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(230,0,0,0.2)]"
-              >
+              <PremiumButton 
+                cost={1} 
+                onConfirm={handleApplyEngineering} 
+                className="w-full bg-[#E60000] text-white py-6 font-oswald text-xl font-bold uppercase tracking-               		[0.4em] hover:bg-red-700 shadow-[0_0_20px_rgba(230,0,0,0.2)]"
+		>
                 Bake & Apply Chain <PlayCircle size={20} />
-              </button>
+              </PremiumButton>
             )}
             
             {status === "processing" && (
