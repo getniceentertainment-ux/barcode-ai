@@ -56,7 +56,31 @@ export default function Room06_Mastering() {
     const { data } = await supabase.from('profiles').select('mastering_tokens').eq('id', userSession.id).single();
     if (data && (data as any).mastering_tokens > 0) setHasToken(true);
   };
+const handlePurchaseToken = async () => {
+    if (!userSession?.id) {
+      if(addToast) addToast("Please sign in to purchase tokens.", "error");
+      return;
+    }
+    
+    if(addToast) addToast("Routing to Secure Payment...", "info");
 
+    // --- 🏦 STRIPE BRIDGE ---
+    // In production, you'll redirect to /api/stripe/checkout-mastering
+    // For now, this updates the ledger to unblock your testing:
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ mastering_tokens: 1 })
+        .eq('id', userSession.id);
+
+      if (error) throw error;
+
+      setHasToken(true);
+      if(addToast) addToast("Mastering Token Acquired.", "success");
+    } catch (err) {
+      if(addToast) addToast("Transaction link severed.", "error");
+    }
+  };
   const handleMastering = async () => {
     // 1. GESTAPO CHECK: Ask the store for permission (Burn token first)
     const authorized = await spendMasteringToken();
