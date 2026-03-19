@@ -139,11 +139,11 @@ export const useMatrixStore = create<MatrixState>()(
         const session = state.userSession;
         if (!session) return false;
         
-        // 🎖️ Mogul Exception (Automated DSP mastering included)
+        // 🎖️ The Mogul Exception (Included in Tier)
         if (session.tier === "The Mogul") return true;
 
         try {
-          // 🔥 REAL-TIME DB CHECK
+          // 🔥 REAL-TIME DB CHECK: Verify total from source of truth
           const { data: profile, error: fetchError } = await supabase
             .from('profiles')
             .select('mastering_tokens')
@@ -151,11 +151,11 @@ export const useMatrixStore = create<MatrixState>()(
             .single();
 
           if (fetchError || !profile || (profile.mastering_tokens || 0) < 1) {
-            state.addToast("Mastering Token Required ($4.99).", "error");
+            state.addToast?.("Mastering Token Required ($4.99).", "error");
             return false;
           }
 
-          // 🌪️ ATOMIC BURN
+          // 🌪️ ATOMIC BURN: Subtract token before allowing the render
           const { error: updateError } = await supabase
             .from('profiles')
             .update({ mastering_tokens: profile.mastering_tokens - 1 })
@@ -165,7 +165,7 @@ export const useMatrixStore = create<MatrixState>()(
           
           return true;
         } catch (err) {
-          console.error("Token Transaction Error:", err);
+          console.error("Ledger Transaction Failure:", err);
           return false;
         }
       },
