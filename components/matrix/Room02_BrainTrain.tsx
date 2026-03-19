@@ -9,12 +9,13 @@ import { BlueprintSection } from "../../lib/types";
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 export default function Room02_BrainTrain() {
-  const { flowDNA, setFlowDNA, setActiveRoom, audioData, setGwStyle, blueprint, setBlueprint } = useMatrixStore();
+  const { flowDNA, setFlowDNA, setActiveRoom, audioData, setGwStyle, blueprint, setBlueprint, ConsumeCredits, addToast } = useMatrixStore();
 
   const [status, setStatus] = useState<"idle" | "analyzing" | "success">(flowDNA ? "success" : "idle");
   const [micStatus, setMicStatus] = useState<"idle" | "listening" | "analyzing_cadence" | "recorded">("idle");
   const [textInput, setTextInput] = useState("");
   const [detectedStyle, setDetectedStyle] = useState<{ id: string; name: string } | null>(null);
+
   
   // Audio Preview States
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
@@ -200,14 +201,8 @@ export default function Room02_BrainTrain() {
   };
 
   const handleSynthesize = async () => {
-  // Add Guardrail
-  const hasCredits = await consumeCredits(1); 
-  if (!hasCredits) {
-    addToast("Insufficient GPU Tokens. Upgrade or Top-up.", "error");
-    return;
-  }
-  setStatus("analyzing");
-  
+    setStatus("analyzing");
+
     let finalStyleId = detectedStyle?.id || "getnice_hybrid";
     let finalStyleName = detectedStyle?.name || STYLES.getnice_hybrid;
 
