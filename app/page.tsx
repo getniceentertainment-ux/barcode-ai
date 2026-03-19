@@ -29,7 +29,8 @@ export default function MatrixController() {
   const { 
     hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix, 
     audioData, isProjectFinalized, playbackMode, setPlaybackMode, 
-    radioTrack, setRadioTrack, addToast
+    radioTrack, setRadioTrack, addToast,
+    vocalStems, generatedLyrics, blueprint // Pulled for Auto-Save logic
   } = useMatrixStore();
 
   const [isBoosting, setIsBoosting] = useState(false);
@@ -38,6 +39,40 @@ export default function MatrixController() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
+
+  // --- 🚨 THE AUTO-SAVE GUARDIAN 🚨 ---
+  // This logic prevents the "id=eq.undefined" error by checking the ID inside the interval
+  useEffect(() => {
+    if (!hasAccess || !userSession?.id) return;
+
+    const autoSaveInterval = setInterval(async () => {
+      // ALWAYS pull the freshest state directly from the store to avoid stale closures
+      const state = useMatrixStore.getState();
+      
+      // Safety Gate: Do not fire the request if the ID is missing
+      if (!state.userSession?.id || !state.hasAccess) return;
+
+      try {
+        await supabase.from('profiles').update({
+          matrix_state: {
+            audioData: state.audioData,
+            vocalStems: state.vocalStems.map(s => ({ 
+              id: s.id, type: s.type, offsetBars: s.offsetBars, volume: s.volume 
+            })),
+            generatedLyrics: state.generatedLyrics,
+            blueprint: state.blueprint
+          },
+          last_saved: new Date().toISOString()
+        }).eq('id', state.userSession.id);
+        
+        console.log("Matrix State Synced to Ledger.");
+      } catch (error) {
+        console.error("Auto-save sync failed:", error);
+      }
+    }, 30000); // 30 second pulse
+
+    return () => clearInterval(autoSaveInterval);
+  }, [hasAccess, userSession?.id]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -166,7 +201,7 @@ export default function MatrixController() {
   return (
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-24">
       
-      {/* RESTORED SIDEBAR WITH IDENT, TIER, PROFILE, ADMIN & DISCONNECT */}
+      {/* SIDEBAR */}
       <aside className="w-72 bg-black border-r border-[#111] flex flex-col shrink-0 hidden md:flex z-20 shadow-2xl">
         <div className="p-8 border-b border-[#111]">
           <h1 className="font-oswald text-2xl uppercase tracking-[0.2em] font-bold text-[#E60000]">Bar-Code.ai</h1>
@@ -220,7 +255,7 @@ export default function MatrixController() {
       <main className="flex-1 relative flex flex-col bg-black overflow-hidden">
         <div className="absolute inset-0 pointer-events-none opacity-10" style={{ backgroundImage: 'linear-gradient(#111 1px, transparent 1px), linear-gradient(90deg, #111 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
         
-        {/* RESTORED HUD WITH CREDITS */}
+        {/* HUD */}
         <div className="h-14 border-b border-[#111] bg-black/80 backdrop-blur-md flex items-center justify-between px-6 md:px-10 z-10 shrink-0">
            <span className="font-mono text-[9px] text-[#444] uppercase tracking-[0.4em] hidden sm:block">
              Facility // Room {activeRoom} // {rooms.find(r => r.id === activeRoom)?.name.toUpperCase()}
@@ -259,7 +294,7 @@ export default function MatrixController() {
         </div>
       </main>
 
-      {/* RESTORED PERSISTENT AUDIO PLAYER WITH RADIO SWITCHER */}
+      {/* AUDIO PLAYER */}
       <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-4 md:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
         <audio 
           ref={audioRef} 
