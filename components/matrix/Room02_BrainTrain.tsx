@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Mic2, Activity, CheckCircle2, BrainCircuit, ArrowRight, Info, AudioWaveform, Plus, Minus, RefreshCw, Play, Pause } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { BlueprintSection } from "../../lib/types";
+import PremiumButton from "./PremiumButton";
 
 // Utility for cleaner timing logic
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
@@ -386,13 +387,13 @@ export default function Room02_BrainTrain() {
             </div>
           </div>
 
-          <button
-            disabled={(micStatus === "idle" || micStatus === "listening") && textInput.trim() === ""}
-            onClick={handleSynthesize}
-            className="w-full bg-[#E60000] disabled:opacity-20 disabled:cursor-not-allowed text-white py-6 font-oswald text-lg font-bold uppercase tracking-[0.4em] rounded transition-all hover:bg-red-700 shadow-[0_0_20px_rgba(230,0,0,0.2)]"
-          >
-            Synthesize Hybrid Flow
-          </button>
+          <PremiumButton 
+  cost={1} 
+  onConfirm={handleSynthesize} 
+  className="w-full bg-[#E60000] text-white py-6 font-oswald text-lg font-bold uppercase tracking-[0.4em] hover:bg-red-700 shadow-[0_0_20px_rgba(230,0,0,0.2)]"
+>
+  Synthesize Hybrid Flow (1 CRD)
+</PremiumButton>
         </div>
       )}
 
