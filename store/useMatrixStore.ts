@@ -135,38 +135,35 @@ export const useMatrixStore = create<MatrixState>()(
 
       // --- 📀 MASTERING TOKEN HANDLER ---
       spendMasteringToken: async () => {
-        const session = get().userSession;
-        if (!session) return false;
-        if (session.tier === "The Mogul") return true;
+  const session = get().userSession;
+  if (!session) return false;
+  if (session.tier === "The Mogul") return true;
 
-        try {
-          // Verify tokens in DB to prevent frontend spoofing
-          const { data: profile, error: fetchError } = await supabase
-            .from('profiles')
-            .select('mastering_tokens')
-            .eq('id', session.id)
-            .single();
+  try {
+    // 🔥 REAL-TIME DB CHECK: No cached state, check the truth.
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('mastering_tokens')
+      .eq('id', session.id)
+      .single();
 
-          if (fetchError || !profile || profile.mastering_tokens < 1) {
-            get().addToast("Mastering Token Required ($4.99).", "error");
-            return false;
-          }
+    if (!profile || profile.mastering_tokens < 1) {
+      get().addToast("Insufficient Mastering Tokens.", "error");
+      return false; 
+    }
 
-          // Atomically decrement token
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update({ mastering_tokens: profile.mastering_tokens - 1 })
-            .eq('id', session.id);
+    // 🌪️ ATOMIC BURN: Subtraction happens BEFORE the mastering result is returned.
+    const { error } = await supabase
+      .from('profiles')
+      .update({ mastering_tokens: profile.mastering_tokens - 1 })
+      .eq('id', session.id);
 
-          if (updateError) throw updateError;
-          
-          get().addToast("Mastering Token Verified & Burned.", "success");
-          return true;
-        } catch (err) {
-          get().addToast("Token Authorization Failed.", "error");
-          return false;
-        }
-      },
+    if (error) throw error;
+    return true; 
+  } catch (err) {
+    return false;
+  }
+},
 
       // --- 🛡️ PROTECTED SETTERS ---
       setAudioData: async (data) => {
