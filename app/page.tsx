@@ -33,7 +33,7 @@ export default function MatrixController() {
     hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix, 
     audioData, isProjectFinalized, playbackMode, setPlaybackMode, 
     radioTrack, setRadioTrack, addToast,
-    vocalStems, generatedLyrics, blueprint, isUpgrading
+    vocalStems, generatedLyrics, blueprint, isUpgrading, setIsUpgrading
   } = useMatrixStore();
 
   const [isBoosting, setIsBoosting] = useState(false);
