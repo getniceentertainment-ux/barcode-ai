@@ -2,7 +2,7 @@
 
 const cspHeader = `
     default-src 'self';
-    script-src 'self' 'unsafe-eval' 'unsafe-inline' https://js.stripe.com https://maps.googleapis.com;
+    script-src 'self' 'unsafe-eval' 'unsafe-inline' https://js.stripe.com https://maps.googleapis.com blob:;
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
     img-src 'self' blob: data: https://*.stripe.com https://images.unsplash.com https://www.transparenttextures.com;
     font-src 'self' https://fonts.gstatic.com;
