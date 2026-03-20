@@ -6,7 +6,7 @@ import {
   UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, 
   Send, Wallet, Radio, Users, ShieldAlert, LogOut,
   Play, Pause, SkipBack, SkipForward, Volume2, Lock, User, Zap, Loader2,
-  ShieldCheck
+  ShieldCheck, Terminal
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
@@ -26,6 +26,10 @@ import Room08_Bank from "../components/matrix/Room08_Bank";
 import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
 
+// --- SECURITY: NO LONGER HARDCODED ---
+// Add NEXT_PUBLIC_CREATOR_ID to your Vercel Environment Variables
+const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID; 
+
 export default function MatrixController() {
   const { 
     hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix, 
@@ -40,8 +44,11 @@ export default function MatrixController() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
 
-  // --- MONETIZATION LOGIC: TIER GATING ---
+  // --- MONETIZATION & SECURITY LOGIC ---
   const isRoomLockedForTier = (roomId: string) => {
+    // 1. Creator (Super Admin) bypasses all locks
+    if (userSession?.id && userSession.id === CREATOR_ID) return false;
+
     const tier = userSession?.tier || "Free Loader";
     const freeAllowed = ["01", "02", "03", "04", "09", "10"];
     const artistAllowed = ["01", "02", "03", "04", "05", "06", "07", "08", "09"];
@@ -85,19 +92,49 @@ export default function MatrixController() {
     if (!audioRef.current) return;
     const url = playbackMode === 'radio' ? radioTrack?.url : audioData?.url;
     if (!url) return;
-    if (isPlaying) audioRef.current.pause();
-    else audioRef.current.play();
+    if (isPlaying) {
+      audioRef.current.pause();
+      window.dispatchEvent(new Event('matrix-global-sys-pause'));
+    } else {
+      audioRef.current.play();
+      window.dispatchEvent(new Event('matrix-global-sys-play'));
+    }
   };
 
   const handleTimeUpdate = () => {
-    if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
+    if (audioRef.current) {
+      const time = audioRef.current.currentTime;
+      setCurrentTime(time);
+      window.dispatchEvent(new CustomEvent('matrix-global-timeupdate', { detail: time }));
+    }
   };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!audioRef.current) return;
     const bounds = e.currentTarget.getBoundingClientRect();
     const percent = (e.clientX - bounds.left) / bounds.width;
-    audioRef.current.currentTime = percent * duration;
+    const newTime = percent * duration;
+    audioRef.current.currentTime = newTime;
+    window.dispatchEvent(new CustomEvent('matrix-global-sys-seek', { detail: newTime }));
+  };
+
+  const toggleRadioMode = () => {
+    setIsPlaying(false);
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
+    
+    if (playbackMode === 'radio') {
+      setPlaybackMode('session');
+    } else {
+      if (!radioTrack) {
+        setRadioTrack({ 
+          url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", 
+          title: "GETNICE FM LIVE", 
+          artist: "SYNDICATE", 
+          score: 99 
+        });
+      }
+      setPlaybackMode('radio');
+    }
   };
 
   const handleBoostPack = async () => {
@@ -112,7 +149,7 @@ export default function MatrixController() {
       const data = await res.json();
       if (data.url) window.location.href = data.url;
     } catch (err) {
-      if(addToast) addToast("Stripe Connection Failed.", "error");
+      if(addToast) addToast("Failed to route to Stripe.", "error");
     } finally {
       setIsBoosting(false);
     }
@@ -142,14 +179,14 @@ export default function MatrixController() {
 
   const renderActiveRoom = () => {
     const lockedRooms = ["01", "02", "03", "04", "05", "06"];
-    if (isProjectFinalized && lockedRooms.includes(activeRoom)) {
+    if (isProjectFinalized && lockedRooms.includes(activeRoom) && userSession?.id !== CREATOR_ID) {
       return (
         <div className="h-full flex flex-col items-center justify-center text-center animate-in zoom-in duration-500">
           <div className="bg-[#110000] border border-[#E60000]/30 p-12 rounded-lg flex flex-col items-center max-w-xl">
             <Lock size={64} className="text-[#E60000] mb-6 shadow-[0_0_30px_rgba(230,0,0,0.5)] rounded-full" />
             <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-4">ARTIFACT LOCKED</h2>
             <p className="font-mono text-xs text-[#888] uppercase tracking-widest mb-8 leading-relaxed">
-              Track permanently locked in ledger.
+              Track permanently locked in ledger. Structural rooms are no longer editable.
             </p>
             <div className="flex gap-4 w-full">
               <button onClick={() => setActiveRoom("08")} className="flex-1 bg-black border border-[#333] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:border-white transition-colors">
@@ -199,7 +236,7 @@ export default function MatrixController() {
             </div>
           )}
         </div>
-        <nav className="flex-1 overflow-y-auto py-6 px-3">
+        <nav className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar">
           <div className="space-y-1 mb-8">
             {rooms.map((room) => {
               const isLockedByProject = isProjectFinalized && ["01", "02", "03", "04", "05", "06"].includes(room.id);
@@ -217,10 +254,17 @@ export default function MatrixController() {
               );
             })}
           </div>
-          <div className="pt-4 border-t border-[#111]">
-            <Link href="/dev-portal" className="w-full flex items-center gap-3 px-5 py-4 text-left text-yellow-600 hover:text-yellow-500 hover:bg-[#111] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold">
+
+          <div className="pt-4 border-t border-[#111] space-y-1">
+            <Link href="/dev-portal" className="w-full flex items-center gap-3 px-5 py-4 text-left text-[#555] hover:text-white hover:bg-[#0a0a0a] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold">
               <ShieldAlert size={16} /> API Portal
             </Link>
+
+            {CREATOR_ID && userSession?.id === CREATOR_ID && (
+              <Link href="/admin-node" className="w-full flex items-center gap-3 px-5 py-4 text-left text-yellow-600 hover:text-yellow-400 hover:bg-[#111] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold border border-yellow-600/20">
+                <Terminal size={16} /> Admin Node
+              </Link>
+            )}
           </div>
         </nav>
       </aside>
@@ -251,17 +295,26 @@ export default function MatrixController() {
       <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
         <audio ref={audioRef} src={playbackMode === 'radio' && radioTrack ? radioTrack.url : audioData?.url || ""} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onEnded={() => setIsPlaying(false)} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} className="hidden" />
         <div className="w-1/3 flex items-center gap-4">
+          <button onClick={toggleRadioMode} className={`w-12 h-12 flex items-center justify-center border transition-all ${playbackMode === 'radio' ? 'bg-[#E60000] border-[#E60000] shadow-[0_0_15px_rgba(230,0,0,0.4)]' : 'bg-black border-[#333] hover:bg-white hover:text-black hover:border-white'}`}>
+            <Radio size={18} className={playbackMode === 'radio' ? "text-white animate-pulse" : "text-[#555]"} />
+          </button>
           <div className="overflow-hidden">
             <p className="font-oswald text-sm uppercase tracking-widest font-bold text-white truncate">{playbackMode === 'radio' && radioTrack ? radioTrack.title : (audioData?.fileName || "IDLE")}</p>
             <p className="font-mono text-[9px] uppercase tracking-widest mt-1 text-[#E60000]">{playbackMode === 'radio' ? `FM BROADCAST` : `STUDIO SESSION`}</p>
           </div>
         </div>
         <div className="flex-1 flex flex-col items-center max-w-xl px-10">
-          <button onClick={togglePlay} className="mb-2 text-white hover:text-[#E60000] transition-colors">{isPlaying ? <Pause size={28} /> : <Play size={28} />}</button>
+          <div className="flex items-center gap-6 mb-2">
+            <button onClick={togglePlay} className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:bg-[#E60000] hover:text-white transition-all">
+              {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-1" />}
+            </button>
+          </div>
           <div className="w-full flex items-center gap-3">
-            <span className="text-[9px] font-mono text-[#444]">{Math.floor(currentTime)}s</span>
-            <div className="flex-1 h-1 bg-[#222] rounded-full overflow-hidden cursor-pointer" onClick={handleSeek}><div className="h-full bg-[#E60000]" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}></div></div>
-            <span className="text-[9px] font-mono text-[#444]">{Math.floor(duration)}s</span>
+            <span className="text-[9px] font-mono text-[#444]">{formatTime(currentTime)}</span>
+            <div className="flex-1 h-1 bg-[#222] rounded-full overflow-hidden cursor-pointer" onClick={handleSeek}>
+              <div className="h-full bg-[#E60000]" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}></div>
+            </div>
+            <span className="text-[9px] font-mono text-[#444]">{formatTime(duration)}</span>
           </div>
         </div>
         <div className="w-1/3 flex justify-end items-center gap-3">
@@ -271,4 +324,11 @@ export default function MatrixController() {
       </div>
     </div>
   );
+
+  function formatTime(t: number) {
+    if (isNaN(t)) return "00:00";
+    const m = Math.floor(t / 60).toString().padStart(2, '0');
+    const s = Math.floor(t % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
 }
