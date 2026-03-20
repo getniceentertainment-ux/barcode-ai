@@ -26,6 +26,47 @@ const ratelimit = new Ratelimit({
   limiter: Ratelimit.slidingWindow(10, "1 m"), 
 });
 
+// --- THE MISSING GET METHOD (For RunPod Polling) ---
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const jobId = searchParams.get('jobId');
+
+    if (!jobId) {
+      return NextResponse.json({ error: "Missing jobId parameter" }, { status: 400 });
+    }
+
+    // 1. First, check the primary DSP Endpoint
+    let runpodRes = await fetch(`https://api.runpod.ai/v2/${process.env.RUNPOD_ENDPOINT_DSP}/status/${jobId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}`,
+      },
+    });
+
+    let data = await runpodRes.json();
+
+    // 2. Fallback check: If the job isn't found (because it was routed to TALON for 'analyze_vibe'), check the TALON endpoint.
+    if (runpodRes.status === 404 || data.error) {
+      runpodRes = await fetch(`https://api.runpod.ai/v2/${process.env.RUNPOD_ENDPOINT_TALON}/status/${jobId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}`,
+        },
+      });
+      data = await runpodRes.json();
+    }
+
+    // Return the status back to the frontend polling loop
+    return NextResponse.json(data);
+
+  } catch (error: any) {
+    console.error("DSP Polling GET Error:", error.message);
+    return NextResponse.json({ error: "Failed to fetch job status" }, { status: 500 });
+  }
+}
+
+// --- SECURE POST METHOD (Initiate Task & Bill Credits) ---
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
@@ -37,7 +78,7 @@ export async function POST(req: Request) {
     let isB2B = false;
     let stripeSubscriptionItemId: string | null = null;
 
-    // --- HYBRID AUTHENTICATION (Matching Ghostwriter) ---
+    // --- HYBRID AUTHENTICATION ---
     if (token.startsWith('getnice_')) {
       isB2B = true;
       const { data: b2bProfile } = await supabaseAdmin
@@ -66,7 +107,6 @@ export async function POST(req: Request) {
 
     if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
 
-    // Block if out of credits (unless Mogul or B2B)
     if (!isB2B && profile.tier !== 'The Mogul' && (profile.credits === null || profile.credits <= 0)) {
       return NextResponse.json({ error: "Insufficient credits for Brain Train." }, { status: 403 });
     }
@@ -79,7 +119,6 @@ export async function POST(req: Request) {
     const { audioUrl, task = "analyze_dsp", blueprint_vibe } = body;
 
     // --- DYNAMIC RUNPOD ROUTING ---
-    // If it's a "vibe train" (not just DSP), it might use the TALON endpoint
     const endpointId = task === "analyze_vibe" ? process.env.RUNPOD_ENDPOINT_TALON : process.env.RUNPOD_ENDPOINT_DSP;
 
     const runResponse = await fetch(`https://api.runpod.ai/v2/${endpointId}/run`, {
@@ -103,13 +142,14 @@ export async function POST(req: Request) {
     if (runData.id) {
       if (isB2B) {
         if (stripeSubscriptionItemId) {
-          await stripe.subscriptionItems.createUsageRecord(stripeSubscriptionItemId, {
-            quantity: 1, timestamp: Math.floor(Date.now() / 1000), action: 'increment'
-          });
+          try {
+            await stripe.subscriptionItems.createUsageRecord(stripeSubscriptionItemId, {
+              quantity: 1, timestamp: Math.floor(Date.now() / 1000), action: 'increment'
+            });
+          } catch(e) { console.error("Stripe Metered Billing failed", e); }
         }
         await supabaseAdmin.rpc('increment_api_calls', { target_user_id: userId });
       } else if (profile.tier !== 'The Mogul') {
-        // Deduct 1 credit for Brain Train / DSP analysis
         await supabaseAdmin
           .from('profiles')
           .update({ credits: profile.credits - 1 })
