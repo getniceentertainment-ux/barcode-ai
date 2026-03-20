@@ -40,7 +40,7 @@ export default function MatrixController() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
 
-  // --- SURGERY 1: TIER GATING LOGIC ---
+  // --- MONETIZATION LOGIC: TIER GATING ---
   const isRoomLockedForTier = (roomId: string) => {
     const tier = userSession?.tier || "Free Loader";
     
@@ -62,11 +62,10 @@ export default function MatrixController() {
     setActiveRoom(roomId);
   };
 
-  // --- SURGERY 2: REAL-TIME CREDIT SYNC ---
+  // --- REAL-TIME CREDIT SYNC ---
   useEffect(() => {
     if (!userSession?.id) return;
 
-    // Listen for credit changes in the database and update frontend instantly
     const channel = supabase
       .channel('profile_sync')
       .on('postgres_changes', { 
@@ -185,7 +184,6 @@ export default function MatrixController() {
   return (
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-24 font-mono">
       
-      {/* SIDEBAR WITH SURGERY 3: GATING VISUALS */}
       <aside className="w-72 bg-black border-r border-[#111] flex flex-col shrink-0 hidden md:flex z-20 shadow-2xl">
         <div className="p-8 border-b border-[#111]">
           <h1 className="font-oswald text-2xl uppercase tracking-[0.2em] font-bold text-[#E60000]">Bar-Code.ai</h1>
@@ -225,7 +223,8 @@ export default function MatrixController() {
                   <span className={`font-oswald text-sm uppercase tracking-widest font-bold ${(isLockedByProject || isLockedByTier) ? 'opacity-30' : ''}`}>
                     R{room.id} - {room.name}
                   </span>
-                  {isLockedByTier && <ShieldCheck size={12} className="absolute right-4 text-yellow-600" title="Upgrade Required" />}
+                  {/* FIXED: Removed invalid title prop from icons */}
+                  {isLockedByTier && <ShieldCheck size={12} className="absolute right-4 text-yellow-600" />}
                   {isLockedByProject && !isLockedByTier && <Lock size={10} className="absolute right-4 text-[#E60000]" />}
                 </button>
               );
@@ -241,7 +240,6 @@ export default function MatrixController() {
       </aside>
 
       <main className="flex-1 relative flex flex-col bg-black overflow-hidden">
-        {/* HUD WITH REAL-TIME CREDITS */}
         <div className="h-14 border-b border-[#111] bg-black/80 backdrop-blur-md flex items-center justify-between px-10 z-10 shrink-0">
            <span className="font-mono text-[9px] text-[#444] uppercase tracking-[0.4em]">
              Matrix // {rooms.find(r => r.id === activeRoom)?.name.toUpperCase()}
@@ -274,7 +272,6 @@ export default function MatrixController() {
         </div>
       </main>
 
-      {/* PERSISTENT PLAYER */}
       <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-10 justify-between">
         <audio ref={audioRef} src={playbackMode === 'radio' && radioTrack ? radioTrack.url : audioData?.url || ""} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onEnded={() => setIsPlaying(false)} className="hidden" />
 
