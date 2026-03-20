@@ -7,12 +7,10 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { userId } = body;
+    const { userId } = await req.json();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized: Missing User ID" }, { status: 401 });
-    }
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://www.bar-code.ai";
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -22,7 +20,7 @@ export async function POST(req: Request) {
             currency: 'usd',
             product_data: {
               name: 'GetNice™ Credit Pack',
-              description: '50 High-Fidelity Generation Credits for Bar-Code.ai',
+              description: '50 High-Fidelity Generation Credits',
             },
             unit_amount: 999,
           },
@@ -30,19 +28,13 @@ export async function POST(req: Request) {
         },
       ],
       mode: 'payment',
-      // FIXED: Pointing to / instead of /studio
-      success_url: `${baseUrl}/?topup_success=true`,
-      cancel_url: `${baseUrl}/`,
+      success_url: `${siteUrl}/?topup_success=true`,
+      cancel_url: `${siteUrl}/`,
       metadata: { userId, type: 'credit_topup', credit_amount: '50' }
     });
 
     return NextResponse.json({ url: session.url });
-
   } catch (error: any) {
-    // This log will appear in your Vercel Function Logs
-    console.error("Stripe Session Error:", error.message);
-    return NextResponse.json({ 
-      error: error.message || "Internal Server Error" 
-    }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

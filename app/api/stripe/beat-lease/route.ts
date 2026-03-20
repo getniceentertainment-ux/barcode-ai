@@ -1,43 +1,56 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
+import { createClient } from '@supabase/supabase-js';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2023-10-16' });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2023-10-16',
+});
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: Request) {
   try {
-    const { beatName, beatUrl, price, userId } = await req.json();
+    const { beatName, beatUrl, price, userId, producerId, beatId } = await req.json();
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://www.bar-code.ai";
 
-    if (!beatName || !beatUrl || !price) {
-      return NextResponse.json({ error: "Missing beat data" }, { status: 400 });
+    const { data: producer } = await supabaseAdmin
+      .from('profiles')
+      .select('stripe_account_id')
+      .eq('id', producerId)
+      .single();
+
+    if (!producer?.stripe_account_id) {
+       return NextResponse.json({ error: "Producer account not linked." }, { status: 400 });
     }
 
-    // Create a secure 1-time payment session for the exact price of the beat
+    const amountInCents = Math.round(price * 100);
+    const platformFee = Math.round(amountInCents * 0.20); 
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{
         price_data: {
           currency: 'usd',
-          product_data: {
-            name: `Commercial Lease: ${beatName}`,
-            description: 'GetNice Records Exclusive Matrix Beat',
-          },
-          unit_amount: Math.round(price * 100), // Convert to cents
+          product_data: { name: beatName, description: 'Bar-Code.ai Marketplace' },
+          unit_amount: amountInCents,
         },
         quantity: 1,
       }],
       mode: 'payment',
-      // CRITICAL: We pass the beat data in the return URL so the Matrix knows to analyze it upon successful payment!
-      success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://bar-code.ai'}?beat_purchased=true&beat_url=${encodeURIComponent(beatUrl)}&beat_name=${encodeURIComponent(beatName)}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://bar-code.ai'}?canceled=true`,
-      metadata: {
-        userId: userId || 'guest',
-        beatName: beatName
+      payment_intent_data: {
+        application_fee_amount: platformFee,
+        transfer_data: { destination: producer.stripe_account_id },
       },
+      success_url: `${siteUrl}/?beat_purchased=true&beat_url=${encodeURIComponent(beatUrl)}`,
+      cancel_url: `${siteUrl}/`,
+      metadata: { userId, type: 'beat_lease', beat_id: beatId }
     });
 
     return NextResponse.json({ url: session.url });
-  } catch (err: any) {
-    console.error("Stripe Beat Lease Error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
