@@ -161,6 +161,11 @@ export default function Room02_BrainTrain() {
       return;
     }
 
+    if (!audioData?.url) {
+      if(addToast) addToast("Missing audio track. Please return to Room 01 to load an instrumental.", "error");
+      return;
+    }
+
     setIsProcessing(true);
     setStatus("analyzing");
 
@@ -174,7 +179,8 @@ export default function Room02_BrainTrain() {
         },
         body: JSON.stringify({ 
           task: "analyze_vibe", 
-          blueprint_vibe: textInput 
+          blueprint_vibe: textInput,
+          audioUrl: audioData.url
         })
       });
 
@@ -207,15 +213,23 @@ export default function Room02_BrainTrain() {
       if (audioData?.totalBars) {
         let remaining = audioData.totalBars;
         const calc: any[] = [];
-        if (remaining >= 4) { calc.push({ id: "intro", type: "INTRO", bars: 4 }); remaining -= 4; }
-        let idCounter = 1;
-        while (remaining >= 24) {
-          calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8 }); remaining -= 8;
-          calc.push({ id: `verse_${idCounter}`, type: "VERSE", bars: 16 }); remaining -= 16;
-          idCounter++;
+        
+        if (userSession?.tier === "The Mogul") {
+          if (remaining >= 4) { calc.push({ id: "intro", type: "INTRO", bars: 4 }); remaining -= 4; }
+          let idCounter = 1;
+          while (remaining >= 24) {
+            calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8 }); remaining -= 8;
+            calc.push({ id: `verse_${idCounter}`, type: "VERSE", bars: 16 }); remaining -= 16;
+            idCounter++;
+          }
+          if (remaining >= 8) { calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8 }); remaining -= 8; }
+          calc.push({ id: "outro", type: "OUTRO", bars: remaining });
+        } else {
+          // Free & Artist Tier Limits: 1 Hook + 1 Verse (Equals 1 Credit)
+          calc.push({ id: "hook_1", type: "HOOK", bars: 8 });
+          calc.push({ id: "verse_1", type: "VERSE", bars: 16 });
         }
-        if (remaining >= 8) { calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8 }); remaining -= 8; }
-        calc.push({ id: "outro", type: "OUTRO", bars: remaining });
+        
         setBlueprint(calc);
       }
 
@@ -324,7 +338,21 @@ export default function Room02_BrainTrain() {
           </div>
 
           <div className="bg-black border border-[#222] p-8 mb-8">
-             <h3 className="text-xl text-[#E60000] font-oswald uppercase tracking-widest font-bold mb-6">DSP Structural Blueprint</h3>
+             <div className="flex justify-between items-center mb-6">
+               <h3 className="text-xl text-[#E60000] font-oswald uppercase tracking-widest font-bold">DSP Structural Blueprint</h3>
+               {userSession?.tier !== "The Mogul" && (
+                 <span className="text-[10px] font-mono text-yellow-500 uppercase border border-yellow-500/20 px-2 py-1 tracking-widest bg-yellow-500/10">
+                   Ghostwriter Cost: {Math.max(1, Math.ceil(blueprint.length / 2))} CRD
+                 </span>
+               )}
+             </div>
+             
+             {userSession?.tier !== "The Mogul" && (
+               <p className="font-mono text-[9px] text-[#888] uppercase tracking-widest mb-4 border-b border-[#111] pb-4">
+                 Tier Limit: 1 Hook & 1 Block per Credit. Upgrade to Mogul to unlock full-song automated mapping.
+               </p>
+             )}
+             
              <div className="space-y-3">
                {blueprint.map((block, index) => (
                  <div key={block.id} className="flex items-center gap-4 bg-[#0a0a0a] border border-[#222] p-3">
