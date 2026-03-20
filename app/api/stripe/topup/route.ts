@@ -57,24 +57,3 @@ export async function POST(req: Request) {
     }, { status: 500 });
   }
 }
-```
-
-### **Critical Live Deployment Steps**
-To prevent the **500 errors** and **404s** you're seeing in the live environment, you must verify these two settings in Vercel immediately:
-
-1.  **Vercel Environment Variables:**
-    * `STRIPE_SECRET_KEY`: Use your **Live** secret key (starts with `sk_live_`) once you're ready to take real money, or `sk_test_` for your current live testing.
-    * `NEXT_PUBLIC_BASE_URL`: Must be the full URL of your site (e.g., `https://barcode-ai.vercel.app`). **Do not include a trailing slash.**
-
-2.  **The Frontend Trigger:**
-    Ensure the "Top Up" button in your UI is calling this route. It should look like this:
-    ```typescript
-    const handleTopUp = async () => {
-      const res = await fetch('/api/stripe/top-up', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: userSession.id })
-      });
-      const { url } = await res.json();
-      if (url) window.location.href = url;
-    };
