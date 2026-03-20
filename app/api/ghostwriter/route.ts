@@ -7,8 +7,14 @@ import Stripe from 'stripe';
 export const dynamic = 'force-dynamic';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16', // Use your current Stripe API version
+  apiVersion: '2023-10-16',
 });
+
+// Initialize Admin Client
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL || '',
@@ -17,38 +23,54 @@ const redis = new Redis({
 
 const ratelimit = new Ratelimit({
   redis: redis,
-  limiter: Ratelimit.slidingWindow(5, "1 m"), 
+  limiter: Ratelimit.slidingWindow(10, "1 m"), 
 });
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
+// --- THE MISSING GET METHOD (For RunPod Polling) ---
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get('jobId');
-    if (!jobId) return NextResponse.json({ error: "Missing jobId" }, { status: 400 });
 
-    const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
-    const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_TALON;
+    if (!jobId) {
+      return NextResponse.json({ error: "Missing jobId parameter" }, { status: 400 });
+    }
 
-    const statusRes = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/status/${jobId}`, {
-      headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
-      cache: 'no-store' 
+    // 1. First, check the primary DSP Endpoint
+    let runpodRes = await fetch(`https://api.runpod.ai/v2/${process.env.RUNPOD_ENDPOINT_DSP}/status/${jobId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}`,
+      },
     });
-    
-    return NextResponse.json(await statusRes.json());
+
+    let data = await runpodRes.json();
+
+    // 2. Fallback check: If the job isn't found (because it was routed to TALON for 'analyze_vibe'), check the TALON endpoint.
+    if (runpodRes.status === 404 || data.error) {
+      runpodRes = await fetch(`https://api.runpod.ai/v2/${process.env.RUNPOD_ENDPOINT_TALON}/status/${jobId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}`,
+        },
+      });
+      data = await runpodRes.json();
+    }
+
+    // Return the status back to the frontend polling loop
+    return NextResponse.json(data);
+
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("DSP Polling GET Error:", error.message);
+    return NextResponse.json({ error: "Failed to fetch job status" }, { status: 500 });
   }
 }
 
+// --- SECURE POST METHOD (Initiate Task & Bill Credits) ---
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
-    if (!authHeader) return NextResponse.json({ error: "Access Denied: Missing Token" }, { status: 401 });
+    if (!authHeader) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     
     const token = authHeader.replace('Bearer ', '');
     
@@ -56,108 +78,91 @@ export async function POST(req: Request) {
     let isB2B = false;
     let stripeSubscriptionItemId: string | null = null;
 
-    // --- HYBRID AUTHENTICATION ROUTING ---
+    // --- HYBRID AUTHENTICATION ---
     if (token.startsWith('getnice_')) {
-      // 1. B2B EXTERNAL API KEY FLOW
       isB2B = true;
       const { data: b2bProfile } = await supabaseAdmin
         .from('profiles')
-        .select('id, stripe_metered_item_id') // Ensure this column exists in DB for B2B users
+        .select('id, stripe_metered_item_id')
         .eq('b2b_api_key', token)
         .single();
 
-      if (!b2bProfile) return NextResponse.json({ error: "Access Denied: Invalid API Key" }, { status: 401 });
-      
+      if (!b2bProfile) return NextResponse.json({ error: "Invalid API Key" }, { status: 401 });
       userId = b2bProfile.id;
       stripeSubscriptionItemId = b2bProfile.stripe_metered_item_id;
-      
     } else {
-      // 2. STANDARD JWT BROWSER FLOW
       const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-      if (authError || !user) return NextResponse.json({ error: "Access Denied: Invalid Auth Token" }, { status: 401 });
+      if (authError || !user) return NextResponse.json({ error: "Invalid Session" }, { status: 401 });
       userId = user.id;
     }
 
-    // --- RATE LIMITING ---
-    if (!userId) {
-      return NextResponse.json({ error: "Access Denied: User ID resolution failed" }, { status: 401 });
+    if (!userId) return NextResponse.json({ error: "User resolution failed" }, { status: 401 });
+
+    // --- STRICT CREDIT CHECK ---
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('credits, tier')
+      .eq('id', userId)
+      .single();
+
+    if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+
+    if (!isB2B && profile.tier !== 'The Mogul' && (profile.credits === null || profile.credits <= 0)) {
+      return NextResponse.json({ error: "Insufficient credits for Brain Train." }, { status: 403 });
     }
-    
+
+    // Rate limiting
     const { success } = await ratelimit.limit(userId);
-    if (!success) return NextResponse.json({ error: "Rate Limit Exceeded. Please hold." }, { status: 429 });
+    if (!success) return NextResponse.json({ error: "Rate limit exceeded." }, { status: 429 });
 
     const body = await req.json();
-    const { prompt, title, bpm, key, stageName, tag, style, blueprint } = body;
+    const { audioUrl, task = "analyze_dsp", blueprint_vibe } = body;
 
-    // --- CREDIT / AUTHORIZATION CHECK ---
-    let profileTier = 'Free Loader';
-    let cost = 1;
-    
-    // Calculate cost: 1 hook + 1 blueprint block (2 blocks total) = 1 credit.
-    if (blueprint && Array.isArray(blueprint)) {
-      cost = Math.max(1, Math.ceil(blueprint.length / 2));
-    }
+    // --- DYNAMIC RUNPOD ROUTING ---
+    const endpointId = task === "analyze_vibe" ? process.env.RUNPOD_ENDPOINT_TALON : process.env.RUNPOD_ENDPOINT_DSP;
 
-    if (!isB2B) {
-      const { data: profile } = await supabaseAdmin.from('profiles').select('credits, tier').eq('id', userId).single();
-      if (!profile || (profile.tier !== 'The Mogul' && profile.credits < cost)) {
-        return NextResponse.json({ error: `Insufficient Credits. This blueprint requires ${cost} credits.` }, { status: 403 });
-      }
-      profileTier = profile.tier;
-    }
-
-    const thematicPrompt = title ? `SONG TITLE: "${title}". ${prompt}` : prompt;
-
-    // --- RUNPOD EXECUTION ---
-    const runResponse = await fetch(`https://api.runpod.ai/v2/${process.env.RUNPOD_ENDPOINT_TALON}/run`, {
+    const runResponse = await fetch(`https://api.runpod.ai/v2/${endpointId}/run`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}` },
+      headers: { 
+        'Content-Type': 'application/json', 
+        'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}` 
+      },
       body: JSON.stringify({
         input: {
-          task_type: "generate",
-          prompt: thematicPrompt,
-          bpm: bpm || 120,
-          key: key || "Unknown Key",            
-          style: style || "getnice_hybrid",
-          stageName: stageName || "The Artist", 
-          blueprint: blueprint 
+          task: task,
+          audio_url: audioUrl,
+          blueprint_vibe: blueprint_vibe
         }
       })
     });
 
     const runData = await runResponse.json();
-    
-    // --- ACCOUNTING & BILLING ---
+
+    // --- ACCOUNTING ---
     if (runData.id) {
       if (isB2B) {
-        // B2B: Log API call to DB for the dashboard, and charge Stripe Metered Billing
         if (stripeSubscriptionItemId) {
           try {
-            await stripe.subscriptionItems.createUsageRecord(
-              stripeSubscriptionItemId,
-              { quantity: 1, timestamp: Math.floor(Date.now() / 1000), action: 'increment' }
-            );
-          } catch (stripeErr) {
-            console.error("Stripe Metered Billing Failed:", stripeErr);
-          }
+            await stripe.subscriptionItems.createUsageRecord(stripeSubscriptionItemId, {
+              quantity: 1, timestamp: Math.floor(Date.now() / 1000), action: 'increment'
+            });
+          } catch(e) { console.error("Stripe Metered Billing failed", e); }
         }
-        // Increment the dashboard counter
-        await supabaseAdmin.rpc('increment_api_calls', { target_user_id: userId }); 
-
-      } else if (profileTier !== 'The Mogul') {
-        // B2C: Deduct calculated credits based on blueprint size
-        const { data: currentProfile } = await supabaseAdmin.from('profiles').select('credits').eq('id', userId).single();
-        if (currentProfile) {
-          await supabaseAdmin.from('profiles').update({ credits: currentProfile.credits - cost }).eq('id', userId);
-        }
+        await supabaseAdmin.rpc('increment_api_calls', { target_user_id: userId });
+      } else if (profile.tier !== 'The Mogul') {
+        await supabaseAdmin
+          .from('profiles')
+          .update({ credits: profile.credits - 1 })
+          .eq('id', userId);
       }
       
       return NextResponse.json({ jobId: runData.id });
-    } else {
-      throw new Error(runData.error || "Failed to initialize TALON container.");
     }
 
+    throw new Error(runData.error || "RunPod initiation failed.");
+
   } catch (error: any) {
+    console.error("Brain Train API Error:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
