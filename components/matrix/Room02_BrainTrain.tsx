@@ -23,6 +23,7 @@ export default function Room02_BrainTrain() {
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const previewAudioRef = useRef<HTMLAudioElement>(null);
   const [countdown, setCountdown] = useState(10);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // --- MONETIZATION: CREDIT CHECK ---
   const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID;
@@ -154,17 +155,16 @@ export default function Room02_BrainTrain() {
     }
   };
 
-  // --- UPDATED: SECURE SYNTHESIZE ---
   const handleSynthesize = async () => {
     if (!hasCredits) {
-      if(addToast) addToast("Insufficient Credits. Top up to synthesize Flow DNA.", "error");
+      if(addToast) addToast("Insufficient Credits.", "error");
       return;
     }
 
+    setIsProcessing(true);
     setStatus("analyzing");
 
     try {
-      // 1. DEDUCT CREDIT VIA SECURE API (Fires RunPod + Deducts DB)
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/api/dsp', {
         method: 'POST',
@@ -181,7 +181,6 @@ export default function Room02_BrainTrain() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Synthesis Failed");
 
-      // 2. Logic to determine style
       let finalStyleId = detectedStyle?.id || "getnice_hybrid";
       let finalStyleName = detectedStyle?.name || STYLES.getnice_hybrid;
 
@@ -224,6 +223,8 @@ export default function Room02_BrainTrain() {
     } catch (err: any) {
       if(addToast) addToast(err.message, "error");
       setStatus("idle");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -293,11 +294,11 @@ export default function Room02_BrainTrain() {
               </div>
             )}
             <button
-              disabled={!hasCredits || ((micStatus === "idle" || micStatus === "listening") && textInput.trim() === "")}
+              disabled={!hasCredits || isProcessing || ((micStatus === "idle" || micStatus === "listening") && textInput.trim() === "")}
               onClick={handleSynthesize}
               className="w-full bg-[#E60000] text-white py-6 font-oswald text-lg font-bold uppercase tracking-[0.4em] hover:bg-red-700 transition-all flex items-center justify-center gap-3"
             >
-              {status === "analyzing" ? <Loader2 className="animate-spin" /> : "Synthesize Hybrid Flow"}
+              {isProcessing ? <Loader2 className="animate-spin" /> : "Synthesize Hybrid Flow"}
               <Zap size={18} />
             </button>
           </div>
