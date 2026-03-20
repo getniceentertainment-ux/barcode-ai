@@ -47,7 +47,7 @@ export default function MatrixController() {
     // Free Loaders: Only Creation (R01-R04) + Radio/Social
     const freeAllowed = ["01", "02", "03", "04", "09", "10"];
     // Artists: Everything except Enterprise Social Tools (R10)
-    const artistAllowed = ["01", "02", "03", "04", "05", "06", "07", "08", "09"];
+    const artistAllowed = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"];
 
     if (tier === "Free Loader" && !freeAllowed.includes(roomId)) return true;
     if (tier === "The Artist" && !artistAllowed.includes(roomId) && roomId === "10") return true;
