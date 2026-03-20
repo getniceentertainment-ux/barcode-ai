@@ -91,10 +91,17 @@ export async function POST(req: Request) {
 
     // --- CREDIT / AUTHORIZATION CHECK ---
     let profileTier = 'Free Loader';
+    let cost = 1;
+    
+    // Calculate cost: 1 hook + 1 blueprint block (2 blocks total) = 1 credit.
+    if (blueprint && Array.isArray(blueprint)) {
+      cost = Math.max(1, Math.ceil(blueprint.length / 2));
+    }
+
     if (!isB2B) {
       const { data: profile } = await supabaseAdmin.from('profiles').select('credits, tier').eq('id', userId).single();
-      if (!profile || (profile.tier !== 'The Mogul' && profile.credits <= 0)) {
-        return NextResponse.json({ error: "Insufficient Generations." }, { status: 403 });
+      if (!profile || (profile.tier !== 'The Mogul' && profile.credits < cost)) {
+        return NextResponse.json({ error: `Insufficient Credits. This blueprint requires ${cost} credits.` }, { status: 403 });
       }
       profileTier = profile.tier;
     }
@@ -138,10 +145,10 @@ export async function POST(req: Request) {
         await supabaseAdmin.rpc('increment_api_calls', { target_user_id: userId }); 
 
       } else if (profileTier !== 'The Mogul') {
-        // B2C: Deduct 1 standard credit
+        // B2C: Deduct calculated credits based on blueprint size
         const { data: currentProfile } = await supabaseAdmin.from('profiles').select('credits').eq('id', userId).single();
         if (currentProfile) {
-          await supabaseAdmin.from('profiles').update({ credits: currentProfile.credits - 1 }).eq('id', userId);
+          await supabaseAdmin.from('profiles').update({ credits: currentProfile.credits - cost }).eq('id', userId);
         }
       }
       
