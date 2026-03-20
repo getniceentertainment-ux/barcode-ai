@@ -25,57 +25,46 @@ const ratelimit = new Ratelimit({
   limiter: Ratelimit.slidingWindow(10, "1 m"), 
 });
 
-// 1. GET ROUTE: Dual-Polling Handler (Finds jobs on either DSP or TALON)
+// 1. GET ROUTE: Required for Room 03 to poll the TALON Job Status
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get('jobId');
-    
+
+    // Prevent polling if the ID is missing
     if (!jobId || jobId === 'undefined') {
       return NextResponse.json({ error: "Missing or invalid jobId" }, { status: 400 });
     }
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
-    const DSP_ENDPOINT = process.env.RUNPOD_ENDPOINT_DSP || process.env.RUNPOD_ENDPOINT_ID;
-    const TALON_ENDPOINT = process.env.RUNPOD_ENDPOINT_TALON || process.env.RUNPOD_ENDPOINT_ID;
+    const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_TALON || process.env.RUNPOD_ENDPOINT_ID;
 
-    // First attempt: Check the DSP Endpoint
-    let statusRes = await fetch(`https://api.runpod.ai/v2/${DSP_ENDPOINT}/status/${jobId}`, {
+    const statusRes = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/status/${jobId}`, {
       headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
       cache: 'no-store'
     });
     
-    let data = await statusRes.json();
-
-    // Second attempt: If the job wasn't found on DSP, it was a Vibe Analysis sent to TALON. Check there.
-    if (statusRes.status === 404 || data.error) {
-      statusRes = await fetch(`https://api.runpod.ai/v2/${TALON_ENDPOINT}/status/${jobId}`, {
-        headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
-        cache: 'no-store'
-      });
-      data = await statusRes.json();
-    }
-    
-    return NextResponse.json(data);
+    return NextResponse.json(await statusRes.json());
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
-// 2. POST ROUTE: Real RunPod Execution & Billing
+// 2. POST ROUTE: Initiates the TALON Ghostwriter & Deducts Dynamic Credits
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: "Security Exception: Missing or invalid Auth Token." }, { status: 401 });
     }
-    
+
     const token = authHeader.replace('Bearer ', '');
     
     let userId: string | null = null;
     let isB2B = false;
     let stripeSubscriptionItemId: string | null = null;
 
+    // --- HYBRID AUTHENTICATION ---
     if (token.startsWith('getnice_')) {
       isB2B = true;
       const { data: b2bProfile } = await supabaseAdmin
@@ -96,13 +85,17 @@ export async function POST(req: Request) {
     if (!userId) return NextResponse.json({ error: "User resolution failed" }, { status: 401 });
 
     const body = await req.json();
-    const file_url = body.file_url || body.audioUrl;
-    const task_type = body.task_type || body.task || "analyze";
-    const blueprint_vibe = body.blueprint_vibe; // Used by Room 02
+    
+    // Ghostwriter payload parameters (No file_url expected)
+    const { prompt, title, bpm, key, stageName, tag, style, gender, useSlang, useIntel, blueprint } = body;
 
-    if (!file_url) return NextResponse.json({ error: "Missing file_url" }, { status: 400 });
+    // --- DYNAMIC CREDIT CHECK ---
+    let cost = 1;
+    if (blueprint && Array.isArray(blueprint)) {
+      // 1 Credit for every 2 structural blocks
+      cost = Math.max(1, Math.ceil(blueprint.length / 2));
+    }
 
-    // --- STRICT CREDIT CHECK ---
     const { data: profile, error: dbError } = await supabaseAdmin
       .from('profiles')
       .select('credits, tier')
@@ -111,8 +104,8 @@ export async function POST(req: Request) {
 
     if (dbError || !profile) return NextResponse.json({ error: "Security Exception: Identity not found." }, { status: 401 });
 
-    if (!isB2B && profile.tier !== 'The Mogul' && profile.credits <= 0) {
-      return NextResponse.json({ error: "Insufficient Generations." }, { status: 403 });
+    if (!isB2B && profile.tier !== 'The Mogul' && profile.credits < cost) {
+      return NextResponse.json({ error: `Insufficient Credits. Need ${cost} CRD.` }, { status: 403 });
     }
 
     // --- RATE LIMITING ---
@@ -120,16 +113,11 @@ export async function POST(req: Request) {
     if (!success) return NextResponse.json({ error: "Rate limit exceeded." }, { status: 429 });
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
-    
-    // --- DYNAMIC ENDPOINT ROUTING ---
-    // If it's a linguistic vibe task, send to TALON. If it's raw audio math, send to DSP.
-    const ENDPOINT_ID = task_type === "analyze_vibe" 
-      ? (process.env.RUNPOD_ENDPOINT_TALON || process.env.RUNPOD_ENDPOINT_ID)
-      : (process.env.RUNPOD_ENDPOINT_DSP || process.env.RUNPOD_ENDPOINT_ID);
+    const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_TALON || process.env.RUNPOD_ENDPOINT_ID;
 
-    if (!RUNPOD_API_KEY || !ENDPOINT_ID) return NextResponse.json({ error: "Server missing RunPod config." }, { status: 500 });
+    if (!RUNPOD_API_KEY || !ENDPOINT_ID) return NextResponse.json({ error: "Server missing TALON config." }, { status: 500 });
 
-    // --- REAL RUNPOD EXECUTION ---
+    // --- PING RUNPOD TALON ENGINE ---
     const runResponse = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/run`, {
       method: 'POST',
       headers: {
@@ -138,9 +126,18 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         input: {
-          task_type: task_type,
-          file_url: file_url,
-          blueprint_vibe: blueprint_vibe
+          task_type: "generate_lyrics",
+          prompt,
+          title,
+          bpm,
+          key,
+          stageName,
+          tag,
+          style,
+          gender,
+          useSlang,
+          useIntel,
+          blueprint
         }
       })
     });
@@ -148,22 +145,23 @@ export async function POST(req: Request) {
     const data = await runResponse.json();
 
     if (data.id) {
-      // --- ACCOUNTING & DEDUCTION ON SUCCESSFUL INITIATION ---
+      // --- ACCOUNTING & DEDUCTION ---
       if (isB2B) {
         if (stripeSubscriptionItemId) {
           try { await stripe.subscriptionItems.createUsageRecord(stripeSubscriptionItemId, { quantity: 1, timestamp: Math.floor(Date.now() / 1000), action: 'increment' }); } catch(e) {}
         }
         await supabaseAdmin.rpc('increment_api_calls', { target_user_id: userId });
       } else if (profile.tier !== 'The Mogul') {
-        await supabaseAdmin.from('profiles').update({ credits: profile.credits - 1 }).eq('id', userId);
+        // Deduct the dynamic blueprint cost
+        await supabaseAdmin.from('profiles').update({ credits: profile.credits - cost }).eq('id', userId);
       }
       return NextResponse.json({ jobId: data.id });
     } else {
-      throw new Error(data.error || "RunPod processing failed");
+      throw new Error(data.error || "TALON processing failed");
     }
 
   } catch (error: any) {
-    console.error("DSP API Error:", error);
+    console.error("Ghostwriter API Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
