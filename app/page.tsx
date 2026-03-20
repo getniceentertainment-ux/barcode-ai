@@ -37,12 +37,23 @@ export default function MatrixController() {
     radioTrack, setRadioTrack, addToast
   } = useMatrixStore();
 
+  const [isHydrated, setIsHydrated] = useState(false);
   const [isBoosting, setIsBoosting] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
+
+  // --- BOOT PURGE LOGIC (Crucial for preventing Blob crash on reload) ---
+  useEffect(() => {
+    setIsHydrated(true);
+    useMatrixStore.setState((state) => ({
+      vocalStems: [], // Wipe dead blobs
+      finalMaster: null, // Wipe dead blobs
+      audioData: state.audioData?.url?.startsWith('blob:') ? null : state.audioData
+    }));
+  }, []);
 
   // --- MONETIZATION & SECURITY LOGIC ---
   const isRoomLockedForTier = (roomId: string) => {
@@ -162,6 +173,18 @@ export default function MatrixController() {
     window.location.reload();
   };
 
+  // --- NEW TRACK LIFECYCLE LOGIC ---
+  const handleNewProject = async () => {
+    if (userSession?.id) {
+      // Obliterate the saved session from the database so they start fresh
+      await supabase.from('matrix_sessions').delete().eq('user_id', userSession.id);
+    }
+    clearMatrix();
+    setActiveRoom("01");
+  };
+
+  // Prevent SSR Hydration Mismatch
+  if (!isHydrated) return null;
   if (!hasAccess) return <EntryGateway />;
 
   const rooms = [
@@ -192,7 +215,8 @@ export default function MatrixController() {
               <button onClick={() => setActiveRoom("08")} className="flex-1 bg-black border border-[#333] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:border-white transition-colors">
                 Vault
               </button>
-              <button onClick={() => { clearMatrix(); setActiveRoom("01"); }} className="flex-1 bg-[#E60000] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:bg-red-700 transition-colors shadow-[0_0_15px_rgba(230,0,0,0.3)]">
+              {/* TRIGGER NEW TRACK SEQUENCE */}
+              <button onClick={handleNewProject} className="flex-1 bg-[#E60000] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:bg-red-700 transition-colors shadow-[0_0_15px_rgba(230,0,0,0.3)]">
                 Initialize New
               </button>
             </div>

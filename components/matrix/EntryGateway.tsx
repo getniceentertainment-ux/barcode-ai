@@ -39,8 +39,6 @@ export default function EntryGateway() {
     if (profile) {
       setUserProfile({ ...user, ...profile });
 
-      // FIX: If they have a tier and credits already, grant access immediately.
-      // Don't force them back to the select_tier screen unless they are brand new.
       if (profile.tier && profile.credits !== null) {
         const session: UserSession = {
           id: profile.id,
@@ -49,6 +47,29 @@ export default function EntryGateway() {
           walletBalance: profile.wallet_balance || 0,
           creditsRemaining: profile.tier === "The Mogul" ? "UNLIMITED" : profile.credits
         };
+
+        // --- SESSION RECOVERY LOGIC ---
+        try {
+          const { data: savedSession } = await supabase
+            .from('matrix_sessions')
+            .select('session_state')
+            .eq('user_id', profile.id)
+            .maybeSingle();
+
+          // If they have an active project in the DB, inject it into the store
+          if (savedSession?.session_state) {
+            useMatrixStore.setState({
+              ...savedSession.session_state,
+              userSession: session, // Securely apply the fresh auth session
+              hasAccess: true
+            });
+            return; // Skip normal grantAccess to preserve recovered state
+          }
+        } catch (err) {
+          console.error("Session recovery failed", err);
+        }
+        // ------------------------------
+
         grantAccess(session);
       } else {
         setAuthStep("select_tier");
@@ -65,7 +86,6 @@ export default function EntryGateway() {
     setIsScanning(true);
     
     try {
-      // Simple hash for hardware signature
       const deviceId = btoa(navigator.userAgent).substring(0, 16);
       await new Promise(resolve => setTimeout(resolve, 1000));
       setIsScanning(false);
@@ -97,7 +117,6 @@ export default function EntryGateway() {
     if (!userProfile?.id) return;
     
     if (tier === "Free Loader") {
-      // Force fetch latest profile to prevent credit resetting to default 5
       const { data: latest } = await supabase.from('profiles').select('credits').eq('id', userProfile.id).single();
       
       const session: UserSession = {

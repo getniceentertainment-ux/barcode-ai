@@ -13,14 +13,17 @@ export default function MatrixAutoSave() {
     const saveInterval = setInterval(async () => {
       try {
         const userId = state.userSession?.id;
-        if (!userId) return; // Satisfies TypeScript strict null-check
+        if (!userId) return; 
 
-        // Extract only the necessary payload to prevent Supabase bloat
+        // EXACT MATCH to Zustand state keys. 
+        // Excludes vocalStems and finalMaster to prevent dead blob storage.
         const payload = {
-          audio_data: state.audioData,
+          audioData: state.audioData,
           blueprint: state.blueprint,
-          flow_dna: state.flowDNA,
-          active_room: state.activeRoom
+          flowDNA: state.flowDNA,
+          activeRoom: state.activeRoom,
+          generatedLyrics: state.generatedLyrics,
+          isProjectFinalized: state.isProjectFinalized
         };
 
         await supabase
@@ -37,7 +40,15 @@ export default function MatrixAutoSave() {
     }, 30000); // 30-second strict interval
 
     return () => clearInterval(saveInterval);
-  }, [state.userSession?.id, state.audioData, state.blueprint, state.flowDNA, state.activeRoom]);
+  }, [
+    state.userSession?.id, 
+    state.audioData, 
+    state.blueprint, 
+    state.flowDNA, 
+    state.activeRoom,
+    state.generatedLyrics,
+    state.isProjectFinalized
+  ]);
 
   return null; // Invisible execution
 }
