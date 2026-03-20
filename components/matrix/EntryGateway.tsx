@@ -117,7 +117,14 @@ export default function EntryGateway() {
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        if (data.user) await processUserSession(data.user);
+        
+        // --- SURGICAL INJECTION: Retroactive Fingerprint Tagging ---
+        // If an older account (or current test account) logs in, permanently tag their hardware hash now.
+        if (data.user) {
+          await supabase.from('profiles').update({ device_fingerprint: deviceId }).eq('id', data.user.id);
+          await processUserSession(data.user);
+        }
+        // -----------------------------------------------------------
       }
     } catch (err: any) {
       if(addToast) addToast("Auth Failed: " + err.message, "error");
