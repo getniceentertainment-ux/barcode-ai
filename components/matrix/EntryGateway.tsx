@@ -84,6 +84,19 @@ export default function EntryGateway() {
       if (authMode === "signup") {
         if (!stageName.trim()) throw new Error("Stage Name / Moniker is required.");
         
+        // --- SURGICAL INJECTION: The Sybil Lock ---
+        // Check if this hardware hash is already active on the matrix
+        const { data: existingDevice } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('device_fingerprint', deviceId)
+          .maybeSingle();
+
+        if (existingDevice) {
+           throw new Error("Sybil Shield Activated: Hardware signature already registered to an active node.");
+        }
+        // ------------------------------------------
+
         const { data, error } = await supabase.auth.signUp({ 
           email, 
           password,
