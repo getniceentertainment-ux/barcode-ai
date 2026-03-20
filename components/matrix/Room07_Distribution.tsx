@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon, Globe, Zap } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
@@ -14,6 +14,25 @@ export default function Room07_Distribution() {
   const [hitScore, setHitScore] = useState<number>(0);
   const [coverUrl, setCoverUrl] = useState<string>("");
   const [tiktokSnippet, setTiktokSnippet] = useState<string>("");
+  const [isGeneratingCover, setIsGeneratingCover] = useState(false);
+
+  // --- SURGICAL INSERTION 1: Catch returning Stripe redirects for purchased DALL-E Cover Art ---
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('cover_purchased') === 'true') {
+        const generatedCoverUrl = params.get('cover_url');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        if (generatedCoverUrl) {
+          setCoverUrl(generatedCoverUrl);
+          setStatus("success");
+          if(addToast) addToast("DALL-E 3 Cover Art Generated & Attached.", "success");
+        }
+      }
+    }
+  }, [userSession, addToast]);
+  // ------------------------------------------------------------------------------------------
 
   const handleAnalyze = async () => {
     if (!trackTitle.trim()) {
@@ -86,6 +105,35 @@ export default function Room07_Distribution() {
       setStatus("idle");
     }
   };
+
+  // --- SURGICAL INSERTION 2: The Checkout Routing Function ---
+  const handlePurchaseCoverArt = async () => {
+    setIsGeneratingCover(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const res = await fetch('/api/stripe/cover-art', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({ userId: userSession?.id, trackTitle })
+      });
+      const data = await res.json();
+      
+      if (data.url) {
+        window.location.href = data.url; 
+      } else {
+        throw new Error(data.error || "Failed to initialize Stripe.");
+      }
+    } catch (err: any) {
+      console.error("Cover Art Checkout Error:", err);
+      if (addToast) addToast("Checkout failed: " + err.message, "error");
+      setIsGeneratingCover(false);
+    }
+  };
+  // -----------------------------------------------------------
 
   return (
     <div className="h-full flex flex-col justify-center max-w-5xl mx-auto animate-in fade-in duration-500">
@@ -165,10 +213,31 @@ export default function Room07_Distribution() {
              
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
                
-               {/* Identity & Score Row */}
+               {/* --- SURGICAL INSERTION 3: UI Replacement for $2.99 Paywall Injection --- */}
                <div className="flex flex-col md:flex-row gap-6">
-                  <div className="w-full md:w-48 h-48 bg-[#111] border border-[#333] relative overflow-hidden shadow-xl shrink-0">
-                    {coverUrl ? <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" /> : <ImageIcon size={32} className="m-auto text-[#333]" />}
+                  <div className="w-full md:w-48 flex flex-col gap-2 shrink-0">
+                    <div className="w-full h-48 bg-[#111] border border-[#333] relative overflow-hidden shadow-xl">
+                      {coverUrl ? (
+                        <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-[#333]">
+                          <ImageIcon size={32} className="mb-2" />
+                          <span className="font-mono text-[8px] uppercase tracking-widest text-center px-2">No Cover Art</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* The $2.99 Paywall Injection */}
+                    {!coverUrl && (
+                      <button 
+                        onClick={handlePurchaseCoverArt}
+                        disabled={isGeneratingCover}
+                        className="w-full flex items-center justify-center gap-2 bg-black border border-[#333] text-yellow-500 py-2 text-[9px] font-bold uppercase tracking-widest hover:border-yellow-500 transition-colors disabled:opacity-50"
+                      >
+                        {isGeneratingCover ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                        AI Cover Art ($2.99)
+                      </button>
+                    )}
                   </div>
                   <div className="flex-1 bg-black border border-[#222] p-6 flex flex-col items-center justify-center">
                     <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 flex items-center gap-2">
@@ -183,6 +252,7 @@ export default function Room07_Distribution() {
                     </p>
                   </div>
                </div>
+               {/* ---------------------------------------------------------------------- */}
 
                {/* TikTok Viral Snippet Display */}
                <div className="bg-[#110000] border border-[#330000] p-6 text-left relative overflow-hidden">
