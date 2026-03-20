@@ -38,7 +38,8 @@ function audioBufferToWav(buffer: AudioBuffer) {
 }
 
 export default function Room05_VocalSuite() {
-  const { vocalStems, addVocalStem, removeVocalStem, setActiveRoom, addToast } = useMatrixStore();
+  // Added audioData for the synchronized instrumental playback
+  const { audioData, vocalStems, addVocalStem, removeVocalStem, setActiveRoom, addToast } = useMatrixStore();
   
   const [activeChain, setActiveChain] = useState(VOCAL_CHAINS[0].id);
   const [presenceIntensity, setPresenceIntensity] = useState(VOCAL_CHAINS[0].presence);
@@ -46,9 +47,14 @@ export default function Room05_VocalSuite() {
   const [eqGains, setEqGains] = useState<number[]>([...VOCAL_CHAINS[0].eq]);
   
   const [status, setStatus] = useState<"idle" | "processing" | "success">("idle");
+  
+  // Master Transport State
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const beatAudioRef = useRef<HTMLAudioElement>(null);
   const wetGainRef = useRef<GainNode | null>(null);
   const dryGainRef = useRef<GainNode | null>(null);
   const eqBandsRef = useRef<BiquadFilterNode[]>([]);
@@ -139,6 +145,7 @@ export default function Room05_VocalSuite() {
     if (saturationRef.current) saturationRef.current.curve = makeDistortionCurve(presenceIntensity / 2);
   }, [reverbMix, presenceIntensity, eqGains, activeChain]);
 
+  // SYNCHRONIZED PLAYBACK LOGIC
   const togglePreviewPlayback = () => {
     if (audioCtxRef.current?.state === 'suspended') {
       audioCtxRef.current.resume();
@@ -146,17 +153,35 @@ export default function Room05_VocalSuite() {
     const willPlay = !isPreviewPlaying;
     setIsPreviewPlaying(willPlay);
     
+    if (willPlay) {
+      if (beatAudioRef.current) beatAudioRef.current.play().catch(()=>{});
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) el.play().catch(()=>{});
+      });
+    } else {
+      if (beatAudioRef.current) beatAudioRef.current.pause();
+      vocalStems.forEach(stem => {
+        const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
+        if (el) el.pause();
+      });
+    }
+  };
+
+  const handleMasterSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value);
+    setCurrentTime(newTime);
+    if (beatAudioRef.current) beatAudioRef.current.currentTime = newTime;
     vocalStems.forEach(stem => {
       const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
-      if (el) {
-        if (willPlay) {
-          el.currentTime = 0;
-          el.play().catch(()=>{});
-        } else {
-          el.pause();
-        }
-      }
+      if (el) el.currentTime = newTime;
     });
+  };
+
+  const formatTime = (s: number) => {
+    const mins = Math.floor(s / 60);
+    const secs = Math.floor(s % 60).toString().padStart(2, '0');
+    return `${mins}:${secs}`;
   };
 
   const updateEqBand = (index: number, val: number) => {
@@ -167,6 +192,7 @@ export default function Room05_VocalSuite() {
 
   const handleApplyEngineering = async () => {
     setIsPreviewPlaying(false);
+    if (beatAudioRef.current) beatAudioRef.current.pause();
     vocalStems.forEach(stem => (document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement)?.pause());
     
     setStatus("processing");
@@ -245,6 +271,19 @@ export default function Room05_VocalSuite() {
 
   return (
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 border border-[#222]">
+      
+      {/* Hidden Audio Element for Instrumental Sync */}
+      {audioData && (
+        <audio 
+          ref={beatAudioRef} 
+          src={audioData.url} 
+          onTimeUpdate={() => setCurrentTime(beatAudioRef.current?.currentTime || 0)}
+          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+          onEnded={() => setIsPreviewPlaying(false)}
+          className="hidden" 
+        />
+      )}
+
       {vocalStems.map((s, idx) => (
         <audio 
           key={s.id} 
@@ -279,23 +318,44 @@ export default function Room05_VocalSuite() {
         
         <div className="relative z-10 max-w-2xl mx-auto w-full flex-1 flex flex-col gap-6">
           
-          {/* PLAYBACK PREVIEW HEADER */}
-          <div className="flex items-center justify-between bg-[#111] border border-[#222] p-4 rounded-sm">
-             <div className="flex items-center gap-4">
-                <button 
-                  onClick={togglePreviewPlayback}
-                  disabled={vocalStems.length === 0 || status !== "idle"}
-                  className={`w-12 h-12 flex items-center justify-center rounded-full transition-all disabled:opacity-50 ${isPreviewPlaying ? 'bg-[#E60000] text-white animate-pulse' : 'bg-white text-black hover:bg-[#E60000] hover:text-white'}`}
-                >
-                  {isPreviewPlaying ? <Pause size={20} /> : <Play size={20} className="ml-1" />}
-                </button>
-                <div>
-                  <p className="font-oswald text-sm text-white uppercase tracking-widest font-bold">Live Vocal Preview</p>
-                  <p className="font-mono text-[9px] text-[#888] uppercase tracking-widest mt-1">Audition chain before baking</p>
+          {/* PLAYBACK PREVIEW HEADER & MASTER TRANSPORT */}
+          <div className="bg-[#111] border border-[#222] p-6 rounded-sm flex flex-col gap-5 shadow-lg">
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={togglePreviewPlayback}
+                    disabled={vocalStems.length === 0 || status !== "idle"}
+                    className={`w-14 h-14 flex items-center justify-center rounded-full transition-all disabled:opacity-50 ${isPreviewPlaying ? 'bg-[#E60000] text-white animate-pulse shadow-[0_0_20px_rgba(230,0,0,0.4)]' : 'bg-white text-black hover:bg-[#E60000] hover:text-white'}`}
+                  >
+                    {isPreviewPlaying ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
+                  </button>
+                  <div>
+                    <p className="font-oswald text-lg text-white uppercase tracking-widest font-bold flex items-center gap-2">
+                      <ListMusic size={16} className="text-[#E60000]"/> Synced Audition
+                    </p>
+                    <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest mt-1">Instrumental + Active Vocal Chain</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="font-mono text-sm font-bold text-[#E60000] bg-black px-3 py-1 border border-[#333]">
+                    {formatTime(currentTime)} <span className="text-[#555]">/</span> {formatTime(duration)}
+                  </span>
                 </div>
              </div>
-             <div className="flex items-center gap-2">
-                <Volume2 size={16} className={isPreviewPlaying ? "text-[#E60000]" : "text-[#444]"} />
+             
+             {/* Seek Scrubber */}
+             <div className="w-full flex items-center gap-3">
+               <span className="text-[9px] font-mono text-[#555]">0:00</span>
+               <input 
+                 type="range" 
+                 min="0" 
+                 max={duration || 100} 
+                 step="0.1" 
+                 value={currentTime} 
+                 onChange={handleMasterSeek}
+                 className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer"
+               />
+               <span className="text-[9px] font-mono text-[#555]">{formatTime(duration)}</span>
              </div>
           </div>
 

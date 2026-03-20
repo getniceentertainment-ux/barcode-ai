@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User } from "lucide-react";
+import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, Terminal, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
@@ -15,13 +15,6 @@ interface RosterNode {
   total_referrals: number;
 }
 
-const MOCK_CHAT = [
-  { id: 1, user: "SYSTEM", msg: "Global Syndicate Comms initialized.", isPlatform: true },
-  { id: 2, user: "Ghost_Node", msg: "Anyone got a 140BPM drill beat?", isPlatform: false },
-  { id: 3, user: "Aura_Synth", msg: "Just uploaded one to the marketplace.", isPlatform: false },
-  { id: 4, user: "NeonBlood", msg: "Need a feature for this new track, hit my escrow.", isPlatform: false },
-];
-
 export default function Room10_Social() {
   const { userSession, addToast } = useMatrixStore();
   
@@ -34,20 +27,51 @@ export default function Room10_Social() {
   const [interactionType, setInteractionType] = useState<"feature" | "booking">("feature");
   const [escrowStatus, setEscrowStatus] = useState<"idle" | "processing" | "locked">("idle");
 
-  // Chat State
-  const [chat, setChat] = useState(MOCK_CHAT);
+  // --- REALTIME CHAT STATE ---
+  const [messages, setMessages] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // 1. Fetch Leaderboard on Mount
   useEffect(() => {
     fetchLeaderboard();
   }, []);
 
+  // 2. Connect to Supabase Realtime for Global Comms
+  useEffect(() => {
+    const fetchHistory = async () => {
+      const { data, error } = await supabase
+        .from('global_messages')
+        .select('*')
+        .order('created_at', { ascending: true })
+        .limit(50);
+      
+      if (data) setMessages(data);
+      if (!error) setIsConnected(true);
+    };
+
+    fetchHistory();
+
+    const channel = supabase
+      .channel('public:global_messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'global_messages' }, (payload) => {
+        setMessages((prev) => [...prev, payload.new]);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // 3. Auto-scroll chat when new messages arrive or tab changes
   useEffect(() => {
     if (activeTab === "chat") {
       chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [chat, activeTab]);
+  }, [messages, activeTab]);
 
   const fetchLeaderboard = async () => {
     try {
@@ -72,17 +96,31 @@ export default function Room10_Social() {
     setTimeout(() => setEscrowStatus("locked"), 2500);
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim()) return;
-    
-    setChat(prev => [...prev, { 
-      id: Date.now(),
-      user: userSession?.stageName || "GUEST_NODE", 
-      msg: chatInput,
-      isPlatform: false
-    }]);
-    setChatInput("");
+    if (!chatInput.trim() || !userSession?.id) return;
+
+    setIsSending(true);
+    try {
+      const { error } = await supabase.from('global_messages').insert([{
+        user_id: userSession.id,
+        stage_name: userSession.stageName || `NODE_${userSession.id.substring(0,6)}`,
+        content: chatInput.trim(),
+      }]);
+      
+      if (error) throw error;
+      setChatInput("");
+    } catch (err) {
+      console.error("Message failed to send:", err);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const formatTime = (ts: string) => {
+    if (!ts) return "";
+    const date = new Date(ts);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const basePrice = selectedNode ? Math.max(100, Math.floor(selectedNode.mogul_score / 2)) : 0;
@@ -201,7 +239,7 @@ export default function Room10_Social() {
             ) : (
               <div className="p-8 flex flex-col h-full animate-in slide-in-from-right-8">
                 
-                {/* NEW: Dynamic Profile Link Header */}
+                {/* Dynamic Profile Link Header */}
                 <div className="mb-8 flex flex-col md:flex-row md:items-start justify-between gap-4 border-b border-[#222] pb-6">
                   <div>
                     <div className="inline-flex items-center gap-2 bg-[#110000] text-[#E60000] border border-[#330000] px-3 py-1 text-[9px] uppercase font-bold tracking-widest mb-4">
@@ -289,20 +327,35 @@ export default function Room10_Social() {
                 <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mt-1">Encrypted Node-to-Node Chat</p>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                <span className="font-mono text-[9px] text-green-500 uppercase tracking-widest font-bold">Online</span>
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div>
+                <span className={`font-mono text-[9px] uppercase tracking-widest font-bold ${isConnected ? 'text-green-500' : 'text-yellow-500'}`}>
+                  {isConnected ? 'Online' : 'Connecting...'}
+                </span>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
-              {chat.map((c) => (
-                <div key={c.id} className={`text-sm font-mono leading-relaxed ${c.isPlatform ? 'bg-[#110000] border border-[#330000] p-4 rounded-sm shadow-sm' : 'bg-black border border-[#111] p-3 rounded-sm'}`}>
-                  <span className={`font-bold mr-3 tracking-widest text-[10px] uppercase ${c.isPlatform ? 'text-[#E60000]' : c.user === userSession?.stageName ? 'text-green-500' : 'text-[#888]'}`}>
-                    {c.user}:
-                  </span>
-                  <span className={c.isPlatform ? 'text-[#E60000] font-bold' : 'text-gray-300'}>{c.msg}</span>
+              {messages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center opacity-30 text-white">
+                  <Terminal size={48} className="mb-4" />
+                  <p className="font-mono text-xs uppercase tracking-widest">Syndicate Log Empty.</p>
                 </div>
-              ))}
+              ) : messages.map((msg, i) => {
+                const isMe = msg.user_id === userSession?.id;
+                return (
+                  <div key={msg.id || i} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <span className="font-mono text-[9px] text-[#555] uppercase">{formatTime(msg.created_at)}</span>
+                      <span className={`font-oswald text-xs uppercase font-bold tracking-widest ${isMe ? 'text-[#E60000]' : 'text-white'}`}>
+                        {msg.stage_name}
+                      </span>
+                    </div>
+                    <div className={`max-w-[80%] p-4 text-sm font-mono ${isMe ? 'bg-[#E60000]/10 border border-[#E60000]/30 text-white rounded-tl-lg rounded-bl-lg rounded-br-lg' : 'bg-black border border-[#333] text-gray-300 rounded-tr-lg rounded-bl-lg rounded-br-lg'}`}>
+                      {msg.content}
+                    </div>
+                  </div>
+                );
+              })}
               <div ref={chatEndRef} />
             </div>
 
@@ -312,15 +365,16 @@ export default function Room10_Social() {
                   type="text" 
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Broadcast to global syndicate..." 
-                  className="flex-1 bg-[#111] border border-[#333] px-4 py-4 text-xs text-white outline-none focus:border-[#E60000] font-mono transition-colors"
+                  placeholder={isConnected ? "Broadcast to global syndicate..." : "Establishing connection..."}
+                  disabled={!isConnected}
+                  className="flex-1 bg-[#111] border border-[#333] px-4 py-4 text-xs text-white outline-none focus:border-[#E60000] font-mono transition-colors disabled:opacity-50"
                 />
                 <button 
                   type="submit"
-                  disabled={!chatInput.trim()}
+                  disabled={!chatInput.trim() || isSending || !isConnected}
                   className="bg-[#E60000] text-white px-6 hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center shadow-[0_0_15px_rgba(230,0,0,0.2)]"
                 >
-                  <Send size={18} />
+                  {isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
                 </button>
               </form>
             </div>
