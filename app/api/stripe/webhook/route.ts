@@ -1,3 +1,4 @@
+import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
@@ -6,64 +7,73 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16',
 });
 
-// We must use the SERVICE ROLE KEY here to securely bypass Row Level Security 
-// and forcefully update the user's credits from the backend server.
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! 
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 export async function POST(req: Request) {
   const body = await req.text();
-  const signature = req.headers.get('stripe-signature') as string;
+  const signature = headers().get('Stripe-Signature') as string;
 
   let event: Stripe.Event;
 
   try {
-    // 1. Cryptographically verify the event actually came from Stripe
     event = stripe.webhooks.constructEvent(
       body,
       signature,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
-  } catch (error: any) {
-    console.error(`Webhook signature verification failed: ${error.message}`);
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
+  } catch (err: any) {
+    return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
   }
 
-  // 2. Handle the specific event when a payment is successful
+  // GLOBAL HANDLER: Listening for successful checkouts
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
-    
-    // Extract the custom metadata we passed during checkout
-    const userId = session.metadata?.userId;
-    const tier = session.metadata?.tier;
+    const { userId, type, credit_amount, beat_id } = session.metadata || {};
 
-    if (userId && tier) {
-      // Calculate how many credits they get
-      const credits = tier === 'The Mogul' ? 999999 : tier === 'The Artist' ? 100 : 5;
+    if (!userId) return NextResponse.json({ error: "No userId in metadata" }, { status: 400 });
 
-      try {
-        // 3. Upgrade their database profile!
-        const { error } = await supabaseAdmin
-          .from('profiles')
-          .update({ 
-            tier: tier, 
-            credits: credits,
-            stripe_customer_id: session.customer as string 
-          })
-          .eq('id', userId);
+    try {
+      switch (type) {
+        case 'mastering_token':
+          // 1. FULFILL MASTERING TOKEN
+          const { data: mProfile } = await supabaseAdmin.from('profiles').select('mastering_tokens').eq('id', userId).single();
+          await supabaseAdmin.from('profiles').update({ 
+            mastering_tokens: (mProfile?.mastering_tokens || 0) + 1 
+          }).eq('id', userId);
+          break;
 
-        if (error) throw error;
-        
-        console.log(`[STRIPE] Successfully upgraded User ${userId} to ${tier}`);
-      } catch (dbError) {
-        console.error("[SUPABASE] Failed to upgrade user:", dbError);
-        return NextResponse.json({ error: 'Database update failed' }, { status: 500 });
+        case 'credit_topup':
+          // 2. FULFILL CREDIT PACK
+          const { data: cProfile } = await supabaseAdmin.from('profiles').select('credits').eq('id', userId).single();
+          const addAmount = parseInt(credit_amount || '50');
+          await supabaseAdmin.from('profiles').update({ 
+            credits: (cProfile?.credits || 0) + addAmount 
+          }).eq('id', userId);
+          break;
+
+        case 'beat_lease':
+          // 3. FULFILL BEAT LEASE
+          // Record the transaction in a 'purchases' table so the user can download it forever
+          await supabaseAdmin.from('purchases').insert({
+            user_id: userId,
+            item_type: 'beat',
+            item_id: beat_id,
+            amount_paid: session.amount_total ? session.amount_total / 100 : 0,
+            created_at: new Date().toISOString()
+          });
+          break;
+
+        default:
+          console.log("Unhandled metadata type:", type);
       }
+    } catch (dbErr: any) {
+      console.error("Webhook DB Update Failed:", dbErr.message);
+      return NextResponse.json({ error: "Database update failed" }, { status: 500 });
     }
   }
 
-  // 4. Return a 200 OK to Stripe so they know we got the message
-  return NextResponse.json({ received: true }, { status: 200 });
+  return NextResponse.json({ received: true });
 }
