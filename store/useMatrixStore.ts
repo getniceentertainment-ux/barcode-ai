@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession, FinalMaster } from '../lib/types';
-import { supabase } from '../lib/supabase';
 
 interface ToastMessage {
   id: string;
@@ -15,12 +14,6 @@ interface MatrixState {
   userSession: UserSession | null;
   activeProjectId: string | null;
   isProjectFinalized: boolean;
-  isUpgrading: boolean;
-  setIsUpgrading: (status: boolean) => void;
-
-  // 💳 TRANSACTION ENGINE
-  spendCredit: (amount?: number) => Promise<boolean>;
-  spendMasteringToken: () => Promise<boolean>;
 
   // RADIO PLAYER STATE
   playbackMode: 'session' | 'radio';
@@ -38,15 +31,11 @@ interface MatrixState {
   setActiveRoom: (roomId: string) => void;
   setActiveProject: (id: string | null, isFinalized: boolean) => void;
 
-  // 🛡️ PROTECTED SETTERS
   audioData: AudioAnalysis | null;
-  setAudioData: (data: AudioAnalysis) => Promise<void>;
+  setAudioData: (data: AudioAnalysis) => void;
   flowDNA: FlowDNA | null;
-  setFlowDNA: (dna: FlowDNA) => Promise<void>;
-  generatedLyrics: string | null;
-  setGeneratedLyrics: (lyrics: string) => Promise<void>;
+  setFlowDNA: (dna: FlowDNA) => void;
 
-  // STANDARD SETTERS
   gwTitle: string;
   gwPrompt: string;
   gwStyle: string;
@@ -62,6 +51,8 @@ interface MatrixState {
 
   blueprint: BlueprintSection[];
   setBlueprint: (blueprint: BlueprintSection[]) => void;
+  generatedLyrics: string | null;
+  setGeneratedLyrics: (lyrics: string) => void;
 
   vocalStems: VocalStem[];
   addVocalStem: (stem: VocalStem) => void;
@@ -81,9 +72,7 @@ interface MatrixState {
 
 export const useMatrixStore = create<MatrixState>()(
   persist(
-    (set, get) => ({
-      isUpgrading: false,
-      setIsUpgrading: (status) => set({ isUpgrading: status }),
+    (set) => ({
       hasAccess: false,
       activeRoom: "01",
       userSession: null,
@@ -107,88 +96,6 @@ export const useMatrixStore = create<MatrixState>()(
       finalMaster: null,
       toasts: [],
 
-      // --- 🏦 THE BANKER (Private Logic) ---
-      spendCredit: async (amount = 1) => {
-        const session = get().userSession;
-        if (!session) return false;
-        if (session.tier === "The Mogul") return true;
-
-        const currentCredits = Number(session.creditsRemaining);
-        if (currentCredits < amount) {
-          get().addToast("Insufficient Credits. Visit Room 08.", "error");
-          return false;
-        }
-
-        const newBalance = currentCredits - amount;
-
-        try {
-          const { error } = await supabase
-            .from('profiles')
-            .update({ credits: newBalance })
-            .eq('id', session.id);
-
-          if (error) throw error;
-          set({ userSession: { ...session, creditsRemaining: newBalance } });
-          get().addToast(`Matrix Resource Accessed. -${amount} CRD`, "info");
-          return true;
-        } catch (err) {
-          get().addToast("Accounting Link Failed.", "error");
-          return false;
-        }
-      },
-
-      // --- 📀 MASTERING TOKEN HANDLER ---
-      spendMasteringToken: async () => {
-        const state = get();
-        const session = state.userSession;
-        if (!session) return false;
-        
-        // 🎖️ The Mogul Exception (Included in Tier)
-        if (session.tier === "The Mogul") return true;
-
-        try {
-          // 🔥 REAL-TIME DB CHECK: Verify total from source of truth
-          const { data: profile, error: fetchError } = await supabase
-            .from('profiles')
-            .select('mastering_tokens')
-            .eq('id', session.id)
-            .single();
-
-          if (fetchError || !profile || (profile.mastering_tokens || 0) < 1) {
-            state.addToast?.("Mastering Token Required ($4.99).", "error");
-            return false;
-          }
-
-          // 🌪️ ATOMIC BURN: Subtract token before allowing the render
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update({ mastering_tokens: profile.mastering_tokens - 1 })
-            .eq('id', session.id);
-
-          if (updateError) throw updateError;
-          
-          return true;
-        } catch (err) {
-          console.error("Ledger Transaction Failure:", err);
-          return false;
-        }
-      },
-
-      // --- 🛡️ PROTECTED SETTERS ---
-      setAudioData: async (data) => {
-        const success = await get().spendCredit(1);
-        if (success) set({ audioData: data });
-      },
-      setFlowDNA: async (dna) => {
-        const success = await get().spendCredit(1);
-        if (success) set({ flowDNA: dna });
-      },
-      setGeneratedLyrics: async (lyrics) => {
-        const success = await get().spendCredit(1);
-        if (success) set({ generatedLyrics: lyrics });
-      },
-
-      // --- STANDARD LOGIC ---
       setPlaybackMode: (mode) => set({ playbackMode: mode }),
       setRadioTrack: (track) => set({ radioTrack: track }),
       setMdxJobId: (id) => set({ mdxJobId: id }),
@@ -196,7 +103,8 @@ export const useMatrixStore = create<MatrixState>()(
       grantAccess: (session) => set({ hasAccess: true, userSession: session }),
       setActiveRoom: (roomId) => set({ activeRoom: roomId }),
       setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
-      
+      setAudioData: (data) => set({ audioData: data }),
+      setFlowDNA: (dna) => set({ flowDNA: dna }),
       setGwTitle: (t) => set({ gwTitle: t }),
       setGwPrompt: (p) => set({ gwPrompt: p }),
       setGwStyle: (s) => set({ gwStyle: s }),
@@ -204,6 +112,7 @@ export const useMatrixStore = create<MatrixState>()(
       setGwUseSlang: (b) => set({ gwUseSlang: b }),
       setGwUseIntel: (b) => set({ gwUseIntel: b }),
       setBlueprint: (blueprint) => set({ blueprint }),
+      setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
       
       addVocalStem: (stem) => set((state) => ({ vocalStems: [...state.vocalStems, stem] })),
       removeVocalStem: (id) => set((state) => ({ vocalStems: state.vocalStems.filter(s => s.id !== id) })),
@@ -218,7 +127,7 @@ export const useMatrixStore = create<MatrixState>()(
       addToast: (message, type) => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({ toasts: [...state.toasts, { id, message, type }] }));
-        setTimeout(() => set((state) => ({ toasts: get().toasts.filter(t => t.id !== id) })), 4000);
+        setTimeout(() => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })), 4000);
       },
       removeToast: (id) => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })),
 
@@ -243,8 +152,7 @@ export const useMatrixStore = create<MatrixState>()(
         playbackMode: state.playbackMode,
         radioTrack: state.radioTrack,
         activeProjectId: state.activeProjectId,
-        isProjectFinalized: state.isProjectFinalized,
-        userSession: state.userSession 
+        isProjectFinalized: state.isProjectFinalized
       }),
     }
   )

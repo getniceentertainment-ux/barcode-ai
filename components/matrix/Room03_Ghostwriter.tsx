@@ -4,8 +4,6 @@ import React, { useState, useEffect } from "react";
 import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Layout, ShieldCheck, Cpu, Activity, ArrowRight } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
-import PremiumButton from "./PremiumButton";
-
 
 export default function Room03_Ghostwriter() {
   const { 
@@ -259,13 +257,13 @@ export default function Room03_Ghostwriter() {
         </div>
 
         <div className="p-6 border-t border-[#222] bg-black sticky bottom-0">
-          <PremiumButton 
-  	cost={1} 
- 	 onConfirm={handleGenerate} // ✅ Matches your actual function name
- 	 className="..."
-	>
-	  Generate Ghostwriter Draft (1 CRD)
-	</PremiumButton>
+          <button 
+            onClick={handleGenerate} 
+            disabled={isGenerating || !gwPrompt.trim()} 
+            className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex justify-center items-center gap-3 shadow-[0_0_20px_rgba(230,0,0,0.2)]"
+          >
+            {isGenerating ? <><Loader2 size={20} className="animate-spin" /> Synthesizing</> : <><Zap size={20} /> Generate Track</>}
+          </button>
         </div>
       </div>
 
