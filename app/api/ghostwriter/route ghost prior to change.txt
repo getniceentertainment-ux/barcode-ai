@@ -124,6 +124,7 @@ export async function POST(req: Request) {
     if (runData.id) {
       if (isB2B) {
         // B2B: Log API call to DB for the dashboard, and charge Stripe Metered Billing
+        // IMPORTANT: In production, you might move this to the GET route (on 'COMPLETED' status) to only charge for successful generations, but this secures the request.
         if (stripeSubscriptionItemId) {
           try {
             await stripe.subscriptionItems.createUsageRecord(
@@ -132,6 +133,7 @@ export async function POST(req: Request) {
             );
           } catch (stripeErr) {
             console.error("Stripe Metered Billing Failed:", stripeErr);
+            // Non-blocking error, allow generation to proceed but log failure
           }
         }
         // Increment the dashboard counter

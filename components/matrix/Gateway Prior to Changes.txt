@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Mail, Loader2, Lock, User as UserIcon, ArrowRight, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Mail, Loader2, Lock, User as UserIcon, ArrowRight } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { AccessTier, UserSession } from "../../lib/types";
 import { supabase } from "../../lib/supabase";
@@ -14,7 +14,6 @@ export default function EntryGateway() {
   const [stageName, setStageName] = useState("");
   
   const [loading, setLoading] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [authStep, setAuthStep] = useState<"auth" | "verify_email" | "select_tier">("auth");
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -65,22 +64,8 @@ export default function EntryGateway() {
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setIsScanning(true);
     
     try {
-      // Phase 1 Sybil Resistance: Device Fingerprinting
-      const fingerprintString = `${navigator.userAgent}|${navigator.language}|${window.screen.width}x${window.screen.height}|${navigator.hardwareConcurrency}|${new Date().getTimezoneOffset()}`;
-      let hash = 0;
-      for (let i = 0; i < fingerprintString.length; i++) {
-        hash = ((hash << 5) - hash) + fingerprintString.charCodeAt(i);
-        hash |= 0;
-      }
-      const deviceId = Math.abs(hash).toString(16);
-
-      // Simulated UI scan delay for UX feedback
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      setIsScanning(false);
-
       if (authMode === "signup") {
         if (!stageName.trim()) throw new Error("Stage Name / Moniker is required.");
         
@@ -88,8 +73,7 @@ export default function EntryGateway() {
           email, 
           password,
           options: {
-            // Bake the hardware hash permanently into their profile
-            data: { stage_name: stageName, device_fingerprint: deviceId },
+            data: { stage_name: stageName },
             emailRedirectTo: window.location.origin
           }
         });
@@ -107,8 +91,7 @@ export default function EntryGateway() {
         if (data.user) await processUserSession(data.user);
       }
     } catch (err: any) {
-      if(addToast) addToast("Auth Failed: " + err.message, "error");
-      setIsScanning(false);
+      if(addToast) addToast(err.message, "error");
     } finally {
       setLoading(false);
     }
@@ -209,16 +192,8 @@ export default function EntryGateway() {
                 <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-black border border-[#333] pl-12 pr-4 py-3 text-xs font-mono text-white outline-none focus:border-[#E60000]" />
               </div>
             </div>
-
-            <div className="bg-[#111] border border-[#333] p-3 flex items-center gap-3">
-              {isScanning ? <Loader2 size={16} className="text-[#E60000] animate-spin" /> : <ShieldCheck size={16} className="text-green-500" />}
-              <span className="text-[9px] font-mono uppercase tracking-widest text-[#888]">
-                {isScanning ? "Scanning Device Fingerprint..." : "Sybil Resistance Active (Device Hash)"}
-              </span>
-            </div>
-
             <button type="submit" disabled={loading} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2">
-              {loading && !isScanning ? <Loader2 size={20} className="animate-spin" /> : <>{authMode === "login" ? "Initialize Matrix" : "Create Profile"} <ArrowRight size={18} /></>}
+              {loading ? <Loader2 size={20} className="animate-spin" /> : <>{authMode === "login" ? "Initialize Matrix" : "Create Profile"} <ArrowRight size={18} /></>}
             </button>
           </form>
         </div>
