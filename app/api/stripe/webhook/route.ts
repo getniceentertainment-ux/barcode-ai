@@ -14,7 +14,14 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
   const body = await req.text();
-  const signature = headers().get('Stripe-Signature') as string;
+  
+  // FIXED: headers() is async in Next.js 15/16. Must await before calling .get()
+  const headerList = await headers();
+  const signature = headerList.get('Stripe-Signature');
+
+  if (!signature) {
+    return NextResponse.json({ error: "Missing Stripe Signature" }, { status: 400 });
+  }
 
   let event: Stripe.Event;
 
@@ -25,6 +32,7 @@ export async function POST(req: Request) {
       process.env.STRIPE_WEBHOOK_SECRET!
     );
   } catch (err: any) {
+    console.error(`Webhook Signature Verification Failed: ${err.message}`);
     return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
   }
 
@@ -38,7 +46,6 @@ export async function POST(req: Request) {
     try {
       switch (type) {
         case 'mastering_token':
-          // 1. FULFILL MASTERING TOKEN
           const { data: mProfile } = await supabaseAdmin.from('profiles').select('mastering_tokens').eq('id', userId).single();
           await supabaseAdmin.from('profiles').update({ 
             mastering_tokens: (mProfile?.mastering_tokens || 0) + 1 
@@ -46,7 +53,6 @@ export async function POST(req: Request) {
           break;
 
         case 'credit_topup':
-          // 2. FULFILL CREDIT PACK
           const { data: cProfile } = await supabaseAdmin.from('profiles').select('credits').eq('id', userId).single();
           const addAmount = parseInt(credit_amount || '50');
           await supabaseAdmin.from('profiles').update({ 
@@ -55,8 +61,6 @@ export async function POST(req: Request) {
           break;
 
         case 'beat_lease':
-          // 3. FULFILL BEAT LEASE
-          // Record the transaction in a 'purchases' table so the user can download it forever
           await supabaseAdmin.from('purchases').insert({
             user_id: userId,
             item_type: 'beat',
