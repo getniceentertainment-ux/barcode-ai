@@ -30,8 +30,8 @@ export async function POST(req: Request) {
       ],
       mode: 'payment',
       // The crucial redirect parameters
-      success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/studio?token_purchased=true`,
-      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/studio`,
+      success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/studio?token_purchased=true`,
+      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL}/studio`,
       metadata: {
         userId: userId,
         type: 'mastering_token'

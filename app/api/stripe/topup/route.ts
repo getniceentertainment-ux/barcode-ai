@@ -30,8 +30,8 @@ export async function POST(req: Request) {
         },
       ],
       mode: 'payment',
-      success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/studio?topup_success=true`,
-      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/studio`,
+      success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/studio?topup_success=true`,
+      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL}/studio`,
       metadata: {
         userId: userId,
         type: 'credit_topup',
