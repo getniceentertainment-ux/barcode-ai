@@ -39,6 +39,51 @@ export default function MatrixController() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
 
+  // --- SURGERY 1: TIER GATING LOGIC ---
+  const isRoomLockedForTier = (roomId: string) => {
+    const tier = userSession?.tier || "Free Loader";
+    
+    // Free Loaders: Only Creation (R01-R04) + Radio/Social
+    const freeAllowed = ["01", "02", "03", "04", "09", "10"];
+    // Artists: Everything except Enterprise Social Tools (R10)
+    const artistAllowed = ["01", "02", "03", "04", "05", "06", "07", "08", "09"];
+
+    if (tier === "Free Loader" && !freeAllowed.includes(roomId)) return true;
+    if (tier === "The Artist" && !artistAllowed.includes(roomId) && roomId === "10") return true;
+    return false;
+  };
+
+  const handleRoomTransition = (roomId: string) => {
+    if (isRoomLockedForTier(roomId)) {
+      if (addToast) addToast(`Upgrade to 'The Artist' to unlock Room ${roomId}`, "error");
+      return;
+    }
+    setActiveRoom(roomId);
+  };
+
+  // --- SURGERY 2: REAL-TIME CREDIT SYNC ---
+  useEffect(() => {
+    if (!userSession?.id) return;
+
+    // Listen for credit changes in the database and update frontend instantly
+    const channel = supabase
+      .channel('profile_sync')
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'profiles',
+        filter: `id=eq.${userSession.id}` 
+      }, (payload) => {
+        const newCredits = payload.new.credits;
+        useMatrixStore.setState((state) => ({
+          userSession: state.userSession ? { ...state.userSession, creditsRemaining: newCredits } : null
+        }));
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [userSession?.id]);
+
   const togglePlay = () => {
     if (!audioRef.current) return;
     const url = playbackMode === 'radio' ? radioTrack?.url : audioData?.url;
