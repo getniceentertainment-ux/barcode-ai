@@ -7,7 +7,8 @@ const cspHeader = `
     img-src 'self' blob: data: https://*.stripe.com https://images.unsplash.com https://www.transparenttextures.com;
     font-src 'self' https://fonts.gstatic.com;
     frame-src 'self' https://js.stripe.com https://hooks.stripe.com;
-    connect-src 'self' https://*.stripe.com https://*.supabase.co wss://*.supabase.co https://api.runpod.ai;
+    connect-src 'self' wss://*.supabase.co https://*.stripe.com https://*.supabase.co https://api.runpod.ai;
+    media-src 'self' blob: data: https://*.supabase.co;
     worker-src 'self' blob:;
     object-src 'none';
     base-uri 'self';
