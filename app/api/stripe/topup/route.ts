@@ -30,13 +30,10 @@ export async function POST(req: Request) {
         },
       ],
       mode: 'payment',
-      success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/studio?topup_success=true`,
-      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL}/studio`,
-      metadata: {
-        userId: userId,
-        type: 'credit_topup',
-        credit_amount: '50'
-      }
+      // FIXED: Pointing to / instead of /studio
+      success_url: `${baseUrl}/?topup_success=true`,
+      cancel_url: `${baseUrl}/`,
+      metadata: { userId, type: 'credit_topup', credit_amount: '50' }
     });
 
     return NextResponse.json({ url: session.url });

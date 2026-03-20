@@ -30,8 +30,8 @@ export async function POST(req: Request) {
     // Generate the secure onboarding URL
     const accountLink = await stripe.accountLinks.create({
       account: accountId,
-      refresh_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}?connect=refresh`,
-      return_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}?connect=success`,
+      refresh_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://www.bar-code.ai'}?connect=refresh`,
+      return_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://www.bar-code.ai'}?connect=success`,
       type: 'account_onboarding',
     });
 

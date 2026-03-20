@@ -29,13 +29,10 @@ export async function POST(req: Request) {
         },
       ],
       mode: 'payment',
-      // The crucial redirect parameters
-      success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/studio?token_purchased=true`,
-      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL}/studio`,
-      metadata: {
-        userId: userId,
-        type: 'mastering_token'
-      }
+      // FIXED: Pointing to / instead of /studio
+      success_url: `${baseUrl}/?token_purchased=true`,
+      cancel_url: `${baseUrl}/`,
+      metadata: { userId, type: 'mastering_token' }
     });
 
     return NextResponse.json({ url: session.url });
