@@ -89,19 +89,29 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { prompt, title, bpm, key, stageName, tag, style, blueprint } = body;
 
-    // --- CREDIT / AUTHORIZATION CHECK ---
+    // --- DYNAMIC CREDIT COST CALCULATION ---
     let profileTier = 'Free Loader';
+    let cost = 1;
+    
+    // 1 Credit covers up to 2 blueprint blocks
+    if (blueprint && Array.isArray(blueprint)) {
+      cost = Math.max(1, Math.ceil(blueprint.length / 2));
+    }
+
+    // --- CREDIT / AUTHORIZATION CHECK ---
     if (!isB2B) {
       const { data: profile } = await supabaseAdmin.from('profiles').select('credits, tier').eq('id', userId).single();
-      if (!profile || (profile.tier !== 'The Mogul' && profile.credits <= 0)) {
-        return NextResponse.json({ error: "Insufficient Generations." }, { status: 403 });
+      
+      // Enforce the dynamic cost
+      if (!profile || (profile.tier !== 'The Mogul' && profile.credits < cost)) {
+        return NextResponse.json({ error: `Insufficient Generations. This structure requires ${cost} CRD.` }, { status: 403 });
       }
       profileTier = profile.tier;
     }
 
     const thematicPrompt = title ? `SONG TITLE: "${title}". ${prompt}` : prompt;
 
-    // --- RUNPOD EXECUTION ---
+    // --- RUNPOD EXECUTION (Your Original Working Payload) ---
     const runResponse = await fetch(`https://api.runpod.ai/v2/${process.env.RUNPOD_ENDPOINT_TALON}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}` },
@@ -124,7 +134,6 @@ export async function POST(req: Request) {
     if (runData.id) {
       if (isB2B) {
         // B2B: Log API call to DB for the dashboard, and charge Stripe Metered Billing
-        // IMPORTANT: In production, you might move this to the GET route (on 'COMPLETED' status) to only charge for successful generations, but this secures the request.
         if (stripeSubscriptionItemId) {
           try {
             await stripe.subscriptionItems.createUsageRecord(
@@ -133,17 +142,15 @@ export async function POST(req: Request) {
             );
           } catch (stripeErr) {
             console.error("Stripe Metered Billing Failed:", stripeErr);
-            // Non-blocking error, allow generation to proceed but log failure
           }
         }
-        // Increment the dashboard counter
         await supabaseAdmin.rpc('increment_api_calls', { target_user_id: userId }); 
 
       } else if (profileTier !== 'The Mogul') {
-        // B2C: Deduct 1 standard credit
+        // B2C: Deduct the dynamically calculated cost instead of just 1
         const { data: currentProfile } = await supabaseAdmin.from('profiles').select('credits').eq('id', userId).single();
         if (currentProfile) {
-          await supabaseAdmin.from('profiles').update({ credits: currentProfile.credits - 1 }).eq('id', userId);
+          await supabaseAdmin.from('profiles').update({ credits: currentProfile.credits - cost }).eq('id', userId);
         }
       }
       
