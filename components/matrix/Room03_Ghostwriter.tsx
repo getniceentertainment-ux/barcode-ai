@@ -52,7 +52,8 @@ export default function Room03_Ghostwriter() {
 
   const updateBlockType = (index: number, newType: string) => {
     const newBp = [...blueprint];
-    newBp[index].type = newType;
+    // FIX: Explicitly cast the generic string to the strict literal union expected by TypeScript
+    newBp[index].type = newType as "HOOK" | "VERSE" | "INTRO" | "OUTRO" | "BRIDGE";
     setBlueprint(newBp);
   };
 
