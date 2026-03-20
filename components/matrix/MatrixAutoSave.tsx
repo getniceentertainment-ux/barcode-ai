@@ -12,6 +12,9 @@ export default function MatrixAutoSave() {
 
     const saveInterval = setInterval(async () => {
       try {
+        const userId = state.userSession?.id;
+        if (!userId) return; // Satisfies TypeScript strict null-check
+
         // Extract only the necessary payload to prevent Supabase bloat
         const payload = {
           audio_data: state.audioData,
@@ -23,7 +26,7 @@ export default function MatrixAutoSave() {
         await supabase
           .from('matrix_sessions')
           .upsert({ 
-            user_id: state.userSession.id, 
+            user_id: userId, 
             session_state: payload,
             updated_at: new Date().toISOString()
           }, { onConflict: 'user_id' });
