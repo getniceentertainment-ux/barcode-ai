@@ -38,7 +38,7 @@ export async function POST(req: Request) {
 
     // 2. ALGORITHMIC FLOW ANALYSIS
     // Calculate Syllable/Word density over the 10-second recording window
-    const wordCount = transcribedText.split(/\s+/).filter(w => w.length > 0).length;
+    const wordCount = transcribedText.split(/\s+/).filter((w: string) => w.length > 0).length;
     const durationSecs = 10; 
     const wordsPerSecond = wordCount / durationSecs;
 
