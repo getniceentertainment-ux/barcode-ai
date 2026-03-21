@@ -169,6 +169,8 @@ You are the TALON Ghostwriter Engine, a highly constrained AI matrix fine-tuned 
 2. SUGGESTED LEXICON: {slang_list}
 3. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. DO NOT WRITE ANY HEADERS, BRACKETS, DIFFS, OR CODE BLOCKS. ONE LINE EQUALS ONE BAR.
 4. CONCRETE NOUNS ONLY: Use physical objects (cars, money, cities, clothes, streets). Avoid abstract emotions.
+5. BAR COUNT MATH IS ABSOLUTE: You must generate EXACTLY the number of lines requested. No more, no less.
+6. NO TIMESTAMPS: Do NOT write any timestamps (like 0:15) at the beginning of your lines.
 
 {flow_architecture}
 
@@ -217,8 +219,18 @@ Previous lyrics context (Continue the rhyme scheme):
     response = re.sub(r'\[.*?\]', '', response)
     response = re.sub(r'\([+-]\d+\)', '', response)
     
-    clean_lines = [line.strip() for line in response.split('\n') if line.strip() and not line.strip().startswith(('+', '-'))]
+    # --- 🚨 NEW ENFORCER PIPELINE (PRE-PHANTOM STACK) ---
+    # 1. Strip hallucinated LLM timestamps (e.g., "(0:00)", "[1:15]")
+    response = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', response, flags=re.MULTILINE)
     
+    # 2. Filter conversational garbage
+    clean_lines = [line.strip() for line in response.split('\n') if line.strip() and not line.strip().startswith(('+', '-')) and not line.lower().startswith("here are")]
+    
+    # 3. ABSOLUTE MATHEMATICAL ENFORCEMENT
+    # If the blueprint asks for 4 bars, cut the bleeding edge off at exactly 4 lines.
+    if len(clean_lines) > bars:
+        clean_lines = clean_lines[:bars]
+
     # 💥 THE PHANTOM STACK
     stacked_lines = []
     for line in clean_lines:

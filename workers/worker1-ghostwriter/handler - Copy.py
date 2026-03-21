@@ -7,7 +7,8 @@ import runpod
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
 
-# --- CONFIGURATION & CONSTANTS ---
+# --- THE HOLY GRAIL FIX ---
+# Restored to Llama-3-8B. The GetNice LoRA is completely incompatible with Mistral.
 BASE_MODEL_NAME = "NousResearch/Hermes-2-Pro-Llama-3-8B"
 LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
 
@@ -15,11 +16,13 @@ SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_
 SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
 
+# Expanded Ban List (Killing the Broadway poetry)
 BAN_LIST = [
     "plight", "fright", "ignite", "divine", "sublime", "mindstream",
     "whispers", "shadows", "dancing", "embrace", "souls", "abyss",
     "void", "chaos", "destiny", "fate", "temptress", "brave ones",
-    "cowards pledge", "kingdom", "throne", "gravity"
+    "cowards pledge", "kingdom", "throne", "gravity", "sincere", 
+    "echoing", "laughter", "tears", "sorrow", "melody", "symphony"
 ]
 
 model = None
@@ -64,38 +67,47 @@ def load_cultural_context():
                 title = item.get("title", "STREET POLITICS")
                 content = item.get("content", "")[:400] 
                 return f"[CULTURAL ANCHOR: {title}] - {content}..."
-    except Exception as e:
+    except Exception:
         pass
     return "Focus on the struggle, the hustle, and survival."
+
+def sanitize_lora_config():
+    """THE AUTO-CLEANER: Safely strips experimental parameters that crash standard PEFT environments."""
+    config_path = os.path.join(LORA_WEIGHTS_DIR, "adapter_config.json")
+    if not os.path.exists(config_path):
+        return
+
+    try:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+
+        keys_to_remove = [
+            "alora_invocation_tokens", "arrow_config", "corda_config", 
+            "ensure_weight_tying", "layer_replication", "megatron_config", 
+            "megatron_core", "use_rslora", "use_dora", "inject_mlps", "eva_config",
+            "exclude_modules", "lora_bias", "peft_version", "qalora_group_size",
+            "target_parameters", "trainable_token_indices", "use_qalora", "alora_alpha"
+        ]
+
+        modified = False
+        for key in keys_to_remove:
+            if key in config:
+                del config[key]
+                modified = True
+
+        if modified:
+            with open(config_path, "w") as f:
+                json.dump(config, f, indent=2)
+            print("Auto-Cleaner executed: Sanitized adapter_config.json for stable fusion.")
+    except Exception as e:
+        print(f"Auto-Cleaner Error: {e}")
 
 def init_model():
     global model, tokenizer
     print("Initiating TALON Engine Deep Burn-In...")
     
-    config_path = os.path.join(LORA_WEIGHTS_DIR, "adapter_config.json")
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, "r") as f:
-                config_data = json.load(f)
-            bad_keys = [
-                "alora_invocation_tokens", "arrow_config", "corda_config", 
-                "ensure_weight_tying", "layer_replication", "megatron_config", 
-                "megatron_core", "use_rslora", "use_dora", "inject_mlps", "eva_config",
-                "exclude_modules", "lora_bias", "peft_version", "qalora_group_size",
-                "target_parameters", "trainable_token_indices", "use_qalora", "use_rslora"
-            ]
-            cleaned = False
-            for key in bad_keys:
-                if key in config_data:
-                    del config_data[key]
-                    cleaned = True
-            if cleaned:
-                with open(config_path, "w") as f:
-                    json.dump(config_data, f, indent=2)
-                print("🧹 Auto-Cleaner: Purged incompatible config keys.")
-        except Exception as e:
-            print(f"Auto-Cleaner skipped: {e}")
-
+    sanitize_lora_config()
+    
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_compute_dtype=torch.float16,
@@ -110,7 +122,7 @@ def init_model():
     
     try:
         model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
-        print("GetNice Adapter fused.")
+        print("✅ GetNice Adapter fused successfully.")
     except Exception as e:
         print(f"🚨 LORA FUSION FAILED! EXACT ERROR: {e}")
         model = base_model
@@ -119,7 +131,7 @@ def init_model():
     _ = model.generate(**dummy, max_new_tokens=5)
     print("Deep Burn-In Complete. Worker Ready.")
 
-# --- INFERENCE LOGIC WITH NEW ARCHITECTURE ROUTER ---
+# --- THE ARCHITECTURE ROUTER ---
 
 def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
@@ -127,36 +139,36 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel):
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     banned_words_str = ", ".join(BAN_LIST)
     
-    # --- THE FLOW ARCHITECTURE ROUTER ---
-    # We strip out generic logic and strictly enforce rhythm schemes based on the selected style
-    if genre_style == "getnice_hybrid":
+    if genre_style == "getnice_hybrid" or genre_style == "getnice_flow":
         flow_architecture = """[FLOW ARCHITECTURE: GETNICE HYBRID (SIGNATURE FLOW)]
 - CADENCE: Mid-bar breath control with aggressive internal rhymes.
 - FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause.
 - SCHEME: Internal multi-syllabic rhymes leading into the break, resolving on the end-bar.
 - CLONE THESE EXACT EXAMPLES FOR STRUCTURE:
-  "I see the green in my dream awake | for the scene"
-  "Cash is king blood is thicker than | cold hard green"
-  "Rollin deep in the whip Benzes | and Maybachs no lease"
+  "I make weight | every single day"
+  "My head's up tight | and my eyes lookin' straight"
+  "Show me love as I roll | in a 5 6 0"
 - CRITICAL INSTRUCTION: Every single bar you write MUST feature this exact internal rhyme structure and use the '|' symbol."""
     elif genre_style == "drill":
         flow_architecture = """[FLOW ARCHITECTURE: NY DRILL]
 - CADENCE: Off-beat, aggressive staccato stops. Sliding 808 pockets.
-- SCHEME: AABB. Keep sentences punchy, sharp, and highly rhythmic."""
+- SCHEME: AABB. Keep sentences punchy, sharp, and highly rhythmic.
+- FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause."""
     elif genre_style == "trap":
         flow_architecture = """[FLOW ARCHITECTURE: ATLANTA TRAP]
 - CADENCE: Fast triplet flows, drawn out vowels on the end-rhyme.
-- SCHEME: AABB with heavy repetition on the end words."""
+- SCHEME: AABB with heavy repetition on the end words. Short, punchy lines.
+- FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause."""
     else:
-        flow_architecture = f"[FLOW ARCHITECTURE: {genre_style.upper()}]\n- CADENCE: Standard 4/4 rhythm structure.\n- DNA REF: {flow_dna}"
+        flow_architecture = f"[FLOW ARCHITECTURE: {genre_style.upper()}]\n- CADENCE: Standard 4/4 rhythm structure.\n- FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line."
     
     return f"""<|im_start|>system
-You are the TALON Ghostwriter Engine, a highly constrained AI matrix fine-tuned for the music industry.
+You are the TALON Ghostwriter Engine, a highly constrained AI matrix fine-tuned for the music industry. You write bars, not poetry.
 
-1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}
+1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}. No abstract poetry.
 2. SUGGESTED LEXICON: {slang_list}
-3. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. DO NOT WRITE ANY HEADERS, BRACKETS, DIFFS, OR CODE BLOCKS. YOU ARE WRITING BARS, NOT CODE.
-4. CONCRETE NOUNS ONLY: Use physical objects. Avoid abstract poetry.
+3. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. DO NOT WRITE ANY HEADERS, BRACKETS, DIFFS, OR CODE BLOCKS. ONE LINE EQUALS ONE BAR.
+4. CONCRETE NOUNS ONLY: Use physical objects (cars, money, cities, clothes, streets). Avoid abstract emotions.
 
 {flow_architecture}
 
@@ -173,11 +185,12 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_
     
     user_prompt = f"""<|im_start|>user
 [STRUCTURAL BLUEPRINT]
-GENERATE A {section_type.upper()}. EXACTLY {bars} LINES. Topic: '{prompt_topic}'.
+GENERATE A {section_type.upper()}. EXACTLY {bars} LINES (BARS). Topic: '{prompt_topic}'.
 DO NOT WRITE THE HEADER (e.g., [Verse]). JUST WRITE THE {bars} LINES OF LYRICS.
+EVERY LINE MUST FOLLOW THE FLOW ARCHITECTURE RULES AND USE THE PIPE SYMBOL (|).
 
-Previous lyrics context:
-{previous_lyrics if previous_lyrics else 'None'}
+Previous lyrics context (Continue the rhyme scheme):
+{previous_lyrics if previous_lyrics else 'None (Start of track)'}
 <|im_end|>
 <|im_start|>assistant
 """
@@ -206,10 +219,16 @@ Previous lyrics context:
     
     clean_lines = [line.strip() for line in response.split('\n') if line.strip() and not line.strip().startswith(('+', '-'))]
     
-    if len(clean_lines) > bars:
-        clean_lines = clean_lines[:bars]
-        
-    return "\n".join(clean_lines)
+    # 💥 THE PHANTOM STACK
+    stacked_lines = []
+    for line in clean_lines:
+        if '|' in line:
+            parts = [p.strip() for p in line.split('|') if p.strip()]
+            stacked_lines.extend(parts)
+        else:
+            stacked_lines.append(line)
+            
+    return "\n".join(stacked_lines)
 
 def handler(event):
     job_input = event.get("input", {})
@@ -219,30 +238,65 @@ def handler(event):
     flow_dna = job_input.get("tag", "Standard flow")
     style = job_input.get("style", "getnice_hybrid")
     use_slang = job_input.get("useSlang", True)
+    use_intel = job_input.get("useIntel", True)
     
-    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_slang)
+    # 🚨 TIMELINE SYNC: MATHEMATICAL BEAT CALCULATION 🚨
+    bpm = float(job_input.get("bpm", 120))
+    if bpm <= 0: bpm = 120
+    seconds_per_bar = (60.0 / bpm) * 4.0
+    
+    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel)
     
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16}])
         final_lyrics = ""
         context_lyrics = ""
         saved_hook = None
+        current_cumulative_bar = 0
         
         for section in blueprint:
             sec_type = section.get("type", "VERSE").upper()
             bars = section.get("bars", 16)
             
-            final_lyrics += f"\n[{sec_type} - {bars} BARS]\n"
+            # Lock onto the absolute start bar defined by the UI (Supports intentional gaps!)
+            start_bar = section.get("startBar", current_cumulative_bar)
+            
+            # Calculate the human-readable timestamp header
+            time_sec = start_bar * seconds_per_bar
+            mins = int(time_sec // 60)
+            secs = int(time_sec % 60)
+            
+            final_lyrics += f"\n[{sec_type} - {bars} BARS | STARTS @ {mins}:{secs:02d} (BAR {start_bar})]\n"
             
             if sec_type == "HOOK" and saved_hook is not None:
-                section_text = saved_hook
+                raw_section_text = saved_hook
             else:
-                section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic)
+                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic)
                 if sec_type == "HOOK":
-                    saved_hook = section_text
+                    saved_hook = raw_section_text
             
-            final_lyrics += section_text + "\n"
-            context_lyrics = "\n".join((context_lyrics + "\n" + section_text).strip().split("\n")[-8:])
+            # 🚨 LIVE TIMELINE TRACKING: Prepend absolute timestamps to EVERY generated line
+            section_lines = raw_section_text.split("\n")
+            timed_lines = []
+            line_bar = start_bar
+            
+            for line in section_lines:
+                if not line.strip(): 
+                    continue
+                
+                line_time = line_bar * seconds_per_bar
+                l_mins = int(line_time // 60)
+                l_secs = int(line_time % 60)
+                
+                # We use (0:10) instead of to safely avoid crashing Room 04's Teleprompter Header Regex
+                timed_lines.append(f"({l_mins}:{l_secs:02d}) {line}")
+                line_bar += 1 # Assume 1 written line = 1 mathematical bar
+            
+            final_lyrics += "\n".join(timed_lines) + "\n"
+            
+            # Feed ONLY the raw text back into the LLM context so the AI isn't confused by timestamps
+            context_lyrics = "\n".join((context_lyrics + "\n" + raw_section_text).strip().split("\n")[-8:])
+            current_cumulative_bar = start_bar + bars
             
         return {"lyrics": final_lyrics.strip()}
         
