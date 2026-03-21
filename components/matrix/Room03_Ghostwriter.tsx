@@ -45,29 +45,35 @@ export default function Room03_Ghostwriter() {
     (userSession?.creditsRemaining && (userSession.creditsRemaining === "UNLIMITED" || userSession.creditsRemaining >= currentCost));
 
   // --- THE MASTER RIPPLE ALGORITHM ---
-  // This function ensures that blocks always follow each other in order.
-  // It is called manually whenever the blueprint structure changes.
+  // This ensures that when one block is adjusted, the rest of the song reacts.
   const syncTimeline = (newBlueprint: any[]) => {
-    let currentBar = 0;
+    let cursor = 0;
     const synced = newBlueprint.map((block) => {
-      // Logic: A block starts at its manual startBar UNLESS that bar 
-      // would overlap with the previous block.
-      const startBar = Math.max(currentBar, block.startBar ?? currentBar);
-      const updatedBlock = { ...block, startBar };
-      
-      // Update the cursor for the NEXT block
-      currentBar = startBar + block.bars;
-      return updatedBlock;
+      // Logic: A block starts at its manual startBar UNLESS that would 
+      // cause an overlap with the block before it.
+      const start = Math.max(cursor, block.startBar ?? cursor);
+      const updated = { ...block, startBar: start };
+      cursor = start + block.bars;
+      return updated;
     });
-
     setBlueprint(synced);
   };
 
   const updateBlueprintStartBar = (index: number, newStart: number) => {
     const newBp = [...blueprint];
-    newBp[index].startBar = Math.max(0, newStart);
+    const oldStart = (newBp[index] as any).startBar || 0;
+    const delta = newStart - oldStart;
     
-    // Trigger the ripple for all subsequent blocks
+    // 1. Move the targeted block
+    (newBp[index] as any).startBar = Math.max(0, newStart);
+    
+    // 2. Ripple the shift to all blocks following this one (preserving their relative gaps)
+    for (let i = index + 1; i < newBp.length; i++) {
+        const currentPos = (newBp[i] as any).startBar || 0;
+        (newBp[i] as any).startBar = Math.max(0, currentPos + delta);
+    }
+
+    // 3. Final safety pass to prevent overlap "pile-ups"
     syncTimeline(newBp);
   };
 
@@ -122,7 +128,12 @@ export default function Room03_Ghostwriter() {
           tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
-          blueprint: blueprint.map(b => ({ type: b.type, bars: b.bars, startBar: (b as any).startBar }))
+          // Sending the startBar to your handler.py so timestamps are accurate!
+          blueprint: blueprint.map(b => ({ 
+            type: b.type, 
+            bars: b.bars, 
+            startBar: (b as any).startBar 
+          }))
         })
       });
 
@@ -302,7 +313,7 @@ export default function Room03_Ghostwriter() {
            </div>
         </div>
 
-        {/* BLUEPRINT BLOCK BUILDER (With Absolute Offsets) */}
+        {/* BLUEPRINT BLOCK BUILDER (With Ripple Offsets) */}
         <div className="h-44 bg-black border-b border-[#222] overflow-x-auto flex items-center px-8 gap-4 shrink-0 custom-scrollbar shadow-[inset_0_-10px_20px_rgba(0,0,0,0.5)]">
           {blueprint.map((block, index) => (
             <div key={block.id} className="w-40 shrink-0 bg-[#050505] border border-[#333] p-4 flex flex-col justify-between h-32 group relative hover:border-[#E60000] transition-colors">
@@ -315,7 +326,7 @@ export default function Room03_Ghostwriter() {
                 <p className="font-mono text-[10px] text-[#E60000] font-bold">{block.bars} BARS</p>
               </div>
 
-              {/* TIMELINE OFFSET CONTROLS - TRIGGERING RIPPLE */}
+              {/* TIMELINE OFFSET CONTROLS - TRIGGERING RELATIVE RIPPLE */}
               <div className="flex justify-between items-center mt-2 border-t border-[#333] pt-2">
                 <span className="text-[9px] font-mono text-[#555] uppercase tracking-widest">Start Bar</span>
                 <div className="flex items-center gap-2">
@@ -351,7 +362,7 @@ export default function Room03_Ghostwriter() {
             <div className="max-w-2xl mx-auto space-y-2 pb-32">
               <div className="flex items-center justify-between border-b border-[#222] pb-6 mb-8">
                 <div>
-                  <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white">{gwTitle || "UNTITLED ARTIFACT"}</h3>
+                  <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white glow-red">{gwTitle || "UNTITLED ARTIFACT"}</h3>
                   <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest mt-2 flex items-center gap-2">
                     <AlignLeft size={12}/> Thematic Intent: {gwPrompt ? gwPrompt.substring(0, 50) + "..." : "None"}
                   </p>
