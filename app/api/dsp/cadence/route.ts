@@ -10,17 +10,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No audio payload received." }, { status: 400 });
     }
 
-    // Swapped to check for GROQ_API_KEY
     if (!process.env.GROQ_API_KEY) {
-       throw new Error("Missing GROQ_API_KEY in environment variables.");
+       return NextResponse.json({ error: "Missing GROQ_API_KEY. Please add to Vercel." }, { status: 500 });
     }
 
-    // 1. SEND RAW AUDIO TO GROQ (Whisper Drop-in Replacement)
-    const whisperFormData = new FormData();
-    whisperFormData.append('file', audioFile, 'cadence.webm');
-    whisperFormData.append('model', 'whisper-large-v3'); // Groq's hosted Whisper model
+    // 1. STRICT FILE CONVERSION 
+    // Groq API often rejects raw Blobs if the MIME type and filename aren't perfectly re-declared on the server.
+    const buffer = await audioFile.arrayBuffer();
+    const secureBlob = new Blob([buffer], { type: 'audio/webm' });
 
-    // Hitting Groq's OpenAI-compatible endpoint
+    // 2. SEND RAW AUDIO TO GROQ (Whisper Drop-in Replacement)
+    const whisperFormData = new FormData();
+    whisperFormData.append('file', secureBlob, 'cadence.webm');
+    whisperFormData.append('model', 'whisper-large-v3'); 
+    whisperFormData.append('response_format', 'json');
+
     const whisperRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
@@ -29,15 +33,17 @@ export async function POST(req: Request) {
       body: whisperFormData
     });
 
-    const whisperData = await whisperRes.json();
+    // Capture the exact Groq error if they reject the payload
     if (!whisperRes.ok) {
-      throw new Error(whisperData.error?.message || "Groq Neural Extraction Failed");
+      const errText = await whisperRes.text();
+      console.error("Groq API Error:", errText);
+      return NextResponse.json({ error: `Groq Error: ${errText}` }, { status: 502 });
     }
 
+    const whisperData = await whisperRes.json();
     const transcribedText = whisperData.text || "";
 
-    // 2. ALGORITHMIC FLOW ANALYSIS
-    // Calculate Syllable/Word density over the 10-second recording window
+    // 3. ALGORITHMIC FLOW ANALYSIS
     const wordCount = transcribedText.split(/\s+/).filter((w: string) => w.length > 0).length;
     const durationSecs = 10; 
     const wordsPerSecond = wordCount / durationSecs;
