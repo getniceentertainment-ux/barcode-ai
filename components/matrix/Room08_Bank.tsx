@@ -6,12 +6,6 @@ import {
   History, DollarSign, Zap, FileText, Lock, 
   ChevronRight, BadgeCheck, Gavel, BarChart3, Loader2
 } from "lucide-react";
-
-/**
- * FIX: Using relative paths that align with the standard project structure.
- * If these still fail in your specific local environment, ensure the 
- * folders 'store' and 'lib' exist at the root level.
- */
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -22,23 +16,19 @@ export default function Room08_Bank() {
   const [submission, setSubmission] = useState<any>(null);
   const [isSigning, setIsSigning] = useState(false);
   const [contractSigned, setContractSigned] = useState(false);
-
-  // Mock Ledger Data representing user transactions and platform arbitrage
-  const ledger = [
-    { id: 1, type: "CREDIT_PURCHASE", amount: "-$9.99", desc: "50 Generation Credits", date: "2026-03-15" },
-    { id: 2, type: "BEAT_LEASE", amount: "-$29.99", desc: "Dior Freestyle #017", date: "2026-03-14" },
-    { id: 3, type: "ROYALTY_DIST", amount: "+$142.50", desc: "Spotify Monthly Payout", date: "2026-03-01" },
-  ];
+  const [ledger, setLedger] = useState<any[]>([]);
 
   useEffect(() => {
-    fetchLatestSubmission();
+    fetchFinancialData();
   }, [userSession]);
 
-  const fetchLatestSubmission = async () => {
+  const fetchFinancialData = async () => {
     if (!userSession?.id) return;
+    setLoading(true);
+    
     try {
-      // Pull the latest analysis from Room 07 submission to check for "Hit Score"
-      const { data, error } = await supabase
+      // 1. Pull the actual latest artifact submission
+      const { data: subData } = await supabase
         .from('submissions')
         .select('*')
         .eq('user_id', userSession.id)
@@ -46,7 +36,25 @@ export default function Room08_Bank() {
         .limit(1)
         .maybeSingle();
 
-      if (data) setSubmission(data);
+      if (subData) {
+        setSubmission(subData);
+        // Persist the contract status if they already signed it previously
+        if (subData.upstream_deal_signed) {
+          setContractSigned(true);
+        }
+      }
+
+      // 2. Pull the real transaction ledger from the database
+      const { data: txData } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userSession.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (txData) {
+        setLedger(txData);
+      }
     } catch (err) {
       console.error("Bank sync error:", err);
     } finally {
@@ -55,16 +63,64 @@ export default function Room08_Bank() {
   };
 
   const handleSignDeal = async () => {
+    if (!userSession?.id || !submission?.id) return;
     setIsSigning(true);
-    // Logic: Simulate the GetNice Algorithmic Advance injection ($1,500 Marketing Credits)
-    setTimeout(() => {
-      setIsSigning(false);
+    
+    try {
+      // 1. Get current marketing credits to add to them safely
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('marketing_credits')
+        .eq('id', userSession.id)
+        .single();
+
+      const currentCredits = profile?.marketing_credits || 0;
+      const advanceAmount = 1500.00;
+
+      // 2. Inject the $1,500 Marketing Advance into the user's wallet
+      const { error: profileErr } = await supabase
+        .from('profiles')
+        .update({ marketing_credits: currentCredits + advanceAmount })
+        .eq('id', userSession.id);
+
+      if (profileErr) throw profileErr;
+
+      // 3. Mark the track as owned/signed by the label
+      const { error: subErr } = await supabase
+        .from('submissions')
+        .update({ upstream_deal_signed: true })
+        .eq('id', submission.id);
+
+      if (subErr) throw subErr;
+
+      // 4. Create a ledger receipt for the audit trail
+      await supabase.from('transactions').insert({
+        user_id: userSession.id,
+        amount: advanceAmount,
+        type: 'ADVANCE_DEPOSIT',
+        description: `Upstream Advance: ${submission.title}`
+      });
+
       setContractSigned(true);
-      if(addToast) addToast("Upstream Deal Secured. $1,500 Marketing Credits Issued.", "success");
-    }, 3000);
+      
+      // Update local store state so the UI reflects the new money instantly
+      useMatrixStore.setState({ 
+        userSession: { 
+          ...userSession, 
+          marketingCredits: currentCredits + advanceAmount 
+        } 
+      });
+
+      if(addToast) addToast("Upstream Deal Executed. $1,500 Deployed to Wallet.", "success");
+      
+    } catch (err: any) {
+      console.error(err);
+      if(addToast) addToast("Contract execution failed.", "error");
+    } finally {
+      setIsSigning(false);
+    }
   };
 
-  // Rubric Rule: Score of 90+ triggers the Upstream Deal intercept
   const isEligibleForDeal = submission && submission.hit_score >= 90;
 
   return (
@@ -88,14 +144,16 @@ export default function Room08_Bank() {
           </div>
           <div className="bg-[#0a0a0a] border border-[#222] p-4 min-w-[160px]">
             <p className="text-[8px] font-mono text-[#E60000] uppercase mb-1 font-bold">Marketing Credits</p>
-            <p className="text-2xl font-oswald font-bold text-[#E60000]">{contractSigned ? "$1,500.00" : "$0.00"}</p>
+            <p className="text-2xl font-oswald font-bold text-[#E60000]">
+              ${userSession?.marketingCredits?.toFixed(2) || "0.00"}
+            </p>
           </div>
         </div>
       </div>
 
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         
-        {/* LEFT: THE LEDGER (Transaction history) */}
+        {/* LEFT: THE REAL LEDGER */}
         <div className="w-full lg:w-1/2 border-r border-[#111] flex flex-col bg-[#020202]">
           <div className="p-6 border-b border-[#111] flex justify-between items-center bg-black">
             <h3 className="font-oswald text-sm uppercase tracking-widest text-[#888] flex items-center gap-2">
@@ -105,22 +163,33 @@ export default function Room08_Bank() {
           </div>
           
           <div className="flex-1 overflow-y-auto p-6 space-y-2 custom-scrollbar">
-            {ledger.map((item) => (
-              <div key={item.id} className="flex justify-between items-center p-4 bg-black border border-[#111] hover:border-[#333] transition-colors group">
-                <div className="flex items-center gap-4">
-                  <div className={`p-2 rounded-full ${item.amount.startsWith('+') ? 'bg-green-500/10 text-green-500' : 'bg-[#E60000]/10 text-[#E60000]'}`}>
-                    {item.amount.startsWith('+') ? <TrendingUp size={14} /> : <DollarSign size={14} />}
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-mono text-white uppercase font-bold tracking-widest">{item.desc}</p>
-                    <p className="text-[8px] font-mono text-[#444] uppercase mt-1">{item.date} // {item.type}</p>
-                  </div>
-                </div>
-                <div className={`font-oswald text-lg font-bold ${item.amount.startsWith('+') ? 'text-green-500' : 'text-white'}`}>
-                  {item.amount}
-                </div>
+            {ledger.length === 0 && !loading ? (
+              <div className="text-center py-10 opacity-30">
+                <p className="text-[10px] font-mono uppercase tracking-widest">No transactions found.</p>
               </div>
-            ))}
+            ) : (
+              ledger.map((item) => {
+                const isPositive = Number(item.amount) > 0;
+                return (
+                  <div key={item.id} className="flex justify-between items-center p-4 bg-black border border-[#111] hover:border-[#333] transition-colors group">
+                    <div className="flex items-center gap-4">
+                      <div className={`p-2 rounded-full ${isPositive ? 'bg-green-500/10 text-green-500' : 'bg-[#E60000]/10 text-[#E60000]'}`}>
+                        {isPositive ? <TrendingUp size={14} /> : <DollarSign size={14} />}
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-mono text-white uppercase font-bold tracking-widest">{item.description}</p>
+                        <p className="text-[8px] font-mono text-[#444] uppercase mt-1">
+                          {new Date(item.created_at).toLocaleDateString()} // {item.type}
+                        </p>
+                      </div>
+                    </div>
+                    <div className={`font-oswald text-lg font-bold ${isPositive ? 'text-green-500' : 'text-white'}`}>
+                      {isPositive ? '+' : ''}${Math.abs(item.amount).toFixed(2)}
+                    </div>
+                  </div>
+                );
+              })
+            )}
             <div className="pt-8 text-center">
               <p className="text-[9px] font-mono text-[#333] uppercase tracking-widest">--- End of Recorded Ledger ---</p>
             </div>
@@ -158,7 +227,7 @@ export default function Room08_Bank() {
             )}
           </div>
 
-          {/* THE INTERCEPTION: UPSTREAM DEAL (Triggered by Hit Score > 90) */}
+          {/* THE INTERCEPTION: UPSTREAM DEAL */}
           {isEligibleForDeal && !contractSigned && (
             <div className="p-8 bg-[#110000] border-b border-[#E60000]/30 animate-in zoom-in duration-700">
                <div className="flex items-center gap-3 mb-6">
