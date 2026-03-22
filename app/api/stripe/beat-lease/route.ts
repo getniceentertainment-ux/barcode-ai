@@ -16,20 +16,23 @@ export async function POST(req: Request) {
     const { beatName, beatUrl, price, userId, producerId, beatId } = await req.json();
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://www.bar-code.ai";
 
-    const { data: producer } = await supabaseAdmin
-      .from('profiles')
-      .select('stripe_account_id')
-      .eq('id', producerId)
-      .single();
+    let destinationAccount = null;
 
-    if (!producer?.stripe_account_id) {
-       return NextResponse.json({ error: "Producer account not linked." }, { status: 400 });
+    if (producerId) {
+      const { data: producer } = await supabaseAdmin
+        .from('profiles')
+        .select('stripe_account_id')
+        .eq('id', producerId)
+        .maybeSingle();
+
+      if (producer?.stripe_account_id) {
+        destinationAccount = producer.stripe_account_id;
+      }
     }
 
     const amountInCents = Math.round(price * 100);
-    const platformFee = Math.round(amountInCents * 0.20); 
 
-    const session = await stripe.checkout.sessions.create({
+    const sessionConfig: Stripe.Checkout.SessionCreateParams = {
       payment_method_types: ['card'],
       line_items: [{
         price_data: {
@@ -40,14 +43,20 @@ export async function POST(req: Request) {
         quantity: 1,
       }],
       mode: 'payment',
-      payment_intent_data: {
-        application_fee_amount: platformFee,
-        transfer_data: { destination: producer.stripe_account_id },
-      },
       success_url: `${siteUrl}/?beat_purchased=true&beat_url=${encodeURIComponent(beatUrl)}`,
       cancel_url: `${siteUrl}/`,
       metadata: { userId, type: 'beat_lease', beat_id: beatId }
-    });
+    };
+
+    if (destinationAccount) {
+      const platformFee = Math.round(amountInCents * 0.20); 
+      sessionConfig.payment_intent_data = {
+        application_fee_amount: platformFee,
+        transfer_data: { destination: destinationAccount },
+      };
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionConfig);
 
     return NextResponse.json({ url: session.url });
   } catch (error: any) {
