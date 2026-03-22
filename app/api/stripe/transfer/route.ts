@@ -2,40 +2,49 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2023-10-16' });
-const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2023-10-16',
+});
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: Request) {
   try {
     const { userId, amount } = await req.json();
-    if (!userId || !amount || amount <= 0) {
-      return NextResponse.json({ error: "Invalid payout request" }, { status: 400 });
-    }
-
-    const { data: profile } = await supabaseAdmin.from('profiles').select('stripe_connect_id, wallet_balance').eq('id', userId).single();
     
-    if (!profile?.stripe_connect_id) {
-      return NextResponse.json({ error: "Stripe Connect account not linked." }, { status: 403 });
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('stripe_account_id, wallet_balance')
+      .eq('id', userId)
+      .single();
+    
+    if (!profile?.stripe_account_id) {
+      return NextResponse.json({ error: "Stripe Connect account not linked." }, { status: 400 });
     }
 
-    if (profile.wallet_balance < amount) {
-      return NextResponse.json({ error: "Insufficient wallet balance." }, { status: 400 });
+    if (profile.wallet_balance < amount || amount <= 0) {
+      return NextResponse.json({ error: "Insufficient funds for transfer." }, { status: 400 });
     }
 
-    // Execute the physical payout to the connected bank account via Stripe
+    // Execute fiat transfer to user's connected bank
     const transfer = await stripe.transfers.create({
-      amount: Math.round(amount * 100), // Convert to cents
+      amount: Math.round(amount * 100), // Stripe uses cents
       currency: 'usd',
-      destination: profile.stripe_connect_id,
-      description: 'GetNice Records Master Royalty / Escrow Payout',
+      destination: profile.stripe_account_id,
+      description: 'GetNice Matrix Royalty Payout'
     });
 
-    // Deduct from the Supabase Ledger
-    await supabaseAdmin.from('profiles').update({ wallet_balance: profile.wallet_balance - amount }).eq('id', userId);
+    // Deduct exact amount from Supabase ledger
+    await supabaseAdmin.from('profiles')
+      .update({ wallet_balance: profile.wallet_balance - amount })
+      .eq('id', userId);
 
-    return NextResponse.json({ success: true, transferId: transfer.id });
-  } catch (err: any) {
-    console.error("Stripe Transfer Error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ success: true, transfer: transfer.id });
+  } catch (error: any) {
+    console.error("Transfer error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
