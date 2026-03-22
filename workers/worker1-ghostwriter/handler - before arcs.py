@@ -133,21 +133,11 @@ def init_model():
 
 # --- THE ARCHITECTURE ROUTER ---
 
-# --- APPENDED LOGIC: Added 'bpm' parameter to the function signature ---
-def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, bpm=120):
+def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
     slang_list = ", ".join(load_street_slang()) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     banned_words_str = ", ".join(BAN_LIST)
-    
-    # --- APPENDED LOGIC: BPM Math for Syllable Pocketing (The Human Pilot Feel) ---
-    bpm_val = float(bpm)
-    if bpm_val <= 100:
-        rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Slow/Heavy). Target 10-14 syllables per bar. Drag the flow."
-    elif bpm_val <= 135:
-        rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Mid). Target 9-12 syllables per bar. Rhythmic, steady pocket."
-    else:
-        rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Fast). Target 7-10 syllables per bar. Fast, staccato."
     
     if genre_style == "getnice_hybrid" or genre_style == "getnice_flow":
         flow_architecture = """[FLOW ARCHITECTURE: GETNICE HYBRID (SIGNATURE FLOW)]
@@ -182,10 +172,6 @@ You are the TALON Ghostwriter Engine, a highly constrained AI matrix fine-tuned 
 5. BAR COUNT MATH IS ABSOLUTE: You must generate EXACTLY the number of lines requested. No more, no less.
 6. NO TIMESTAMPS: Do NOT write any timestamps (like 0:15) at the beginning of your lines.
 
-# --- APPENDED LOGIC: Human Delivery Overrides ---
-7. VOCAL DELIVERY: Speak conversationally, like a deposition or late-night reflection.
-{rhythm_logic}
-
 {flow_architecture}
 
 [LIVE INTEL]
@@ -196,24 +182,12 @@ You are the TALON Ghostwriter Engine, a highly constrained AI matrix fine-tuned 
 <|im_end|>
 """
 
-# --- APPENDED LOGIC: Added 'section_index' parameter to the function signature ---
-def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0):
+def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic):
     delivery = "Melodic, longer vowels" if section_type.upper() == "HOOK" else "Complex, internal rhymes"
-    
-    # --- APPENDED LOGIC: Thematic Progression Arc ---
-    if section_index == 0:
-        arc_instruction = "Establish the setting, the origin, or the initial struggle. Ground the listener."
-    elif section_type.upper() == "HOOK":
-        arc_instruction = "Summarize the core theme. Make it highly repetitive and catchy."
-    elif section_index in [1, 2]:
-        arc_instruction = "Introduce the conflict, the hustle, or the transition phase. Escalate tension."
-    else:
-        arc_instruction = "The resolution, the empire, the legacy. High confidence, boss-level energy."
     
     user_prompt = f"""<|im_start|>user
 [STRUCTURAL BLUEPRINT]
 GENERATE A {section_type.upper()}. EXACTLY {bars} LINES (BARS). Topic: '{prompt_topic}'.
-NARRATIVE ARC: {arc_instruction}
 DO NOT WRITE THE HEADER (e.g., [Verse]). JUST WRITE THE {bars} LINES OF LYRICS.
 EVERY LINE MUST FOLLOW THE FLOW ARCHITECTURE RULES AND USE THE PIPE SYMBOL (|).
 
@@ -229,7 +203,7 @@ Previous lyrics context (Continue the rhyme scheme):
     outputs = model.generate(
         **inputs,
         max_new_tokens=40 * bars,
-        temperature=0.85, # --- APPENDED LOGIC: Raised slightly from 0.75 for looser vocabulary ---
+        temperature=0.75,
         top_p=0.9,
         repetition_penalty=1.15,
         pad_token_id=tokenizer.eos_token_id,
@@ -262,13 +236,6 @@ Previous lyrics context (Continue the rhyme scheme):
     for line in clean_lines:
         if '|' in line:
             parts = [p.strip() for p in line.split('|') if p.strip()]
-            
-            # --- APPENDED LOGIC: Teleprompter Cascading Formatting ---
-            # Drops a comma at the break before the Phantom Stack extends it to a carriage return
-            for i in range(len(parts) - 1):
-                if not parts[i].endswith(','):
-                    parts[i] += ','
-                    
             stacked_lines.extend(parts)
         else:
             stacked_lines.append(line)
@@ -290,8 +257,7 @@ def handler(event):
     if bpm <= 0: bpm = 120
     seconds_per_bar = (60.0 / bpm) * 4.0
     
-    # --- APPENDED LOGIC: Passed 'bpm' to construct_system_prompt ---
-    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel, bpm)
+    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel)
     
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16}])
@@ -300,8 +266,7 @@ def handler(event):
         saved_hook = None
         current_cumulative_bar = 0
         
-        # --- APPENDED LOGIC: Added enumerate to pass the section index ---
-        for index, section in enumerate(blueprint):
+        for section in blueprint:
             sec_type = section.get("type", "VERSE").upper()
             bars = section.get("bars", 16)
             
@@ -318,8 +283,7 @@ def handler(event):
             if sec_type == "HOOK" and saved_hook is not None:
                 raw_section_text = saved_hook
             else:
-                # --- APPENDED LOGIC: Passed 'index' to generate_section for thematic progression ---
-                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, index)
+                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic)
                 if sec_type == "HOOK":
                     saved_hook = raw_section_text
             
