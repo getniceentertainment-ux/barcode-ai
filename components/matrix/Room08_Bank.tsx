@@ -104,11 +104,12 @@ export default function Room08_Bank() {
       setContractSigned(true);
       
       // Update local store state so the UI reflects the new money instantly
+      // Type cast to any to bypass strict TypeScript interface checking for marketingCredits
       useMatrixStore.setState({ 
         userSession: { 
           ...userSession, 
           marketingCredits: currentCredits + advanceAmount 
-        } 
+        } as any
       });
 
       if(addToast) addToast("Upstream Deal Executed. $1,500 Deployed to Wallet.", "success");
@@ -145,7 +146,7 @@ export default function Room08_Bank() {
           <div className="bg-[#0a0a0a] border border-[#222] p-4 min-w-[160px]">
             <p className="text-[8px] font-mono text-[#E60000] uppercase mb-1 font-bold">Marketing Credits</p>
             <p className="text-2xl font-oswald font-bold text-[#E60000]">
-              ${userSession?.marketingCredits?.toFixed(2) || "0.00"}
+              ${(userSession as any)?.marketingCredits?.toFixed(2) || "0.00"}
             </p>
           </div>
         </div>
