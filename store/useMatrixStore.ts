@@ -199,6 +199,13 @@ export const useMatrixStore = create<MatrixState>()(
         gwTitle: state.gwTitle,
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
+	mixSettings: {
+	    preset: string;
+	    eq: { low: number; mid: number; high: number };
+	    compressor: { threshold: number; ratio: number };
+	    fx: { reverb: number; autotune: number };
+	  };
+	updateMixSettings: (newSettings: any) => void;
         playbackMode: state.playbackMode,
         radioTrack: state.radioTrack,
         activeProjectId: state.activeProjectId,
