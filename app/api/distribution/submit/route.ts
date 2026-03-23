@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     if (authError || !user) return NextResponse.json({ error: "Invalid Token" }, { status: 401 });
 
     const body = await req.json();
-    const { title, audioUrl, coverUrl, hitScore, tiktokSnippet } = body;
+    const { title, audioUrl, coverUrl, hitScore, tiktokSnippet, stageName } = await req.json();
 
     if (!title || !audioUrl) {
       return NextResponse.json({ error: "Missing submission payload data." }, { status: 400 });
