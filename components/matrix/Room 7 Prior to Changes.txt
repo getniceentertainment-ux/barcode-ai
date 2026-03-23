@@ -7,13 +7,16 @@ import { supabase } from "../../lib/supabase";
 import Link from "next/link"; 
 
 export default function Room07_Distribution() {
-  // GLOBAL STATE INJECTION: Pull the A&R data directly from the store
-  const { setActiveRoom, userSession, generatedLyrics, addToast, audioData, finalMaster, anrData, updateAnrData } = useMatrixStore();
-  const { trackTitle, status, hitScore, coverUrl, tiktokSnippet } = anrData;
-
+  const { setActiveRoom, userSession, generatedLyrics, addToast, audioData, finalMaster } = useMatrixStore();
+  
+  const [trackTitle, setTrackTitle] = useState("");
+  const [status, setStatus] = useState<"idle" | "analyzing" | "submitting" | "success">("idle");
+  const [hitScore, setHitScore] = useState<number>(0);
+  const [coverUrl, setCoverUrl] = useState<string>("");
+  const [tiktokSnippet, setTiktokSnippet] = useState<string>("");
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
 
-  // Catch returning Stripe redirects for purchased DALL-E Cover Art
+  // --- SURGICAL INSERTION 1: Catch returning Stripe redirects for purchased DALL-E Cover Art ---
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -22,12 +25,14 @@ export default function Room07_Distribution() {
         window.history.replaceState({}, document.title, window.location.pathname);
         
         if (generatedCoverUrl) {
-          updateAnrData({ coverUrl: generatedCoverUrl, status: "success" });
+          setCoverUrl(generatedCoverUrl);
+          setStatus("success");
           if(addToast) addToast("DALL-E 3 Cover Art Generated & Attached.", "success");
         }
       }
     }
-  }, [userSession, addToast, updateAnrData]);
+  }, [userSession, addToast]);
+  // ------------------------------------------------------------------------------------------
 
   const handleAnalyze = async () => {
     if (!trackTitle.trim()) {
@@ -39,7 +44,7 @@ export default function Room07_Distribution() {
       return;
     }
 
-    updateAnrData({ status: "analyzing" });
+    setStatus("analyzing");
 
     try {
       // 1. Trigger the Proprietary A&R Neural Scan (AI Grading + DALL-E + TikTok Slicer)
@@ -56,23 +61,21 @@ export default function Room07_Distribution() {
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      updateAnrData({
-        hitScore: analyzeData.hitScore,
-        coverUrl: analyzeData.coverUrl,
-        tiktokSnippet: analyzeData.tiktokSnippet
-      });
+      setHitScore(analyzeData.hitScore);
+      setCoverUrl(analyzeData.coverUrl);
+      setTiktokSnippet(analyzeData.tiktokSnippet);
       
       // 2. Move to Final Ledger Submission
       handleFinalSubmit(analyzeData);
     } catch (error: any) {
       console.error("A&R Error:", error);
       if (addToast) addToast(error.message, "error");
-      updateAnrData({ status: "idle" });
+      setStatus("idle");
     }
   };
 
   const handleFinalSubmit = async (aAndRData: any) => {
-    updateAnrData({ status: "submitting" });
+    setStatus("submitting");
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -94,15 +97,16 @@ export default function Room07_Distribution() {
 
       if (!res.ok) throw new Error("Failed to secure artifact in Ledger.");
 
-      updateAnrData({ status: "success" });
+      setStatus("success");
       if (addToast) addToast("Artifact secured. Global Nodes synchronized.", "success");
     } catch (err: any) {
       console.error("Submission Error:", err);
       if (addToast) addToast(err.message, "error");
-      updateAnrData({ status: "idle" });
+      setStatus("idle");
     }
   };
 
+  // --- SURGICAL INSERTION 2: The Checkout Routing Function ---
   const handlePurchaseCoverArt = async () => {
     setIsGeneratingCover(true);
     try {
@@ -129,6 +133,7 @@ export default function Room07_Distribution() {
       setIsGeneratingCover(false);
     }
   };
+  // -----------------------------------------------------------
 
   return (
     <div className="h-full flex flex-col justify-center max-w-5xl mx-auto animate-in fade-in duration-500">
@@ -158,7 +163,7 @@ export default function Room07_Distribution() {
               <input 
                 type="text" 
                 value={trackTitle}
-                onChange={(e) => updateAnrData({ trackTitle: e.target.value })}
+                onChange={(e) => setTrackTitle(e.target.value)}
                 className="w-full bg-black border border-[#222] p-4 font-mono text-xs uppercase text-white outline-none focus:border-[#E60000] transition-colors" 
                 placeholder="E.g., MATRIX INFILTRATION..." 
               />
@@ -208,6 +213,7 @@ export default function Room07_Distribution() {
              
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
                
+               {/* --- SURGICAL INSERTION 3: UI Replacement for $2.99 Paywall Injection --- */}
                <div className="flex flex-col md:flex-row gap-6">
                   <div className="w-full md:w-48 flex flex-col gap-2 shrink-0">
                     <div className="w-full h-48 bg-[#111] border border-[#333] relative overflow-hidden shadow-xl">
@@ -246,6 +252,7 @@ export default function Room07_Distribution() {
                     </p>
                   </div>
                </div>
+               {/* ---------------------------------------------------------------------- */}
 
                {/* TikTok Viral Snippet Display */}
                <div className="bg-[#110000] border border-[#330000] p-6 text-left relative overflow-hidden">

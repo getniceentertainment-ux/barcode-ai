@@ -16,6 +16,16 @@ interface MatrixState {
   activeProjectId: string | null;
   isProjectFinalized: boolean;
 
+  // A&R DATA STATE
+  anrData: {
+    trackTitle: string;
+    hitScore: number;
+    tiktokSnippet: string;
+    coverUrl: string;
+    status: "idle" | "analyzing" | "submitting" | "success";
+  };
+  updateAnrData: (data: Partial<MatrixState['anrData']>) => void;
+
   mixParams: {
     activeChain: string;
     presenceIntensity: number;
@@ -105,6 +115,14 @@ export const useMatrixStore = create<MatrixState>()(
         reverbMix: 25,
         eqGains: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5]
       },
+
+      anrData: {
+        trackTitle: "",
+        hitScore: 0,
+        tiktokSnippet: "",
+        coverUrl: "",
+        status: "idle",
+      },
       
       blueprint: [],
       generatedLyrics: null,
@@ -114,6 +132,11 @@ export const useMatrixStore = create<MatrixState>()(
 
       updateMixParams: (params) => set((state) => ({ 
         mixParams: { ...state.mixParams, ...params } 
+      })),
+
+      // --- SURGICAL FIX: The A&R Setter ---
+      updateAnrData: (data) => set((state) => ({ 
+        anrData: { ...state.anrData, ...data } 
       })),
 
       setPlaybackMode: (mode) => set({ playbackMode: mode }),
@@ -132,18 +155,15 @@ export const useMatrixStore = create<MatrixState>()(
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
       
-      // --- SURGICAL FIX 1: THE VAULT DOOR ---
-      // Intercept navigation. If finalized, block access to Rooms 01-05.
       setActiveRoom: (roomId) => set((state) => {
         if (state.isProjectFinalized && ["01", "02", "03", "04", "05"].includes(roomId)) {
-          return state; // Deny navigation
+          return state; 
         }
         return { activeRoom: roomId };
       }),
 
-      // --- SURGICAL FIX 2: MASTER RETENTION & LOCKING ---
       setFinalMaster: (master) => {
-        set({ finalMaster: master, isProjectFinalized: !!master }); // Automatically locks the project
+        set({ finalMaster: master, isProjectFinalized: !!master }); 
         saveAudioToDisk('matrix_final_master', master);
       },
       
@@ -179,8 +199,6 @@ export const useMatrixStore = create<MatrixState>()(
       },
       removeToast: (id) => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })),
 
-      // --- SURGICAL FIX 3: SAFE PURGE ---
-      // Wipes track data without logging the user out of the platform
       clearMatrix: () => set((state) => {
         saveAudioToDisk('matrix_audio_data', null);
         saveAudioToDisk('matrix_vocal_stems', []);
@@ -195,16 +213,23 @@ export const useMatrixStore = create<MatrixState>()(
             presenceIntensity: 30,
             reverbMix: 25,
             eqGains: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5]
+          },
+          // --- SURGICAL FIX: Purging the A&R Cache ---
+          anrData: {
+            trackTitle: "",
+            hitScore: 0,
+            tiktokSnippet: "",
+            coverUrl: "",
+            status: "idle",
           }
         };
       }),
 
-      // --- SURGICAL FIX 4: MASTER HYDRATION ---
       hydrateDiskAudio: async () => {
         try {
           const savedBeat = await loadAudioFromDisk('matrix_audio_data');
           const savedStems = await loadAudioFromDisk('matrix_vocal_stems');
-          const savedMaster = await loadAudioFromDisk('matrix_final_master'); // Fetch Master
+          const savedMaster = await loadAudioFromDisk('matrix_final_master'); 
 
           if (savedBeat && (savedBeat as any).blob) {
             set({ audioData: { ...(savedBeat as any), url: URL.createObjectURL((savedBeat as any).blob) } });
@@ -239,6 +264,7 @@ export const useMatrixStore = create<MatrixState>()(
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
         mixParams: state.mixParams,
+        anrData: state.anrData, // <--- THE MISSING LINK: Now it saves to the hard drive!
         playbackMode: state.playbackMode,
         radioTrack: state.radioTrack,
         activeProjectId: state.activeProjectId,
