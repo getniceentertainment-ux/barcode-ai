@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession, FinalMaster } from '../lib/types';
 import { saveAudioToDisk, loadAudioFromDisk } from '../lib/dawStorage';
+import { supabase } from '../lib/supabase'; // <-- ADDED SUPABASE IMPORT
 
 interface ToastMessage {
   id: string;
@@ -16,7 +17,6 @@ interface MatrixState {
   activeProjectId: string | null;
   isProjectFinalized: boolean;
 
-  // A&R DATA STATE
   anrData: {
     trackTitle: string;
     hitScore: number;
@@ -86,11 +86,14 @@ interface MatrixState {
 
   clearMatrix: () => void;
   hydrateDiskAudio: () => Promise<void>;
+  
+  // --- SURGICAL FIX: Ledger Synchronization ---
+  syncLedger: () => Promise<void>;
 }
 
 export const useMatrixStore = create<MatrixState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       hasAccess: false,
       activeRoom: "01",
       userSession: null,
@@ -134,7 +137,6 @@ export const useMatrixStore = create<MatrixState>()(
         mixParams: { ...state.mixParams, ...params } 
       })),
 
-      // --- SURGICAL FIX: The A&R Setter ---
       updateAnrData: (data) => set((state) => ({ 
         anrData: { ...state.anrData, ...data } 
       })),
@@ -214,7 +216,6 @@ export const useMatrixStore = create<MatrixState>()(
             reverbMix: 25,
             eqGains: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5]
           },
-          // --- SURGICAL FIX: Purging the A&R Cache ---
           anrData: {
             trackTitle: "",
             hitScore: 0,
@@ -225,8 +226,37 @@ export const useMatrixStore = create<MatrixState>()(
         };
       }),
 
+      // --- SURGICAL FIX: The Ledger Pull ---
+      // Automatically fetches your true balances from the DB to prevent UI exploits/wipes
+      syncLedger: async () => {
+        const state = get();
+        if (!state.userSession?.id) return;
+        try {
+          const { data } = await supabase
+            .from('profiles')
+            .select('marketing_credits, wallet_balance')
+            .eq('id', state.userSession.id)
+            .single();
+            
+          if (data) {
+            set({
+              userSession: {
+                ...state.userSession,
+                marketingCredits: data.marketing_credits,
+                walletBalance: data.wallet_balance
+              } as any
+            });
+          }
+        } catch (err) {
+          console.error("Ledger sync failed", err);
+        }
+      },
+
       hydrateDiskAudio: async () => {
         try {
+          // Rescue the user's balances from the database immediately on boot
+          await get().syncLedger();
+
           const savedBeat = await loadAudioFromDisk('matrix_audio_data');
           const savedStems = await loadAudioFromDisk('matrix_vocal_stems');
           const savedMaster = await loadAudioFromDisk('matrix_final_master'); 
@@ -264,12 +294,15 @@ export const useMatrixStore = create<MatrixState>()(
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
         mixParams: state.mixParams,
-        anrData: state.anrData, // <--- THE MISSING LINK: Now it saves to the hard drive!
+        anrData: state.anrData,
         playbackMode: state.playbackMode,
         radioTrack: state.radioTrack,
         activeProjectId: state.activeProjectId,
         isProjectFinalized: state.isProjectFinalized,
-        activeRoom: state.activeRoom 
+        activeRoom: state.activeRoom,
+        // --- SURGICAL FIX: Store the Session to prevent amnesia ---
+        hasAccess: state.hasAccess,
+        userSession: state.userSession
       }),
     }
   )
