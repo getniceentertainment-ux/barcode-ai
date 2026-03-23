@@ -35,6 +35,8 @@ export async function POST(req: Request) {
         cover_url: coverUrl,
         hit_score: hitScore,
         tiktok_snippet: tiktokSnippet,
+        stage_name: stageName // <--- ADD THIS LINE
+	base_hit_score: hitScore // <--- ADD THIS LINE
         status: 'pending' // Requires Admin Node approval for Global Radio, but shows on Profile immediately
       }])
       .select()
