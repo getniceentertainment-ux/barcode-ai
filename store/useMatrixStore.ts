@@ -16,7 +16,6 @@ interface MatrixState {
   activeProjectId: string | null;
   isProjectFinalized: boolean;
 
-  // MIXING CONSOLE STATE
   mixParams: {
     activeChain: string;
     presenceIntensity: number;
@@ -25,13 +24,11 @@ interface MatrixState {
   };
   updateMixParams: (params: Partial<MatrixState['mixParams']>) => void;
 
-  // RADIO PLAYER STATE
   playbackMode: 'session' | 'radio';
   radioTrack: { url: string; title: string; artist: string; score: number } | null;
   setPlaybackMode: (mode: 'session' | 'radio') => void;
   setRadioTrack: (track: { url: string; title: string; artist: string; score: number } | null) => void;
   
-  // MDX NEURAL STATUS
   mdxJobId: string | null;
   setMdxJobId: (id: string | null) => void;
   mdxStatus: "idle" | "processing" | "success" | "failed";
@@ -78,7 +75,6 @@ interface MatrixState {
   removeToast: (id: string) => void;
 
   clearMatrix: () => void;
-  
   hydrateDiskAudio: () => Promise<void>;
 }
 
@@ -103,7 +99,6 @@ export const useMatrixStore = create<MatrixState>()(
       gwUseSlang: true,
       gwUseIntel: true,
       
-      // INITIAL MIX PARAMETERS
       mixParams: {
         activeChain: "getnice_eq",
         presenceIntensity: 30,
@@ -117,7 +112,6 @@ export const useMatrixStore = create<MatrixState>()(
       finalMaster: null,
       toasts: [],
 
-      // MIX PARAMETER SETTER
       updateMixParams: (params) => set((state) => ({ 
         mixParams: { ...state.mixParams, ...params } 
       })),
@@ -127,7 +121,6 @@ export const useMatrixStore = create<MatrixState>()(
       setMdxJobId: (id) => set({ mdxJobId: id }),
       setMdxStatus: (status) => set({ mdxStatus: status }),
       grantAccess: (session) => set({ hasAccess: true, userSession: session }),
-      setActiveRoom: (roomId) => set({ activeRoom: roomId }),
       setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
       setGwTitle: (t) => set({ gwTitle: t }),
@@ -139,7 +132,21 @@ export const useMatrixStore = create<MatrixState>()(
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
       
-      // INTERCEPTING AUDIO TO DISK
+      // --- SURGICAL FIX 1: THE VAULT DOOR ---
+      // Intercept navigation. If finalized, block access to Rooms 01-05.
+      setActiveRoom: (roomId) => set((state) => {
+        if (state.isProjectFinalized && ["01", "02", "03", "04", "05"].includes(roomId)) {
+          return state; // Deny navigation
+        }
+        return { activeRoom: roomId };
+      }),
+
+      // --- SURGICAL FIX 2: MASTER RETENTION & LOCKING ---
+      setFinalMaster: (master) => {
+        set({ finalMaster: master, isProjectFinalized: !!master }); // Automatically locks the project
+        saveAudioToDisk('matrix_final_master', master);
+      },
+      
       setAudioData: (data) => {
         set({ audioData: data });
         saveAudioToDisk('matrix_audio_data', data);
@@ -165,8 +172,6 @@ export const useMatrixStore = create<MatrixState>()(
         return { vocalStems: newStems };
       }),
 
-      setFinalMaster: (master) => set({ finalMaster: master }),
-      
       addToast: (message, type) => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({ toasts: [...state.toasts, { id, message, type }] }));
@@ -174,27 +179,32 @@ export const useMatrixStore = create<MatrixState>()(
       },
       removeToast: (id) => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })),
 
-      clearMatrix: () => {
-        set({
+      // --- SURGICAL FIX 3: SAFE PURGE ---
+      // Wipes track data without logging the user out of the platform
+      clearMatrix: () => set((state) => {
+        saveAudioToDisk('matrix_audio_data', null);
+        saveAudioToDisk('matrix_vocal_stems', []);
+        saveAudioToDisk('matrix_final_master', null);
+        
+        return {
           audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
           gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
-          userSession: null, hasAccess: false, playbackMode: 'session', radioTrack: null, mdxJobId: null, mdxStatus: "idle",
-          // Reset mix params on clear
+          mdxJobId: null, mdxStatus: "idle",
           mixParams: {
             activeChain: "getnice_eq",
             presenceIntensity: 30,
             reverbMix: 25,
             eqGains: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5]
           }
-        });
-        saveAudioToDisk('matrix_audio_data', null);
-        saveAudioToDisk('matrix_vocal_stems', []);
-      },
+        };
+      }),
 
+      // --- SURGICAL FIX 4: MASTER HYDRATION ---
       hydrateDiskAudio: async () => {
         try {
           const savedBeat = await loadAudioFromDisk('matrix_audio_data');
           const savedStems = await loadAudioFromDisk('matrix_vocal_stems');
+          const savedMaster = await loadAudioFromDisk('matrix_final_master'); // Fetch Master
 
           if (savedBeat && (savedBeat as any).blob) {
             set({ audioData: { ...(savedBeat as any), url: URL.createObjectURL((savedBeat as any).blob) } });
@@ -209,6 +219,10 @@ export const useMatrixStore = create<MatrixState>()(
             }));
             set({ vocalStems: revivedStems });
           }
+
+          if (savedMaster && (savedMaster as any).blob) {
+             set({ finalMaster: { ...(savedMaster as any), url: URL.createObjectURL((savedMaster as any).blob) } });
+          }
         } catch (e) {
           console.error("Failed to hydrate audio from disk", e);
         }
@@ -217,7 +231,6 @@ export const useMatrixStore = create<MatrixState>()(
     {
       name: 'barcode-matrix-storage', 
       storage: createJSONStorage(() => localStorage),
-      // THE FIX: ONLY valid keys are passed to localStorage here
       partialize: (state) => ({ 
         flowDNA: state.flowDNA,
         blueprint: state.blueprint, 
@@ -225,7 +238,7 @@ export const useMatrixStore = create<MatrixState>()(
         gwTitle: state.gwTitle,
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
-        mixParams: state.mixParams, // <-- THIS IS THE MAGIC LINE
+        mixParams: state.mixParams,
         playbackMode: state.playbackMode,
         radioTrack: state.radioTrack,
         activeProjectId: state.activeProjectId,
