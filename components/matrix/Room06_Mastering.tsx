@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Sliders, CheckCircle2, Activity, ArrowRight, AudioWaveform, Disc3, Download, RefreshCw, FileArchive, Loader2, Lock, DollarSign, ShieldCheck } from "lucide-react";
+import { Sliders, CheckCircle2, Activity, ArrowRight, AudioWaveform, Disc3, Download, RefreshCw, FileArchive, Loader2, Lock, DollarSign, ShieldCheck, Trash2 } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import JSZip from 'jszip';
@@ -33,7 +33,7 @@ function audioBufferToWav(buffer: AudioBuffer) {
 }
 
 export default function Room06_Mastering() {
-  const { audioData, vocalStems, generatedLyrics, setActiveRoom, addToast, finalMaster, setFinalMaster, userSession } = useMatrixStore();
+  const { audioData, vocalStems, generatedLyrics, setActiveRoom, addToast, finalMaster, setFinalMaster, userSession, clearMatrix } = useMatrixStore();
   
   const [lufs, setLufs] = useState(-14); 
   const [actualLUFS, setActualLUFS] = useState(-20); 
@@ -46,7 +46,6 @@ export default function Room06_Mastering() {
     if (userSession?.tier === "The Mogul") setHasToken(true);
     else checkTokens();
 
-    // Catch returning Stripe redirect
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('token_purchased') === 'true') {
@@ -138,9 +137,10 @@ export default function Room06_Mastering() {
       const finalUrl = URL.createObjectURL(wavBlob);
 
       setMasterUrl(finalUrl);
+      // The moment this is called, the session is globally locked by useMatrixStore
       setFinalMaster({ url: finalUrl, blob: wavBlob }); 
       
-      if(addToast) addToast("Master encoded successfully.", "success");
+      if(addToast) addToast("Master encoded successfully. Session locked.", "success");
       setStatus("success");
     } catch (err: any) {
       if(addToast) addToast("Error rendering master.", "error");
@@ -190,6 +190,12 @@ export default function Room06_Mastering() {
       if(addToast) addToast("Failed to compile ZIP artifact.", "error");
     } finally {
       setIsZipping(false);
+    }
+  };
+
+  const handleStartNewProject = () => {
+    if(confirm("This will permanently clear the current session and send you to The Lab. Are you sure?")) {
+      clearMatrix();
     }
   };
 
@@ -275,7 +281,14 @@ export default function Room06_Mastering() {
 
           <div className="w-full flex flex-col gap-3">
             <button onClick={() => setActiveRoom("07")} className="w-full flex justify-center items-center gap-3 bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">Route to Distribution <ArrowRight size={20} /></button>
-            <button onClick={() => { setFinalMaster(null); setStatus("idle"); }} className="w-full border border-[#222] text-[#555] py-3 font-oswald text-xs font-bold uppercase tracking-widest hover:text-white hover:border-white transition-all flex justify-center items-center gap-2"><RefreshCw size={14} /> Re-Master Track</button>
+            
+            {/* SURGICAL FIX: The Definitive Vault Lock */}
+            <button 
+              onClick={handleStartNewProject} 
+              className="w-full border border-red-900/30 text-[#555] py-3 font-oswald text-xs font-bold uppercase tracking-widest hover:text-[#E60000] hover:border-[#E60000] transition-all flex justify-center items-center gap-2"
+            >
+              <Trash2 size={14} /> Start New Project (Purge Matrix)
+            </button>
           </div>
         </div>
       )}

@@ -45,6 +45,16 @@ export default function Room06_Mastering() {
   useEffect(() => {
     if (userSession?.tier === "The Mogul") setHasToken(true);
     else checkTokens();
+
+    // Catch returning Stripe redirect
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('token_purchased') === 'true') {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setHasToken(true);
+        if (addToast) addToast("Mastering Token Secured. System unlocked.", "success");
+      }
+    }
   }, [userSession]);
 
   const checkTokens = async () => {
@@ -53,9 +63,23 @@ export default function Room06_Mastering() {
     if (data && (data as any).mastering_tokens > 0) setHasToken(true);
   };
 
-  const handlePurchaseToken = () => {
-    if(addToast) addToast("Routing to Secure Payment...", "info");
-    setTimeout(() => { setHasToken(true); if(addToast) addToast("Mastering Token Acquired.", "success"); }, 2000);
+  const handlePurchaseToken = async () => {
+    if (!userSession?.id) return;
+    if(addToast) addToast("Routing to Secure Checkout...", "info");
+    
+    try {
+      const res = await fetch('/api/stripe/master-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userSession.id })
+      });
+      const data = await res.json();
+      
+      if (data.url) window.location.href = data.url;
+      else throw new Error(data.error || "Failed to route to checkout.");
+    } catch (err: any) {
+      if(addToast) addToast("Checkout failed: " + err.message, "error");
+    }
   };
 
   const handleMastering = async () => {
@@ -73,7 +97,6 @@ export default function Room06_Mastering() {
       const beatBuf = await tmpCtx.decodeAudioData(beatArrayBuf);
       let maxDuration = beatBuf.duration;
 
-      // REAL-TIME INTEGRATED LUFS SCAN
       const channelData = beatBuf.getChannelData(0);
       let sumSquares = 0;
       for (let i = 0; i < channelData.length; i++) { sumSquares += channelData[i] * channelData[i]; }
