@@ -67,7 +67,31 @@ export default function Room08_Bank() {
     setIsSigning(true);
     
     try {
-      // 1. Get current marketing credits to add to them safely
+      // 1. THE DOUBLE-SPEND CHECK: Verify it hasn't been signed already
+      const { data: checkSub } = await supabase
+        .from('submissions')
+        .select('upstream_deal_signed')
+        .eq('id', submission.id)
+        .single();
+        
+      if (checkSub?.upstream_deal_signed) {
+        setContractSigned(true);
+        throw new Error("Security Alert: Contract has already been executed.");
+      }
+
+      // 2. THE VAULT LOCK: Update the submission BEFORE touching the money
+      const { error: subErr } = await supabase
+        .from('submissions')
+        .update({ upstream_deal_signed: true })
+        .eq('id', submission.id);
+
+      // If the contract fails to lock, HALT THE FUNCTION. No money is granted.
+      if (subErr) {
+        console.error("Contract Lock Failed:", subErr);
+        throw new Error("Failed to sign contract. Database lock rejected.");
+      }
+
+      // 3. THE INJECTION: Only if the contract is locked do we grant the funds
       const { data: profile } = await supabase
         .from('profiles')
         .select('marketing_credits')
@@ -77,7 +101,6 @@ export default function Room08_Bank() {
       const currentCredits = profile?.marketing_credits || 0;
       const advanceAmount = 1500.00;
 
-      // 2. Inject the $1,500 Marketing Advance into the user's wallet
       const { error: profileErr } = await supabase
         .from('profiles')
         .update({ marketing_credits: currentCredits + advanceAmount })
@@ -85,15 +108,7 @@ export default function Room08_Bank() {
 
       if (profileErr) throw profileErr;
 
-      // 3. Mark the track as owned/signed by the label
-      const { error: subErr } = await supabase
-        .from('submissions')
-        .update({ upstream_deal_signed: true })
-        .eq('id', submission.id);
-
-      if (subErr) throw subErr;
-
-      // 4. Create a ledger receipt for the audit trail
+      // 4. THE RECEIPT: Create an immutable audit trail
       await supabase.from('transactions').insert({
         user_id: userSession.id,
         amount: advanceAmount,
@@ -101,10 +116,10 @@ export default function Room08_Bank() {
         description: `Upstream Advance: ${submission.title}`
       });
 
+      // 5. UPDATE UI
       setContractSigned(true);
       
       // Update local store state so the UI reflects the new money instantly
-      // Type cast to any to bypass strict TypeScript interface checking for marketingCredits
       useMatrixStore.setState({ 
         userSession: { 
           ...userSession, 
@@ -115,8 +130,8 @@ export default function Room08_Bank() {
       if(addToast) addToast("Upstream Deal Executed. $1,500 Deployed to Wallet.", "success");
       
     } catch (err: any) {
-      console.error(err);
-      if(addToast) addToast("Contract execution failed.", "error");
+      console.error("Deal Execution Error:", err);
+      if(addToast) addToast(err.message || "Contract execution failed.", "error");
     } finally {
       setIsSigning(false);
     }
