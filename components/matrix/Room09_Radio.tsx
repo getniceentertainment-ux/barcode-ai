@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Radio, Play, Pause, BarChart2, Users, Disc3, Trophy, Flame } from "lucide-react";
+import { Radio, Play, Pause, BarChart2, Users, Disc3, Trophy, Flame, Megaphone, Target, Zap, Loader2, ArrowUpRight } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -22,13 +22,24 @@ const SEED_TRACKS: ApprovedTrack[] = [
 ];
 
 export default function Room09_Radio() {
-  const { radioTrack, setRadioTrack, setPlaybackMode, playbackMode } = useMatrixStore();
+  const { radioTrack, setRadioTrack, setPlaybackMode, playbackMode, userSession, addToast } = useMatrixStore();
+  
+  // Radio State
   const [tracks, setTracks] = useState<ApprovedTrack[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Ad Manager State
+  const [userVault, setUserVault] = useState<ApprovedTrack[]>([]);
+  const [selectedTrackId, setSelectedTrackId] = useState<string>("");
+  const [campaignBudget, setCampaignBudget] = useState<number>(0);
+  const [isDeploying, setIsDeploying] = useState(false);
+
+  const availableCredits = (userSession as any)?.marketingCredits || 0;
+
   useEffect(() => {
     fetchGlobalRadio();
-  }, []);
+    fetchUserVault();
+  }, [userSession]);
 
   const fetchGlobalRadio = async () => {
     try {
@@ -39,21 +50,34 @@ export default function Room09_Radio() {
         .order('hit_score', { ascending: false });
 
       if (error) throw error;
-      
-      // AUTO-SEED: Use the database tracks, but fallback to seeds if empty!
       const finalTracks = (data && data.length > 0) ? data : SEED_TRACKS;
       setTracks(finalTracks);
-      
     } catch (err) {
       console.error("Failed to load Radio:", err);
-      setTracks(SEED_TRACKS); // Ultimate fallback
+      setTracks(SEED_TRACKS);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const fetchUserVault = async () => {
+    if (!userSession?.id) return;
+    try {
+      const { data } = await supabase
+        .from('submissions')
+        .select('*')
+        .eq('user_id', userSession.id);
+      
+      if (data) {
+        setUserVault(data);
+        if (data.length > 0) setSelectedTrackId(data[0].id);
+      }
+    } catch (err) {
+      console.error("Failed to load user vault:", err);
+    }
+  };
+
   const playRadioTrack = (track: ApprovedTrack) => {
-    // THE FIX: Uses the dedicated radio state, leaving the user's Room 01 DSP session 100% safe!
     setRadioTrack({ url: track.audio_url, title: track.title, artist: track.user_id.substring(0,8), score: track.hit_score });
     setPlaybackMode('radio');
     
@@ -63,91 +87,221 @@ export default function Room09_Radio() {
     }, 100);
   };
 
-  return (
-    <div className="h-full flex flex-col max-w-5xl mx-auto animate-in fade-in duration-500">
-      <div className="flex items-end justify-between border-b border-[#222] pb-6 mb-8">
-        <div>
-          <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white flex items-center gap-4">
-            <Radio size={36} className="text-[#E60000]" /> Global Radio
-          </h2>
-          <p className="font-mono text-[10px] text-[#555] uppercase mt-2 tracking-widest">
-            Live Syndication // A&R Approved Master Tracks
-          </p>
-        </div>
-        <div className="text-right">
-          <div className="flex items-center gap-2 text-green-500 font-mono text-[10px] uppercase tracking-widest mb-1">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Broadcast Active
-          </div>
-          <div className="font-oswald text-xl text-white tracking-widest">{tracks.length} Tracks Online</div>
-        </div>
-      </div>
+  const handleDeployCampaign = async () => {
+    if (!userSession?.id || !selectedTrackId || campaignBudget <= 0) return;
+    if (campaignBudget > availableCredits) {
+      if (addToast) addToast("Insufficient marketing credits.", "error");
+      return;
+    }
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar pr-4 pb-12">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center h-64 opacity-50">
-            <Disc3 size={48} className="text-[#E60000] animate-spin mb-4" />
-            <p className="font-mono text-[10px] uppercase tracking-widest">Tuning Frequencies...</p>
+    setIsDeploying(true);
+    try {
+      // 1. Deduct Credits from Profiles Table
+      const newBalance = availableCredits - campaignBudget;
+      const { error: profileErr } = await supabase
+        .from('profiles')
+        .update({ marketing_credits: newBalance })
+        .eq('id', userSession.id);
+
+      if (profileErr) throw profileErr;
+
+      // 2. Log the Ad Spend Transaction
+      const selectedTrack = userVault.find(t => t.id === selectedTrackId);
+      await supabase.from('transactions').insert({
+        user_id: userSession.id,
+        amount: -campaignBudget,
+        type: 'AD_CAMPAIGN_SPEND',
+        description: `Algorithmic Boost: ${selectedTrack?.title}`
+      });
+
+      // 3. Update the Hit Score / Priority (Simulating the Boost)
+      await supabase
+        .from('submissions')
+        .update({ hit_score: (selectedTrack?.hit_score || 0) + Math.floor(campaignBudget / 100) })
+        .eq('id', selectedTrackId);
+
+      // 4. Update Local Global State
+      useMatrixStore.setState({ 
+        userSession: { ...userSession, marketingCredits: newBalance } as any
+      });
+
+      if (addToast) addToast("Campaign Live. Algorithm prioritized.", "success");
+      setCampaignBudget(0);
+      fetchGlobalRadio(); // Refresh radio to show new ranking
+      
+    } catch (err: any) {
+      if (addToast) addToast(err.message, "error");
+    } finally {
+      setIsDeploying(false);
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col lg:flex-row gap-8 max-w-7xl mx-auto p-4 lg:p-8 animate-in fade-in duration-500 overflow-hidden">
+      
+      {/* LEFT PANEL: THE RADIO BROADCAST */}
+      <div className="flex-1 flex flex-col border border-[#222] bg-[#050505] overflow-hidden">
+        <div className="flex items-end justify-between border-b border-[#222] bg-black p-6">
+          <div>
+            <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white flex items-center gap-4">
+              <Radio size={28} className="text-[#E60000]" /> Global Syndicate
+            </h2>
+            <p className="font-mono text-[10px] text-[#555] uppercase mt-2 tracking-widest">
+              Live Broadcast // A&R Approved Network
+            </p>
           </div>
-        ) : tracks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 border border-dashed border-[#222] bg-[#050505]">
-            <Radio size={48} className="text-[#333] mb-4" />
-            <p className="font-oswald text-xl uppercase tracking-widest text-[#555]">Dead Air</p>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-[#444] mt-2">No tracks have passed A&R review yet.</p>
+          <div className="text-right hidden sm:block">
+            <div className="flex items-center justify-end gap-2 text-green-500 font-mono text-[10px] uppercase tracking-widest mb-1">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Active
+            </div>
+            <div className="font-oswald text-lg text-white tracking-widest">{tracks.length} Nodes</div>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {tracks.map((track, index) => {
+        </div>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-3">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center h-full opacity-50">
+              <Disc3 size={48} className="text-[#E60000] animate-spin mb-4" />
+              <p className="font-mono text-[10px] uppercase tracking-widest">Tuning Frequencies...</p>
+            </div>
+          ) : tracks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full border border-dashed border-[#222] bg-black">
+              <Radio size={48} className="text-[#333] mb-4" />
+              <p className="font-oswald text-xl uppercase tracking-widest text-[#555]">Dead Air</p>
+            </div>
+          ) : (
+            tracks.map((track, index) => {
               const isPlaying = playbackMode === 'radio' && radioTrack?.url === track.audio_url;
               const isHeavyRotation = track.hit_score >= 95;
 
               return (
                 <div 
                   key={track.id} 
-                  className={`flex flex-col md:flex-row items-start md:items-center justify-between p-4 border transition-all duration-300 group
+                  className={`flex items-center justify-between p-4 border transition-all duration-300 group
                     ${isPlaying ? 'bg-[#110000] border-[#E60000]' : isHeavyRotation ? 'bg-[#0a0000] border-[#330000] hover:border-[#E60000]' : 'bg-black border-[#222] hover:border-[#555]'}`}
                 >
-                  <div className="flex items-center gap-6 w-full md:w-auto">
-                    <div className={`font-oswald text-2xl font-bold w-8 text-center ${isHeavyRotation ? 'text-[#E60000]' : 'text-[#333]'}`}>{index + 1}</div>
+                  <div className="flex items-center gap-4 w-full">
+                    <div className={`font-oswald text-xl font-bold w-6 text-center ${isHeavyRotation ? 'text-[#E60000]' : 'text-[#333]'}`}>{index + 1}</div>
                     
                     <button 
                       onClick={() => playRadioTrack(track)}
-                      className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center transition-all ${
-                        isPlaying ? 'bg-[#E60000] text-white shadow-[0_0_15px_rgba(230,0,0,0.4)] animate-pulse' : 'bg-[#111] text-white hover:bg-white hover:text-black'
+                      className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-all ${
+                        isPlaying ? 'bg-[#E60000] text-white shadow-[0_0_15px_rgba(230,0,0,0.4)] animate-pulse' : 'bg-[#111] border border-[#333] text-white hover:bg-white hover:text-black'
                       }`}
                     >
-                      {isPlaying ? <Disc3 size={20} className="animate-spin" /> : <Play size={20} className="ml-1" />}
+                      {isPlaying ? <Disc3 size={16} className="animate-spin" /> : <Play size={16} className="ml-1" />}
                     </button>
                     
-                    <div className="overflow-hidden">
-                      <h3 className={`font-oswald text-xl uppercase tracking-widest font-bold truncate ${isPlaying || isHeavyRotation ? 'text-[#E60000]' : 'text-white'}`}>
+                    <div className="overflow-hidden flex-1">
+                      <h3 className={`font-oswald text-lg uppercase tracking-widest font-bold truncate ${isPlaying || isHeavyRotation ? 'text-[#E60000]' : 'text-white'}`}>
                         {track.title}
                       </h3>
                       <div className="flex items-center gap-3 mt-1 font-mono text-[9px] text-[#666] uppercase tracking-widest">
-                        <span>ID: {track.user_id.substring(0, 6)}</span><span>•</span><span>{new Date(track.created_at).toLocaleDateString()}</span>
+                        <span>{track.user_id.substring(0, 8)}</span>
+                        {isHeavyRotation && <span className="text-[#E60000] flex items-center gap-1"><Flame size={10}/> Boosted</span>}
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-6 mt-4 md:mt-0 w-full md:w-auto justify-end border-t md:border-t-0 border-[#222] pt-4 md:pt-0">
-                    {isHeavyRotation && (
-                      <div className="flex items-center gap-1 text-[#E60000] font-mono text-[9px] uppercase tracking-widest px-2 py-1 bg-red-900/10 border border-red-900/30">
-                        <Flame size={10} /> Heavy Rotation
-                      </div>
-                    )}
-                    
-                    <div className="flex flex-col items-end">
+                    <div className="flex flex-col items-end shrink-0 hidden sm:flex">
                       <span className="text-[8px] font-mono text-[#555] uppercase tracking-widest mb-1 flex items-center gap-1"><BarChart2 size={10} /> Score</span>
-                      <span className={`font-oswald text-xl font-bold ${track.hit_score === 100 ? 'text-yellow-500' : isHeavyRotation ? 'text-[#E60000]' : track.hit_score >= 80 ? 'text-green-500' : 'text-white'}`}>
+                      <span className={`font-oswald text-lg font-bold ${isHeavyRotation ? 'text-[#E60000]' : 'text-white'}`}>
                         {track.hit_score}
                       </span>
                     </div>
                   </div>
                 </div>
               );
-            })}
-          </div>
-        )}
+            })
+          )}
+        </div>
       </div>
+
+      {/* RIGHT PANEL: AD MANAGER CAMPAIGN BUILDER */}
+      <div className="w-full lg:w-[400px] flex flex-col bg-black border border-[#222]">
+        <div className="p-6 border-b border-[#222] bg-[#110000]">
+           <h3 className="font-oswald text-2xl uppercase tracking-widest text-[#E60000] font-bold flex items-center gap-3">
+             <Megaphone size={24} /> Ad Manager
+           </h3>
+           <p className="font-mono text-[9px] text-gray-400 uppercase tracking-widest mt-2">Deploy Upstream Deal Credits</p>
+        </div>
+
+        <div className="p-6 flex-1 flex flex-col custom-scrollbar overflow-y-auto">
+           {/* Available Credits Display */}
+           <div className="bg-[#050505] border border-[#330000] p-6 text-center mb-8 shadow-[0_0_20px_rgba(230,0,0,0.1)]">
+             <p className="text-[10px] font-mono text-[#888] uppercase tracking-widest font-bold mb-2">Available Marketing Budget</p>
+             <p className="font-oswald text-5xl font-bold text-white tracking-widest">
+               ${availableCredits.toFixed(2)}
+             </p>
+           </div>
+
+           {availableCredits <= 0 ? (
+             <div className="flex-1 flex flex-col items-center justify-center text-center opacity-50 border border-dashed border-[#333] p-8">
+               <Target size={40} className="mb-4 text-[#555]" />
+               <p className="font-oswald text-lg text-white uppercase tracking-widest">No Active Budgets</p>
+               <p className="font-mono text-[9px] text-[#888] uppercase mt-2 leading-relaxed">You must secure an Upstream Deal in Room 08 to unlock non-fiat marketing credits.</p>
+             </div>
+           ) : (
+             <div className="flex flex-col gap-6 animate-in slide-in-from-bottom-4">
+               
+               {/* Target Track Selection */}
+               <div>
+                 <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold mb-2 block">1. Select Target Asset</label>
+                 <select 
+                   value={selectedTrackId}
+                   onChange={(e) => setSelectedTrackId(e.target.value)}
+                   className="w-full bg-[#0a0a0a] border border-[#333] p-4 text-white font-oswald uppercase tracking-widest text-sm outline-none focus:border-[#E60000] transition-colors appearance-none"
+                 >
+                   <option value="" disabled>-- Choose Artifact --</option>
+                   {userVault.map(t => (
+                     <option key={t.id} value={t.id}>{t.title} (Score: {t.hit_score})</option>
+                   ))}
+                 </select>
+               </div>
+
+               {/* Budget Allocation */}
+               <div>
+                 <div className="flex justify-between items-center mb-2">
+                   <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold">2. Allocate Budget</label>
+                   <span className="font-oswald text-lg text-white">${campaignBudget.toFixed(2)}</span>
+                 </div>
+                 <input 
+                   type="range" 
+                   min="0" 
+                   max={availableCredits} 
+                   step="10"
+                   value={campaignBudget} 
+                   onChange={(e) => setCampaignBudget(Number(e.target.value))} 
+                   className="w-full accent-[#E60000] h-2 bg-[#222] rounded-full appearance-none cursor-pointer" 
+                 />
+                 <div className="flex justify-between mt-2 text-[9px] font-mono text-[#555]">
+                   <span>$0</span>
+                   <span>MAX</span>
+                 </div>
+               </div>
+
+               {/* Estimated ROI */}
+               <div className="bg-[#111] p-4 border-l-2 border-[#E60000] mt-2">
+                 <p className="text-[9px] font-mono text-[#888] uppercase tracking-widest mb-1">Estimated Algorithmic Reach</p>
+                 <div className="flex items-center gap-2">
+                   <Zap size={14} className="text-yellow-500"/>
+                   <span className="font-oswald text-xl text-white">{(campaignBudget * 14.5).toLocaleString()}</span>
+                   <span className="font-mono text-[10px] text-[#555] uppercase mt-1">Guaranteed Streams</span>
+                 </div>
+               </div>
+
+               {/* Deploy Action */}
+               <button 
+                 onClick={handleDeployCampaign}
+                 disabled={isDeploying || campaignBudget <= 0 || !selectedTrackId}
+                 className="mt-4 w-full bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(230,0,0,0.2)]"
+               >
+                 {isDeploying ? <Loader2 size={20} className="animate-spin" /> : <><ArrowUpRight size={20} /> Deploy Campaign</>}
+               </button>
+             </div>
+           )}
+        </div>
+      </div>
+
     </div>
   );
 }
