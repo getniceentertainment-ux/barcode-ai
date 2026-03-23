@@ -245,13 +245,13 @@ export default function Room09_Radio() {
                
                {/* Target Track Selection */}
                <div>
-                 <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold mb-2 block">1. Select Target Asset</label>
+                 <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold mb-2 block">1. Select Target Record</label>
                  <select 
                    value={selectedTrackId}
                    onChange={(e) => setSelectedTrackId(e.target.value)}
                    className="w-full bg-[#0a0a0a] border border-[#333] p-4 text-white font-oswald uppercase tracking-widest text-sm outline-none focus:border-[#E60000] transition-colors appearance-none"
                  >
-                   <option value="" disabled>-- Choose Artifact --</option>
+                   <option value="" disabled>-- Choose Track --</option>
                    {userVault.map(t => (
                      <option key={t.id} value={t.id}>{t.title} (Score: {t.hit_score})</option>
                    ))}
