@@ -171,18 +171,30 @@ export default function MatrixController() {
     }
   };
 
-const handleDisconnect = async () => {
+	const handleDisconnect = async () => {
+    // 1. Tell the Supabase backend to kill the session
     try {
-      // 1. Attempt graceful remote signout
       await supabase.auth.signOut();
     } catch (err) {
-      console.error("Remote signout failed, forcing local wipe...");
-    } finally {
-      // 2. GUARANTEED LOCAL WIPE (Executes even if the network fails)
-      localStorage.removeItem('barcode-matrix-storage'); 
-      clearMatrix();
-      window.location.replace('/'); // 3. Hard redirect to flush memory
+      console.warn("Backend signout failed, proceeding with local wipe.");
     }
+
+    // 2. THE NUCLEAR WIPE: Destroy everything in browser memory
+    localStorage.clear();
+    sessionStorage.clear();
+
+    // 3. Destroy all cookies (Prevents Next.js SSR Ghost Sessions)
+    document.cookie.split(";").forEach((c) => {
+      document.cookie = c
+        .replace(/^ +/, "")
+        .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+    });
+
+    // 4. Reset the Global Brain
+    clearMatrix();
+
+    // 5. Hard redirect to the root domain (bypassing the router cache)
+    window.location.href = '/';
   };
 
   const handleNewProject = async () => {
