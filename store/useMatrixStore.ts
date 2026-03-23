@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession, FinalMaster } from '../lib/types';
 import { saveAudioToDisk, loadAudioFromDisk } from '../lib/dawStorage';
-import { supabase } from '../lib/supabase'; // <-- ADDED SUPABASE IMPORT
+import { supabase } from '../lib/supabase'; // <-- ADDED SUPABASE IMPOR
 
 interface ToastMessage {
   id: string;
