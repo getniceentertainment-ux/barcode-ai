@@ -6,7 +6,7 @@ import {
   UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, 
   Send, Wallet, Radio, Users, ShieldAlert, LogOut,
   Play, Pause, SkipBack, SkipForward, Volume2, Lock, User, Zap, Loader2,
-  ShieldCheck, Terminal
+  ShieldCheck, Terminal, FileAudio // <--- ADDED FileAudio for Room 11
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabase";
 // The Gateway
 import EntryGateway from "../components/matrix/EntryGateway";
 
-// The 10 Matrix Rooms
+// The 11 Matrix Rooms
 import Room01_Lab from "../components/matrix/Room01_Lab";
 import Room02_BrainTrain from "../components/matrix/Room02_BrainTrain";
 import Room03_Ghostwriter from "../components/matrix/Room03_Ghostwriter";
@@ -25,9 +25,9 @@ import Room07_Distribution from "../components/matrix/Room07_Distribution";
 import Room08_Bank from "../components/matrix/Room08_Bank";
 import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
+import Room11_Contracts from "../components/matrix/Room11_Contracts"; // <--- ADDED ROOM 11
 
 // --- SECURITY: NO LONGER HARDCODED ---
-// Add NEXT_PUBLIC_CREATOR_ID to your Vercel Environment Variables
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID; 
 
 export default function MatrixController() {
@@ -45,34 +45,33 @@ export default function MatrixController() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
 
-  // --- SURGICAL FIX: BOOT-UP AUDIO HYDRATION ---
   useEffect(() => {
-    // Revives all audio Blobs from IndexedDB on page load/refresh
     hydrateDiskAudio().then(() => {
       setIsHydrated(true);
     });
   }, []);
 
-  // --- BOOT PURGE LOGIC (Crucial for preventing Blob crash on reload) ---
-  useEffect(() => {    setIsHydrated(true);
+  useEffect(() => {    
+    setIsHydrated(true);
     useMatrixStore.setState((state) => ({
-      vocalStems: [], // Wipe dead blobs
-      finalMaster: null, // Wipe dead blobs
+      vocalStems: [], 
+      finalMaster: null, 
       audioData: state.audioData?.url?.startsWith('blob:') ? null : state.audioData
     }));
   }, []);
 
   // --- MONETIZATION & SECURITY LOGIC ---
   const isRoomLockedForTier = (roomId: string) => {
-    // 1. Creator (Super Admin) bypasses all locks
     if (userSession?.id && userSession.id === CREATOR_ID) return false;
 
     const tier = userSession?.tier || "Free Loader";
-    const freeAllowed = ["01", "02", "03", "04", "09", "10"];
-    const artistAllowed = ["01", "02", "03", "04", "05", "06", "07", "08", "09"];
+    
+    // SURGICAL FIX: Added Room 10 and 11 to both tiers so the Escrow economy functions globally
+    const freeAllowed = ["01", "02", "03", "04", "09", "10", "11"];
+    const artistAllowed = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"];
 
     if (tier === "Free Loader" && !freeAllowed.includes(roomId)) return true;
-    if (tier === "The Artist" && !artistAllowed.includes(roomId) && roomId === "10") return true;
+    if (tier === "The Artist" && !artistAllowed.includes(roomId)) return true;
     return false;
   };
 
@@ -84,7 +83,6 @@ export default function MatrixController() {
     setActiveRoom(roomId);
   };
 
-  // --- REAL-TIME CREDIT SYNC ---
   useEffect(() => {
     if (!userSession?.id) return;
 
@@ -180,20 +178,18 @@ export default function MatrixController() {
     window.location.reload();
   };
 
-  // --- NEW TRACK LIFECYCLE LOGIC ---
   const handleNewProject = async () => {
     if (userSession?.id) {
-      // Obliterate the saved session from the database so they start fresh
       await supabase.from('matrix_sessions').delete().eq('user_id', userSession.id);
     }
     clearMatrix();
     setActiveRoom("01");
   };
 
-  // Prevent SSR Hydration Mismatch
   if (!isHydrated) return null;
   if (!hasAccess) return <EntryGateway />;
 
+  // --- SURGICAL FIX: Added Room 11 to the Sidebar Array ---
   const rooms = [
     { id: "01", name: "The Lab", icon: <UploadCloud size={16} /> },
     { id: "02", name: "Brain Train", icon: <Cpu size={16} /> },
@@ -205,6 +201,7 @@ export default function MatrixController() {
     { id: "08", name: "The Bank & Vault", icon: <Wallet size={16} /> },
     { id: "09", name: "The Radio", icon: <Radio size={16} /> },
     { id: "10", name: "Social Syndicate", icon: <Users size={16} /> },
+    { id: "11", name: "Active Contracts", icon: <FileAudio size={16} /> }, 
   ];
 
   const renderActiveRoom = () => {
@@ -222,7 +219,6 @@ export default function MatrixController() {
               <button onClick={() => setActiveRoom("08")} className="flex-1 bg-black border border-[#333] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:border-white transition-colors">
                 Vault
               </button>
-              {/* TRIGGER NEW TRACK SEQUENCE */}
               <button onClick={handleNewProject} className="flex-1 bg-[#E60000] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:bg-red-700 transition-colors shadow-[0_0_15px_rgba(230,0,0,0.3)]">
                 Initialize New
               </button>
@@ -232,6 +228,7 @@ export default function MatrixController() {
       );
     }
 
+    // --- SURGICAL FIX: Wired Room 11 into the Matrix Switch ---
     switch (activeRoom) {
       case "01": return <Room01_Lab />;
       case "02": return <Room02_BrainTrain />;
@@ -243,6 +240,7 @@ export default function MatrixController() {
       case "08": return <Room08_Bank />;
       case "09": return <Room09_Radio />;
       case "10": return <Room10_Social />;
+      case "11": return <Room11_Contracts />;
       default: return <div />;
     }
   };
