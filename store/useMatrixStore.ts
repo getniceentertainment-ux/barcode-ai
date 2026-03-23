@@ -228,7 +228,7 @@ export const useMatrixStore = create<MatrixState>()(
 
       // --- SURGICAL FIX: The Ledger Pull ---
       // Automatically fetches your true balances from the DB to prevent UI exploits/wipes
-      syncLedger: async () => {
+syncLedger: async () => {
         const state = get();
         if (!state.userSession?.id) return;
         try {
@@ -236,7 +236,7 @@ export const useMatrixStore = create<MatrixState>()(
             .from('profiles')
             .select('marketing_credits, wallet_balance')
             .eq('id', state.userSession.id)
-            .single();
+            .maybeSingle(); // <--- SURGICAL FIX: Prevents 406 crashes on ghost accounts
             
           if (data) {
             set({

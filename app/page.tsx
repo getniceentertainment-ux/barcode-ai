@@ -171,11 +171,18 @@ export default function MatrixController() {
     }
   };
 
-  const handleDisconnect = async () => {
-    await supabase.auth.signOut();
-    localStorage.removeItem('barcode-matrix-storage'); 
-    clearMatrix();
-    window.location.reload();
+const handleDisconnect = async () => {
+    try {
+      // 1. Attempt graceful remote signout
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("Remote signout failed, forcing local wipe...");
+    } finally {
+      // 2. GUARANTEED LOCAL WIPE (Executes even if the network fails)
+      localStorage.removeItem('barcode-matrix-storage'); 
+      clearMatrix();
+      window.location.replace('/'); // 3. Hard redirect to flush memory
+    }
   };
 
   const handleNewProject = async () => {
