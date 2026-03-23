@@ -10,16 +10,6 @@ import {
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
-import { useEffect } from 'react';
-import { useMatrixStore } from '../store/useMatrixStore';
-
-export default function MatrixController() {
-  const hydrateDiskAudio = useMatrixStore((state) => state.hydrateDiskAudio);
-
-  useEffect(() => {
-    // Revives all audio Blobs and reconnects them to the UI on refresh
-    hydrateDiskAudio();
-  }, []);
 
 // The Gateway
 import EntryGateway from "../components/matrix/EntryGateway";
@@ -44,7 +34,7 @@ export default function MatrixController() {
   const { 
     hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix, 
     audioData, isProjectFinalized, playbackMode, setPlaybackMode, 
-    radioTrack, setRadioTrack, addToast
+    radioTrack, setRadioTrack, addToast, hydrateDiskAudio 
   } = useMatrixStore();
 
   const [isHydrated, setIsHydrated] = useState(false);
@@ -55,9 +45,16 @@ export default function MatrixController() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
 
-  // --- BOOT PURGE LOGIC (Crucial for preventing Blob crash on reload) ---
+  // --- SURGICAL FIX: BOOT-UP AUDIO HYDRATION ---
   useEffect(() => {
-    setIsHydrated(true);
+    // Revives all audio Blobs from IndexedDB on page load/refresh
+    hydrateDiskAudio().then(() => {
+      setIsHydrated(true);
+    });
+  }, []);
+
+  // --- BOOT PURGE LOGIC (Crucial for preventing Blob crash on reload) ---
+  useEffect(() => {    setIsHydrated(true);
     useMatrixStore.setState((state) => ({
       vocalStems: [], // Wipe dead blobs
       finalMaster: null, // Wipe dead blobs
