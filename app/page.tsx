@@ -10,6 +10,16 @@ import {
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
+import { useEffect } from 'react';
+import { useMatrixStore } from '../store/useMatrixStore';
+
+export default function MatrixController() {
+  const hydrateDiskAudio = useMatrixStore((state) => state.hydrateDiskAudio);
+
+  useEffect(() => {
+    // Revives all audio Blobs and reconnects them to the UI on refresh
+    hydrateDiskAudio();
+  }, []);
 
 // The Gateway
 import EntryGateway from "../components/matrix/EntryGateway";

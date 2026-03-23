@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession, FinalMaster } from '../lib/types';
+import { saveAudioToDisk, loadAudioFromDisk } from '../lib/dawStorage'; // <-- NEW: Import Disk Engine
 
 interface ToastMessage {
   id: string;
@@ -68,6 +69,9 @@ interface MatrixState {
   removeToast: (id: string) => void;
 
   clearMatrix: () => void;
+  
+  // --- SURGICAL ADDITION: Disk Hydration ---
+  hydrateDiskAudio: () => Promise<void>;
 }
 
 export const useMatrixStore = create<MatrixState>()(
@@ -103,7 +107,6 @@ export const useMatrixStore = create<MatrixState>()(
       grantAccess: (session) => set({ hasAccess: true, userSession: session }),
       setActiveRoom: (roomId) => set({ activeRoom: roomId }),
       setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
-      setAudioData: (data) => set({ audioData: data }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
       setGwTitle: (t) => set({ gwTitle: t }),
       setGwPrompt: (p) => set({ gwPrompt: p }),
@@ -114,16 +117,34 @@ export const useMatrixStore = create<MatrixState>()(
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
       
-      addVocalStem: (stem) => set((state) => ({ vocalStems: [...state.vocalStems, stem] })),
-      removeVocalStem: (id) => set((state) => ({ vocalStems: state.vocalStems.filter(s => s.id !== id) })),
-      updateStemVolume: (id, volume) => set((state) => ({
-        vocalStems: state.vocalStems.map(s => s.id === id ? { ...s, volume } : s)
-      })),
-      updateStemOffset: (id, offsetBars) => set((state) => ({
-        vocalStems: state.vocalStems.map(s => s.id === id ? { ...s, offsetBars } : s)
-      })),
+      // --- SURGICAL FIXES: Intercepting Audio to Disk ---
+      setAudioData: (data) => {
+        set({ audioData: data });
+        saveAudioToDisk('matrix_audio_data', data);
+      },
+      addVocalStem: (stem) => set((state) => {
+        const newStems = [...state.vocalStems, stem];
+        saveAudioToDisk('matrix_vocal_stems', newStems);
+        return { vocalStems: newStems };
+      }),
+      removeVocalStem: (id) => set((state) => {
+        const newStems = state.vocalStems.filter(s => s.id !== id);
+        saveAudioToDisk('matrix_vocal_stems', newStems);
+        return { vocalStems: newStems };
+      }),
+      updateStemVolume: (id, volume) => set((state) => {
+        const newStems = state.vocalStems.map(s => s.id === id ? { ...s, volume } : s);
+        saveAudioToDisk('matrix_vocal_stems', newStems);
+        return { vocalStems: newStems };
+      }),
+      updateStemOffset: (id, offsetBars) => set((state) => {
+        const newStems = state.vocalStems.map(s => s.id === id ? { ...s, offsetBars } : s);
+        saveAudioToDisk('matrix_vocal_stems', newStems);
+        return { vocalStems: newStems };
+      }),
 
       setFinalMaster: (master) => set({ finalMaster: master }),
+      
       addToast: (message, type) => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({ toasts: [...state.toasts, { id, message, type }] }));
@@ -131,28 +152,58 @@ export const useMatrixStore = create<MatrixState>()(
       },
       removeToast: (id) => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })),
 
-      clearMatrix: () => set({
-        audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
-        gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
-        userSession: null, hasAccess: false, playbackMode: 'session', radioTrack: null, mdxJobId: null, mdxStatus: "idle"
-      })
+      clearMatrix: () => {
+        set({
+          audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
+          gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
+          userSession: null, hasAccess: false, playbackMode: 'session', radioTrack: null, mdxJobId: null, mdxStatus: "idle"
+        });
+        // Clear the hard drive too
+        saveAudioToDisk('matrix_audio_data', null);
+        saveAudioToDisk('matrix_vocal_stems', []);
+      },
+
+      // --- SURGICAL ADDITION: The Boot-Up Protocol ---
+      hydrateDiskAudio: async () => {
+        try {
+          const savedBeat = await loadAudioFromDisk('matrix_audio_data');
+          const savedStems = await loadAudioFromDisk('matrix_vocal_stems');
+
+          if (savedBeat && (savedBeat as any).blob) {
+            set({ audioData: { ...(savedBeat as any), url: URL.createObjectURL((savedBeat as any).blob) } });
+          } else if (savedBeat) {
+             set({ audioData: savedBeat as AudioAnalysis });
+          }
+
+          if (savedStems && Array.isArray(savedStems)) {
+            const revivedStems = savedStems.map((stem: any) => ({
+              ...stem,
+              // Critical: Generate a fresh URL for the Blob so the browser can play it
+              url: stem.blob ? URL.createObjectURL(stem.blob) : stem.url
+            }));
+            set({ vocalStems: revivedStems });
+          }
+        } catch (e) {
+          console.error("Failed to hydrate audio from disk", e);
+        }
+      }
     }),
     {
       name: 'barcode-matrix-storage', 
       storage: createJSONStorage(() => localStorage),
+      // --- SURGICAL FIX: REMOVED audioData & vocalStems from localStorage ---
       partialize: (state) => ({ 
-        audioData: state.audioData, 
         flowDNA: state.flowDNA,
         blueprint: state.blueprint, 
         generatedLyrics: state.generatedLyrics,
         gwTitle: state.gwTitle,
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
-        vocalStems: state.vocalStems,
         playbackMode: state.playbackMode,
         radioTrack: state.radioTrack,
         activeProjectId: state.activeProjectId,
-        isProjectFinalized: state.isProjectFinalized
+        isProjectFinalized: state.isProjectFinalized,
+        activeRoom: state.activeRoom // Ensures it remembers what room you were in
       }),
     }
   )
