@@ -27,8 +27,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: cspHeader.replace(/\s{2,}/g, ' ').trim(),
-          },
+value: "default-src 'self'; ... media-src 'self' blob: data: https://*.supabase.co https://www.soundhelix.com;"          },
         ],
       },
     ];

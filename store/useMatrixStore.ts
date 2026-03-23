@@ -234,7 +234,7 @@ syncLedger: async () => {
         try {
           const { data } = await supabase
             .from('profiles')
-            .select('marketing_credits, wallet_balance')
+            .select('*')
             .eq('id', state.userSession.id)
             .maybeSingle(); // <--- SURGICAL FIX: Prevents 406 crashes on ghost accounts
             
