@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Radio, Play, Pause, BarChart2, Users, Disc3, Trophy, Flame, Megaphone, Target, Zap, Loader2, ArrowUpRight } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
+import Link from "next/link";
 
 interface ApprovedTrack {
   id: string;
@@ -12,13 +13,14 @@ interface ApprovedTrack {
   hit_score: number;
   user_id: string;
   created_at: string;
+  stage_name?: string; // <-- ADDED
 }
 
 // SEED TRACKS: Fills the radio if the database is empty
 const SEED_TRACKS: ApprovedTrack[] = [
-  { id: "seed_1", title: "NEON BLOOD (MASTER)", audio_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", hit_score: 98, user_id: "GETNICE_ADM", created_at: new Date().toISOString() },
-  { id: "seed_2", title: "GHOST PROTOCOL", audio_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", hit_score: 95, user_id: "SYSTEM_NODE", created_at: new Date().toISOString() },
-  { id: "seed_3", title: "SILICON SOUL", audio_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", hit_score: 91, user_id: "AURA_SYNTH", created_at: new Date().toISOString() },
+  { id: "seed_1", title: "NEON BLOOD (MASTER)", audio_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", hit_score: 98, user_id: "GETNICE_ADM", created_at: new Date().toISOString(), stage_name: "GetNice Admin" },
+  { id: "seed_2", title: "GHOST PROTOCOL", audio_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", hit_score: 95, user_id: "SYSTEM_NODE", created_at: new Date().toISOString(), stage_name: "System Node" },
+  { id: "seed_3", title: "SILICON SOUL", audio_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", hit_score: 91, user_id: "AURA_SYNTH", created_at: new Date().toISOString(), stage_name: "Aura Synth" },
 ];
 
 export default function Room09_Radio() {
@@ -43,15 +45,34 @@ export default function Room09_Radio() {
 
   const fetchGlobalRadio = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: tracksData, error } = await supabase
         .from('submissions')
         .select('*')
         .eq('status', 'approved')
         .order('hit_score', { ascending: false });
 
       if (error) throw error;
-      const finalTracks = (data && data.length > 0) ? data : SEED_TRACKS;
-      setTracks(finalTracks);
+      
+      if (tracksData && tracksData.length > 0) {
+        // --- SURGICAL FIX: Fetch Stage Names Safely ---
+        const userIds = [...new Set(tracksData.map(t => t.user_id))];
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('id, stage_name')
+          .in('id', userIds);
+          
+        const profileMap: Record<string, string> = {};
+        profilesData?.forEach(p => { profileMap[p.id] = p.stage_name; });
+        
+        const mergedTracks = tracksData.map(t => ({
+          ...t,
+          stage_name: profileMap[t.user_id] || "Unknown Artist"
+        }));
+        
+        setTracks(mergedTracks);
+      } else {
+        setTracks(SEED_TRACKS);
+      }
     } catch (err) {
       console.error("Failed to load Radio:", err);
       setTracks(SEED_TRACKS);
@@ -78,7 +99,12 @@ export default function Room09_Radio() {
   };
 
   const playRadioTrack = (track: ApprovedTrack) => {
-    setRadioTrack({ url: track.audio_url, title: track.title, artist: track.user_id.substring(0,8), score: track.hit_score });
+    setRadioTrack({ 
+      url: track.audio_url, 
+      title: track.title, 
+      artist: track.stage_name || track.user_id.substring(0,8), 
+      score: track.hit_score 
+    });
     setPlaybackMode('radio');
     
     setTimeout(() => {
@@ -96,7 +122,6 @@ export default function Room09_Radio() {
 
     setIsDeploying(true);
     try {
-      // 1. Deduct Credits from Profiles Table
       const newBalance = availableCredits - campaignBudget;
       const { error: profileErr } = await supabase
         .from('profiles')
@@ -105,7 +130,6 @@ export default function Room09_Radio() {
 
       if (profileErr) throw profileErr;
 
-      // 2. Log the Ad Spend Transaction
       const selectedTrack = userVault.find(t => t.id === selectedTrackId);
       await supabase.from('transactions').insert({
         user_id: userSession.id,
@@ -114,20 +138,18 @@ export default function Room09_Radio() {
         description: `Algorithmic Boost: ${selectedTrack?.title}`
       });
 
-      // 3. Update the Hit Score / Priority (Simulating the Boost)
       await supabase
         .from('submissions')
         .update({ hit_score: (selectedTrack?.hit_score || 0) + Math.floor(campaignBudget / 100) })
         .eq('id', selectedTrackId);
 
-      // 4. Update Local Global State
       useMatrixStore.setState({ 
         userSession: { ...userSession, marketingCredits: newBalance } as any
       });
 
       if (addToast) addToast("Campaign Live. Algorithm prioritized.", "success");
       setCampaignBudget(0);
-      fetchGlobalRadio(); // Refresh radio to show new ranking
+      fetchGlobalRadio(); 
       
     } catch (err: any) {
       if (addToast) addToast(err.message, "error");
@@ -197,7 +219,15 @@ export default function Room09_Radio() {
                         {track.title}
                       </h3>
                       <div className="flex items-center gap-3 mt-1 font-mono text-[9px] text-[#666] uppercase tracking-widest">
-                        <span>{track.user_id.substring(0, 8)}</span>
+                        
+                        {/* SURGICAL FIX: The Social Link routing to the artist's page */}
+                        <Link 
+                          href={`/${encodeURIComponent(track.stage_name || "Artist")}`} 
+                          className="hover:text-white hover:underline transition-colors z-10 relative cursor-pointer"
+                        >
+                          {track.stage_name || track.user_id.substring(0, 8)}
+                        </Link>
+
                         {isHeavyRotation && <span className="text-[#E60000] flex items-center gap-1"><Flame size={10}/> Boosted</span>}
                       </div>
                     </div>
@@ -226,7 +256,6 @@ export default function Room09_Radio() {
         </div>
 
         <div className="p-6 flex-1 flex flex-col custom-scrollbar overflow-y-auto">
-           {/* Available Credits Display */}
            <div className="bg-[#050505] border border-[#330000] p-6 text-center mb-8 shadow-[0_0_20px_rgba(230,0,0,0.1)]">
              <p className="text-[10px] font-mono text-[#888] uppercase tracking-widest font-bold mb-2">Available Marketing Budget</p>
              <p className="font-oswald text-5xl font-bold text-white tracking-widest">
@@ -242,8 +271,6 @@ export default function Room09_Radio() {
              </div>
            ) : (
              <div className="flex flex-col gap-6 animate-in slide-in-from-bottom-4">
-               
-               {/* Target Track Selection */}
                <div>
                  <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold mb-2 block">1. Select Target Record</label>
                  <select 
@@ -258,7 +285,6 @@ export default function Room09_Radio() {
                  </select>
                </div>
 
-               {/* Budget Allocation */}
                <div>
                  <div className="flex justify-between items-center mb-2">
                    <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold">2. Allocate Budget</label>
@@ -279,7 +305,6 @@ export default function Room09_Radio() {
                  </div>
                </div>
 
-               {/* Estimated ROI */}
                <div className="bg-[#111] p-4 border-l-2 border-[#E60000] mt-2">
                  <p className="text-[9px] font-mono text-[#888] uppercase tracking-widest mb-1">Estimated Algorithmic Reach</p>
                  <div className="flex items-center gap-2">
@@ -289,7 +314,6 @@ export default function Room09_Radio() {
                  </div>
                </div>
 
-               {/* Deploy Action */}
                <button 
                  onClick={handleDeployCampaign}
                  disabled={isDeploying || campaignBudget <= 0 || !selectedTrackId}
@@ -301,7 +325,6 @@ export default function Room09_Radio() {
            )}
         </div>
       </div>
-
     </div>
   );
 }
