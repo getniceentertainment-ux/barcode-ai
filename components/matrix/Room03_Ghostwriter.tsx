@@ -12,6 +12,10 @@ export default function Room03_Ghostwriter() {
     gwUseSlang, setGwUseSlang, gwUseIntel, setGwUseIntel, userSession
   } = useMatrixStore();
 
+  const [motive, setMotive] = useState("");
+  const [struggle, setStruggle] = useState("");
+  const [hustle, setHustle] = useState("");
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [lyrics, setLyrics] = useState(generatedLyrics || "");
   const [pollingAttempts, setPollingAttempts] = useState(0);
@@ -121,14 +125,16 @@ export default function Room03_Ghostwriter() {
         },
         body: JSON.stringify({
           userId: userSession?.id,
-          prompt: gwPrompt,
+          prompt: gwPrompt, // This becomes 'topic' in the backend
+          motive: motive || "Mastering the craft",
+          struggle: struggle || "Against the odds",
+          hustle: hustle || "Relentless execution",
           title: gwTitle,
           bpm: audioData?.bpm,
           style: gwStyle,
           tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
-          // Sending the startBar to your handler.py so timestamps are accurate!
           blueprint: blueprint.map(b => ({ 
             type: b.type, 
             bars: b.bars, 
@@ -240,14 +246,49 @@ export default function Room03_Ghostwriter() {
             />
           </div>
 
-          <div>
-            <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Thematic Prompt</label>
-            <textarea 
-              value={gwPrompt} 
-              onChange={(e) => setGwPrompt(e.target.value)} 
-              placeholder="Describe the vibe, the struggle, the story..." 
-              className="w-full h-24 bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] custom-scrollbar resize-none transition-colors" 
-            />
+          <div className="space-y-4">
+            <div>
+              <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-1 block font-bold">The Drive (Motive)</label>
+              <input 
+                type="text" 
+                value={motive} 
+                onChange={(e) => setMotive(e.target.value)} 
+                placeholder="E.g., Building a media brand..." 
+                className="w-full bg-[#111] border border-[#333] p-2 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" 
+              />
+            </div>
+            
+            <div>
+              <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-1 block font-bold">The Setback (Struggle)</label>
+              <input 
+                type="text" 
+                value={struggle} 
+                onChange={(e) => setStruggle(e.target.value)} 
+                placeholder="E.g., Equipment failures and tight margins..." 
+                className="w-full bg-[#111] border border-[#333] p-2 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" 
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-1 block font-bold">The Execution (Hustle)</label>
+              <input 
+                type="text" 
+                value={hustle} 
+                onChange={(e) => setHustle(e.target.value)} 
+                placeholder="E.g., Late night DAW sessions..." 
+                className="w-full bg-[#111] border border-[#333] p-2 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" 
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-1 block font-bold mt-4">Current Topic (Thematic Focus)</label>
+              <textarea 
+                value={gwPrompt} 
+                onChange={(e) => setGwPrompt(e.target.value)} 
+                placeholder="What is this specific song about?" 
+                className="w-full h-16 bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] custom-scrollbar resize-none transition-colors" 
+              />
+            </div>
           </div>
 
           <div>

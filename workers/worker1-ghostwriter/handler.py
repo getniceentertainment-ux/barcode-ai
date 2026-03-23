@@ -8,7 +8,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
 
 # --- THE HOLY GRAIL FIX ---
-# Restored to Llama-3-8B. The GetNice LoRA is completely incompatible with Mistral.
 BASE_MODEL_NAME = "NousResearch/Hermes-2-Pro-Llama-3-8B"
 LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
 
@@ -16,13 +15,24 @@ SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_
 SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
 
-# Expanded Ban List (Killing the Broadway poetry)
+# --- REVISION 1: THE CONCENTRATED KILL LIST (2026 UPDATE) ---
 BAN_LIST = [
-    "plight", "fright", "ignite", "divine", "sublime", "mindstream",
-    "whispers", "shadows", "dancing", "embrace", "souls", "abyss",
-    "void", "chaos", "destiny", "fate", "temptress", "brave ones",
-    "cowards pledge", "kingdom", "throne", "gravity", "sincere", 
-    "echoing", "laughter", "tears", "sorrow", "melody", "symphony"
+    # The 90s/Corny Rap Ban
+    "concrete jungle", "jiggy", "phat", "cheddar", "rags to riches", "no pain no gain",
+    "weathered storms", "naysayers", "darkest hour", "spirits took flight",
+    "dreams dare to breathe", "rise from our knees", "time's arrow", "chatter",
+    # AI Corporate Slop
+    "tapestry", "delve", "testament", "beacon", "journey", "myriad", "landscape", 
+    "navigate", "resonate", "foster", "catalyst", "paradigm", "synergy", "unleash",
+    # Melodrama & Poetry
+    "plight", "fright", "ignite", "divine", "sublime", "mindstream", "whispers", 
+    "shadows", "dancing", "embrace", "souls", "abyss", "void", "chaos", "destiny", 
+    "fate", "tears", "sorrow", "melody", "symphony", "ashes", "strife", "yearning",
+    # Epic/Medieval Fantasy
+    "kingdom", "throne", "crown", "realm", "legacy", "quest", "vanquish", "fortress", 
+    "prophecy", "omen", "crusade", "vanguard", "sovereign", "dominion", "forsaken",
+    "weave", "forge", "craft", "sculpt", "flutter", "plunge", "unfurl", "awaken", 
+    "slumber", "beckon", "entwine", "enchant", "captivate", "illuminate", "transcend"
 ]
 
 model = None
@@ -34,27 +44,61 @@ def load_rag_intel():
             return f.read()
     return "No live intel available."
 
-def load_street_slang():
+# --- REVISION 2: EXECUTIVE 2026 SLANG ROUTER + CUSTOM DICTIONARY PARSER ---
+def load_street_slang(style="getnice_hybrid"):
+    # 1. The 2026 Hardcoded Fallbacks
+    drill_slang = ["opp", "spin", "motion", "clear the board", "tactical", "steppin'"]
+    trap_slang = ["bag", "margins", "overhead", "frontend", "clearance", "motion"]
+    executive_slang = ["equity", "leverage", "routing", "offshore", "dividend", "infrastructure", "bandwidth", "allocation", "vault", "code"]
+    
+    if style in ["drill", "chopper"]:
+        target_list = drill_slang
+    elif style in ["trap", "triplet", "lazy"]:
+        target_list = trap_slang
+    else:
+        target_list = executive_slang
+
+    # 2. Check for Custom Dictionary File
     if not os.path.exists(SLANG_FILE):
-        return ["bando", "racks", "opp", "gas", "bag"] 
-    with open(SLANG_FILE, "r", encoding="utf-8") as f:
-        content = f.read()
+        return target_list 
+
+    # 3. The Original Parser Logic (Restored & Upgraded for Nested JSON)
     words = []
     try:
-        data = json.loads(content)
-        if isinstance(data, list):
-            words = [item.get("word", "") for item in data if "word" in item]
-    except json.JSONDecodeError:
-        lines = content.split('\n')
-        for i, line in enumerate(lines):
-            clean_line = line.strip().lower()
-            if clean_line in ['noun', 'verb', 'adj.', 'adjective', 'phrase'] and i > 0:
-                word = lines[i-1].strip()
-                if word and len(word) > 1 and len(word) < 20:
-                    words.append(word)
-    if words:
-        return random.sample(words, min(8, len(words)))
-    return ["bando", "racks", "opp", "gas", "bag"]
+        with open(SLANG_FILE, "r", encoding="utf-8") as f:
+            content = f.read()
+            
+        try:
+            data = json.loads(content)
+            
+            # 🚨 NEW LOGIC: If it finds your exact JSON structure, it grabs the keys 🚨
+            if isinstance(data, dict) and "slang_terms" in data:
+                words = list(data["slang_terms"].keys())
+            # Fallback for old list formats
+            elif isinstance(data, list):
+                words = [item.get("word", "") for item in data if "word" in item]
+                
+        except json.JSONDecodeError:
+            # Fallback to parsing as text file with 'noun', 'verb' labels
+            lines = content.split('\n')
+            for i, line in enumerate(lines):
+                clean_line = line.strip().lower()
+                if clean_line in ['noun', 'verb', 'adj.', 'adjective', 'phrase'] and i > 0:
+                    word = lines[i-1].strip()
+                    if word and 1 < len(word) < 20:
+                        words.append(word)
+                        
+        if words:
+            # Clean up the words (remove anything empty) and combine with fallback
+            words = [w.strip() for w in words if w.strip()]
+            combined_list = list(set(words + target_list))
+            return random.sample(combined_list, min(8, len(combined_list)))
+            
+    except Exception as e:
+        print(f"Slang Loader Error: {e}")
+        pass
+        
+    return target_list
 
 def load_cultural_context():
     if not os.path.exists(CULTURE_FILE):
@@ -72,15 +116,12 @@ def load_cultural_context():
     return "Focus on the struggle, the hustle, and survival."
 
 def sanitize_lora_config():
-    """THE AUTO-CLEANER: Safely strips experimental parameters that crash standard PEFT environments."""
     config_path = os.path.join(LORA_WEIGHTS_DIR, "adapter_config.json")
     if not os.path.exists(config_path):
         return
-
     try:
         with open(config_path, "r") as f:
             config = json.load(f)
-
         keys_to_remove = [
             "alora_invocation_tokens", "arrow_config", "corda_config", 
             "ensure_weight_tying", "layer_replication", "megatron_config", 
@@ -88,13 +129,11 @@ def sanitize_lora_config():
             "exclude_modules", "lora_bias", "peft_version", "qalora_group_size",
             "target_parameters", "trainable_token_indices", "use_qalora", "alora_alpha"
         ]
-
         modified = False
         for key in keys_to_remove:
             if key in config:
                 del config[key]
                 modified = True
-
         if modified:
             with open(config_path, "w") as f:
                 json.dump(config, f, indent=2)
@@ -102,24 +141,21 @@ def sanitize_lora_config():
     except Exception as e:
         print(f"Auto-Cleaner Error: {e}")
 
+# --- RESTORED: THE ENGINE IGNITION ---
 def init_model():
     global model, tokenizer
-    print("Initiating TALON Engine Deep Burn-In...")
-    
+    print("Initiating GETNICE Engine Deep Burn-In...")
     sanitize_lora_config()
-    
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_compute_dtype=torch.float16,
         bnb_4bit_use_double_quant=True,
         bnb_4bit_quant_type="nf4"
     )
-    
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
     base_model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL_NAME, quantization_config=bnb_config, device_map="auto", torch_dtype=torch.float16
     )
-    
     try:
         model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
         print("✅ GetNice Adapter fused successfully.")
@@ -131,16 +167,13 @@ def init_model():
     _ = model.generate(**dummy, max_new_tokens=5)
     print("Deep Burn-In Complete. Worker Ready.")
 
-# --- THE ARCHITECTURE ROUTER ---
-
-# --- APPENDED LOGIC: Added 'bpm' parameter to the function signature ---
-def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, bpm=120):
+# --- REVISION 3: THE PARAMETRIC GRINDER (SAAS ENGINE) ---
+def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive, struggle, hustle, topic, bpm=120):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
-    slang_list = ", ".join(load_street_slang()) if use_slang else "Standard vocabulary."
+    slang_list = ", ".join(load_street_slang(genre_style)) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     banned_words_str = ", ".join(BAN_LIST)
     
-    # --- APPENDED LOGIC: BPM Math for Syllable Pocketing (The Human Pilot Feel) ---
     bpm_val = float(bpm)
     if bpm_val <= 100:
         rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Slow/Heavy). Target 10-14 syllables per bar. Drag the flow."
@@ -154,10 +187,6 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, bpm=120
 - CADENCE: Mid-bar breath control with aggressive internal rhymes.
 - FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause.
 - SCHEME: Internal multi-syllabic rhymes leading into the break, resolving on the end-bar.
-- CLONE THESE EXACT EXAMPLES FOR STRUCTURE:
-  "I make weight | every single day"
-  "My head's up tight | and my eyes lookin' straight"
-  "Show me love as I roll | in a 5 6 0"
 - CRITICAL INSTRUCTION: Every single bar you write MUST feature this exact internal rhyme structure and use the '|' symbol."""
     elif genre_style == "drill":
         flow_architecture = """[FLOW ARCHITECTURE: NY DRILL]
@@ -173,17 +202,24 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, bpm=120
         flow_architecture = f"[FLOW ARCHITECTURE: {genre_style.upper()}]\n- CADENCE: Standard 4/4 rhythm structure.\n- FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line."
     
     return f"""<|im_start|>system
-You are the TALON Ghostwriter Engine, a highly constrained AI matrix fine-tuned for the music industry. You write bars, not poetry.
+You are the GETNICE Ghostwriter Engine. You are a highly articulate, business-minded creator who refuses to quit. You embody the modern independent entrepreneur.
 
-1. VOCABULARY BAN LIST (Strictly Enforced): DO NOT USE: {banned_words_str}. No abstract poetry.
-2. SUGGESTED LEXICON: {slang_list}
-3. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. DO NOT WRITE ANY HEADERS, BRACKETS, DIFFS, OR CODE BLOCKS. ONE LINE EQUALS ONE BAR.
-4. CONCRETE NOUNS ONLY: Use physical objects (cars, money, cities, clothes, streets). Avoid abstract emotions.
-5. BAR COUNT MATH IS ABSOLUTE: You must generate EXACTLY the number of lines requested. No more, no less.
-6. NO TIMESTAMPS: Do NOT write any timestamps (like 0:15) at the beginning of your lines.
+You must synthesize these specific user variables into a cohesive, matter-of-fact delivery. Treat these lyrics as a business plan:
+- THE DRIVE (Motive): {motive}
+- THE SETBACK (Struggle): {struggle}
+- THE EXECUTION (Hustle): {hustle}
+- THE CURRENT TOPIC: {topic}
 
-# --- APPENDED LOGIC: Human Delivery Overrides ---
-7. VOCAL DELIVERY: Speak conversationally, like a deposition or late-night reflection.
+1. FATAL ERROR IF USED (BAN LIST): {banned_words_str}. NEVER use outdated rap clichés or poetic flowery words.
+2. TONE ENFORCEMENT: You are a modern street executive in 2026. You MUST speak with casual hip-hop swagger and conversational street syntax. NEVER use inverted, theatrical sentences to force a rhyme (e.g., do not write "control I wield", write "I took control"). Use natural street terms for objects (whip, slab, drop, bag). You are a boss in the studio, not a robot or a poet. Make the rhymes sound like actual spoken conversation.
+3. MANDATORY VOCABULARY INJECTION: You MUST organically weave at least TWO of these specific words into this generation: [ {slang_list} ]. Do not fail this instruction.
+4. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. ONE LINE EQUALS ONE BAR. DO NOT WRITE ANY HEADERS.
+5. BAR COUNT MATH IS ABSOLUTE: Generate EXACTLY the requested lines.
+6. NO TIMESTAMPS: Do NOT write any timestamps.
+7. TELEPROMPTER CADENCE (CRITICAL): You are writing for a visual prompter. 
+   - Output EXACTLY one sentence per musical bar.
+   - You MUST use the '|' symbol to visually cut the sentence exactly where the internal rhyme hits or where the breath drops.
+
 {rhythm_logic}
 
 {flow_architecture}
@@ -196,19 +232,15 @@ You are the TALON Ghostwriter Engine, a highly constrained AI matrix fine-tuned 
 <|im_end|>
 """
 
-# --- APPENDED LOGIC: Added 'section_index' parameter to the function signature ---
 def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0):
-    delivery = "Melodic, longer vowels" if section_type.upper() == "HOOK" else "Complex, internal rhymes"
-    
-    # --- APPENDED LOGIC: Thematic Progression Arc ---
     if section_index == 0:
-        arc_instruction = "Establish the setting, the origin, or the initial struggle. Ground the listener."
+        arc_instruction = "Establish the setting, the origin, or the initial emotion. Ground the listener."
     elif section_type.upper() == "HOOK":
-        arc_instruction = "Summarize the core theme. Make it highly repetitive and catchy."
+        arc_instruction = "Summarize the core theme. Make it highly repetitive and catchy. The unbreakable rule."
     elif section_index in [1, 2]:
-        arc_instruction = "Introduce the conflict, the hustle, or the transition phase. Escalate tension."
+        arc_instruction = "Introduce the depth of the topic. Escalate the energy."
     else:
-        arc_instruction = "The resolution, the empire, the legacy. High confidence, boss-level energy."
+        arc_instruction = "The resolution, the takeaway. High confidence, grounded reality."
     
     user_prompt = f"""<|im_start|>user
 [STRUCTURAL BLUEPRINT]
@@ -229,7 +261,7 @@ Previous lyrics context (Continue the rhyme scheme):
     outputs = model.generate(
         **inputs,
         max_new_tokens=40 * bars,
-        temperature=0.85, # --- APPENDED LOGIC: Raised slightly from 0.75 for looser vocabulary ---
+        temperature=0.85, 
         top_p=0.9,
         repetition_penalty=1.15,
         pad_token_id=tokenizer.eos_token_id,
@@ -238,37 +270,26 @@ Previous lyrics context (Continue the rhyme scheme):
     
     response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
     
-    # 🧹 AGGRESSIVE CLEANUP PIPELINE
     response = response.replace("<|im_end|>", "").strip()
     response = re.sub(r'```.*?```', '', response, flags=re.DOTALL)
     response = response.replace("```", "")
     response = re.sub(r'\[.*?\]', '', response)
     response = re.sub(r'\([+-]\d+\)', '', response)
     
-    # --- 🚨 NEW ENFORCER PIPELINE (PRE-PHANTOM STACK) ---
-    # 1. Strip hallucinated LLM timestamps (e.g., "(0:00)", "[1:15]")
     response = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', response, flags=re.MULTILINE)
     
-    # 2. Filter conversational garbage
     clean_lines = [line.strip() for line in response.split('\n') if line.strip() and not line.strip().startswith(('+', '-')) and not line.lower().startswith("here are")]
     
-    # 3. ABSOLUTE MATHEMATICAL ENFORCEMENT
-    # If the blueprint asks for 4 bars, cut the bleeding edge off at exactly 4 lines.
     if len(clean_lines) > bars:
         clean_lines = clean_lines[:bars]
 
-    # 💥 THE PHANTOM STACK
     stacked_lines = []
     for line in clean_lines:
         if '|' in line:
             parts = [p.strip() for p in line.split('|') if p.strip()]
-            
-            # --- APPENDED LOGIC: Teleprompter Cascading Formatting ---
-            # Drops a comma at the break before the Phantom Stack extends it to a carriage return
             for i in range(len(parts) - 1):
                 if not parts[i].endswith(','):
                     parts[i] += ','
-                    
             stacked_lines.extend(parts)
         else:
             stacked_lines.append(line)
@@ -279,20 +300,55 @@ def handler(event):
     job_input = event.get("input", {})
     
     task_type = job_input.get("task_type", "generate")
-    topic = job_input.get("prompt", "Matrix infiltration")
+    topic = job_input.get("prompt", "Securing the legacy")
+    
+    # --- SAAS VARIABLES ---
+    motive = job_input.get("motive", "Mastering the technical craft")
+    struggle = job_input.get("struggle", "Industry doors closing")
+    hustle = job_input.get("hustle", "Relentless execution")
+    
     flow_dna = job_input.get("tag", "Standard flow")
     style = job_input.get("style", "getnice_hybrid")
     use_slang = job_input.get("useSlang", True)
     use_intel = job_input.get("useIntel", True)
-    
-    # 🚨 TIMELINE SYNC: MATHEMATICAL BEAT CALCULATION 🚨
     bpm = float(job_input.get("bpm", 120))
     if bpm <= 0: bpm = 120
     seconds_per_bar = (60.0 / bpm) * 4.0
     
-    # --- APPENDED LOGIC: Passed 'bpm' to construct_system_prompt ---
-    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel, bpm)
+    # --- PASS SAAS VARIABLES TO PROMPT ---
+    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel, motive, struggle, hustle, topic, bpm)
     
+    if task_type == "refine":
+        original_line = job_input.get("originalLine", "")
+        instruction = job_input.get("instruction", "Make it hit harder.")
+        
+        refine_prompt = f"""<|im_start|>user
+[MICRO-REFINEMENT PROTOCOL]
+Original Line: "{original_line}"
+Instruction: {instruction}
+
+Rewrite the line to satisfy the instruction while strictly maintaining the required persona and emotional mirror. 
+Output ONLY the rewritten line. Do not explain yourself.
+<|im_end|>
+<|im_start|>assistant
+"""
+        inputs = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=50,
+            temperature=0.7, 
+            top_p=0.9,
+            repetition_penalty=1.1,
+            pad_token_id=tokenizer.eos_token_id,
+            eos_token_id=tokenizer.eos_token_id 
+        )
+        
+        refined_line = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
+        refined_line = refined_line.replace("<|im_end|>", "").strip()
+        refined_line = re.sub(r'^["\']|["\']$', '', refined_line) 
+        
+        return {"refinedLine": refined_line}
+
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16}])
         final_lyrics = ""
@@ -300,15 +356,11 @@ def handler(event):
         saved_hook = None
         current_cumulative_bar = 0
         
-        # --- APPENDED LOGIC: Added enumerate to pass the section index ---
         for index, section in enumerate(blueprint):
             sec_type = section.get("type", "VERSE").upper()
             bars = section.get("bars", 16)
-            
-            # Lock onto the absolute start bar defined by the UI (Supports intentional gaps!)
             start_bar = section.get("startBar", current_cumulative_bar)
             
-            # Calculate the human-readable timestamp header
             time_sec = start_bar * seconds_per_bar
             mins = int(time_sec // 60)
             secs = int(time_sec % 60)
@@ -318,12 +370,10 @@ def handler(event):
             if sec_type == "HOOK" and saved_hook is not None:
                 raw_section_text = saved_hook
             else:
-                # --- APPENDED LOGIC: Passed 'index' to generate_section for thematic progression ---
                 raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, index)
                 if sec_type == "HOOK":
                     saved_hook = raw_section_text
             
-            # 🚨 LIVE TIMELINE TRACKING: Prepend absolute timestamps to EVERY generated line
             section_lines = raw_section_text.split("\n")
             timed_lines = []
             line_bar = start_bar
@@ -336,13 +386,11 @@ def handler(event):
                 l_mins = int(line_time // 60)
                 l_secs = int(line_time % 60)
                 
-                # We use (0:10) instead of to safely avoid crashing Room 04's Teleprompter Header Regex
                 timed_lines.append(f"({l_mins}:{l_secs:02d}) {line}")
-                line_bar += 1 # Assume 1 written line = 1 mathematical bar
+                line_bar += 1 
             
             final_lyrics += "\n".join(timed_lines) + "\n"
             
-            # Feed ONLY the raw text back into the LLM context so the AI isn't confused by timestamps
             context_lyrics = "\n".join((context_lyrics + "\n" + raw_section_text).strip().split("\n")[-8:])
             current_cumulative_bar = start_bar + bars
             
