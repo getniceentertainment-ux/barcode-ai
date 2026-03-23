@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession, FinalMaster } from '../lib/types';
-import { saveAudioToDisk, loadAudioFromDisk } from '../lib/dawStorage'; // <-- NEW: Import Disk Engine
+import { saveAudioToDisk, loadAudioFromDisk } from '../lib/dawStorage';
 
 interface ToastMessage {
   id: string;
@@ -15,6 +15,15 @@ interface MatrixState {
   userSession: UserSession | null;
   activeProjectId: string | null;
   isProjectFinalized: boolean;
+
+  // MIXING CONSOLE STATE
+  mixParams: {
+    activeChain: string;
+    presenceIntensity: number;
+    reverbMix: number;
+    eqGains: number[];
+  };
+  updateMixParams: (params: Partial<MatrixState['mixParams']>) => void;
 
   // RADIO PLAYER STATE
   playbackMode: 'session' | 'radio';
@@ -70,7 +79,6 @@ interface MatrixState {
 
   clearMatrix: () => void;
   
-  // --- SURGICAL ADDITION: Disk Hydration ---
   hydrateDiskAudio: () => Promise<void>;
 }
 
@@ -94,11 +102,25 @@ export const useMatrixStore = create<MatrixState>()(
       gwGender: "male",
       gwUseSlang: true,
       gwUseIntel: true,
+      
+      // INITIAL MIX PARAMETERS
+      mixParams: {
+        activeChain: "getnice_eq",
+        presenceIntensity: 30,
+        reverbMix: 25,
+        eqGains: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5]
+      },
+      
       blueprint: [],
       generatedLyrics: null,
       vocalStems: [],
       finalMaster: null,
       toasts: [],
+
+      // MIX PARAMETER SETTER
+      updateMixParams: (params) => set((state) => ({ 
+        mixParams: { ...state.mixParams, ...params } 
+      })),
 
       setPlaybackMode: (mode) => set({ playbackMode: mode }),
       setRadioTrack: (track) => set({ radioTrack: track }),
@@ -117,7 +139,7 @@ export const useMatrixStore = create<MatrixState>()(
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
       
-      // --- SURGICAL FIXES: Intercepting Audio to Disk ---
+      // INTERCEPTING AUDIO TO DISK
       setAudioData: (data) => {
         set({ audioData: data });
         saveAudioToDisk('matrix_audio_data', data);
@@ -156,14 +178,19 @@ export const useMatrixStore = create<MatrixState>()(
         set({
           audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
           gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
-          userSession: null, hasAccess: false, playbackMode: 'session', radioTrack: null, mdxJobId: null, mdxStatus: "idle"
+          userSession: null, hasAccess: false, playbackMode: 'session', radioTrack: null, mdxJobId: null, mdxStatus: "idle",
+          // Reset mix params on clear
+          mixParams: {
+            activeChain: "getnice_eq",
+            presenceIntensity: 30,
+            reverbMix: 25,
+            eqGains: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5]
+          }
         });
-        // Clear the hard drive too
         saveAudioToDisk('matrix_audio_data', null);
         saveAudioToDisk('matrix_vocal_stems', []);
       },
 
-      // --- SURGICAL ADDITION: The Boot-Up Protocol ---
       hydrateDiskAudio: async () => {
         try {
           const savedBeat = await loadAudioFromDisk('matrix_audio_data');
@@ -178,7 +205,6 @@ export const useMatrixStore = create<MatrixState>()(
           if (savedStems && Array.isArray(savedStems)) {
             const revivedStems = savedStems.map((stem: any) => ({
               ...stem,
-              // Critical: Generate a fresh URL for the Blob so the browser can play it
               url: stem.blob ? URL.createObjectURL(stem.blob) : stem.url
             }));
             set({ vocalStems: revivedStems });
@@ -191,7 +217,7 @@ export const useMatrixStore = create<MatrixState>()(
     {
       name: 'barcode-matrix-storage', 
       storage: createJSONStorage(() => localStorage),
-      // --- SURGICAL FIX: REMOVED audioData & vocalStems from localStorage ---
+      // THE FIX: ONLY valid keys are passed to localStorage here
       partialize: (state) => ({ 
         flowDNA: state.flowDNA,
         blueprint: state.blueprint, 
@@ -199,18 +225,12 @@ export const useMatrixStore = create<MatrixState>()(
         gwTitle: state.gwTitle,
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
-	mixSettings: {
-	    preset: string;
-	    eq: { low: number; mid: number; high: number };
-	    compressor: { threshold: number; ratio: number };
-	    fx: { reverb: number; autotune: number };
-	  };
-	updateMixSettings: (newSettings: any) => void;
+        mixParams: state.mixParams, // <-- THIS IS THE MAGIC LINE
         playbackMode: state.playbackMode,
         radioTrack: state.radioTrack,
         activeProjectId: state.activeProjectId,
         isProjectFinalized: state.isProjectFinalized,
-        activeRoom: state.activeRoom // Ensures it remembers what room you were in
+        activeRoom: state.activeRoom 
       }),
     }
   )

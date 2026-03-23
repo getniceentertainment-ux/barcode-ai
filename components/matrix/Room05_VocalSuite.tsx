@@ -38,13 +38,9 @@ function audioBufferToWav(buffer: AudioBuffer) {
 }
 
 export default function Room05_VocalSuite() {
-  // Added audioData for the synchronized instrumental playback
-  const { audioData, vocalStems, addVocalStem, removeVocalStem, setActiveRoom, addToast } = useMatrixStore();
-  
-  const [activeChain, setActiveChain] = useState(VOCAL_CHAINS[0].id);
-  const [presenceIntensity, setPresenceIntensity] = useState(VOCAL_CHAINS[0].presence);
-  const [reverbMix, setReverbMix] = useState(VOCAL_CHAINS[0].reverb);
-  const [eqGains, setEqGains] = useState<number[]>([...VOCAL_CHAINS[0].eq]);
+  // GLOBAL STATE INJECTION: Pull the mix settings directly from the store
+  const { audioData, vocalStems, addVocalStem, removeVocalStem, setActiveRoom, addToast, mixParams, updateMixParams } = useMatrixStore();
+  const { activeChain, presenceIntensity, reverbMix, eqGains } = mixParams;
   
   const [status, setStatus] = useState<"idle" | "processing" | "success">("idle");
   
@@ -117,14 +113,6 @@ export default function Room05_VocalSuite() {
     };
   }, [vocalStems]);
 
-  // Sync Preset Selection to Local State
-  useEffect(() => {
-    const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
-    setEqGains([...preset.eq]);
-    setPresenceIntensity(preset.presence);
-    setReverbMix(preset.reverb);
-  }, [activeChain]);
-
   // Apply State Changes to Audio Graph Nodes dynamically
   useEffect(() => {
     if (wetGainRef.current && dryGainRef.current) { 
@@ -144,6 +132,24 @@ export default function Room05_VocalSuite() {
     }
     if (saturationRef.current) saturationRef.current.curve = makeDistortionCurve(presenceIntensity / 2);
   }, [reverbMix, presenceIntensity, eqGains, activeChain]);
+
+  // PRESET CLICK HANDLER: Updates global store directly
+  const handlePresetSelect = (chainId: string) => {
+    const preset = VOCAL_CHAINS.find(c => c.id === chainId) || VOCAL_CHAINS[0];
+    updateMixParams({
+      activeChain: chainId,
+      presenceIntensity: preset.presence,
+      reverbMix: preset.reverb,
+      eqGains: [...preset.eq]
+    });
+  };
+
+  // EQ CHANGE HANDLER: Updates global store array
+  const updateEqBand = (index: number, val: number) => {
+    const newGains = [...eqGains];
+    newGains[index] = val;
+    updateMixParams({ eqGains: newGains });
+  };
 
   // SYNCHRONIZED PLAYBACK LOGIC
   const togglePreviewPlayback = () => {
@@ -182,12 +188,6 @@ export default function Room05_VocalSuite() {
     const mins = Math.floor(s / 60);
     const secs = Math.floor(s % 60).toString().padStart(2, '0');
     return `${mins}:${secs}`;
-  };
-
-  const updateEqBand = (index: number, val: number) => {
-    const newGains = [...eqGains];
-    newGains[index] = val;
-    setEqGains(newGains);
   };
 
   const handleApplyEngineering = async () => {
@@ -238,7 +238,7 @@ export default function Room05_VocalSuite() {
         const band = offlineCtx.createBiquadFilter(); 
         band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; 
         band.frequency.value = freq; 
-        band.gain.value = eqGains[i]; // Using customized state, not raw preset!
+        band.gain.value = eqGains[i]; // Retains your manual EQ tweaks
         prevOfflineNode.connect(band); 
         prevOfflineNode = band; 
       });
@@ -304,7 +304,7 @@ export default function Room05_VocalSuite() {
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {VOCAL_CHAINS.map(c => (
-            <button key={c.id} onClick={() => setActiveChain(c.id)} className={`w-full text-left p-4 border transition-all ${activeChain === c.id ? 'border-[#E60000] bg-[#110000]' : 'border-[#222] bg-[#0a0a0a] hover:border-[#555]'}`}>
+            <button key={c.id} onClick={() => handlePresetSelect(c.id)} className={`w-full text-left p-4 border transition-all ${activeChain === c.id ? 'border-[#E60000] bg-[#110000]' : 'border-[#222] bg-[#0a0a0a] hover:border-[#555]'}`}>
               <span className={`font-oswald text-lg uppercase font-bold ${activeChain === c.id ? 'text-white' : 'text-gray-400'}`}>{c.name}</span>
               <span className="font-mono text-[9px] text-[#888] block mt-1">{c.desc}</span>
             </button>
@@ -396,14 +396,14 @@ export default function Room05_VocalSuite() {
                   <label className="text-[10px] font-mono uppercase text-[#888] font-bold">Presence / Saturation</label>
                   <span className="text-xs font-mono text-white">{presenceIntensity}%</span>
                 </div>
-                <input type="range" min="0" max="100" value={presenceIntensity} onChange={(e) => setPresenceIntensity(Number(e.target.value))} className="w-full accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
+                <input type="range" min="0" max="100" value={presenceIntensity} onChange={(e) => updateMixParams({ presenceIntensity: Number(e.target.value) })} className="w-full accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
               </div>
               <div>
                 <div className="flex justify-between items-center mb-3">
                   <label className="text-[10px] font-mono uppercase text-[#888] font-bold">Vocal Space (Reverb Size)</label>
                   <span className="text-xs font-mono text-white">{reverbMix}%</span>
                 </div>
-                <input type="range" min="0" max="100" value={reverbMix} onChange={(e) => setReverbMix(Number(e.target.value))} className="w-full accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
+                <input type="range" min="0" max="100" value={reverbMix} onChange={(e) => updateMixParams({ reverbMix: Number(e.target.value) })} className="w-full accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
               </div>
             </div>
           </div>
