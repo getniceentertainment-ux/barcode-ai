@@ -1,58 +1,9 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2 } from "lucide-react";
+import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
-
-// --- SURGICAL ADDITION: AUDIO TRIMMING UTILITIES ---
-function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
-  const numOfChan = buffer.numberOfChannels;
-  const length = buffer.length * numOfChan * 2 + 44;
-  const out = new ArrayBuffer(length);
-  const view = new DataView(out);
-  const channels = [];
-  let sample = 0; let offset = 0; let pos = 0;
-
-  const setUint16 = (data: number) => { view.setUint16(pos, data, true); pos += 2; };
-  const setUint32 = (data: number) => { view.setUint32(pos, data, true); pos += 4; };
-  const writeString = (offset: number, string: string) => { for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i)); };
-  
-  writeString(0, 'RIFF'); setUint32(length - 8); writeString(8, 'WAVE'); writeString(12, 'fmt '); setUint32(16); setUint16(1); setUint16(numOfChan);
-  setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16); writeString(36, 'data'); setUint32(length - pos - 4);
-
-  for (let i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
-
-  while (pos < length) {
-    for (let i = 0; i < numOfChan; i++) {
-      sample = Math.max(-1, Math.min(1, channels[i][offset])); 
-      sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
-      view.setInt16(pos, sample, true); pos += 2;
-    }
-    offset++;
-  }
-  return new Blob([view], { type: "audio/wav" });
-}
-
-async function trimAudioBlob(originalBlob: Blob, startSec: number, endSec: number): Promise<Blob> {
-  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-  const arrayBuffer = await originalBlob.arrayBuffer();
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-  
-  const sampleRate = audioBuffer.sampleRate;
-  const startOffset = Math.floor(startSec * sampleRate);
-  const endOffset = Math.floor(endSec * sampleRate);
-  const frameCount = endOffset - startOffset;
-
-  const trimmedBuffer = audioContext.createBuffer(audioBuffer.numberOfChannels, frameCount, sampleRate);
-  for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
-    const channelData = audioBuffer.getChannelData(channel);
-    const trimmedData = trimmedBuffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) trimmedData[i] = channelData[startOffset + i];
-  }
-  return audioBufferToWavBlob(trimmedBuffer);
-}
-// ---------------------------------------------------
 
 function encodeWAV(samples: Float32Array, sampleRate: number) {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
@@ -85,15 +36,6 @@ export default function Room04_Booth() {
   const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean, timestamp?: string}[]>([]);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
 
-  // --- TRIM MODAL STATE ---
-  const [trimmingStem, setTrimmingStem] = useState<any | null>(null);
-  const [trimStart, setTrimStart] = useState(0);
-  const [trimEnd, setTrimEnd] = useState(0);
-  const [trimDuration, setTrimDuration] = useState(0);
-  const [isProcessingTrim, setIsProcessingTrim] = useState(false);
-  const trimWaveformRef = useRef<HTMLDivElement>(null);
-  const trimWavesurferRef = useRef<WaveSurfer | null>(null);
-
   // Web Audio API & Wasm Architecture Refs
   const audioCtxRef = useRef<AudioContext | null>(null);
   const stemBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -103,6 +45,7 @@ export default function Room04_Booth() {
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   
+  // FIX: Persistent Stream Refs to prevent sample rate drift
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const recordedChunksRef = useRef<Float32Array[]>([]);
@@ -110,15 +53,21 @@ export default function Room04_Booth() {
 
   const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
 
+  // INITIALIZE AUDIO CONTEXT ONCE
   useEffect(() => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     audioCtxRef.current = new AudioContextClass();
+    
     return () => {
-      if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      // Clean up hardware stream when leaving the Booth entirely
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      }
       audioCtxRef.current?.close();
     };
   }, []);
 
+  // PRE-LOAD STEMS INTO AUDIO BUFFERS
   useEffect(() => {
     const loadBuffers = async () => {
       if (!audioCtxRef.current) return;
@@ -129,13 +78,16 @@ export default function Room04_Booth() {
             const arrayBuf = await resp.arrayBuffer();
             const audioBuf = await audioCtxRef.current.decodeAudioData(arrayBuf);
             stemBuffersRef.current.set(stem.id, audioBuf);
-          } catch (e) { console.error("Failed to decode stem buffer", e); }
+          } catch (e) {
+            console.error("Failed to decode stem buffer", e);
+          }
         }
       }
     };
     loadBuffers();
   }, [vocalStems]);
 
+  // WAVESURFER INITIALIZATION
   useEffect(() => {
     if (waveformRef.current && audioData?.url && !wavesurferRef.current) {
       wavesurferRef.current = WaveSurfer.create({
@@ -146,13 +98,18 @@ export default function Room04_Booth() {
       
       let lastRender = 0;
       wavesurferRef.current.on('audioprocess', (time) => {
-        if (time - lastRender > 0.1) { setCurrentTime(time); lastRender = time; }
+        if (time - lastRender > 0.1) {
+          setCurrentTime(time);
+          lastRender = time;
+        }
       });
+      
       wavesurferRef.current.on('finish', () => stopEverything());
     }
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
+  // PARSE LYRICS
   useEffect(() => {
     if (!generatedLyrics) return;
     const lines = generatedLyrics.split('\n');
@@ -171,50 +128,7 @@ export default function Room04_Booth() {
     setLyricLines(parsed);
   }, [generatedLyrics, audioData, blueprint]);
 
-  // --- TRIM MODAL LOGIC ---
-  useEffect(() => {
-    if (trimmingStem && trimWaveformRef.current) {
-      trimWavesurferRef.current = WaveSurfer.create({
-        container: trimWaveformRef.current, waveColor: '#555', progressColor: '#E60000',
-        cursorColor: '#fff', barWidth: 2, barGap: 1, height: 100, normalize: true,
-      });
-      trimWavesurferRef.current.load(trimmingStem.url);
-      trimWavesurferRef.current.on('ready', () => {
-        const dur = trimWavesurferRef.current?.getDuration() || 0;
-        setTrimDuration(dur);
-        setTrimStart(0);
-        setTrimEnd(dur);
-      });
-    }
-    return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
-  }, [trimmingStem]);
-
-  const applyTrim = async () => {
-    if (!trimmingStem || !trimmingStem.blob) return;
-    setIsProcessingTrim(true);
-    try {
-      const newBlob = await trimAudioBlob(trimmingStem.blob, trimStart, trimEnd);
-      const newUrl = URL.createObjectURL(newBlob);
-      
-      // Remove old stem, add newly sliced stem in its exact place
-      removeVocalStem(trimmingStem.id);
-      addVocalStem({
-        id: `TAKE_${Date.now()}`,
-        type: trimmingStem.type,
-        url: newUrl,
-        blob: newBlob,
-        volume: trimmingStem.volume,
-        offsetBars: trimmingStem.offsetBars
-      });
-      
-      setTrimmingStem(null);
-    } catch (err) {
-      console.error("Trim failed", err);
-    } finally {
-      setIsProcessingTrim(false);
-    }
-  };
-
+  // SAMPLE ACCURATE PLAYBACK
   const togglePlayback = () => {
     if (!wavesurferRef.current || !audioCtxRef.current) return;
     if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
@@ -261,10 +175,12 @@ export default function Room04_Booth() {
   const stopEverything = () => {
     wavesurferRef.current?.pause(); 
     wavesurferRef.current?.seekTo(0);
+    
     activeSourcesRef.current.forEach(src => { try { src.stop(); src.disconnect(); } catch (e) {} });
     activeSourcesRef.current = [];
 
     if (isRecording && workletNodeRef.current && audioCtxRef.current) {
+      // FIX: Disconnect nodes but KEEP the hardware stream open for the next take
       workletNodeRef.current.disconnect();
       if (mediaSourceRef.current) mediaSourceRef.current.disconnect();
       
@@ -277,13 +193,17 @@ export default function Room04_Booth() {
       addVocalStem({ id: `TAKE_${Date.now()}`, type: vocalStems.length === 0 ? "Lead" : "Adlib", url: URL.createObjectURL(wavBlob), blob: wavBlob, volume: 1, offsetBars: 0 });
     }
     
-    setIsPlaying(false); setIsRecording(false); setCurrentTime(0);
+    setIsPlaying(false); 
+    setIsRecording(false); 
+    setCurrentTime(0);
   };
 
   const startHardwareRecording = async () => {
     if (!audioCtxRef.current) return;
     try {
       if (audioCtxRef.current.state === 'suspended') await audioCtxRef.current.resume();
+
+      // FIX: Only request microphone access ONCE per session.
       if (!mediaStreamRef.current) {
         mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
         mediaSourceRef.current = audioCtxRef.current.createMediaStreamSource(mediaStreamRef.current);
@@ -294,8 +214,16 @@ export default function Room04_Booth() {
       let padTime = Math.max(0, currentWS_Time - LATENCY_OFFSET);
       recordedChunksRef.current = [new Float32Array(Math.floor(padTime * audioCtxRef.current.sampleRate))];
       
+      // FIX: Worklet script deeply copies the Float32Array to prevent mutation bugs
       if (!workletLoadedRef.current) {
-        const workletCode = `class RecorderWorklet extends AudioWorkletProcessor { process(inputs) { if (inputs[0] && inputs[0][0]) { this.port.postMessage(new Float32Array(inputs[0][0])); } return true; } } registerProcessor('recorder-worklet', RecorderWorklet);`;
+        const workletCode = `class RecorderWorklet extends AudioWorkletProcessor { 
+          process(inputs) { 
+            if (inputs[0] && inputs[0][0]) { 
+              this.port.postMessage(new Float32Array(inputs[0][0])); 
+            } 
+            return true; 
+          } 
+        } registerProcessor('recorder-worklet', RecorderWorklet);`;
         const blob = new Blob([workletCode], { type: 'application/javascript' });
         await audioCtxRef.current.audioWorklet.addModule(URL.createObjectURL(blob));
         workletLoadedRef.current = true;
@@ -305,13 +233,16 @@ export default function Room04_Booth() {
       workletNodeRef.current = workletNode;
       workletNode.port.onmessage = (e) => recordedChunksRef.current.push(new Float32Array(e.data));
       
+      // Connect persistent source to the new worklet node
       if (mediaSourceRef.current) mediaSourceRef.current.connect(workletNode);
       workletNode.connect(audioCtxRef.current.destination);
       
       setIsRecording(true); 
       if (!isPlaying) togglePlayback();
       
-    } catch (err) { alert("Hardware microphone access required for Worklet processing."); }
+    } catch (err) { 
+      alert("Hardware microphone access required for Worklet processing."); 
+    }
   };
 
   const toggleMute = (id: string) => {
@@ -323,9 +254,8 @@ export default function Room04_Booth() {
   };
 
   return (
-    <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500 relative">
+    <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500">
       
-      {/* LEFT: TELEPROMPTER */}
       <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
         <div className="p-8 pb-4 border-b border-[#111] flex justify-between items-center">
            <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
@@ -344,7 +274,6 @@ export default function Room04_Booth() {
         </div>
       </div>
 
-      {/* RIGHT: TIMELINE & DAW */}
       <div className="flex-1 flex flex-col relative bg-black">
         <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10">
           <div className="flex items-center gap-4">
@@ -390,10 +319,6 @@ export default function Room04_Booth() {
                   
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 mr-4">
-                      {/* NEW: Trim Scissors Icon */}
-                      <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors" title="Trim Dead Air">
-                        <Scissors size={14} />
-                      </button>
                       <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>
                         {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
                       </button>
@@ -427,68 +352,6 @@ export default function Room04_Booth() {
           </button>
         </div>
       </div>
-
-      {/* --- SURGICAL OVERLAY: TRIMMING MODAL --- */}
-      {trimmingStem && (
-        <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-8 animate-in zoom-in duration-300">
-          <div className="bg-[#050505] border border-[#E60000] rounded-lg w-full max-w-2xl p-8 shadow-[0_0_50px_rgba(230,0,0,0.2)]">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-oswald text-2xl uppercase tracking-widest text-[#E60000] font-bold flex items-center gap-3">
-                <Scissors size={24} /> Slice Region
-              </h3>
-              <button onClick={() => setTrimmingStem(null)} className="text-[#555] hover:text-white"><X size={24}/></button>
-            </div>
-            
-            <p className="font-mono text-[10px] text-gray-400 uppercase tracking-widest mb-6">Drag sliders to crop dead air from the microphone take.</p>
-
-            <div className="bg-black border border-[#222] p-4 rounded-lg relative">
-              <div ref={trimWaveformRef} className="w-full h-24 pointer-events-none"></div>
-              
-              {/* Dual Range Sliders mapped precisely over the waveform */}
-              <div className="absolute inset-0 px-4 flex flex-col justify-center">
-                <input 
-                  type="range" min={0} max={trimDuration} step={0.01} value={trimStart}
-                  onChange={(e) => setTrimStart(Math.min(parseFloat(e.target.value), trimEnd - 0.1))}
-                  className="w-full absolute opacity-50 cursor-ew-resize h-full top-0 left-0 accent-[#E60000]"
-                  style={{ zIndex: 10 }}
-                />
-                <input 
-                  type="range" min={0} max={trimDuration} step={0.01} value={trimEnd}
-                  onChange={(e) => setTrimEnd(Math.max(parseFloat(e.target.value), trimStart + 0.1))}
-                  className="w-full absolute opacity-50 cursor-ew-resize h-full top-0 left-0 accent-white"
-                  style={{ zIndex: 11 }}
-                />
-              </div>
-
-              {/* Visual Highlighting Mask */}
-              {trimDuration > 0 && (
-                <div 
-                  className="absolute top-4 bottom-4 bg-[#E60000]/20 border-l-2 border-r-2 border-[#E60000] pointer-events-none"
-                  style={{
-                    left: `calc(1rem + ${(trimStart / trimDuration) * (100 - 2)}%)`,
-                    width: `${((trimEnd - trimStart) / trimDuration) * (100 - 2)}%`
-                  }}
-                />
-              )}
-            </div>
-
-            <div className="flex justify-between font-mono text-[10px] text-[#888] mt-4 uppercase">
-              <span>Start: {trimStart.toFixed(2)}s</span>
-              <span>Keep: {(trimEnd - trimStart).toFixed(2)}s</span>
-              <span>End: {trimEnd.toFixed(2)}s</span>
-            </div>
-
-            <button 
-              onClick={applyTrim} 
-              disabled={isProcessingTrim}
-              className="w-full mt-8 bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-            >
-              {isProcessingTrim ? <Loader2 size={20} className="animate-spin" /> : <><Scissors size={20} /> Execute Destructive Slice</>}
-            </button>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }

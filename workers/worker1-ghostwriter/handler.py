@@ -232,32 +232,37 @@ You must synthesize these specific user variables into a cohesive, matter-of-fac
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0):
+# SURGICAL FIX: Added `section_index` and `anchor_hook` parameters
+def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0, anchor_hook=None):
     if section_index == 0:
-        arc_instruction = "Establish the setting, the origin, or the initial emotion. Ground the listener."
+        arc_instruction = "Establish the setting and the origin. Ground the listener."
     elif section_type.upper() == "HOOK":
-        arc_instruction = "Summarize the core theme. Make it highly repetitive and catchy. The unbreakable rule."
+        arc_instruction = "Summarize the core theme. Make it highly repetitive and catchy."
     elif section_index in [1, 2]:
-        arc_instruction = "Introduce the depth of the topic. Escalate the energy."
+        arc_instruction = "Introduce the depth of the topic. Connect directly to the previous verse and the Hook. Escalate the energy."
     else:
         arc_instruction = "The resolution, the takeaway. High confidence, grounded reality."
     
-    user_prompt = f"""<|im_start|>user
-[STRUCTURAL BLUEPRINT]
+    # Optional context injection to keep the story locked to the Hook
+    hook_context = f"\n[THE ANCHOR HOOK]:\n{anchor_hook}\n" if anchor_hook and section_type.upper() != "HOOK" else ""
+    
+    # ==========================================
+    # PASS 1: THE STUDIO DRAFT (First Crack)
+    # ==========================================
+    draft_prompt = f"""<|im_start|>user
+[STUDIO DRAFTING PHASE]
 GENERATE A {section_type.upper()}. EXACTLY {bars} LINES (BARS). Topic: '{prompt_topic}'.
 NARRATIVE ARC: {arc_instruction}
-DO NOT WRITE THE HEADER (e.g., [Verse]). JUST WRITE THE {bars} LINES OF LYRICS.
-EVERY LINE MUST FOLLOW THE FLOW ARCHITECTURE RULES AND USE THE PIPE SYMBOL (|).
-
-Previous lyrics context (Continue the rhyme scheme):
+{hook_context}
+Previous lyrics context (Continue the story and rhyme scheme):
 {previous_lyrics if previous_lyrics else 'None (Start of track)'}
+
+Write the draft now.
 <|im_end|>
 <|im_start|>assistant
 """
     
-    full_prompt = system_prompt + user_prompt
-    inputs = tokenizer(full_prompt, return_tensors="pt").to("cuda")
-    
+    inputs = tokenizer(system_prompt + draft_prompt, return_tensors="pt").to("cuda")
     outputs = model.generate(
         **inputs,
         max_new_tokens=40 * bars,
@@ -267,18 +272,49 @@ Previous lyrics context (Continue the rhyme scheme):
         pad_token_id=tokenizer.eos_token_id,
         eos_token_id=tokenizer.eos_token_id 
     )
+    draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
     
-    response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+    # ==========================================
+    # PASS 2: THE SECOND CRACK (Analysis & Polish)
+    # ==========================================
+    refine_prompt = f"""<|im_start|>user
+[THE SECOND CRACK - FINAL POLISH]
+You just drafted this {bars}-bar {section_type.upper()}:
+"{draft_text}"
+
+CRITICAL ANALYSIS & REWRITE INSTRUCTIONS:
+1. Review the storyline. Make sure it connects perfectly to the previous lyrics.
+2. Dump any weak lines. Ensure you are using the mandatory 2026 Executive vocabulary.
+3. 🚨 OVERRIDE: YOU MUST INSERT EXACTLY ONE PIPE SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE TO MARK THE BREATH. 
+4. DO NOT WRITE HEADERS (e.g., [Verse]). JUST OUTPUT EXACTLY {bars} LINES.
+
+Take a second crack at it and rewrite the final {bars} lines now.
+<|im_end|>
+<|im_start|>assistant
+"""
     
-    response = response.replace("<|im_end|>", "").strip()
-    response = re.sub(r'```.*?```', '', response, flags=re.DOTALL)
-    response = response.replace("```", "")
-    response = re.sub(r'\[.*?\]', '', response)
-    response = re.sub(r'\([+-]\d+\)', '', response)
+    inputs_refine = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
+    outputs_refine = model.generate(
+        **inputs_refine,
+        max_new_tokens=40 * bars,
+        temperature=0.75, # Lower temp for the final polish to force strict rule adherence
+        top_p=0.9,
+        repetition_penalty=1.15,
+        pad_token_id=tokenizer.eos_token_id,
+        eos_token_id=tokenizer.eos_token_id 
+    )
     
-    response = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', response, flags=re.MULTILINE)
+    final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True)
     
-    clean_lines = [line.strip() for line in response.split('\n') if line.strip() and not line.strip().startswith(('+', '-')) and not line.lower().startswith("here are")]
+    # 🧹 AGGRESSIVE CLEANUP PIPELINE (Ghost Timestamp Killer included)
+    final_text = final_text.replace("<|im_end|>", "").strip()
+    final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL)
+    final_text = final_text.replace("```", "")
+    final_text = re.sub(r'\[.*?\]', '', final_text)
+    final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE)
+    
+    # Only keep lines longer than 5 characters to kill stray AI timestamps like (0:02)
+    clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and len(line.strip()) > 5 and not line.strip().startswith(('+', '-')) and not line.lower().startswith("here are")]
     
     if len(clean_lines) > bars:
         clean_lines = clean_lines[:bars]
@@ -353,9 +389,17 @@ Output ONLY the rewritten line. Do not explain yourself.
         blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16}])
         final_lyrics = ""
         context_lyrics = ""
-        saved_hook = None
         current_cumulative_bar = 0
         
+        # 1. THE ANCHOR: Pre-Generate the Hook first
+        saved_hook = None
+        for section in blueprint:
+            if section.get("type", "VERSE").upper() == "HOOK":
+                # SURGICAL FIX: Using section_index instead of index
+                saved_hook = generate_section(system_prompt, "", "HOOK", section.get("bars", 4), topic, section_index=0)
+                break
+        
+        # 2. THE TIMELINE GENERATION (Verse -> Hook -> Verse)
         for index, section in enumerate(blueprint):
             sec_type = section.get("type", "VERSE").upper()
             bars = section.get("bars", 16)
@@ -370,8 +414,9 @@ Output ONLY the rewritten line. Do not explain yourself.
             if sec_type == "HOOK" and saved_hook is not None:
                 raw_section_text = saved_hook
             else:
-                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, index)
-                if sec_type == "HOOK":
+                # SURGICAL FIX: Using section_index instead of index
+                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, section_index=index, anchor_hook=saved_hook)
+                if sec_type == "HOOK" and saved_hook is None:
                     saved_hook = raw_section_text
             
             section_lines = raw_section_text.split("\n")
