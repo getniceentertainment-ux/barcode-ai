@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Layout, ShieldCheck, Cpu, Activity, ArrowRight, Lock } from "lucide-react";
+import { 
+  PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, 
+  Loader2, Layout, ShieldCheck, Cpu, Activity, 
+  ArrowRight, Lock, Plus 
+} from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -33,13 +37,11 @@ export default function Room03_Ghostwriter() {
     { id: "chopper", name: "Chopper (Fast/Tech)" }
   ];
 
-  // THE MATH: Calculate seconds per bar based on the precise DSP tempo
   const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
   const formatTime = (s: number) => `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;
 
   const calculateTotalBars = () => blueprint.reduce((acc, section) => acc + section.bars, 0);
 
-  // --- MONETIZATION: DYNAMIC COST CALCULATION ---
   const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID;
   const isCreator = userSession?.id && userSession.id === CREATOR_ID;
   const isMogul = userSession?.tier === "The Mogul";
@@ -48,13 +50,9 @@ export default function Room03_Ghostwriter() {
   const hasEnoughCredits = isCreator || isMogul || 
     (userSession?.creditsRemaining && (userSession.creditsRemaining === "UNLIMITED" || userSession.creditsRemaining >= currentCost));
 
-  // --- THE MASTER RIPPLE ALGORITHM ---
-  // This ensures that when one block is adjusted, the rest of the song reacts.
   const syncTimeline = (newBlueprint: any[]) => {
     let cursor = 0;
     const synced = newBlueprint.map((block) => {
-      // Logic: A block starts at its manual startBar UNLESS that would 
-      // cause an overlap with the block before it.
       const start = Math.max(cursor, block.startBar ?? cursor);
       const updated = { ...block, startBar: start };
       cursor = start + block.bars;
@@ -67,21 +65,15 @@ export default function Room03_Ghostwriter() {
     const newBp = [...blueprint];
     const oldStart = (newBp[index] as any).startBar || 0;
     const delta = newStart - oldStart;
-    
-    // 1. Move the targeted block
     (newBp[index] as any).startBar = Math.max(0, newStart);
-    
-    // 2. Ripple the shift to all blocks following this one (preserving their relative gaps)
     for (let i = index + 1; i < newBp.length; i++) {
         const currentPos = (newBp[i] as any).startBar || 0;
         (newBp[i] as any).startBar = Math.max(0, currentPos + delta);
     }
-
-    // 3. Final safety pass to prevent overlap "pile-ups"
     syncTimeline(newBp);
   };
 
-const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
+  const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
     // --- REVENUE PROTECTION: TIER-BASED BLOCK LIMIT ---
     const isFreeLoader = userSession?.tier === "The Free Loader";
     const currentSectionCount = blueprint.length;
@@ -93,7 +85,7 @@ const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars:
           "error"
         );
       }
-      return; // Stop the function here
+      return;
     }
 
     const lastBlock = blueprint[blueprint.length - 1] as any;
@@ -108,6 +100,11 @@ const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars:
     
     syncTimeline([...blueprint, newBlock]);
   };
+
+  const removeSection = (id: string) => {
+    syncTimeline(blueprint.filter(b => b.id !== id));
+  };
+
   const handleGenerate = async () => {
     if (!userSession?.id) return addToast("Security Exception: User Session missing.", "error");
     if (!gwPrompt.trim()) return addToast("Missing thematic directive.", "error");
@@ -134,7 +131,7 @@ const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars:
         },
         body: JSON.stringify({
           userId: userSession?.id,
-          prompt: gwPrompt, // This becomes 'topic' in the backend
+          prompt: gwPrompt,
           motive: motive || "Mastering the craft",
           struggle: struggle || "Against the odds",
           hustle: hustle || "Relentless execution",
@@ -376,7 +373,6 @@ const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars:
                 <p className="font-mono text-[10px] text-[#E60000] font-bold">{block.bars} BARS</p>
               </div>
 
-              {/* TIMELINE OFFSET CONTROLS - TRIGGERING RELATIVE RIPPLE */}
               <div className="flex justify-between items-center mt-2 border-t border-[#333] pt-2">
                 <span className="text-[9px] font-mono text-[#555] uppercase tracking-widest">Start Bar</span>
                 <div className="flex items-center gap-2">
@@ -391,29 +387,23 @@ const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars:
               </div>
             </div>
           ))}
-<div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2 relative">
-  {userSession?.tier === "The Free Loader" && blueprint.length >= 2 && (
-    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10">
-      <Lock size={14} className="text-[#E60000] mb-1" />
-      <span className="text-[8px] font-mono text-white uppercase font-bold tracking-tighter text-center px-2">Sections Locked</span>
-    </div>
-  )}
-  <p className="text-[8px] font-mono text-[#555] uppercase text-center tracking-widest">Add Structure</p>
-  <div className="flex gap-1 justify-center">
-    <button 
-      onClick={() => addSection("HOOK", 8)} 
-      className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors"
-    >
-      Hook
-    </button>
-    <button 
-      onClick={() => addSection("VERSE", 16)} 
-      className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors"
-    >
-      Verse
-    </button>
-  </div>
-</div>
+          
+          <div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2 relative">
+            {/* --- UI GATE FOR FREE LOADERS --- */}
+            {userSession?.tier === "The Free Loader" && blueprint.length >= 2 && (
+              <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-10">
+                <Lock size={14} className="text-[#E60000] mb-1" />
+                <span className="text-[8px] font-mono text-white uppercase font-bold tracking-tighter text-center px-2">Sections Locked</span>
+              </div>
+            )}
+            <p className="text-[8px] font-mono text-[#555] uppercase text-center tracking-widest">Add Structure</p>
+            <div className="flex gap-1 justify-center">
+              <button onClick={() => addSection("HOOK", 8)} className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors">Hook</button>
+              <button onClick={() => addSection("VERSE", 16)} className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors">Verse</button>
+            </div>
+          </div>
+        </div>
+
         {/* LYRICS DISPLAY ENVIRONMENT */}
         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar relative bg-[#020202]">
           {isGenerating ? (
@@ -434,7 +424,6 @@ const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars:
                 <Cpu size={32} className="text-[#E60000] opacity-50" />
               </div>
 
-              {/* RENDERED TEXT: Timeline Synced View */}
               {(() => {
                  let currentBlockIndex = -1;
                  let barOffsetWithinBlock = 0;
