@@ -7,7 +7,7 @@ import { supabase } from "../../lib/supabase";
 import Link from "next/link"; 
 
 export default function Room07_Distribution() {
-  const { setActiveRoom, userSession, generatedLyrics, addToast, audioData, finalMaster, anrData, updateAnrData } = useMatrixStore();
+  const { setActiveRoom, userSession, generatedLyrics, addToast, audioData, finalMaster, setFinalMaster, anrData, updateAnrData } = useMatrixStore();
   const { trackTitle, status, hitScore, coverUrl, tiktokSnippet } = anrData;
 
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
@@ -39,8 +39,7 @@ export default function Room07_Distribution() {
     updateAnrData({ status: "analyzing" });
 
     try {
-      // 1. Trigger Backend: Groq determines the Snippet Timestamp & DSP calculates the Score
-const analyzeRes = await fetch('/api/distribution/analyze', {
+      const analyzeRes = await fetch('/api/distribution/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -49,16 +48,14 @@ const analyzeRes = await fetch('/api/distribution/analyze', {
           bpm: audioData?.bpm || 120,
           energy: (audioData as any)?.energy || 0.8 
         })
-      }); // <--- THIS WAS MISSING!      
-
+      });
+      
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      // 2. Local Web Audio Slicer (Now powered by Groq's timestamp!)
       let snippetBlobUrl = "";
       try {
         if (finalMaster?.url) {
-          // Pass the exact second Groq said the hook starts (default to 15 if missing)
           const targetStartTime = analyzeData.snippetStartTime || 15;
           snippetBlobUrl = await extractTikTokSnippet(finalMaster.url, targetStartTime);
         }
@@ -67,14 +64,12 @@ const analyzeRes = await fetch('/api/distribution/analyze', {
         if (addToast) addToast("Snippet isolation bypassed. Securing artifact.", "info");
       }
 
-      // 3. Update UI State (NO MORE MOCKING)
       updateAnrData({
         hitScore: analyzeData.hitScore, 
         coverUrl: analyzeData.coverUrl || "",
         tiktokSnippet: snippetBlobUrl
       });
       
-      // 4. Move to Final Ledger Submission
       handleFinalSubmit({ ...analyzeData, tiktokSnippet: snippetBlobUrl });
 
     } catch (error: any) {
@@ -89,6 +84,47 @@ const analyzeRes = await fetch('/api/distribution/analyze', {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
+      // ========================================================================
+      // CLOUD HARDENING PROTOCOL: Convert ephemeral Blobs to permanent URLs
+      // ========================================================================
+      let cloudMasterUrl = finalMaster?.url;
+      let cloudSnippetUrl = aAndRData.tiktokSnippet;
+
+      const secureToSupabase = async (urlToSecure: string, prefix: string) => {
+        if (!urlToSecure || !urlToSecure.startsWith('blob:')) return urlToSecure;
+        
+        const blobRes = await fetch(urlToSecure);
+        const rawBlob = await blobRes.blob();
+        const fileName = `${userSession?.id}/${Date.now()}_${prefix}.wav`;
+        
+        const { error: uploadErr } = await supabase.storage
+          .from('mastered-audio')
+          .upload(fileName, rawBlob, { contentType: 'audio/wav', upsert: true });
+          
+        if (uploadErr) throw new Error(`Storage upload failed: ${uploadErr.message}`);
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from('mastered-audio')
+          .getPublicUrl(fileName);
+          
+        return publicUrl;
+      };
+
+      // 1. Secure the Master Track
+      if (cloudMasterUrl?.startsWith('blob:')) {
+        cloudMasterUrl = await secureToSupabase(cloudMasterUrl, 'MASTER');
+        if (finalMaster) {
+          setFinalMaster({ ...finalMaster, url: cloudMasterUrl }); 
+        }
+      }
+
+      // 2. Secure the TikTok Snippet
+      if (cloudSnippetUrl?.startsWith('blob:')) {
+        cloudSnippetUrl = await secureToSupabase(cloudSnippetUrl, 'TIKTOK');
+        updateAnrData({ tiktokSnippet: cloudSnippetUrl });
+      }
+      // ========================================================================
+
       const res = await fetch('/api/distribution/submit', {
         method: 'POST',
         headers: { 
@@ -97,10 +133,10 @@ const analyzeRes = await fetch('/api/distribution/analyze', {
         },
         body: JSON.stringify({
           title: trackTitle,
-          audioUrl: finalMaster?.url,
+          audioUrl: cloudMasterUrl, // NOW PERMANENT
           coverUrl: aAndRData.coverUrl,
           hitScore: aAndRData.hitScore,
-          tiktokSnippet: aAndRData.tiktokSnippet
+          tiktokSnippet: cloudSnippetUrl // NOW PERMANENT
         })
       });
 
@@ -211,7 +247,7 @@ const analyzeRes = await fetch('/api/distribution/analyze', {
           <div className="space-y-6 py-10 relative z-10">
             <p className="font-oswald text-2xl text-white uppercase tracking-widest font-bold">Securing Artifact...</p>
             <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest">
-              Writing metadata to Supabase Ledger...
+              Writing metadata and uploading WAVs to Supabase Ledger...
             </div>
           </div>
         )}
@@ -260,7 +296,6 @@ const analyzeRes = await fetch('/api/distribution/analyze', {
                   </div>
                </div>
 
-               {/* TikTok Viral Snippet Display */}
                <div className="bg-[#110000] border border-[#330000] p-6 text-left relative overflow-hidden flex flex-col justify-center">
                   <div className="absolute top-0 right-0 p-2 opacity-10">
                     <Zap size={64} className="text-[#E60000]" />
@@ -321,7 +356,6 @@ const analyzeRes = await fetch('/api/distribution/analyze', {
 // ============================================================================
 // WEB AUDIO API ENGINE: AUTOMATIC 15-SECOND WAV SLICER (DYNAMIC START TIME)
 // ============================================================================
-// SURGICAL FIX: We now accept 'targetStartTime' from Groq
 async function extractTikTokSnippet(audioUrl: string, targetStartTime: number): Promise<string> {
   const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
   const response = await fetch(audioUrl);
@@ -330,7 +364,6 @@ async function extractTikTokSnippet(audioUrl: string, targetStartTime: number): 
 
   const snippetLength = 15; 
   
-  // Ensure Groq's timestamp doesn't accidentally exceed the track length
   const maxAllowedStart = Math.max(0, audioBuffer.duration - snippetLength);
   const startOffset = Math.min(targetStartTime, maxAllowedStart);
 
