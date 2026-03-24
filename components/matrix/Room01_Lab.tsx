@@ -101,7 +101,7 @@ export default function Room01_Lab() {
     }
   }, [userSession]);
 
-  // --- SURGICAL FIX: The Hydration Catcher ---
+  // --- SURGICAL FIXER: The Hydration Catcher ---
   // Listens for the audioData to arrive from the hard drive after a refresh
   useEffect(() => {
     if (audioData) {
