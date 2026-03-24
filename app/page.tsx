@@ -6,7 +6,7 @@ import {
   UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, 
   Send, Wallet, Radio, Users, ShieldAlert, LogOut,
   Play, Pause, SkipBack, SkipForward, Volume2, Lock, User, Zap, Loader2,
-  ShieldCheck, Terminal, FileAudio // <--- ADDED FileAudio for Room 11
+  ShieldCheck, Terminal, FileAudio
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
@@ -25,9 +25,8 @@ import Room07_Distribution from "../components/matrix/Room07_Distribution";
 import Room08_Bank from "../components/matrix/Room08_Bank";
 import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
-import Room11_Contracts from "../components/matrix/Room11_Contracts"; // <--- ADDED ROOM 11
+import Room11_Contracts from "../components/matrix/Room11_Contracts";
 
-// --- SECURITY: NO LONGER HARDCODED ---
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID; 
 
 export default function MatrixController() {
@@ -60,13 +59,10 @@ export default function MatrixController() {
     }));
   }, []);
 
-  // --- MONETIZATION & SECURITY LOGIC ---
   const isRoomLockedForTier = (roomId: string) => {
     if (userSession?.id && userSession.id === CREATOR_ID) return false;
 
     const tier = userSession?.tier || "Free Loader";
-    
-    // SURGICAL FIX: Added Room 10 and 11 to both tiers so the Escrow economy functions globally
     const freeAllowed = ["01", "02", "03", "04", "09", "10", "11"];
     const artistAllowed = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"];
 
@@ -171,28 +167,19 @@ export default function MatrixController() {
     }
   };
 
-const handleDisconnect = async () => {
-  // 1. CLEAR LOCAL FIRST (Non-negotiable, does not rely on network)
-  localStorage.removeItem('barcode-matrix-storage'); 
-  localStorage.clear();
-  sessionStorage.clear();
-  clearMatrix();
+  const handleDisconnect = async () => {
+    localStorage.removeItem('barcode-matrix-storage'); 
+    localStorage.clear();
+    sessionStorage.clear();
+    clearMatrix();
 
-  try {
-    // 2. Attempt to hit the server-side logout we built
-    await fetch('/api/auth/logout', { method: 'POST' });
-    // 3. Tell Supabase to kill the session
-    await supabase.auth.signOut();
-  } catch (err) {
-    console.warn("Server-side logout skipped or failed.");
-  }
-
-  // 4. FORCE REDIRECT
-  window.location.replace('/'); 
-};
-
-    // 5. Hard redirect to the root domain (bypassing the router cache)
-    window.location.href = '/';
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn("Server-side logout skipped or failed.");
+    }
+    window.location.replace('/'); 
   };
 
   const handleNewProject = async () => {
@@ -203,21 +190,9 @@ const handleDisconnect = async () => {
     setActiveRoom("01");
   };
 
-  // 3. Conditional Returns
   if (!isHydrated) return null;
   if (!hasAccess) return <EntryGateway />;
 
-  // 4. Constants
-  const rooms = [ /* ... */ ];
-
-  // 5. Final Render
-  return (
-    <div className="flex h-screen ...">
-       {/* UI Content */}
-    </div>
-  );
-}
-  // --- SURGICAL FIX: Added Room 11 to the Sidebar Array ---
   const rooms = [
     { id: "01", name: "The Lab", icon: <UploadCloud size={16} /> },
     { id: "02", name: "Brain Train", icon: <Cpu size={16} /> },
@@ -256,7 +231,6 @@ const handleDisconnect = async () => {
       );
     }
 
-    // --- SURGICAL FIX: Wired Room 11 into the Matrix Switch ---
     switch (activeRoom) {
       case "01": return <Room01_Lab />;
       case "02": return <Room02_BrainTrain />;
