@@ -1,6 +1,7 @@
 "use client";
 
-import { useMatrixStore } from "../store/useMatrixStore";
+// SURGICAL FIX: Added an extra '../' to properly reach the store folder
+import { useMatrixStore } from "../../store/useMatrixStore";
 import { Loader2, CheckCircle2, AlertTriangle, Cloud } from "lucide-react";
 
 export default function GlobalSyncIndicator() {
