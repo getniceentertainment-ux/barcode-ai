@@ -5,6 +5,7 @@ import requests
 import runpod
 import torch
 import time
+import subprocess
 from audio_separator.separator import Separator
 
 def download_file(url, dest_path):
@@ -44,21 +45,17 @@ def upload_to_supabase_native(file_path, destination_path):
 
 def handler(event):
     temp_input_name = None
+    temp_snippet_name = None
     
     try:
         job_input = event.get("input", {})
         file_url = job_input.get("file_url")
-        # THE FIX: Fallback to the new Kim_Vocal_2 model
-        model_name = job_input.get("model", "Kim_Vocal_2.onnx") 
+        task_type = job_input.get("task_type", "separate") # Default to separate if missing
         user_id = job_input.get("userId", "GUEST")
 
         if not file_url:
             return {"error": "Missing file_url in payload"}
 
-        # THE FIX: Enabled Normalization to prevent audio clipping during split
-        separator = Separator(output_dir=tempfile.gettempdir(), normalization_enabled=True)
-        separator.load_model(model_name) 
-        
         temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
         temp_input_name = temp_input.name
         temp_input.close()
@@ -67,12 +64,49 @@ def handler(event):
         sys.stdout.flush()
         download_file(file_url, temp_input_name)
 
+        job_id = event.get("id", str(int(time.time())))
+
+        # ==========================================
+        # TASK 1: TIKTOK SNIPPET EXTRACTION
+        # ==========================================
+        if task_type == "extract_snippet":
+            print(f"[MDX] Executing TikTok Snippet Extraction (15 seconds)...")
+            sys.stdout.flush()
+            
+            temp_snippet_name = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
+            
+            # Use ffmpeg to slice 15 seconds starting from the 15-second mark
+            subprocess.run([
+                "ffmpeg", "-y", "-i", temp_input_name, 
+                "-ss", "00:00:15", "-t", "00:00:15", 
+                "-c", "copy", temp_snippet_name
+            ], check=True)
+            
+            dest_path = f"{user_id}/mdx_{job_id}_snippet.wav"
+            public_url = upload_to_supabase_native(temp_snippet_name, dest_path)
+            
+            print(f"[MDX] Snippet extracted and secured.")
+            sys.stdout.flush()
+            
+            return {
+                "status": "COMPLETED",
+                "audio_url": public_url, # Matches exactly what Next.js is looking for
+                "message": "15-second viral snippet extracted."
+            }
+
+        # ==========================================
+        # TASK 2: FULL STEM SEPARATION (Default)
+        # ==========================================
+        model_name = job_input.get("model", "Kim_Vocal_2.onnx") 
+        
+        separator = Separator(output_dir=tempfile.gettempdir(), normalization_enabled=True)
+        separator.load_model(model_name) 
+        
         print(f"[MDX] Running Neural Separation (CUDA Available: {torch.cuda.is_available()})")
         sys.stdout.flush()
         
         output_files = separator.separate(temp_input_name)
         
-        job_id = event.get("id", str(int(time.time())))
         stems = {"instrumental": None, "vocals": None}
         
         for f in output_files:
@@ -105,6 +139,8 @@ def handler(event):
     finally:
         if temp_input_name and os.path.exists(temp_input_name):
             os.remove(temp_input_name)
+        if temp_snippet_name and os.path.exists(temp_snippet_name):
+            os.remove(temp_snippet_name)
 
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
