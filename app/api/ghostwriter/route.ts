@@ -7,7 +7,7 @@ import Stripe from 'stripe';
 export const dynamic = 'force-dynamic';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16', // Use your current Stripe API version
+  apiVersion: '2023-10-16', 
 });
 
 const redis = new Redis({
@@ -58,11 +58,10 @@ export async function POST(req: Request) {
 
     // --- HYBRID AUTHENTICATION ROUTING ---
     if (token.startsWith('getnice_')) {
-      // 1. B2B EXTERNAL API KEY FLOW
       isB2B = true;
       const { data: b2bProfile } = await supabaseAdmin
         .from('profiles')
-        .select('id, stripe_metered_item_id') // Ensure this column exists in DB for B2B users
+        .select('id, stripe_metered_item_id') 
         .eq('b2b_api_key', token)
         .single();
 
@@ -72,7 +71,6 @@ export async function POST(req: Request) {
       stripeSubscriptionItemId = b2bProfile.stripe_metered_item_id;
       
     } else {
-      // 2. STANDARD JWT BROWSER FLOW
       const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
       if (authError || !user) return NextResponse.json({ error: "Access Denied: Invalid Auth Token" }, { status: 401 });
       userId = user.id;
@@ -93,7 +91,6 @@ export async function POST(req: Request) {
     let profileTier = 'Free Loader';
     let cost = 1;
     
-    // 1 Credit covers up to 2 blueprint blocks
     if (blueprint && Array.isArray(blueprint)) {
       cost = Math.max(1, Math.ceil(blueprint.length / 2));
     }
@@ -102,16 +99,29 @@ export async function POST(req: Request) {
     if (!isB2B) {
       const { data: profile } = await supabaseAdmin.from('profiles').select('credits, tier').eq('id', userId).single();
       
-      // Enforce the dynamic cost
       if (!profile || (profile.tier !== 'The Mogul' && profile.credits < cost)) {
         return NextResponse.json({ error: `Insufficient Generations. This structure requires ${cost} CRD.` }, { status: 403 });
       }
       profileTier = profile.tier;
     }
 
-    const thematicPrompt = title ? `SONG TITLE: "${title}". ${prompt}` : prompt;
+    // --- SURGICAL FIX: THE GETNICE OVERRIDE ---
+    const getNiceOverride = `
+    CRITICAL OVERRIDE - THE "GETNICE" DIRECTIVE:
+    1. NO SANITIZED POETRY: Do not write cheesy, generic, or polite poetry.
+    2. RAW AUTHENTICITY: Write gritty, street-level bars. Use internal rhymes, complex syllables, and raw emotional imagery. Spit hot fire.
+    3. ENERGY FORMATTING: Output the actual lyrics in ALL CAPS to simulate an aggressive, high-energy vocal delivery.
+    4. STRUCTURAL ARCHITECTURE: Rigidly structure the output with timestamps and exact bar counts.
+    `;
 
-    // --- RUNPOD EXECUTION (Your Original Working Payload) ---
+    const thematicPrompt = title 
+      ? `SONG TITLE: "${title}". USER PROMPT: ${prompt}\n\n${getNiceOverride}` 
+      : `${prompt}\n\n${getNiceOverride}`;
+
+    // Force the LoRA to trigger by secretly appending our custom style string
+    const forcedStyle = style ? `${style} (GetNice Hybrid Blueprint)` : "getnice_hybrid";
+
+    // --- RUNPOD EXECUTION ---
     const runResponse = await fetch(`https://api.runpod.ai/v2/${process.env.RUNPOD_ENDPOINT_TALON}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}` },
@@ -121,7 +131,7 @@ export async function POST(req: Request) {
           prompt: thematicPrompt,
           bpm: bpm || 120,
           key: key || "Unknown Key",            
-          style: style || "getnice_hybrid",
+          style: forcedStyle, // <--- Sent to Python Worker (Guaranteed LoRA Wakeup)
           stageName: stageName || "The Artist", 
           blueprint: blueprint 
         }
@@ -133,7 +143,6 @@ export async function POST(req: Request) {
     // --- ACCOUNTING & BILLING ---
     if (runData.id) {
       if (isB2B) {
-        // B2B: Log API call to DB for the dashboard, and charge Stripe Metered Billing
         if (stripeSubscriptionItemId) {
           try {
             await stripe.subscriptionItems.createUsageRecord(
@@ -147,7 +156,6 @@ export async function POST(req: Request) {
         await supabaseAdmin.rpc('increment_api_calls', { target_user_id: userId }); 
 
       } else if (profileTier !== 'The Mogul') {
-        // B2C: Deduct the dynamically calculated cost instead of just 1
         const { data: currentProfile } = await supabaseAdmin.from('profiles').select('credits').eq('id', userId).single();
         if (currentProfile) {
           await supabaseAdmin.from('profiles').update({ credits: currentProfile.credits - cost }).eq('id', userId);
