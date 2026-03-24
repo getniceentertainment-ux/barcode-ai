@@ -11,8 +11,9 @@ import {
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
 
-// The Gateway
+// The Gateway & Global UI
 import EntryGateway from "../components/matrix/EntryGateway";
+import GlobalSyncIndicator from "../components/matrix/GlobalSyncIndicator"; // <--- ADDED IMPORT
 
 // The 11 Matrix Rooms
 import Room01_Lab from "../components/matrix/Room01_Lab";
@@ -167,31 +168,19 @@ export default function MatrixController() {
     }
   };
 
-const handleDisconnect = async () => {
-    // 1. Tell Supabase to kill the session globally
+  const handleDisconnect = async () => {
     await supabase.auth.signOut();
-    
-    // 2. Wipe the local React State
     clearMatrix();
-
-    // 3. Nuke Browser Storage
     localStorage.clear();
     sessionStorage.clear();
-
-    // 4. Force-kill all accessible client cookies
     document.cookie.split(";").forEach((c) => {
       document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
     });
-
     try {
-      // 5. Hit the server killswitch (if you still have that API route)
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch (err) {
       console.warn("Server wipe bypassed.");
     }
-
-    // 6. SURGICAL FIX: The 500ms Delay. 
-    // This gives the browser enough time to actually throw the trash away before reloading.
     setTimeout(() => {
       window.location.replace('/'); 
     }, 500);
@@ -337,6 +326,9 @@ const handleDisconnect = async () => {
           {renderActiveRoom()}
         </div>
       </main>
+
+      {/* --- ADDED SYNC INDICATOR HERE --- */}
+      <GlobalSyncIndicator />
 
       <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
         <audio ref={audioRef} src={playbackMode === 'radio' && radioTrack ? radioTrack.url : audioData?.url || ""} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onEnded={() => setIsPlaying(false)} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} className="hidden" />
