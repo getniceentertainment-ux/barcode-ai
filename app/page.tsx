@@ -203,9 +203,20 @@ const handleDisconnect = async () => {
     setActiveRoom("01");
   };
 
+  // 3. Conditional Returns
   if (!isHydrated) return null;
   if (!hasAccess) return <EntryGateway />;
 
+  // 4. Constants
+  const rooms = [ /* ... */ ];
+
+  // 5. Final Render
+  return (
+    <div className="flex h-screen ...">
+       {/* UI Content */}
+    </div>
+  );
+}
   // --- SURGICAL FIX: Added Room 11 to the Sidebar Array ---
   const rooms = [
     { id: "01", name: "The Lab", icon: <UploadCloud size={16} /> },
