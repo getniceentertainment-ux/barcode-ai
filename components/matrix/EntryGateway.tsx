@@ -48,30 +48,12 @@ export default function EntryGateway() {
           creditsRemaining: profile.tier === "The Mogul" ? "UNLIMITED" : profile.credits
         };
 
-        // --- SESSION RECOVERY LOGIC ---
-        try {
-          const { data: savedSession } = await supabase
-            .from('matrix_sessions')
-            .select('session_state')
-            .eq('user_id', profile.id)
-            .maybeSingle();
-
-          // If they have an active project in the DB, inject it into the store
-          if (savedSession?.session_state) {
-            useMatrixStore.setState({
-              ...savedSession.session_state,
-              userSession: session, // Securely apply the fresh auth session
-              hasAccess: true
-            });
-            return; // Skip normal grantAccess to preserve recovered state
-          }
-        } catch (err) {
-          console.error("Session recovery failed", err);
-        }
-        // ------------------------------
-
+        // 1. Grant Base Access securely via the store
         grantAccess(session);
-	await useMatrixStore.getState().pullFromCloud(session.id); // <--- Add this line!
+        
+        // 2. Trigger the Cloud Restore to pull down their saved room, lyrics, and state
+        await useMatrixStore.getState().pullFromCloud(session.id);
+
       } else {
         setAuthStep("select_tier");
       }
