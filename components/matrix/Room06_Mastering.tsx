@@ -134,16 +134,41 @@ export default function Room06_Mastering() {
 
       const renderedBuffer = await offlineCtx.startRendering();
       const wavBlob = audioBufferToWav(renderedBuffer);
-      const finalUrl = URL.createObjectURL(wavBlob);
-
-      setMasterUrl(finalUrl);
-      // The moment this is called, the session is globally locked by useMatrixStore
-      setFinalMaster({ url: finalUrl, blob: wavBlob }); 
       
-      if(addToast) addToast("Master encoded successfully. Session locked.", "success");
+      // --- SURGICAL FIX: UPLOAD DIRECTLY TO SUPABASE STORAGE ---
+      const fileName = `${userSession?.id || 'ANON'}/${Date.now()}_MASTER.wav`;
+      
+      const { data, error } = await supabase.storage
+        .from('vault') // <--- Make sure you have a bucket named 'vault' set to Public!
+        .upload(fileName, wavBlob, {
+          contentType: 'audio/wav',
+          upsert: true,
+        });
+
+      if (error) throw error;
+
+      // Retrieve the permanent public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('vault')
+        .getPublicUrl(fileName);
+
+      setMasterUrl(publicUrl);
+      
+      // Save the REAL URL to the matrix state, but keep the blob for the ZIP export feature
+      setFinalMaster({ url: publicUrl, blob: wavBlob }); 
+      
+      // Force the global audio player to use the real URL, destroying the blob dependency
+      useMatrixStore.setState({
+        audioData: { ...audioData, url: publicUrl },
+        isProjectFinalized: true
+      });
+      // ---------------------------------------------------------
+
+      if(addToast) addToast("Master encoded & permanently secured. Session locked.", "success");
       setStatus("success");
     } catch (err: any) {
-      if(addToast) addToast("Error rendering master.", "error");
+      console.error("Mastering/Upload Error:", err);
+      if(addToast) addToast("Error rendering or uploading master.", "error");
       setStatus("idle");
     }
   };
