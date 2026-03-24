@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession, FinalMaster } from '../lib/types';
 import { saveAudioToDisk, loadAudioFromDisk } from '../lib/dawStorage';
-import { supabase } from '../lib/supabase'; // <-- ADDED SUPABASE IMPOR
+import { supabase } from '../lib/supabase';
 
 interface ToastMessage {
   id: string;
@@ -87,62 +87,11 @@ interface MatrixState {
   clearMatrix: () => void;
   hydrateDiskAudio: () => Promise<void>;
   
-  // --- SURGICAL FIX: Ledger Synchronization ---
+  // --- SURGICAL FIX: Ledger Synchronization & Cloud Saves ---
   syncLedger: () => Promise<void>;
-// --- CLOUD SAVE PROTOCOLS ---
   pushToCloud: () => Promise<void>;
   pullFromCloud: (userId: string) => Promise<void>;
 }
-// --- SURGICAL FIX: The Cloud Save Bridge ---
-      pushToCloud: async () => {
-        const state = get();
-        if (!state.userSession?.id) return;
-        
-        // Take a snapshot of all the crucial text/settings data
-        const draftSnapshot = {
-           flowDNA: state.flowDNA,
-           blueprint: state.blueprint, 
-           generatedLyrics: state.generatedLyrics,
-           gwTitle: state.gwTitle,
-           gwPrompt: state.gwPrompt,
-           gwStyle: state.gwStyle,
-           mixParams: state.mixParams,
-           anrData: state.anrData,
-           activeProjectId: state.activeProjectId,
-           isProjectFinalized: state.isProjectFinalized,
-           activeRoom: state.activeRoom,
-        };
-
-        try {
-          await supabase
-            .from('matrix_sessions')
-            .upsert({ 
-              user_id: state.userSession.id, 
-              state_data: draftSnapshot,
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id' });
-        } catch (err) {
-          console.error("Matrix Cloud Save Failed:", err);
-        }
-      },
-
-      pullFromCloud: async (userId: string) => {
-        try {
-          const { data, error } = await supabase
-            .from('matrix_sessions')
-            .select('state_data')
-            .eq('user_id', userId)
-            .maybeSingle();
-
-          if (data?.state_data) {
-            // Restore the state from the database
-            set({ ...data.state_data });
-            console.log("Matrix State Restored from Cloud Vault.");
-          }
-        } catch (err) {
-          console.error("Matrix Cloud Pull Failed:", err);
-        }
-      },
 
 export const useMatrixStore = create<MatrixState>()(
   persist(
@@ -210,16 +159,17 @@ export const useMatrixStore = create<MatrixState>()(
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
       
-setActiveRoom: (roomId) => {
+      setActiveRoom: (roomId) => {
         set((state) => {
           if (state.isProjectFinalized && ["01", "02", "03", "04", "05"].includes(roomId)) {
             return state; 
           }
           return { activeRoom: roomId };
         });
-        // Auto-save to the cloud every time they enter a new room
+        // --- SURGICAL FIX: Auto-save checkpoint on room transition ---
         get().pushToCloud();
       },
+
       setFinalMaster: (master) => {
         set({ finalMaster: master, isProjectFinalized: !!master }); 
         saveAudioToDisk('matrix_final_master', master);
@@ -282,9 +232,7 @@ setActiveRoom: (roomId) => {
         };
       }),
 
-      // --- SURGICAL FIX: The Ledger Pull ---
-      // Automatically fetches your true balances from the DB to prevent UI exploits/wipes
-syncLedger: async () => {
+      syncLedger: async () => {
         const state = get();
         if (!state.userSession?.id) return;
         try {
@@ -292,7 +240,7 @@ syncLedger: async () => {
             .from('profiles')
             .select('*')
             .eq('id', state.userSession.id)
-            .maybeSingle(); // <--- SURGICAL FIX: Prevents 406 crashes on ghost accounts
+            .maybeSingle(); 
             
           if (data) {
             set({
@@ -308,9 +256,57 @@ syncLedger: async () => {
         }
       },
 
+      // --- SURGICAL FIX: The Cloud Save Bridge ---
+      pushToCloud: async () => {
+        const state = get();
+        if (!state.userSession?.id) return;
+        
+        const draftSnapshot = {
+           flowDNA: state.flowDNA,
+           blueprint: state.blueprint, 
+           generatedLyrics: state.generatedLyrics,
+           gwTitle: state.gwTitle,
+           gwPrompt: state.gwPrompt,
+           gwStyle: state.gwStyle,
+           mixParams: state.mixParams,
+           anrData: state.anrData,
+           activeProjectId: state.activeProjectId,
+           isProjectFinalized: state.isProjectFinalized,
+           activeRoom: state.activeRoom,
+        };
+
+        try {
+          await supabase
+            .from('matrix_sessions')
+            .upsert({ 
+              user_id: state.userSession.id, 
+              state_data: draftSnapshot,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+        } catch (err) {
+          console.error("Matrix Cloud Save Failed:", err);
+        }
+      },
+
+      pullFromCloud: async (userId: string) => {
+        try {
+          const { data } = await supabase
+            .from('matrix_sessions')
+            .select('state_data')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+          if (data?.state_data) {
+            set({ ...data.state_data });
+            console.log("Matrix State Restored from Cloud Vault.");
+          }
+        } catch (err) {
+          console.error("Matrix Cloud Pull Failed:", err);
+        }
+      },
+
       hydrateDiskAudio: async () => {
         try {
-          // Rescue the user's balances from the database immediately on boot
           await get().syncLedger();
 
           const savedBeat = await loadAudioFromDisk('matrix_audio_data');
@@ -356,7 +352,6 @@ syncLedger: async () => {
         activeProjectId: state.activeProjectId,
         isProjectFinalized: state.isProjectFinalized,
         activeRoom: state.activeRoom,
-        // --- SURGICAL FIX: Store the Session to prevent amnesia ---
         hasAccess: state.hasAccess,
         userSession: state.userSession
       }),
