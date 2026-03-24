@@ -15,56 +15,56 @@ export async function POST(req: Request) {
   try {
     const { userId, amount } = await req.json();
 
-    // 1. Fetch the user's Profile (Need balance and Stripe ID)
     const { data: profile, error: profileErr } = await supabaseAdmin
       .from('profiles')
       .select('wallet_balance, stripe_account_id')
       .eq('id', userId)
       .single();
 
-    if (profileErr || !profile) {
-      return NextResponse.json({ error: "Profile not found." }, { status: 404 });
-    }
+    if (profileErr || !profile) return NextResponse.json({ error: "Profile not found." }, { status: 404 });
+    if (!profile.stripe_account_id) return NextResponse.json({ error: "No bank account linked." }, { status: 400 });
 
-    if (!profile.stripe_account_id) {
-      return NextResponse.json({ error: "No bank account linked." }, { status: 400 });
-    }
-
-    // 2. Security Check: Ensure they aren't withdrawing more than they have
-    // And ensure we are only touching wallet_balance (Fiat), not marketing_credits
-    if (amount <= 0 || amount > profile.wallet_balance) {
+    // 1. SURGICAL FIX: Ensure we are using absolute numbers and rounding to avoid float errors
+    const requestAmount = Math.abs(parseFloat(amount));
+    
+    if (requestAmount <= 0 || requestAmount > profile.wallet_balance) {
       return NextResponse.json({ error: "Invalid withdrawal amount." }, { status: 400 });
     }
 
-    // 3. Execute Stripe Transfer
-    // This moves money from your platform's Stripe balance to their Express account
-    const transfer = await stripe.transfers.create({
-      amount: Math.round(amount * 100), // Stripe uses cents
-      currency: 'usd',
-      destination: profile.stripe_account_id,
-      description: `GetNice Payout: Artist Royalty/Advance`,
-    });
+    // 2. STRIPE TRANSFER EXECUTION
+    // Wrap in a sub-try/catch to capture specific Stripe rejection reasons
+    try {
+      const transfer = await stripe.transfers.create({
+        amount: Math.round(requestAmount * 100), // Convert to Cents
+        currency: 'usd',
+        destination: profile.stripe_account_id,
+        description: `GetNice Payout: ${userId}`,
+      });
 
-    // 4. Atomic Database Update
-    // Deduct the balance and log the transaction
-    const newBalance = profile.wallet_balance - amount;
-    
-    await supabaseAdmin
-      .from('profiles')
-      .update({ wallet_balance: newBalance })
-      .eq('id', userId);
+      // 3. DATABASE SYNC (Only happens if Stripe succeeds)
+      const newBalance = profile.wallet_balance - requestAmount;
+      
+      await supabaseAdmin
+        .from('profiles')
+        .update({ wallet_balance: newBalance })
+        .eq('id', userId);
 
-    await supabaseAdmin.from('transactions').insert({
-      user_id: userId,
-      amount: -amount,
-      type: 'WITHDRAWAL',
-      description: `Withdrawal to Bank (Stripe: ${transfer.id})`
-    });
+      await supabaseAdmin.from('transactions').insert({
+        user_id: userId,
+        amount: -requestAmount,
+        type: 'WITHDRAWAL',
+        description: `Withdrawal to Bank (Stripe ID: ${transfer.id})`
+      });
 
-    return NextResponse.json({ success: true, transferId: transfer.id, newBalance });
+      return NextResponse.json({ success: true, newBalance });
+
+    } catch (stripeError: any) {
+      console.error("STRIPE REJECTION:", stripeError.message);
+      return NextResponse.json({ error: `Stripe Rejected: ${stripeError.message}` }, { status: 400 });
+    }
 
   } catch (error: any) {
-    console.error("Withdrawal Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("WITHDRAWAL ROUTE CRASH:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
