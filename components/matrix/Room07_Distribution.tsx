@@ -12,14 +12,12 @@ export default function Room07_Distribution() {
 
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
 
-  // Catch returning Stripe redirects for purchased DALL-E Cover Art
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('cover_purchased') === 'true') {
         const generatedCoverUrl = params.get('cover_url');
         window.history.replaceState({}, document.title, window.location.pathname);
-        
         if (generatedCoverUrl) {
           updateAnrData({ coverUrl: generatedCoverUrl, status: "success" });
           if(addToast) addToast("DALL-E 3 Cover Art Generated & Attached.", "success");
@@ -41,35 +39,37 @@ export default function Room07_Distribution() {
     updateAnrData({ status: "analyzing" });
 
     try {
-      // 1. Trigger the Proprietary A&R Neural Scan (Cover Art & Hit Score)
+      // 1. Trigger Backend: Groq determines the Snippet Timestamp & DSP calculates the Score
       const analyzeRes = await fetch('/api/distribution/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           title: trackTitle, 
-          lyrics: generatedLyrics || "No lyrics provided",
+          lyrics: generatedLyrics || "",
           bpm: audioData?.bpm || 120,
-          audioUrl: finalMaster.url 
+          energy: audioData?.energy || 0.8 // Using actual DSP data!
         })
       });
       
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      // 2. Local Web Audio TikTok Slicer (Zero Latency, Handles Blobs perfectly)
+      // 2. Local Web Audio Slicer (Now powered by Groq's timestamp!)
       let snippetBlobUrl = "";
       try {
         if (finalMaster?.url) {
-          snippetBlobUrl = await extractTikTokSnippet(finalMaster.url);
+          // Pass the exact second Groq said the hook starts (default to 15 if missing)
+          const targetStartTime = analyzeData.snippetStartTime || 15;
+          snippetBlobUrl = await extractTikTokSnippet(finalMaster.url, targetStartTime);
         }
       } catch (sliceErr) {
         console.error("Local audio slicing failed:", sliceErr);
         if (addToast) addToast("Snippet isolation bypassed. Securing artifact.", "info");
       }
 
-      // 3. Update UI State 
+      // 3. Update UI State (NO MORE MOCKING)
       updateAnrData({
-        hitScore: analyzeData.hitScore || Math.floor(Math.random() * (99 - 70) + 70), 
+        hitScore: analyzeData.hitScore, 
         coverUrl: analyzeData.coverUrl || "",
         tiktokSnippet: snippetBlobUrl
       });
@@ -190,7 +190,7 @@ export default function Room07_Distribution() {
             <div className="flex items-start gap-3 mt-6 p-4 bg-[#110000] border border-[#330000]">
               <ShieldAlert size={16} className="text-[#E60000] shrink-0 mt-0.5" />
               <p className="text-[9px] text-[#888] uppercase font-mono text-left leading-relaxed">
-                By submitting, the AI A&R algorithm will analyze your master and generate social media viral snippets. High Hit Scores unlock algorithmic advances in The Bank.
+                By submitting, Groq will scan your lyrics to find the viral hook, and DSP intelligence will calculate your global A&R Score.
               </p>
             </div>
           </div>
@@ -200,9 +200,9 @@ export default function Room07_Distribution() {
           <div className="space-y-6 py-10 relative z-10 flex flex-col items-center">
             <p className="font-oswald text-2xl text-[#E60000] uppercase tracking-widest font-bold">A&R Neural Scan In Progress...</p>
             <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest space-y-2 text-center">
-              <p>Extracting sonic features...</p>
+              <p>Analyzing DSP frequencies...</p>
+              <p className="text-[#E60000] font-bold">Groq AI identifying viral hook timestamp...</p>
               <p>Generating Cover Art via DALL-E 3...</p>
-              <p className="text-[#E60000] font-bold">Isolating TikTok Viral Snippet locally...</p>
             </div>
           </div>
         )}
@@ -273,7 +273,7 @@ export default function Room07_Distribution() {
                     <div className="z-10 bg-black/50 p-4 border border-[#E60000]/30 rounded-lg">
                       <div className="flex items-center gap-3 mb-3">
                         <Music size={16} className="text-white" />
-                        <span className="text-xs font-mono uppercase text-white">Algorithmically Isolated Cut</span>
+                        <span className="text-xs font-mono uppercase text-white">Groq-Isolated Hook</span>
                       </div>
                       <audio controls src={tiktokSnippet} className="w-full h-8 mb-3 outline-none" />
                       <a 
@@ -291,7 +291,7 @@ export default function Room07_Distribution() {
                   )}
 
                   <p className="mt-4 text-[8px] text-[#555] uppercase tracking-widest font-mono z-10">
-                    This selection was optimized for 15-second viral retention.
+                    This timestamp was identified by Groq LLM for maximum virality.
                   </p>
                </div>
 
@@ -319,16 +319,20 @@ export default function Room07_Distribution() {
 }
 
 // ============================================================================
-// WEB AUDIO API ENGINE: AUTOMATIC 15-SECOND WAV SLICER
+// WEB AUDIO API ENGINE: AUTOMATIC 15-SECOND WAV SLICER (DYNAMIC START TIME)
 // ============================================================================
-async function extractTikTokSnippet(audioUrl: string): Promise<string> {
+// SURGICAL FIX: We now accept 'targetStartTime' from Groq
+async function extractTikTokSnippet(audioUrl: string, targetStartTime: number): Promise<string> {
   const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
   const response = await fetch(audioUrl);
   const arrayBuffer = await response.arrayBuffer();
   const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 
   const snippetLength = 15; 
-  const startOffset = Math.min(15, Math.max(0, audioBuffer.duration - snippetLength)); 
+  
+  // Ensure Groq's timestamp doesn't accidentally exceed the track length
+  const maxAllowedStart = Math.max(0, audioBuffer.duration - snippetLength);
+  const startOffset = Math.min(targetStartTime, maxAllowedStart);
 
   const frameCount = audioCtx.sampleRate * snippetLength;
   const offlineCtx = new OfflineAudioContext(
