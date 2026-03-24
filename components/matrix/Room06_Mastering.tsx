@@ -139,7 +139,7 @@ export default function Room06_Mastering() {
       const fileName = `${userSession?.id || 'ANON'}/${Date.now()}_MASTER.wav`;
       
       const { data, error } = await supabase.storage
-        .from('submissions') // <--- Make sure you have a bucket named 'vault' set to Public!
+        .from('mastered-audio') // <--- Make sure you have a bucket named 'vault' set to Public!
         .upload(fileName, wavBlob, {
           contentType: 'audio/wav',
           upsert: true,
@@ -149,7 +149,7 @@ export default function Room06_Mastering() {
 
       // Retrieve the permanent public URL
       const { data: { publicUrl } } = supabase.storage
-        .from('submissions')
+        .from('mastered-audio')
         .getPublicUrl(fileName);
 
       setMasterUrl(publicUrl);
