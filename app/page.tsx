@@ -167,31 +167,35 @@ export default function MatrixController() {
     }
   };
 
-  const handleDisconnect = async () => {
-    localStorage.removeItem('barcode-matrix-storage'); 
+const handleDisconnect = async () => {
+    // 1. Tell Supabase to kill the session globally
+    await supabase.auth.signOut();
+    
+    // 2. Wipe the local React State
+    clearMatrix();
+
+    // 3. Nuke Browser Storage
     localStorage.clear();
     sessionStorage.clear();
-    clearMatrix();
+
+    // 4. Force-kill all accessible client cookies
+    document.cookie.split(";").forEach((c) => {
+      document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+    });
 
     try {
+      // 5. Hit the server killswitch (if you still have that API route)
       await fetch('/api/auth/logout', { method: 'POST' });
-      await supabase.auth.signOut();
     } catch (err) {
-      console.warn("Server-side logout skipped or failed.");
+      console.warn("Server wipe bypassed.");
     }
-    window.location.replace('/'); 
-  };
 
-  const handleNewProject = async () => {
-    if (userSession?.id) {
-      await supabase.from('matrix_sessions').delete().eq('user_id', userSession.id);
-    }
-    clearMatrix();
-    setActiveRoom("01");
+    // 6. SURGICAL FIX: The 500ms Delay. 
+    // This gives the browser enough time to actually throw the trash away before reloading.
+    setTimeout(() => {
+      window.location.replace('/'); 
+    }, 500);
   };
-
-  if (!isHydrated) return null;
-  if (!hasAccess) return <EntryGateway />;
 
   const rooms = [
     { id: "01", name: "The Lab", icon: <UploadCloud size={16} /> },
