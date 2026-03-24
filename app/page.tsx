@@ -6,14 +6,14 @@ import {
   UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, 
   Send, Wallet, Radio, Users, ShieldAlert, LogOut,
   Play, Pause, SkipBack, SkipForward, Volume2, Lock, User, Zap, Loader2,
-  ShieldCheck, Terminal, FileAudio
+  ShieldCheck, Terminal, FileAudio, Trash2
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
 
 // The Gateway & Global UI
 import EntryGateway from "../components/matrix/EntryGateway";
-import GlobalSyncIndicator from "../components/matrix/GlobalSyncIndicator"; // <--- ADDED IMPORT
+import GlobalSyncIndicator from "../components/matrix/GlobalSyncIndicator";
 
 // The 11 Matrix Rooms
 import Room01_Lab from "../components/matrix/Room01_Lab";
@@ -170,7 +170,11 @@ export default function MatrixController() {
 
   const handleDisconnect = async () => {
     await supabase.auth.signOut();
-    clearMatrix();
+    
+    // SURGICAL FIX: We lock the UI but DO NOT call clearMatrix(). 
+    // This prevents the audio hard drive from being destroyed on logout.
+    useMatrixStore.setState({ hasAccess: false, userSession: null });
+    
     localStorage.clear();
     sessionStorage.clear();
     document.cookie.split(";").forEach((c) => {
@@ -188,10 +192,14 @@ export default function MatrixController() {
 
   const handleNewProject = async () => {
     if (userSession?.id) {
+      // 1. Nuke the Cloud Save so it doesn't try to pull you back here
       await supabase.from('matrix_sessions').delete().eq('user_id', userSession.id);
     }
+    // 2. Erase the local state and hard drive
     clearMatrix();
+    // 3. Drop back to Room 1
     setActiveRoom("01");
+    if (addToast) addToast("Matrix Formatted. Ready for new artifact.", "info");
   };
 
   if (!isHydrated) return null;
@@ -307,16 +315,30 @@ export default function MatrixController() {
       <main className="flex-1 relative flex flex-col bg-black overflow-hidden">
         <div className="h-14 border-b border-[#111] bg-black/80 backdrop-blur-md flex items-center justify-between px-10 z-10 shrink-0">
            <span className="font-mono text-[9px] text-[#444] uppercase tracking-[0.4em]">Matrix // {rooms.find(r => r.id === activeRoom)?.name.toUpperCase()}</span>
+           
            <div className="flex items-center gap-6 ml-auto">
              {userSession && (
-               <div className="flex items-center gap-2 bg-[#110000] border border-[#330000] pl-3 pr-1 py-1 rounded-full shadow-[inset_0_0_10px_rgba(230,0,0,0.1)]">
-                 <Zap size={12} className={userSession.creditsRemaining === 0 ? "text-[#555]" : "text-yellow-500"} />
-                 <span className="font-mono text-[10px] text-white uppercase tracking-widest font-bold">{userSession.creditsRemaining} CRD</span>
-                 {userSession.tier !== "The Mogul" && (
-                   <button onClick={handleBoostPack} disabled={isBoosting} className="ml-2 bg-[#E60000] text-white px-3 py-1 text-[9px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors rounded-full">
-                     {isBoosting ? <Loader2 size={10} className="animate-spin" /> : "Top Up"}
-                   </button>
-                 )}
+               <div className="flex items-center gap-4">
+                 
+                 {/* THE EMERGENCY ESCAPE HATCH */}
+                 <button 
+                   onClick={handleNewProject} 
+                   className="flex items-center gap-2 text-[#555] hover:text-[#E60000] transition-colors font-mono text-[9px] uppercase tracking-widest px-3 py-1 border border-transparent hover:border-[#E60000]/30 rounded-full"
+                   title="Nuke Matrix and Start Fresh"
+                 >
+                   <Trash2 size={12} /> Format Matrix
+                 </button>
+                 
+                 <div className="flex items-center gap-2 bg-[#110000] border border-[#330000] pl-3 pr-1 py-1 rounded-full shadow-[inset_0_0_10px_rgba(230,0,0,0.1)]">
+                   <Zap size={12} className={userSession.creditsRemaining === 0 ? "text-[#555]" : "text-yellow-500"} />
+                   <span className="font-mono text-[10px] text-white uppercase tracking-widest font-bold">{userSession.creditsRemaining} CRD</span>
+                   {userSession.tier !== "The Mogul" && (
+                     <button onClick={handleBoostPack} disabled={isBoosting} className="ml-2 bg-[#E60000] text-white px-3 py-1 text-[9px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors rounded-full">
+                       {isBoosting ? <Loader2 size={10} className="animate-spin" /> : "Top Up"}
+                     </button>
+                   )}
+                 </div>
+
                </div>
              )}
            </div>
@@ -327,7 +349,6 @@ export default function MatrixController() {
         </div>
       </main>
 
-      {/* --- ADDED SYNC INDICATOR HERE --- */}
       <GlobalSyncIndicator />
 
       <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">

@@ -37,7 +37,7 @@ export async function GET(req: Request) {
     }
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
-    const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP || process.env.RUNPOD_ENDPOINT_ID;
+    const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_MDX || process.env.RUNPOD_ENDPOINT_MDX;
 
     const statusRes = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/status/${jobId}`, {
       headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
@@ -116,7 +116,7 @@ export async function POST(req: Request) {
     if (!success) return NextResponse.json({ error: "Rate limit exceeded." }, { status: 429 });
 
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
-    const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP || process.env.RUNPOD_ENDPOINT_ID;
+    const ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_DSP || process.env.RUNPOD_ENDPOINT_MDX;
 
     if (!RUNPOD_API_KEY || !ENDPOINT_ID) return NextResponse.json({ error: "Server missing DSP config." }, { status: 500 });
 
