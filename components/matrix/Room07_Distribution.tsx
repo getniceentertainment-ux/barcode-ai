@@ -93,7 +93,10 @@ const handleAnalyze = async () => {
         })
       });
 
-      if (!res.ok) throw new Error("Failed to secure artifact in Ledger.");
+      if (!res.ok) {
+  const errorData = await res.json().catch(() => ({ error: "Unknown API Crash" }));
+  throw new Error(`API Error: ${errorData.error || "Failed to secure artifact"}`);
+}
 
       updateAnrData({ status: "success" });
       if (addToast) addToast("Artifact secured. Global Nodes synchronized.", "success");
