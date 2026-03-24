@@ -15,7 +15,7 @@ export default function MatrixAutoSave() {
     bootMatrix();
   }, []);
 
-  // --- THE CLOUD SYNC ENGINE ---
+  // --- THE CLOUD SYNC ENGINE (Bypass Mode) ---
   useEffect(() => {
     if (!state.userSession?.id) return;
 
@@ -24,8 +24,6 @@ export default function MatrixAutoSave() {
         const userId = state.userSession?.id;
         if (!userId) return; 
 
-        // CRITICAL: We strip out audioData, vocalStems, and finalMaster.
-        // Supabase will throw a 400 Bad Request if you try to save an audio Blob as JSON.
         const payload = {
           blueprint: state.blueprint,
           flowDNA: state.flowDNA,
@@ -39,18 +37,36 @@ export default function MatrixAutoSave() {
           gwStyle: state.gwStyle
         };
 
-        // SURGICAL FIX: We removed { onConflict: 'user_id' } 
-        // Supabase natively detects the Primary Key. Forcing it causes the 400 crash.
-        const { error } = await supabase
+        // SURGICAL FIX: The Upsert Bypass
+        // 1. Check if the session already exists
+        const { data: existingSession } = await supabase
           .from('matrix_sessions')
-          .upsert({ 
-            user_id: userId, 
-            session_state: payload,
-            updated_at: new Date().toISOString()
-          });
+          .select('user_id')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (existingSession) {
+          // 2. If it exists, explicitly UPDATE
+          const { error: updateError } = await supabase
+            .from('matrix_sessions')
+            .update({ 
+              session_state: payload, 
+              updated_at: new Date().toISOString() 
+            })
+            .eq('user_id', userId);
+            
+          if (updateError) console.error("Matrix Update Blocked:", updateError.message);
           
-        if (error) {
-          console.error("Supabase Save Error:", error.message);
+        } else {
+          // 3. If it doesn't exist, explicitly INSERT
+          const { error: insertError } = await supabase
+            .from('matrix_sessions')
+            .insert([{ 
+              user_id: userId, 
+              session_state: payload 
+            }]);
+            
+          if (insertError) console.error("Matrix Insert Blocked:", insertError.message);
         }
           
       } catch (err) {
