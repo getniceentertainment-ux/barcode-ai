@@ -1,34 +1,76 @@
 "use client";
 
-// SURGICAL FIX: Added an extra '../' to properly reach the store folder
-import { useMatrixStore } from "../../store/useMatrixStore";
-import { Loader2, CheckCircle2, AlertTriangle, Cloud } from "lucide-react";
+import { useEffect } from 'react';
+import { useMatrixStore } from '../../store/useMatrixStore';
+import { supabase } from '../../lib/supabase';
 
-export default function GlobalSyncIndicator() {
-  const { syncStatus } = useMatrixStore();
+export default function MatrixAutoSave() {
+  const state = useMatrixStore();
 
-  if (syncStatus === "idle") return null;
+  // --- THE HYDRATION ENGINE ---
+  useEffect(() => {
+    const bootMatrix = async () => {
+      await state.hydrateDiskAudio();
+    };
+    bootMatrix();
+  }, []);
 
-  return (
-    <div className="fixed bottom-32 right-4 z-50 bg-[#0a0a0a] border border-[#222] px-4 py-2 rounded-full flex items-center gap-2 shadow-2xl animate-in fade-in slide-in-from-bottom-4">
-      {syncStatus === "saving" && (
-        <>
-          <Loader2 size={14} className="text-[#E60000] animate-spin" />
-          <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest">Securing Matrix...</span>
-        </>
-      )}
-      {syncStatus === "saved" && (
-        <>
-          <CheckCircle2 size={14} className="text-green-500" />
-          <span className="text-[10px] font-mono text-green-500 uppercase tracking-widest">Ledger Synced</span>
-        </>
-      )}
-      {syncStatus === "error" && (
-        <>
-          <AlertTriangle size={14} className="text-yellow-500" />
-          <span className="text-[10px] font-mono text-yellow-500 uppercase tracking-widest">Sync Failed</span>
-        </>
-      )}
-    </div>
-  );
+  // --- THE SILENT CLOUD SYNC ENGINE ---
+  useEffect(() => {
+    if (!state.userSession?.id) return;
+
+    const saveInterval = setInterval(async () => {
+      try {
+        const userId = state.userSession?.id;
+        if (!userId) return; 
+
+        const payload = {
+          blueprint: state.blueprint,
+          flowDNA: state.flowDNA,
+          activeRoom: state.activeRoom,
+          generatedLyrics: state.generatedLyrics,
+          isProjectFinalized: state.isProjectFinalized,
+          anrData: state.anrData,
+          mixParams: state.mixParams,
+          gwTitle: state.gwTitle,
+          gwPrompt: state.gwPrompt,
+          gwStyle: state.gwStyle
+        };
+
+        const { data: existingSession } = await supabase
+          .from('matrix_sessions')
+          .select('user_id')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (existingSession) {
+          await supabase.from('matrix_sessions').update({ 
+            session_state: payload, 
+            updated_at: new Date().toISOString() 
+          }).eq('user_id', userId);
+        } else {
+          await supabase.from('matrix_sessions').insert([{ 
+            user_id: userId, 
+            session_state: payload 
+          }]);
+        }
+          
+      } catch (err) {
+        console.error("Silent auto-save failed", err);
+      }
+    }, 30000); // 30-second invisible interval
+
+    return () => clearInterval(saveInterval);
+  }, [
+    state.userSession?.id, 
+    state.blueprint, 
+    state.flowDNA, 
+    state.activeRoom,
+    state.generatedLyrics,
+    state.isProjectFinalized,
+    state.anrData,
+    state.mixParams
+  ]);
+
+  return null; 
 }
