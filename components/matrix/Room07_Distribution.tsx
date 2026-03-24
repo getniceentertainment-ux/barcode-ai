@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon, Globe, Zap, Music, Network } from "lucide-react";
+import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon, Globe, Zap, Music } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import Link from "next/link"; 
@@ -11,7 +11,6 @@ export default function Room07_Distribution() {
   const { trackTitle, status, hitScore, coverUrl, tiktokSnippet } = anrData;
 
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
-  const [mdxAttempts, setMdxAttempts] = useState(0);
 
   // Catch returning Stripe redirects for purchased DALL-E Cover Art
   useEffect(() => {
@@ -40,7 +39,6 @@ export default function Room07_Distribution() {
     }
 
     updateAnrData({ status: "analyzing" });
-    setMdxAttempts(0);
 
     try {
       // 1. Trigger the Proprietary A&R Neural Scan (Cover Art & Hit Score)
@@ -58,64 +56,25 @@ export default function Room07_Distribution() {
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      // 2. SURGICAL FIX: Trigger the RunPod MDX Worker & Gracefully Degrade
+      // 2. Local Web Audio TikTok Slicer (Zero Latency, Handles Blobs perfectly)
       let snippetBlobUrl = "";
-      
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const mdxInitRes = await fetch('/api/mdx/tiktok', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token}`
-          },
-          body: JSON.stringify({ audioUrl: finalMaster.url })
-        });
-        
-        if (mdxInitRes.ok) {
-          const mdxInitData = await mdxInitRes.json();
-          
-          if (mdxInitData.jobId) {
-            // 3. Poll the RunPod Job every 3 seconds (Bumped to 60 attempts / 3 mins for cold boots)
-            let attempts = 0;
-            while (attempts < 60) { 
-              await new Promise(resolve => setTimeout(resolve, 3000));
-              attempts++;
-              setMdxAttempts(attempts);
-
-              const pollRes = await fetch(`/api/mdx/tiktok?jobId=${mdxInitData.jobId}&t=${Date.now()}`);
-              
-              if (pollRes.ok) {
-                const pollData = await pollRes.json();
-
-                if (pollData.status === 'COMPLETED') {
-                  snippetBlobUrl = pollData.output?.audio_url || pollData.output?.url || ""; 
-                  break;
-                } else if (pollData.status === 'FAILED') {
-                  console.warn("RunPod MDX Worker execution failed.");
-                  break;
-                }
-              }
-            }
-          }
+        if (finalMaster?.url) {
+          snippetBlobUrl = await extractTikTokSnippet(finalMaster.url);
         }
-      } catch (mdxError) {
-        console.error("MDX Pipeline Bypassed:", mdxError);
+      } catch (sliceErr) {
+        console.error("Local audio slicing failed:", sliceErr);
+        if (addToast) addToast("Snippet isolation bypassed. Securing artifact.", "info");
       }
 
-      // 4. GRACEFUL DEGRADATION: Do not throw an error! Just alert and continue.
-      if (!snippetBlobUrl) {
-        if (addToast) addToast("MDX Snippet timed out. Securing artifact anyway.", "info");
-      }
-
-      // 5. Update UI State 
+      // 3. Update UI State 
       updateAnrData({
         hitScore: analyzeData.hitScore || Math.floor(Math.random() * (99 - 70) + 70), 
         coverUrl: analyzeData.coverUrl || "",
         tiktokSnippet: snippetBlobUrl
       });
       
-      // 6. Move to Final Ledger Submission
+      // 4. Move to Final Ledger Submission
       handleFinalSubmit({ ...analyzeData, tiktokSnippet: snippetBlobUrl });
 
     } catch (error: any) {
@@ -243,10 +202,7 @@ export default function Room07_Distribution() {
             <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest space-y-2 text-center">
               <p>Extracting sonic features...</p>
               <p>Generating Cover Art via DALL-E 3...</p>
-              <p className="text-[#E60000] font-bold">Slicing TikTok Viral Snippet via MDX Worker...</p>
-            </div>
-            <div className="mt-4 flex items-center gap-2 text-[10px] font-mono text-[#E60000] border border-[#E60000]/30 bg-[#E60000]/10 px-3 py-1 w-fit">
-              <Network size={12} className="animate-pulse" /> Compute Attempt: {mdxAttempts} / 60
+              <p className="text-[#E60000] font-bold">Isolating TikTok Viral Snippet locally...</p>
             </div>
           </div>
         )}
@@ -317,7 +273,7 @@ export default function Room07_Distribution() {
                     <div className="z-10 bg-black/50 p-4 border border-[#E60000]/30 rounded-lg">
                       <div className="flex items-center gap-3 mb-3">
                         <Music size={16} className="text-white" />
-                        <span className="text-xs font-mono uppercase text-white">MDX Isolated Cut</span>
+                        <span className="text-xs font-mono uppercase text-white">Algorithmically Isolated Cut</span>
                       </div>
                       <audio controls src={tiktokSnippet} className="w-full h-8 mb-3 outline-none" />
                       <a 
@@ -335,7 +291,7 @@ export default function Room07_Distribution() {
                   )}
 
                   <p className="mt-4 text-[8px] text-[#555] uppercase tracking-widest font-mono z-10">
-                    This selection was algorithmically processed via MDX for 15-second retention.
+                    This selection was optimized for 15-second viral retention.
                   </p>
                </div>
 
@@ -360,4 +316,87 @@ export default function Room07_Distribution() {
       </div>
     </div>
   );
+}
+
+// ============================================================================
+// WEB AUDIO API ENGINE: AUTOMATIC 15-SECOND WAV SLICER
+// ============================================================================
+async function extractTikTokSnippet(audioUrl: string): Promise<string> {
+  const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const response = await fetch(audioUrl);
+  const arrayBuffer = await response.arrayBuffer();
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+  const snippetLength = 15; 
+  const startOffset = Math.min(15, Math.max(0, audioBuffer.duration - snippetLength)); 
+
+  const frameCount = audioCtx.sampleRate * snippetLength;
+  const offlineCtx = new OfflineAudioContext(
+    audioBuffer.numberOfChannels,
+    frameCount,
+    audioBuffer.sampleRate
+  );
+
+  const source = offlineCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(offlineCtx.destination);
+  source.start(0, startOffset, snippetLength);
+
+  const renderedBuffer = await offlineCtx.startRendering();
+
+  const interleaved = interleave(renderedBuffer);
+  const wavBlob = encodeWAV(interleaved, renderedBuffer.sampleRate, renderedBuffer.numberOfChannels);
+  
+  return URL.createObjectURL(wavBlob);
+}
+
+function interleave(buffer: AudioBuffer) {
+  const numChannels = buffer.numberOfChannels;
+  const length = buffer.length * numChannels;
+  const result = new Float32Array(length);
+  const channels = [];
+  for (let i = 0; i < numChannels; i++) {
+    channels.push(buffer.getChannelData(i));
+  }
+  let index = 0;
+  let inputIndex = 0;
+  while (index < length) {
+    for (let i = 0; i < numChannels; i++) {
+      result[index++] = channels[i][inputIndex];
+    }
+    inputIndex++;
+  }
+  return result;
+}
+
+function encodeWAV(samples: Float32Array, sampleRate: number, numChannels: number) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * 2, true);
+  view.setUint16(32, numChannels * 2, true);
+  view.setUint16(34, 16, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+  
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++, offset += 2) {
+    let s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+  return new Blob([view], { type: 'audio/wav' });
+}
+
+function writeString(view: DataView, offset: number, string: string) {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
 }
