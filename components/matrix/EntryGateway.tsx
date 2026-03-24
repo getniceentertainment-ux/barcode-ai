@@ -29,7 +29,7 @@ export default function EntryGateway() {
     checkUser();
   }, []);
 
-  const processUserSession = async (user: any, retries = 0): Promise<void> => {
+const processUserSession = async (user: any, retries = 0): Promise<void> => {
     const { data: profile } = await supabase
       .from('profiles')
       .select('*')
@@ -48,12 +48,32 @@ export default function EntryGateway() {
           creditsRemaining: profile.tier === "The Mogul" ? "UNLIMITED" : profile.credits
         };
 
-        // 1. Grant Base Access securely via the store
-        grantAccess(session);
-        
-        // 2. Trigger the Cloud Restore to pull down their saved room, lyrics, and state
-        await useMatrixStore.getState().pullFromCloud(session.id);
+        // --- YOUR ORIGINAL SESSION RECOVERY LOGIC ---
+        try {
+          const { data: savedSession } = await supabase
+            .from('matrix_sessions')
+            .select('session_state')
+            .eq('user_id', profile.id)
+            .maybeSingle();
 
+          // If they have an active project in the DB, inject it into the store
+          if (savedSession?.session_state) {
+            useMatrixStore.setState({
+              ...savedSession.session_state,
+              userSession: session, // Securely apply the fresh auth session
+              hasAccess: true
+            });
+            // Immediately load the audio blobs to match the restored state
+            await useMatrixStore.getState().hydrateDiskAudio();
+            return; // Skip normal grantAccess to preserve recovered state
+          }
+        } catch (err) {
+          console.error("Session recovery failed", err);
+        }
+        // ------------------------------
+
+        // If no cloud save exists, grant standard empty access
+        grantAccess(session);
       } else {
         setAuthStep("select_tier");
       }
@@ -62,7 +82,6 @@ export default function EntryGateway() {
       return processUserSession(user, retries + 1);
     }
   };
-
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
