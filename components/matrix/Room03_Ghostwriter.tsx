@@ -26,8 +26,7 @@ export default function Room03_Ghostwriter() {
   const [selectedLine, setSelectedLine] = useState("");
 
   const styles = [
-    { id: "getnice_hybrid", name: "GetNice Hybrid [Melodic Trap]
-" },
+    { id: "getnice_hybrid", name: "GetNice Hybrid [Melodic Trap]" },
     { id: "heartbeat", name: "Heartbeat (Boom-Bap)" },
     { id: "lazy", name: "Lazy (Wavy/Delayed)" },
     { id: "triplet", name: "Triplet (Trap)" },
