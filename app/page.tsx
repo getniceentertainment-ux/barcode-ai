@@ -197,6 +197,17 @@ const handleDisconnect = async () => {
     }, 500);
   };
 
+  const handleNewProject = async () => {
+    if (userSession?.id) {
+      await supabase.from('matrix_sessions').delete().eq('user_id', userSession.id);
+    }
+    clearMatrix();
+    setActiveRoom("01");
+  };
+
+  if (!isHydrated) return null;
+  if (!hasAccess) return <EntryGateway />;
+
   const rooms = [
     { id: "01", name: "The Lab", icon: <UploadCloud size={16} /> },
     { id: "02", name: "Brain Train", icon: <Cpu size={16} /> },
