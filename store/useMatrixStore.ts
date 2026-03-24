@@ -256,7 +256,7 @@ export const useMatrixStore = create<MatrixState>()(
         }
       },
 
-      // --- SURGICAL FIX: The Cloud Save Bridge ---
+      // --- SURGICAL FIX: The Cloud Save Bridge (Manual Upsert Bypass) ---
       pushToCloud: async () => {
         const state = get();
         if (!state.userSession?.id) return;
@@ -276,13 +276,24 @@ export const useMatrixStore = create<MatrixState>()(
         };
 
         try {
-          await supabase
+          // Bypass the onConflict crash by manually checking existence
+          const { data: existing } = await supabase
             .from('matrix_sessions')
-            .upsert({ 
-              user_id: state.userSession.id, 
-              state_data: draftSnapshot,
+            .select('user_id')
+            .eq('user_id', state.userSession.id)
+            .maybeSingle();
+
+          if (existing) {
+            await supabase.from('matrix_sessions').update({
+              session_state: draftSnapshot, // FIXED: Correct DB Column
               updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id' });
+            }).eq('user_id', state.userSession.id);
+          } else {
+            await supabase.from('matrix_sessions').insert([{
+              user_id: state.userSession.id,
+              session_state: draftSnapshot // FIXED: Correct DB Column
+            }]);
+          }
         } catch (err) {
           console.error("Matrix Cloud Save Failed:", err);
         }
@@ -292,12 +303,12 @@ export const useMatrixStore = create<MatrixState>()(
         try {
           const { data } = await supabase
             .from('matrix_sessions')
-            .select('state_data')
+            .select('session_state') // FIXED: Correct DB Column
             .eq('user_id', userId)
             .maybeSingle();
 
-          if (data?.state_data) {
-            set({ ...data.state_data });
+          if (data?.session_state) {
+            set({ ...data.session_state });
             console.log("Matrix State Restored from Cloud Vault.");
           }
         } catch (err) {
