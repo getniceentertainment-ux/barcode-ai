@@ -7,8 +7,8 @@ import { supabase } from '../../lib/supabase';
 export default function MatrixAutoSave() {
   const state = useMatrixStore();
 
-  // --- THE SURGICAL FIX: The Refresh Hydrator ---
-  // When you refresh the page, this instantly pulls your audio blobs back from IndexedDB
+  // --- THE HYDRATION ENGINE ---
+  // When the page refreshes, pull the audio from the hard drive back into memory
   useEffect(() => {
     const bootMatrix = async () => {
       await state.hydrateDiskAudio();
@@ -16,7 +16,7 @@ export default function MatrixAutoSave() {
     bootMatrix();
   }, []);
 
-  // --- YOUR ORIGINAL AUTO-SAVE ENGINE ---
+  // --- THE CLOUD SYNC ENGINE ---
   useEffect(() => {
     if (!state.userSession?.id) return;
 
@@ -25,10 +25,9 @@ export default function MatrixAutoSave() {
         const userId = state.userSession?.id;
         if (!userId) return; 
 
-        // EXACT MATCH to Zustand state keys. 
-        // Expanded to ensure lyrics, A&R data, and mix params survive logouts
+        // CRITICAL: We DO NOT include audioData here. 
+        // Audio lives in local IndexedDB. This payload is for lightweight cloud syncing.
         const payload = {
-          audioData: state.audioData,
           blueprint: state.blueprint,
           flowDNA: state.flowDNA,
           activeRoom: state.activeRoom,
@@ -52,12 +51,11 @@ export default function MatrixAutoSave() {
       } catch (err) {
         console.error("Auto-Save matrix synchronization failed", err);
       }
-    }, 30000); // 30-second strict interval
+    }, 30000); // 30-second interval
 
     return () => clearInterval(saveInterval);
   }, [
     state.userSession?.id, 
-    state.audioData, 
     state.blueprint, 
     state.flowDNA, 
     state.activeRoom,
@@ -67,5 +65,5 @@ export default function MatrixAutoSave() {
     state.mixParams
   ]);
 
-  return null; // Invisible execution
+  return null; 
 }
