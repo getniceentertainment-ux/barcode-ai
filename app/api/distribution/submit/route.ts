@@ -18,13 +18,14 @@ export async function POST(req: Request) {
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) return NextResponse.json({ error: "Invalid Token" }, { status: 401 });
 
+    // 2. SURGICAL FIX: Read the body stream exactly once
     const { title, audioUrl, coverUrl, hitScore, tiktokSnippet, stageName } = await req.json();
 
     if (!title || !audioUrl) {
       return NextResponse.json({ error: "Missing submission payload data." }, { status: 400 });
     }
 
-    // 2. Insert into the permanent Submissions Ledger
+    // 3. Insert into the permanent Submissions Ledger
     const { data, error: dbError } = await supabaseAdmin
       .from('submissions')
       .insert([{
@@ -34,8 +35,8 @@ export async function POST(req: Request) {
         cover_url: coverUrl,
         hit_score: hitScore,
         tiktok_snippet: tiktokSnippet,
-        stage_name: stageName, // <--- ADDED COMMA HERE
-        base_hit_score: hitScore, // <--- ADDED COMMA HERE
+        stage_name: stageName,
+        base_hit_score: hitScore,
         status: 'pending' // Requires Admin Node approval for Global Radio
       }])
       .select()
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
 
     if (dbError) throw dbError;
 
-    // 3. Increment the user's Mogul Score for completing a project
+    // 4. Increment the user's Mogul Score for completing a project
     const { data: profile } = await supabaseAdmin.from('profiles').select('mogul_score').eq('id', user.id).single();
     await supabaseAdmin.from('profiles').update({ mogul_score: (profile?.mogul_score || 0) + 50 }).eq('id', user.id);
 
@@ -51,6 +52,6 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error("Submission API Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: `DB Error: ${error.message} (Details: ${error.details || 'None'})` }, { status: 500 });
   }
 }
