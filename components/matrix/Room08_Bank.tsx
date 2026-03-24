@@ -19,21 +19,27 @@ export default function Room08_Bank() {
   const [ledger, setLedger] = useState<any[]>([]);
   
   // --- STRIPE CONNECT STATE ---
-  const [hasConnectedBank, setHasConnectedBank] = useState(false);
-  const [isConnectingBank, setIsConnectingBank] = useState(false);
-
-  // Catch returning Stripe redirects for Bank Onboarding
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('connect') === 'success') {
-        window.history.replaceState({}, document.title, window.location.pathname);
-        setHasConnectedBank(true);
-        if(addToast) addToast("Bank Account Linked Successfully. Ready for Withdrawals.", "success");
-      }
+const handleConnectBank = async () => {
+  if (!userSession?.id) return;
+  setIsConnectingBank(true);
+  try {
+    const res = await fetch('/api/stripe/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: userSession.id })
+    });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url; 
+    } else {
+      throw new Error(data.error || "Failed to initialize Stripe.");
     }
-  }, [addToast]);
-
+  } catch (err: any) {
+    console.error("Connect Error:", err);
+    if(addToast) addToast(err.message, "error");
+    setIsConnectingBank(false);
+  }
+};
   useEffect(() => {
     fetchFinancialData();
   }, [userSession]);
@@ -112,17 +118,24 @@ export default function Room08_Bank() {
     }
   };
 
-  const handleWithdrawFunds = async () => {
-    const balance = userSession?.walletBalance || 0;
-    if (balance <= 0) {
-      if(addToast) addToast("Insufficient Fiat Balance to withdraw.", "error");
-      return;
-    }
-    
-    if(addToast) addToast("Withdrawal Network Initiated. Processing...", "info");
-    // NOTE: This will trigger your future /api/stripe/withdraw route!
-  };
-
+const handleWithdrawFunds = async () => {
+  const balance = userSession?.walletBalance || 0;
+  if (balance <= 0) {
+    if(addToast) addToast("No fiat funds to withdraw.", "error");
+    return;
+  }
+  // Call your new withdraw router
+  const res = await fetch('/api/stripe/withdraw', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: userSession?.id, amount: balance })
+  });
+  const data = await res.json();
+  if (data.success) {
+    if(addToast) addToast("Withdrawal successful!", "success");
+    fetchFinancialData();
+  }
+};
   const handleSignDeal = async () => {
     if (!userSession?.id || !submission?.id) return;
     setIsSigning(true);
@@ -215,18 +228,17 @@ export default function Room08_Bank() {
             </div>
             
             {/* STRIPE CONNECT BUTTON INJECTION */}
-            <button 
-              onClick={hasConnectedBank ? handleWithdrawFunds : handleConnectBank}
-              disabled={isConnectingBank}
-              className={`mt-3 w-full border text-[9px] font-mono uppercase tracking-widest py-1.5 transition-all flex items-center justify-center gap-2
-                ${hasConnectedBank 
-                  ? "bg-white text-black border-white hover:bg-[#E60000] hover:text-white hover:border-[#E60000]" 
-                  : "bg-black text-[#888] border-[#333] hover:text-white hover:border-white"}`}
-            >
-              {isConnectingBank ? <Loader2 size={10} className="animate-spin" /> : <Landmark size={12} />}
-              {hasConnectedBank ? "Withdraw Funds" : "Link Bank"}
-            </button>
-
+<button 
+  onClick={hasConnectedBank ? handleWithdrawFunds : handleConnectBank} // <-- CRITICAL
+  disabled={isConnectingBank}
+  className={`mt-3 w-full border text-[9px] font-mono uppercase tracking-widest py-1.5 transition-all flex items-center justify-center gap-2
+    ${hasConnectedBank 
+      ? "bg-white text-black border-white hover:bg-[#E60000] hover:text-white hover:border-[#E60000]" 
+      : "bg-black text-[#888] border-[#333] hover:text-white hover:border-white"}`}
+>
+  {isConnectingBank ? <Loader2 size={10} className="animate-spin" /> : <Landmark size={12} />}
+  {hasConnectedBank ? "Withdraw Funds" : "Link Bank"}
+</button>
           </div>
           <div className="bg-[#0a0a0a] border border-[#222] p-4 min-w-[160px] flex flex-col justify-between">
             <div>
