@@ -8,7 +8,6 @@ export default function MatrixAutoSave() {
   const state = useMatrixStore();
 
   // --- THE HYDRATION ENGINE ---
-  // When the page refreshes, pull the audio from the hard drive back into memory
   useEffect(() => {
     const bootMatrix = async () => {
       await state.hydrateDiskAudio();
@@ -25,8 +24,8 @@ export default function MatrixAutoSave() {
         const userId = state.userSession?.id;
         if (!userId) return; 
 
-        // CRITICAL: We DO NOT include audioData here. 
-        // Audio lives in local IndexedDB. This payload is for lightweight cloud syncing.
+        // CRITICAL: We strip out audioData, vocalStems, and finalMaster.
+        // Supabase will throw a 400 Bad Request if you try to save an audio Blob as JSON.
         const payload = {
           blueprint: state.blueprint,
           flowDNA: state.flowDNA,
@@ -40,13 +39,19 @@ export default function MatrixAutoSave() {
           gwStyle: state.gwStyle
         };
 
-        await supabase
+        // SURGICAL FIX: We removed { onConflict: 'user_id' } 
+        // Supabase natively detects the Primary Key. Forcing it causes the 400 crash.
+        const { error } = await supabase
           .from('matrix_sessions')
           .upsert({ 
             user_id: userId, 
             session_state: payload,
             updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id' });
+          });
+          
+        if (error) {
+          console.error("Supabase Save Error:", error.message);
+        }
           
       } catch (err) {
         console.error("Auto-Save matrix synchronization failed", err);
