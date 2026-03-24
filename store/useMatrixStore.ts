@@ -11,14 +11,15 @@ interface ToastMessage {
 }
 
 interface MatrixState {
-// Add this near the top of the interface:
-  syncStatus: "idle" | "saving" | "saved" | "error";
-  setSyncStatus: (status: "idle" | "saving" | "saved" | "error") => void;
   hasAccess: boolean;
   activeRoom: string;
   userSession: UserSession | null;
   activeProjectId: string | null;
   isProjectFinalized: boolean;
+
+  // --- VISUAL SYNC HUD STATE ---
+  syncStatus: "idle" | "saving" | "saved" | "error";
+  setSyncStatus: (status: "idle" | "saving" | "saved" | "error") => void;
 
   anrData: {
     trackTitle: string;
@@ -90,7 +91,6 @@ interface MatrixState {
   clearMatrix: () => void;
   hydrateDiskAudio: () => Promise<void>;
   
-  // --- SURGICAL FIX: Ledger Synchronization & Cloud Saves ---
   syncLedger: () => Promise<void>;
   pushToCloud: () => Promise<void>;
   pullFromCloud: (userId: string) => Promise<void>;
@@ -99,15 +99,12 @@ interface MatrixState {
 export const useMatrixStore = create<MatrixState>()(
   persist(
     (set, get) => ({
-
       hasAccess: false,
       activeRoom: "01",
-      // Add this inside the (set, get) => ({ ... }) block:
-      syncStatus: "idle",
-      setSyncStatus: (status) => set({ syncStatus: status }),
       userSession: null,
       activeProjectId: null,
       isProjectFinalized: false,
+      syncStatus: "idle",
       playbackMode: 'session',
       radioTrack: null,
       mdxJobId: null,
@@ -142,6 +139,8 @@ export const useMatrixStore = create<MatrixState>()(
       finalMaster: null,
       toasts: [],
 
+      setSyncStatus: (status) => set({ syncStatus: status }),
+
       updateMixParams: (params) => set((state) => ({ 
         mixParams: { ...state.mixParams, ...params } 
       })),
@@ -173,7 +172,7 @@ export const useMatrixStore = create<MatrixState>()(
           }
           return { activeRoom: roomId };
         });
-        // --- SURGICAL FIX: Auto-save checkpoint on room transition ---
+        // TRIGGER LOUD CLOUD SAVE ON TRANSITION
         get().pushToCloud();
       },
 
@@ -222,7 +221,7 @@ export const useMatrixStore = create<MatrixState>()(
         return {
           audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
           gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
-          mdxJobId: null, mdxStatus: "idle",
+          mdxJobId: null, mdxStatus: "idle", syncStatus: "idle",
           mixParams: {
             activeChain: "getnice_eq",
             presenceIntensity: 30,
@@ -263,14 +262,14 @@ export const useMatrixStore = create<MatrixState>()(
         }
       },
 
-      // --- SURGICAL FIX: The Cloud Save Bridge (Manual Upsert Bypass) ---
-pushToCloud: async () => {
+      // --- LOUD CLOUD SAVE ENGINE ---
+      pushToCloud: async () => {
         const state = get();
         if (!state.userSession?.id) return;
-        
-        // Trigger visual UI
-        set({ syncStatus: "saving" }); 
 
+        // 1. Trigger the Opaque HUD!
+        set({ syncStatus: "saving" });
+        
         const draftSnapshot = {
            flowDNA: state.flowDNA,
            blueprint: state.blueprint, 
@@ -286,28 +285,41 @@ pushToCloud: async () => {
         };
 
         try {
-          const { data: existing } = await supabase.from('matrix_sessions').select('user_id').eq('user_id', state.userSession.id).maybeSingle();
+          const { data: existing } = await supabase
+            .from('matrix_sessions')
+            .select('user_id')
+            .eq('user_id', state.userSession.id)
+            .maybeSingle();
 
           if (existing) {
-            await supabase.from('matrix_sessions').update({ session_state: draftSnapshot, updated_at: new Date().toISOString() }).eq('user_id', state.userSession.id);
+            await supabase.from('matrix_sessions').update({
+              session_state: draftSnapshot, 
+              updated_at: new Date().toISOString()
+            }).eq('user_id', state.userSession.id);
           } else {
-            await supabase.from('matrix_sessions').insert([{ user_id: state.userSession.id, session_state: draftSnapshot }]);
+            await supabase.from('matrix_sessions').insert([{
+              user_id: state.userSession.id,
+              session_state: draftSnapshot 
+            }]);
           }
-          
-          // Trigger Success UI, then hide after 3 seconds
+
+          // 2. Flash Success, hide after 3 seconds
           set({ syncStatus: "saved" });
           setTimeout(() => set({ syncStatus: "idle" }), 3000);
 
         } catch (err) {
           console.error("Matrix Cloud Save Failed:", err);
+          // 3. Flash Error if connection fails
           set({ syncStatus: "error" });
+          setTimeout(() => set({ syncStatus: "idle" }), 5000);
         }
       },
+
       pullFromCloud: async (userId: string) => {
         try {
           const { data } = await supabase
             .from('matrix_sessions')
-            .select('session_state') // FIXED: Correct DB Column
+            .select('session_state')
             .eq('user_id', userId)
             .maybeSingle();
 
