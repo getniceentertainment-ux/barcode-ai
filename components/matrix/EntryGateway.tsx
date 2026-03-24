@@ -29,8 +29,13 @@ export default function EntryGateway() {
     checkUser();
   }, []);
 
-const processUserSession = async (user: any, retries = 0): Promise<void> => {
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+  // Ensure this function has the 'async' keyword
+  const processUserSession = async (user: any, retries = 0): Promise<void> => {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
 
     if (profile) {
       setUserProfile({ ...user, ...profile });
@@ -48,50 +53,24 @@ const processUserSession = async (user: any, retries = 0): Promise<void> => {
         grantAccess(session);
 
         // 2. HALT AND PULL FROM CLOUD BEFORE CONTINUING
-        const { data: savedData } = await supabase.from('matrix_sessions').select('session_state').eq('user_id', profile.id).maybeSingle();
-        
-        if (savedData?.session_state) {
-          // 3. Inject the saved rooms, lyrics, and settings
-          useMatrixStore.setState({ ...savedData.session_state });
-          
-          // 4. Reach into the hard drive to reconnect the audio files
-          await useMatrixStore.getState().hydrateDiskAudio();
-        }
-
-      } else {
-        setAuthStep("select_tier");
-      }
-    } else if (retries < 3) {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      return processUserSession(user, retries + 1);
-    }
-  };
-        // --- YOUR ORIGINAL SESSION RECOVERY LOGIC ---
         try {
-          const { data: savedSession } = await supabase
+          const { data: savedData } = await supabase
             .from('matrix_sessions')
             .select('session_state')
             .eq('user_id', profile.id)
             .maybeSingle();
-
-          // If they have an active project in the DB, inject it into the store
-          if (savedSession?.session_state) {
-            useMatrixStore.setState({
-              ...savedSession.session_state,
-              userSession: session, // Securely apply the fresh auth session
-              hasAccess: true
-            });
-            // Immediately load the audio blobs to match the restored state
+          
+          if (savedData?.session_state) {
+            // 3. Inject the saved rooms, lyrics, and settings
+            useMatrixStore.setState({ ...savedData.session_state });
+            
+            // 4. Reach into the hard drive to reconnect the audio files
             await useMatrixStore.getState().hydrateDiskAudio();
-            return; // Skip normal grantAccess to preserve recovered state
           }
         } catch (err) {
-          console.error("Session recovery failed", err);
+          console.error("Session recovery failed:", err);
         }
-        // ------------------------------
 
-        // If no cloud save exists, grant standard empty access
-        grantAccess(session);
       } else {
         setAuthStep("select_tier");
       }
@@ -100,6 +79,7 @@ const processUserSession = async (user: any, retries = 0): Promise<void> => {
       return processUserSession(user, retries + 1);
     }
   };
+
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
