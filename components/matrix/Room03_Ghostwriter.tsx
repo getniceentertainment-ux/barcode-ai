@@ -81,7 +81,21 @@ export default function Room03_Ghostwriter() {
     syncTimeline(newBp);
   };
 
-  const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
+const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
+    // --- REVENUE PROTECTION: TIER-BASED BLOCK LIMIT ---
+    const isFreeLoader = userSession?.tier === "The Free Loader";
+    const currentSectionCount = blueprint.length;
+
+    if (isFreeLoader && currentSectionCount >= 2) {
+      if (addToast) {
+        addToast(
+          "Free Tier Limited to 2 Sections (1 Hook & 1 Verse). Upgrade to 'The Artist' for unlimited blocks.", 
+          "error"
+        );
+      }
+      return; // Stop the function here
+    }
+
     const lastBlock = blueprint[blueprint.length - 1] as any;
     const nextStart = lastBlock && lastBlock.startBar !== undefined ? lastBlock.startBar + lastBlock.bars : 0;
     
@@ -94,11 +108,6 @@ export default function Room03_Ghostwriter() {
     
     syncTimeline([...blueprint, newBlock]);
   };
-
-  const removeSection = (id: string) => {
-    syncTimeline(blueprint.filter(b => b.id !== id));
-  };
-
   const handleGenerate = async () => {
     if (!userSession?.id) return addToast("Security Exception: User Session missing.", "error");
     if (!gwPrompt.trim()) return addToast("Missing thematic directive.", "error");
@@ -382,15 +391,29 @@ export default function Room03_Ghostwriter() {
               </div>
             </div>
           ))}
-          <div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2">
-            <p className="text-[8px] font-mono text-[#555] uppercase text-center tracking-widest">Add Structure</p>
-            <div className="flex gap-1 justify-center">
-              <button onClick={() => addSection("HOOK", 8)} className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors">Hook</button>
-              <button onClick={() => addSection("VERSE", 16)} className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors">Verse</button>
-            </div>
-          </div>
-        </div>
-
+<div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2 relative">
+  {userSession?.tier === "The Free Loader" && blueprint.length >= 2 && (
+    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10">
+      <Lock size={14} className="text-[#E60000] mb-1" />
+      <span className="text-[8px] font-mono text-white uppercase font-bold tracking-tighter text-center px-2">Sections Locked</span>
+    </div>
+  )}
+  <p className="text-[8px] font-mono text-[#555] uppercase text-center tracking-widest">Add Structure</p>
+  <div className="flex gap-1 justify-center">
+    <button 
+      onClick={() => addSection("HOOK", 8)} 
+      className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors"
+    >
+      Hook
+    </button>
+    <button 
+      onClick={() => addSection("VERSE", 16)} 
+      className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors"
+    >
+      Verse
+    </button>
+  </div>
+</div>
         {/* LYRICS DISPLAY ENVIRONMENT */}
         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar relative bg-[#020202]">
           {isGenerating ? (
