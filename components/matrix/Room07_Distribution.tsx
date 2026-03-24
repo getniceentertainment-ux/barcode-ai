@@ -40,16 +40,17 @@ export default function Room07_Distribution() {
 
     try {
       // 1. Trigger Backend: Groq determines the Snippet Timestamp & DSP calculates the Score
-      const analyzeRes = await fetch('/api/distribution/analyze', {
+const analyzeRes = await fetch('/api/distribution/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-	body: JSON.stringify({ 
+        body: JSON.stringify({ 
           title: trackTitle, 
           lyrics: generatedLyrics || "",
           bpm: audioData?.bpm || 120,
-          energy: (audioData as any)?.energy || 0.8 // SURGICAL FIX: Bypassed strict type check
-      })
-      
+          energy: (audioData as any)?.energy || 0.8 
+        })
+      }); // <--- THIS WAS MISSING!      
+
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
