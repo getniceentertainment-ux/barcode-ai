@@ -89,7 +89,60 @@ interface MatrixState {
   
   // --- SURGICAL FIX: Ledger Synchronization ---
   syncLedger: () => Promise<void>;
+// --- CLOUD SAVE PROTOCOLS ---
+  pushToCloud: () => Promise<void>;
+  pullFromCloud: (userId: string) => Promise<void>;
 }
+// --- SURGICAL FIX: The Cloud Save Bridge ---
+      pushToCloud: async () => {
+        const state = get();
+        if (!state.userSession?.id) return;
+        
+        // Take a snapshot of all the crucial text/settings data
+        const draftSnapshot = {
+           flowDNA: state.flowDNA,
+           blueprint: state.blueprint, 
+           generatedLyrics: state.generatedLyrics,
+           gwTitle: state.gwTitle,
+           gwPrompt: state.gwPrompt,
+           gwStyle: state.gwStyle,
+           mixParams: state.mixParams,
+           anrData: state.anrData,
+           activeProjectId: state.activeProjectId,
+           isProjectFinalized: state.isProjectFinalized,
+           activeRoom: state.activeRoom,
+        };
+
+        try {
+          await supabase
+            .from('matrix_sessions')
+            .upsert({ 
+              user_id: state.userSession.id, 
+              state_data: draftSnapshot,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+        } catch (err) {
+          console.error("Matrix Cloud Save Failed:", err);
+        }
+      },
+
+      pullFromCloud: async (userId: string) => {
+        try {
+          const { data, error } = await supabase
+            .from('matrix_sessions')
+            .select('state_data')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+          if (data?.state_data) {
+            // Restore the state from the database
+            set({ ...data.state_data });
+            console.log("Matrix State Restored from Cloud Vault.");
+          }
+        } catch (err) {
+          console.error("Matrix Cloud Pull Failed:", err);
+        }
+      },
 
 export const useMatrixStore = create<MatrixState>()(
   persist(
@@ -157,13 +210,16 @@ export const useMatrixStore = create<MatrixState>()(
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
       
-      setActiveRoom: (roomId) => set((state) => {
-        if (state.isProjectFinalized && ["01", "02", "03", "04", "05"].includes(roomId)) {
-          return state; 
-        }
-        return { activeRoom: roomId };
-      }),
-
+setActiveRoom: (roomId) => {
+        set((state) => {
+          if (state.isProjectFinalized && ["01", "02", "03", "04", "05"].includes(roomId)) {
+            return state; 
+          }
+          return { activeRoom: roomId };
+        });
+        // Auto-save to the cloud every time they enter a new room
+        get().pushToCloud();
+      },
       setFinalMaster: (master) => {
         set({ finalMaster: master, isProjectFinalized: !!master }); 
         saveAudioToDisk('matrix_final_master', master);

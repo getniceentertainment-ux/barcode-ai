@@ -71,6 +71,7 @@ export default function EntryGateway() {
         // ------------------------------
 
         grantAccess(session);
+	await useMatrixStore.getState().pullFromCloud(session.id); // <--- Add this line!
       } else {
         setAuthStep("select_tier");
       }
