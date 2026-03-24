@@ -101,6 +101,22 @@ export default function Room01_Lab() {
     }
   }, [userSession]);
 
+  // --- SURGICAL FIX: The Hydration Catcher ---
+  // Listens for the audioData to arrive from the hard drive after a refresh
+  useEffect(() => {
+    if (audioData) {
+      // If the beat arrives, but the UI is stuck on idle, flip it to success
+      if (status === "idle") {
+        setStatus("success");
+      }
+    } else {
+      // If the matrix gets cleared (e.g., user hits trash can), reset the room
+      if (status === "success") {
+        setStatus("idle");
+      }
+    }
+  }, [audioData, status]);
+
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
