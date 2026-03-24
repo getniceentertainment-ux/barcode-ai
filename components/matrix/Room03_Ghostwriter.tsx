@@ -73,9 +73,10 @@ export default function Room03_Ghostwriter() {
     syncTimeline(newBp);
   };
 
-  const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
-    // --- REVENUE PROTECTION: TIER-BASED BLOCK LIMIT ---
-    const isFreeLoader = userSession?.tier === "The Free Loader";
+const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
+    // --- REVENUE PROTECTION: TYPE-SAFE CHECK ---
+    // We cast to string to avoid the AccessTier overlap error
+    const isFreeLoader = (userSession?.tier as string) === "The Free Loader";
     const currentSectionCount = blueprint.length;
 
     if (isFreeLoader && currentSectionCount >= 2) {
@@ -87,7 +88,6 @@ export default function Room03_Ghostwriter() {
       }
       return;
     }
-
     const lastBlock = blueprint[blueprint.length - 1] as any;
     const nextStart = lastBlock && lastBlock.startBar !== undefined ? lastBlock.startBar + lastBlock.bars : 0;
     
@@ -388,13 +388,17 @@ export default function Room03_Ghostwriter() {
             </div>
           ))}
           
-          <div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2 relative">
-            {/* --- UI GATE FOR FREE LOADERS --- */}
-            {userSession?.tier === "The Free Loader" && blueprint.length >= 2 && (
-              <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-10">
-                <Lock size={14} className="text-[#E60000] mb-1" />
-                <span className="text-[8px] font-mono text-white uppercase font-bold tracking-tighter text-center px-2">Sections Locked</span>
-              </div>
+	<div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2 relative">
+  	  {/* --- UI GATE FOR FREE LOADERS (TYPE-SAFE) --- */}
+	    {(userSession?.tier as string) === "The Free Loader" && blueprint.length >= 2 && (
+ 	     <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-10">
+  	      <Lock size={14} className="text-[#E60000] mb-1" />
+  	      <span className="text-[8px] font-mono text-white uppercase font-bold tracking-tighter text-center px-2">Sections Locked</span>
+	      </div>
+ 	   )}
+ 	   <p className="text-[8px] font-mono text-[#555] uppercase text-center tracking-widest">Add Structure</p>
+  	  {/* ... rest of your buttons */}
+ 	 </div>
             )}
             <p className="text-[8px] font-mono text-[#555] uppercase text-center tracking-widest">Add Structure</p>
             <div className="flex gap-1 justify-center">
