@@ -24,6 +24,9 @@ export default function MatrixAutoSave() {
         const userId = state.userSession?.id;
         if (!userId) return; 
 
+        // 1. WAKE UP THE UI (Show the loading spinner)
+        state.setSyncStatus("saving");
+
         const payload = {
           blueprint: state.blueprint,
           flowDNA: state.flowDNA,
@@ -38,7 +41,6 @@ export default function MatrixAutoSave() {
         };
 
         // SURGICAL FIX: The Upsert Bypass
-        // 1. Check if the session already exists
         const { data: existingSession } = await supabase
           .from('matrix_sessions')
           .select('user_id')
@@ -46,7 +48,6 @@ export default function MatrixAutoSave() {
           .maybeSingle();
 
         if (existingSession) {
-          // 2. If it exists, explicitly UPDATE
           const { error: updateError } = await supabase
             .from('matrix_sessions')
             .update({ 
@@ -55,10 +56,9 @@ export default function MatrixAutoSave() {
             })
             .eq('user_id', userId);
             
-          if (updateError) console.error("Matrix Update Blocked:", updateError.message);
+          if (updateError) throw new Error(updateError.message);
           
         } else {
-          // 3. If it doesn't exist, explicitly INSERT
           const { error: insertError } = await supabase
             .from('matrix_sessions')
             .insert([{ 
@@ -66,11 +66,19 @@ export default function MatrixAutoSave() {
               session_state: payload 
             }]);
             
-          if (insertError) console.error("Matrix Insert Blocked:", insertError.message);
+          if (insertError) throw new Error(insertError.message);
         }
+
+        // 2. SHOW SUCCESS UI (Turn green, hide after 3 seconds)
+        state.setSyncStatus("saved");
+        setTimeout(() => state.setSyncStatus("idle"), 3000);
           
       } catch (err) {
         console.error("Auto-Save matrix synchronization failed", err);
+        
+        // 3. SHOW ERROR UI (Turn yellow if the save fails)
+        state.setSyncStatus("error");
+        setTimeout(() => state.setSyncStatus("idle"), 5000);
       }
     }, 30000); // 30-second interval
 
@@ -83,7 +91,8 @@ export default function MatrixAutoSave() {
     state.generatedLyrics,
     state.isProjectFinalized,
     state.anrData,
-    state.mixParams
+    state.mixParams,
+    state.setSyncStatus
   ]);
 
   return null; 

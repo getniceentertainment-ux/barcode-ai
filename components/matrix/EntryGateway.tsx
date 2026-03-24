@@ -30,11 +30,7 @@ export default function EntryGateway() {
   }, []);
 
 const processUserSession = async (user: any, retries = 0): Promise<void> => {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle();
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
 
     if (profile) {
       setUserProfile({ ...user, ...profile });
@@ -48,6 +44,28 @@ const processUserSession = async (user: any, retries = 0): Promise<void> => {
           creditsRemaining: profile.tier === "The Mogul" ? "UNLIMITED" : profile.credits
         };
 
+        // 1. Grant base authorization
+        grantAccess(session);
+
+        // 2. HALT AND PULL FROM CLOUD BEFORE CONTINUING
+        const { data: savedData } = await supabase.from('matrix_sessions').select('session_state').eq('user_id', profile.id).maybeSingle();
+        
+        if (savedData?.session_state) {
+          // 3. Inject the saved rooms, lyrics, and settings
+          useMatrixStore.setState({ ...savedData.session_state });
+          
+          // 4. Reach into the hard drive to reconnect the audio files
+          await useMatrixStore.getState().hydrateDiskAudio();
+        }
+
+      } else {
+        setAuthStep("select_tier");
+      }
+    } else if (retries < 3) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      return processUserSession(user, retries + 1);
+    }
+  };
         // --- YOUR ORIGINAL SESSION RECOVERY LOGIC ---
         try {
           const { data: savedSession } = await supabase
