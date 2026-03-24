@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { 
   Wallet, TrendingUp, ShieldCheck, ArrowUpRight, 
   History, DollarSign, Zap, FileText, Lock, 
-  ChevronRight, BadgeCheck, Gavel, BarChart3, Loader2
+  ChevronRight, BadgeCheck, Gavel, BarChart3, Loader2, Landmark
 } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
@@ -17,6 +17,22 @@ export default function Room08_Bank() {
   const [isSigning, setIsSigning] = useState(false);
   const [contractSigned, setContractSigned] = useState(false);
   const [ledger, setLedger] = useState<any[]>([]);
+  
+  // --- STRIPE CONNECT STATE ---
+  const [hasConnectedBank, setHasConnectedBank] = useState(false);
+  const [isConnectingBank, setIsConnectingBank] = useState(false);
+
+  // Catch returning Stripe redirects for Bank Onboarding
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('connect') === 'success') {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setHasConnectedBank(true);
+        if(addToast) addToast("Bank Account Linked Successfully. Ready for Withdrawals.", "success");
+      }
+    }
+  }, [addToast]);
 
   useEffect(() => {
     fetchFinancialData();
@@ -27,7 +43,18 @@ export default function Room08_Bank() {
     setLoading(true);
     
     try {
-      // 1. Pull the actual latest artifact submission
+      // 1. Check if they have a Stripe Connect Account linked
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('stripe_account_id')
+        .eq('id', userSession.id)
+        .single();
+
+      if (profileData?.stripe_account_id) {
+        setHasConnectedBank(true);
+      }
+
+      // 2. Pull the actual latest artifact submission
       const { data: subData } = await supabase
         .from('submissions')
         .select('*')
@@ -38,13 +65,12 @@ export default function Room08_Bank() {
 
       if (subData) {
         setSubmission(subData);
-        // Persist the contract status if they already signed it previously
         if (subData.upstream_deal_signed) {
           setContractSigned(true);
         }
       }
 
-      // 2. Pull the real transaction ledger from the database
+      // 3. Pull the real transaction ledger from the database
       const { data: txData } = await supabase
         .from('transactions')
         .select('*')
@@ -62,12 +88,46 @@ export default function Room08_Bank() {
     }
   };
 
+  // --- STRIPE CONNECT ACTIONS ---
+  const handleConnectBank = async () => {
+    if (!userSession?.id) return;
+    setIsConnectingBank(true);
+    try {
+      const res = await fetch('/api/stripe/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userSession.id })
+      });
+      const data = await res.json();
+      
+      if (data.url) {
+        window.location.href = data.url; 
+      } else {
+        throw new Error(data.error || "Failed to initialize Stripe Connect.");
+      }
+    } catch (err: any) {
+      console.error("Connect Error:", err);
+      if(addToast) addToast("Failed to route to Stripe Onboarding.", "error");
+      setIsConnectingBank(false);
+    }
+  };
+
+  const handleWithdrawFunds = async () => {
+    const balance = userSession?.walletBalance || 0;
+    if (balance <= 0) {
+      if(addToast) addToast("Insufficient Fiat Balance to withdraw.", "error");
+      return;
+    }
+    
+    if(addToast) addToast("Withdrawal Network Initiated. Processing...", "info");
+    // NOTE: This will trigger your future /api/stripe/withdraw route!
+  };
+
   const handleSignDeal = async () => {
     if (!userSession?.id || !submission?.id) return;
     setIsSigning(true);
     
     try {
-      // 1. THE DOUBLE-SPEND CHECK: Verify it hasn't been signed already
       const { data: checkSub } = await supabase
         .from('submissions')
         .select('upstream_deal_signed')
@@ -79,19 +139,16 @@ export default function Room08_Bank() {
         throw new Error("Security Alert: Contract has already been executed.");
       }
 
-      // 2. THE VAULT LOCK: Update the submission BEFORE touching the money
       const { error: subErr } = await supabase
         .from('submissions')
         .update({ upstream_deal_signed: true })
         .eq('id', submission.id);
 
-      // If the contract fails to lock, HALT THE FUNCTION. No money is granted.
       if (subErr) {
         console.error("Contract Lock Failed:", subErr);
         throw new Error("Failed to sign contract. Database lock rejected.");
       }
 
-      // 3. THE INJECTION: Only if the contract is locked do we grant the funds
       const { data: profile } = await supabase
         .from('profiles')
         .select('marketing_credits')
@@ -108,7 +165,6 @@ export default function Room08_Bank() {
 
       if (profileErr) throw profileErr;
 
-      // 4. THE RECEIPT: Create an immutable audit trail
       await supabase.from('transactions').insert({
         user_id: userSession.id,
         amount: advanceAmount,
@@ -116,10 +172,8 @@ export default function Room08_Bank() {
         description: `Upstream Advance: ${submission.title}`
       });
 
-      // 5. UPDATE UI
       setContractSigned(true);
       
-      // Update local store state so the UI reflects the new money instantly
       useMatrixStore.setState({ 
         userSession: { 
           ...userSession, 
@@ -154,14 +208,35 @@ export default function Room08_Bank() {
         </div>
         
         <div className="flex gap-4">
-          <div className="bg-[#0a0a0a] border border-[#222] p-4 min-w-[160px]">
-            <p className="text-[8px] font-mono text-[#555] uppercase mb-1 font-bold">Wallet Balance</p>
-            <p className="text-2xl font-oswald font-bold text-white">${userSession?.walletBalance?.toFixed(2) || "0.00"}</p>
+          <div className="bg-[#0a0a0a] border border-[#222] p-4 min-w-[160px] flex flex-col justify-between">
+            <div>
+              <p className="text-[8px] font-mono text-[#555] uppercase mb-1 font-bold">Fiat Balance</p>
+              <p className="text-2xl font-oswald font-bold text-white">${userSession?.walletBalance?.toFixed(2) || "0.00"}</p>
+            </div>
+            
+            {/* STRIPE CONNECT BUTTON INJECTION */}
+            <button 
+              onClick={hasConnectedBank ? handleWithdrawFunds : handleConnectBank}
+              disabled={isConnectingBank}
+              className={`mt-3 w-full border text-[9px] font-mono uppercase tracking-widest py-1.5 transition-all flex items-center justify-center gap-2
+                ${hasConnectedBank 
+                  ? "bg-white text-black border-white hover:bg-[#E60000] hover:text-white hover:border-[#E60000]" 
+                  : "bg-black text-[#888] border-[#333] hover:text-white hover:border-white"}`}
+            >
+              {isConnectingBank ? <Loader2 size={10} className="animate-spin" /> : <Landmark size={12} />}
+              {hasConnectedBank ? "Withdraw Funds" : "Link Bank"}
+            </button>
+
           </div>
-          <div className="bg-[#0a0a0a] border border-[#222] p-4 min-w-[160px]">
-            <p className="text-[8px] font-mono text-[#E60000] uppercase mb-1 font-bold">Marketing Credits</p>
-            <p className="text-2xl font-oswald font-bold text-[#E60000]">
-              ${(userSession as any)?.marketingCredits?.toFixed(2) || "0.00"}
+          <div className="bg-[#0a0a0a] border border-[#222] p-4 min-w-[160px] flex flex-col justify-between">
+            <div>
+              <p className="text-[8px] font-mono text-[#E60000] uppercase mb-1 font-bold">Marketing Credits</p>
+              <p className="text-2xl font-oswald font-bold text-[#E60000]">
+                ${(userSession as any)?.marketingCredits?.toFixed(2) || "0.00"}
+              </p>
+            </div>
+            <p className="mt-3 text-[8px] font-mono text-[#444] uppercase tracking-widest text-center">
+              Ecosystem Locked
             </p>
           </div>
         </div>
