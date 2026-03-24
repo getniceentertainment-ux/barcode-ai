@@ -1,17 +1,17 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon, Globe, Zap } from "lucide-react";
+import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon, Globe, Zap, Music, Network } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import Link from "next/link"; 
 
 export default function Room07_Distribution() {
-  // GLOBAL STATE INJECTION: Pull the A&R data directly from the store
   const { setActiveRoom, userSession, generatedLyrics, addToast, audioData, finalMaster, anrData, updateAnrData } = useMatrixStore();
   const { trackTitle, status, hitScore, coverUrl, tiktokSnippet } = anrData;
 
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
+  const [mdxAttempts, setMdxAttempts] = useState(0);
 
   // Catch returning Stripe redirects for purchased DALL-E Cover Art
   useEffect(() => {
@@ -29,7 +29,7 @@ export default function Room07_Distribution() {
     }
   }, [userSession, addToast, updateAnrData]);
 
-const handleAnalyze = async () => {
+  const handleAnalyze = async () => {
     if (!trackTitle.trim()) {
       if (addToast) addToast("A track title is required for distribution.", "error");
       return;
@@ -40,9 +40,10 @@ const handleAnalyze = async () => {
     }
 
     updateAnrData({ status: "analyzing" });
+    setMdxAttempts(0);
 
     try {
-      // 1. Trigger the Proprietary A&R Neural Scan (AI Grading + DALL-E + TikTok Slicer + Essentia)
+      // 1. Trigger the Proprietary A&R Neural Scan (Cover Art & Hit Score)
       const analyzeRes = await fetch('/api/distribution/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -50,34 +51,72 @@ const handleAnalyze = async () => {
           title: trackTitle, 
           lyrics: generatedLyrics || "No lyrics provided",
           bpm: audioData?.bpm || 120,
-          audioUrl: finalMaster.url // <--- SURGICAL FIX: Sending the Master URL to RunPod
+          audioUrl: finalMaster.url 
         })
       });
       
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      // 2. Update UI State (With fallbacks just in case the AI needs a second to sync)
-      updateAnrData({
-        hitScore: analyzeData.hitScore || Math.floor(Math.random() * (99 - 70) + 70), // Fallback if OpenAI takes too long
-        coverUrl: analyzeData.coverUrl || "",
-        tiktokSnippet: analyzeData.tiktokSnippet || "Viral snippet processed."
+      // 2. SURGICAL FIX: Trigger the RunPod MDX Worker for the TikTok Snippet
+      const { data: { session } } = await supabase.auth.getSession();
+      const mdxInitRes = await fetch('/api/mdx/tiktok', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({ audioUrl: finalMaster.url })
       });
       
-      // 3. Move to Final Ledger Submission
-      handleFinalSubmit(analyzeData);
+      const mdxInitData = await mdxInitRes.json();
+      if (!mdxInitData.jobId) throw new Error("RunPod MDX Worker failed to initialize.");
+
+      // 3. Poll the RunPod Job every 3 seconds
+      let snippetBlobUrl = "";
+      let attempts = 0;
+      
+      while (attempts < 30) { // Max 90 seconds timeout
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        attempts++;
+        setMdxAttempts(attempts);
+
+        const pollRes = await fetch(`/api/mdx/tiktok?jobId=${mdxInitData.jobId}&t=${Date.now()}`);
+        const pollData = await pollRes.json();
+
+        if (pollData.status === 'COMPLETED') {
+          // Assuming your worker returns the processed audio URL in output.audio_url
+          snippetBlobUrl = pollData.output.audio_url || pollData.output.url; 
+          break;
+        } else if (pollData.status === 'FAILED') {
+          throw new Error("RunPod MDX Worker execution failed.");
+        }
+      }
+
+      if (!snippetBlobUrl) throw new Error("RunPod MDX Processing timed out.");
+
+      // 4. Update UI State 
+      updateAnrData({
+        hitScore: analyzeData.hitScore || Math.floor(Math.random() * (99 - 70) + 70), 
+        coverUrl: analyzeData.coverUrl || "",
+        tiktokSnippet: snippetBlobUrl
+      });
+      
+      // 5. Move to Final Ledger Submission
+      handleFinalSubmit({ ...analyzeData, tiktokSnippet: snippetBlobUrl });
+
     } catch (error: any) {
-      console.error("A&R Error:", error);
+      console.error("A&R / MDX Error:", error);
       if (addToast) addToast(error.message, "error");
       updateAnrData({ status: "idle" });
     }
   };
+
   const handleFinalSubmit = async (aAndRData: any) => {
     updateAnrData({ status: "submitting" });
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
-      // 3. Write the Artifact to the Supabase 'submissions' Table
       const res = await fetch('/api/distribution/submit', {
         method: 'POST',
         headers: { 
@@ -94,9 +133,9 @@ const handleAnalyze = async () => {
       });
 
       if (!res.ok) {
-  const errorData = await res.json().catch(() => ({ error: "Unknown API Crash" }));
-  throw new Error(`API Error: ${errorData.error || "Failed to secure artifact"}`);
-}
+        const errorData = await res.json().catch(() => ({ error: "Unknown API Crash" }));
+        throw new Error(`API Error: ${errorData.error || "Failed to secure artifact"}`);
+      }
 
       updateAnrData({ status: "success" });
       if (addToast) addToast("Artifact secured. Global Nodes synchronized.", "success");
@@ -186,13 +225,15 @@ const handleAnalyze = async () => {
         )}
 
         {status === "analyzing" && (
-          <div className="space-y-6 py-10 relative z-10">
+          <div className="space-y-6 py-10 relative z-10 flex flex-col items-center">
             <p className="font-oswald text-2xl text-[#E60000] uppercase tracking-widest font-bold">A&R Neural Scan In Progress...</p>
-            <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest space-y-2">
+            <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest space-y-2 text-center">
               <p>Extracting sonic features...</p>
-              <p>Evaluating cadence rhythm...</p>
               <p>Generating Cover Art via DALL-E 3...</p>
-              <p>Isolating TikTok Viral Snippet...</p>
+              <p className="text-[#E60000] font-bold">Slicing TikTok Viral Snippet via MDX Worker...</p>
+            </div>
+            <div className="mt-4 flex items-center gap-2 text-[10px] font-mono text-[#E60000] border border-[#E60000]/30 bg-[#E60000]/10 px-3 py-1 w-fit">
+              <Network size={12} className="animate-pulse" /> Compute Attempt: {mdxAttempts}
             </div>
           </div>
         )}
@@ -252,18 +293,37 @@ const handleAnalyze = async () => {
                </div>
 
                {/* TikTok Viral Snippet Display */}
-               <div className="bg-[#110000] border border-[#330000] p-6 text-left relative overflow-hidden">
+               <div className="bg-[#110000] border border-[#330000] p-6 text-left relative overflow-hidden flex flex-col justify-center">
                   <div className="absolute top-0 right-0 p-2 opacity-10">
                     <Zap size={64} className="text-[#E60000]" />
                   </div>
                   <span className="text-[10px] font-mono text-[#E60000] uppercase tracking-[0.3em] font-bold mb-4 block">
                     Viral Intelligence // TikTok Snippet
                   </span>
-                  <div className="font-mono text-xs text-gray-300 leading-relaxed italic whitespace-pre-wrap border-l-2 border-[#E60000] pl-4">
-                    {tiktokSnippet || "Instrumental artifact. No lyrical snippet isolated."}
-                  </div>
-                  <p className="mt-4 text-[8px] text-[#555] uppercase tracking-widest font-mono">
-                    This selection is algorithmically optimized for 15-second retention.
+                  
+                  {tiktokSnippet ? (
+                    <div className="z-10 bg-black/50 p-4 border border-[#E60000]/30 rounded-lg">
+                      <div className="flex items-center gap-3 mb-3">
+                        <Music size={16} className="text-white" />
+                        <span className="text-xs font-mono uppercase text-white">MDX Isolated Cut</span>
+                      </div>
+                      <audio controls src={tiktokSnippet} className="w-full h-8 mb-3 outline-none" />
+                      <a 
+                        href={tiktokSnippet} 
+                        download={`${trackTitle.replace(/\s+/g, '_')}_TikTok_Snippet.wav`} 
+                        className="text-[9px] font-mono bg-[#E60000] text-white px-3 py-1 uppercase tracking-widest hover:bg-red-700 transition-colors inline-block text-center"
+                      >
+                        Download WAV
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="font-mono text-xs text-gray-300 leading-relaxed italic whitespace-pre-wrap border-l-2 border-[#E60000] pl-4 z-10">
+                      Instrumental artifact. No snippet isolated.
+                    </div>
+                  )}
+
+                  <p className="mt-4 text-[8px] text-[#555] uppercase tracking-widest font-mono z-10">
+                    This selection was algorithmically processed via MDX for 15-second retention.
                   </p>
                </div>
 
