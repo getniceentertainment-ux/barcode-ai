@@ -48,7 +48,7 @@ export default function Room07_Distribution() {
           lyrics: generatedLyrics || "",
           bpm: audioData?.bpm || 120,
           energy: (audioData as any)?.energy || 0.8 // SURGICAL FIX: Bypassed strict type check
-      });
+      })
       
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
