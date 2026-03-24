@@ -18,7 +18,6 @@ export async function POST(req: Request) {
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) return NextResponse.json({ error: "Invalid Token" }, { status: 401 });
 
-    const body = await req.json();
     const { title, audioUrl, coverUrl, hitScore, tiktokSnippet, stageName } = await req.json();
 
     if (!title || !audioUrl) {
