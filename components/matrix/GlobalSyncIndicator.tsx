@@ -10,7 +10,7 @@ export default function GlobalSyncIndicator() {
   if (syncStatus === "idle") return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 bg-[#0a0a0a] border border-[#222] px-4 py-2 rounded-full flex items-center gap-2 shadow-2xl animate-in fade-in slide-in-from-bottom-4">
+    <div className="fixed bottom-32 right-4 z-50 bg-[#0a0a0a] border border-[#222] px-4 py-2 rounded-full flex items-center gap-2 shadow-2xl animate-in fade-in slide-in-from-bottom-4">
       {syncStatus === "saving" && (
         <>
           <Loader2 size={14} className="text-[#E60000] animate-spin" />
