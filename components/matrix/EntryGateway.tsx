@@ -1,7 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Mail, Loader2, Lock, User as UserIcon, ArrowRight, ShieldCheck } from "lucide-react";
+import { 
+  CheckCircle2, Mail, Loader2, Lock, User as UserIcon, ArrowRight, ShieldCheck,
+  UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, Send, Wallet, Radio, Users, FileAudio, ChevronRight, Zap
+} from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { AccessTier, UserSession } from "../../lib/types";
 import { supabase } from "../../lib/supabase";
@@ -16,8 +19,19 @@ export default function EntryGateway() {
   const [loading, setLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
-  const [authStep, setAuthStep] = useState<"auth" | "verify_email" | "select_tier">("auth");
+  
+  // ADDED "landing" to the auth steps to serve the flashy page first
+  const [authStep, setAuthStep] = useState<"landing" | "auth" | "verify_email" | "select_tier">("landing");
   const [userProfile, setUserProfile] = useState<any>(null);
+  
+  // For Landing Page Navbar Scroll Effect
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 50);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -29,7 +43,6 @@ export default function EntryGateway() {
     checkUser();
   }, []);
 
-  // Ensure this function has the 'async' keyword
   const processUserSession = async (user: any, retries = 0): Promise<void> => {
     const { data: profile } = await supabase
       .from('profiles')
@@ -152,9 +165,136 @@ export default function EntryGateway() {
     { name: "The Mogul", price: "99", isPro: true, features: ["Unlimited Generations", "Instant Inference", "A&R Fast-Track"] }
   ];
 
+  const roomsInfo = [
+    { id: "01", name: "The Lab", desc: "Forensic Audio Injection. Extract the exact BPM, Musical Key, and Bar Count of any beat.", icon: <UploadCloud size={24} /> },
+    { id: "02", name: "Brain Train", desc: "The Mind-Meld chamber. Analyzes your transients and vocabulary to build your Flow DNA.", icon: <Cpu size={24} /> },
+    { id: "03", name: "Ghostwriter", desc: "Stateless RAG Intelligence. Aggressive, authentic street lyrics mathematically locked to the beat.", icon: <PenTool size={24} /> },
+    { id: "04", name: "The Booth", desc: "Zero-latency, hardware-accelerated tracking with a synced, beat-locked teleprompter.", icon: <Mic2 size={24} /> },
+    { id: "05", name: "Engineering", desc: "Proprietary Mix rack. Dynamic EQ and compression to glue your vocals directly in the pocket.", icon: <Layers size={24} /> },
+    { id: "06", name: "Mastering", desc: "Commercial Render engine. Analog LUFS metering for Spotify and Brickwall club standards.", icon: <Sliders size={24} /> },
+    { id: "07", name: "Distribution", desc: "Algorithmic A&R. Calculates Hit Scores and extracts viral snippets for TikTok.", icon: <Send size={24} /> },
+    { id: "08", name: "The Bank", desc: "Royalty ledger. High scores trigger automated $1,000 marketing advances. Withdraw via Stripe.", icon: <Wallet size={24} /> },
+    { id: "09", name: "The Radio", desc: "GetNice Nation FM. A 24/7 global syndication of the platform's highest-scoring tracks.", icon: <Radio size={24} /> },
+    { id: "10", name: "Social Syndicate", desc: "Open Verse Economy. Book top-tier nodes for features using secure, programmatic fiat escrows.", icon: <Users size={24} /> },
+    { id: "11", name: "Active Contracts", desc: "Active Contract Matrix. Monitor live escrow statuses and manage your B2B pipeline.", icon: <FileAudio size={24} /> },
+  ];
+
+  // ==========================================
+  // VIEW 1: THE FLASHY LANDING PAGE
+  // ==========================================
+  if (authStep === "landing") {
+    return (
+      <div className="min-h-screen bg-[#121212] text-[#E0E0E0] selection:bg-[#E60000] selection:text-white relative overflow-x-hidden font-sans">
+        
+        {/* Background Grid Overlay */}
+        <div 
+          className="fixed inset-0 pointer-events-none opacity-[0.03] z-0" 
+          style={{ backgroundImage: 'linear-gradient(#E0E0E0 1px, transparent 1px), linear-gradient(90deg, #E0E0E0 1px, transparent 1px)', backgroundSize: '40px 40px' }} 
+        />
+
+        {/* Navigation Bar */}
+        <nav className={`fixed w-full top-0 z-50 transition-all duration-300 ${scrolled ? 'bg-[#121212]/90 backdrop-blur-md border-b border-[#333]' : 'bg-transparent'}`}>
+          <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Zap className="text-[#E60000] animate-pulse-fast" size={20} />
+              <span className="font-oswald text-2xl uppercase tracking-[0.2em] font-bold text-[#E60000]">BAR-CODE.AI</span>
+            </div>
+            <button onClick={() => setAuthStep("auth")} className="gn-btn-outline text-[10px] py-2 px-6">
+              Access System
+            </button>
+          </div>
+        </nav>
+
+        {/* Hero Section */}
+        <header className="relative pt-40 pb-24 px-6 flex flex-col items-center text-center z-10 border-b border-[#333]">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#E60000]/5 via-[#121212] to-[#121212] -z-10"></div>
+          
+          <div className="inline-flex items-center gap-2 border border-[#333] bg-[#1a1a1a] px-4 py-1.5 rounded-full mb-8">
+            <span className="w-2 h-2 rounded-full bg-[#E60000] animate-pulse"></span>
+            <span className="font-mono text-[9px] uppercase tracking-widest text-[#888]">Secure Ingestion Node Ready</span>
+          </div>
+
+          <h1 className="font-oswald text-6xl md:text-8xl font-bold mb-6 tracking-tight uppercase text-white drop-shadow-neon-red">
+            Unlock Your <br/> <span className="text-[#E60000]">Artistic DNA</span>
+          </h1>
+          
+          <p className="max-w-2xl font-sans text-lg text-[#888] mb-12 leading-relaxed">
+            Stop making songs. Start engineering hits with the world's first AI-Powered Forensic Music Studio. Seamless fusion of your raw style and platinum-grade structure.
+          </p>
+          
+          <button onClick={() => setAuthStep("auth")} className="gn-btn-primary text-sm px-10 py-5 group shadow-neon-red">
+            Initialize Session 
+            <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
+          </button>
+        </header>
+
+        {/* Systems Architecture Grid */}
+        <section className="max-w-7xl mx-auto px-6 py-24 relative z-10">
+          <div className="flex flex-col md:flex-row justify-between items-end border-b border-[#333] pb-4 mb-12">
+            <div>
+              <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-2">System Architecture</h2>
+              <p className="font-mono text-[10px] uppercase tracking-widest text-[#888]">11 Dedicated Processing Nodes</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {roomsInfo.map((room) => (
+              <div key={room.id} className="gn-panel p-6 group hover:border-[#E60000] transition-all duration-300 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-[#E60000]/50 opacity-0 group-hover:opacity-100 group-hover:animate-scan-line blur-[2px]"></div>
+                
+                <div className="flex justify-between items-start mb-6">
+                  <div className="text-[#E60000] p-3 bg-[#121212] border border-[#333] rounded-lg group-hover:bg-[#E60000] group-hover:text-white transition-colors">
+                    {room.icon}
+                  </div>
+                  <span className="font-mono text-[10px] text-[#555] group-hover:text-[#E60000] transition-colors uppercase font-bold tracking-widest">
+                    R{room.id}
+                  </span>
+                </div>
+                
+                <h3 className="font-oswald text-xl uppercase tracking-widest font-bold text-white mb-3">
+                  {room.name}
+                </h3>
+                <p className="font-sans text-sm text-[#888] leading-relaxed">
+                  {room.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="border-t border-[#333] py-12 bg-[#0a0a0a] text-center relative z-10">
+          <div className="max-w-7xl mx-auto px-6">
+            <div className="flex justify-center mb-6">
+              <Zap className="text-[#333]" size={24} />
+            </div>
+            <p className="font-mono text-[10px] text-[#555] uppercase tracking-[0.2em] mb-2">
+              PROPERTY OF GETNICE™ ENTERTAINMENT & RECORDS ©2026
+            </p>
+            <p className="font-mono text-[10px] text-[#555] uppercase tracking-[0.2em]">
+              ALL RIGHTS RESERVED BY: TALON ANDREW LLOYD
+            </p>
+          </div>
+        </footer>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // VIEW 2: ORIGINAL AUTHENTICATION FLOW
+  // ==========================================
   return (
-    <div className="min-h-screen bg-[#000] text-white flex flex-col items-center justify-center p-6 font-mono">
-      <div className="text-center mb-12 animate-in fade-in duration-700">
+    <div className="min-h-screen bg-[#000] text-white flex flex-col items-center justify-center p-6 font-mono relative">
+      
+      {/* Back to landing page button */}
+      <button 
+        onClick={() => setAuthStep("landing")} 
+        className="absolute top-8 left-8 text-[#555] hover:text-white flex items-center gap-2 text-xs uppercase tracking-widest transition-colors"
+      >
+        ← Abort Login
+      </button>
+
+      <div className="text-center mb-12 animate-in fade-in duration-700 mt-12">
         <div className="w-16 h-16 border-2 border-[#E60000] flex items-center justify-center mx-auto mb-6">
           <span className="font-oswald text-2xl text-[#E60000] font-bold">BC</span>
         </div>
