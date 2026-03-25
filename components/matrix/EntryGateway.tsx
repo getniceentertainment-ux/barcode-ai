@@ -214,20 +214,22 @@ export default function EntryGateway() {
             <span className="font-mono text-[9px] uppercase tracking-widest text-[#888]">Secure Ingestion Node Ready</span>
           </div>
 
-          <h1 className="font-oswald text-6xl md:text-8xl font-bold mb-6 tracking-tight uppercase text-white drop-shadow-neon-red">
-            Unlock Your <br/> <span className="text-[#E60000]">Artistic DNA</span>
-          </h1>
-          
-          <p className="max-w-2xl font-sans text-lg text-[#888] mb-12 leading-relaxed">
-            Stop making songs. Start engineering hits with the world's first AI-Powered Forensic Music Studio. Seamless fusion of your raw style and platinum-grade structure.
-          </p>
-          
-          <button onClick={() => setAuthStep("auth")} className="gn-btn-primary text-sm px-10 py-5 group shadow-neon-red">
-            Initialize Session 
-            <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
-          </button>
-        </header>
-
+        <h1 className="font-oswald text-6xl md:text-8xl font-bold mb-6 tracking-tight uppercase text-white drop-shadow-neon-red">
+          Weaponize Your <br/> <span className="text-[#E60000]">Sonic DNA</span>
+        </h1>
+        
+        <p className="max-w-2xl font-sans text-lg text-[#888] mb-12 leading-relaxed">
+          Stop chasing the algorithm. <br/>
+          Start engineering undeniable hits with the world's first forensic AI studio. <br/>
+          Fuse your raw, unfiltered style with platinum-tier architecture. <br/>
+          Command the culture.
+        </p>
+        
+        <button onClick={() => setAuthStep("auth")} className="gn-btn-primary text-sm px-10 py-5 group shadow-neon-red uppercase tracking-widest font-bold">
+          Ignite the Engine 
+          <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
+        </button>
+      </header>
         {/* Systems Architecture Grid */}
         <section className="max-w-7xl mx-auto px-6 py-24 relative z-10">
           <div className="flex flex-col md:flex-row justify-between items-end border-b border-[#333] pb-4 mb-12">
