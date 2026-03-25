@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock } from "lucide-react";
-import WaveSurfer from 'wavesurfer.js';
+import React, { useState, useEffect, useRef } from "react";
+import { Mic2, Play, Pause, Square, RefreshCw, Layers, ArrowRight, Activity, Volume2, Info, ChevronRight, Lock } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
-import { supabase } from "../../lib/supabase"; 
+import { supabase } from "../../lib/supabase";
+
+type TrackType = "Lead" | "Adlib" | "Dub";
 
 // --- AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
@@ -35,25 +36,6 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   return new Blob([view], { type: "audio/wav" });
 }
 
-async function trimAudioBlob(originalBlob: Blob, startSec: number, endSec: number): Promise<Blob> {
-  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-  const arrayBuffer = await originalBlob.arrayBuffer();
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-  
-  const sampleRate = audioBuffer.sampleRate;
-  const startOffset = Math.floor(startSec * sampleRate);
-  const endOffset = Math.floor(endSec * sampleRate);
-  const frameCount = endOffset - startOffset;
-
-  const trimmedBuffer = audioContext.createBuffer(audioBuffer.numberOfChannels, frameCount, sampleRate);
-  for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
-    const channelData = audioBuffer.getChannelData(channel);
-    const trimmedData = trimmedBuffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) trimmedData[i] = channelData[startOffset + i];
-  }
-  return audioBufferToWavBlob(trimmedBuffer);
-}
-
 function encodeWAV(samples: Float32Array, sampleRate: number) {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
@@ -77,237 +59,78 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
 }
 
 export default function Room04_Booth() {
-  const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, updateStemOffset, setActiveRoom, blueprint, userSession, addToast } = useMatrixStore();
+  const { audioData, generatedLyrics, vocalStems, addVocalStem, removeVocalStem, setActiveRoom, addToast, userSession } = useMatrixStore();
 
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
   const [isRecording, setIsRecording] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean, timestamp?: string}[]>([]);
-  const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
-
-  // --- TRIM MODAL STATE ---
-  const [trimmingStem, setTrimmingStem] = useState<any | null>(null);
-  const [trimStart, setTrimStart] = useState(0);
-  const [trimEnd, setTrimEnd] = useState(0);
-  const [trimDuration, setTrimDuration] = useState(0);
-  const [isProcessingTrim, setIsProcessingTrim] = useState(false);
-  const trimWaveformRef = useRef<HTMLDivElement>(null);
-  const trimWavesurferRef = useRef<WaveSurfer | null>(null);
-
-  // Web Audio API & Wasm Architecture Refs
+  const [duration, setDuration] = useState(0);
+  
+  const audioRef = useRef<HTMLAudioElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const stemBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
-  const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
-  
-  const waveformRef = useRef<HTMLDivElement>(null);
-  const wavesurferRef = useRef<WaveSurfer | null>(null);
-  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
-  
-  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
   const recordedChunksRef = useRef<Float32Array[]>([]);
   const workletLoadedRef = useRef(false);
+  const teleprompterRef = useRef<HTMLDivElement>(null);
 
-  const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
+  // --- SECURITY GATE VARS ---
+  // Using .includes() catches both "Free Loader" and "The Free Loader" variations securely
+  const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
+  const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
   useEffect(() => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     audioCtxRef.current = new AudioContextClass();
     return () => {
-      if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
       audioCtxRef.current?.close();
     };
   }, []);
 
+  // --- STRIPE REDIRECT CATCHER: AUTO-ADVANCE TO ENGINEERING ---
   useEffect(() => {
-    const loadBuffers = async () => {
-      if (!audioCtxRef.current) return;
-      for (const stem of vocalStems) {
-        if (!stemBuffersRef.current.has(stem.id)) {
-          try {
-            const resp = await fetch(stem.url);
-            const arrayBuf = await resp.arrayBuffer();
-            const audioBuf = await audioCtxRef.current.decodeAudioData(arrayBuf);
-            stemBuffersRef.current.set(stem.id, audioBuf);
-          } catch (e) { console.error("Failed to decode stem buffer", e); }
-        }
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('engineering_unlocked') === 'true') {
+        // 1. Clean the URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        // 2. Optimistically unlock the UI before the webhook finishes to prevent bounce-back
+        useMatrixStore.setState((state) => ({
+          userSession: state.userSession ? { ...state.userSession, has_engineering_token: true } as any : null
+        }));
+        
+        // 3. Auto-Advance the user into Room 05
+        if (addToast) addToast("Engineering Token Secured. Suite Unlocked.", "success");
+        setActiveRoom("05");
       }
-    };
-    loadBuffers();
-  }, [vocalStems]);
-
-  useEffect(() => {
-    if (waveformRef.current && audioData?.url && !wavesurferRef.current) {
-      wavesurferRef.current = WaveSurfer.create({
-        container: waveformRef.current, waveColor: '#333333', progressColor: '#E60000',
-        cursorColor: '#ffffff', barWidth: 2, barGap: 1, barRadius: 2, height: 80, normalize: true,
-      });
-      wavesurferRef.current.load(audioData.url);
-      
-      let lastRender = 0;
-      wavesurferRef.current.on('audioprocess', (time) => {
-        if (time - lastRender > 0.1) { setCurrentTime(time); lastRender = time; }
-      });
-      wavesurferRef.current.on('finish', () => stopEverything());
     }
-    return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
-  }, [audioData]);
+  }, [userSession, setActiveRoom, addToast]);
 
-  useEffect(() => {
-    if (!generatedLyrics) return;
+  // --- TELEPROMPTER PARSING ---
+  const parseLyrics = () => {
+    if (!generatedLyrics) return [];
     const lines = generatedLyrics.split('\n');
-    let currentBlockIndex = -1; let barOffsetWithinBlock = 0; 
-    const parsed = lines.filter(l => l.trim()).map((text) => {
-      if (text.startsWith('[')) { currentBlockIndex++; barOffsetWithinBlock = 0; return { text, startTime: 0, isHeader: true, timestamp: "" }; }
-      let blockStartBar = 0;
-      if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
-         blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
+    return lines.map(line => {
+      const match = line.match(/^\((\d+):(\d{2})\)\s*(.*)/);
+      if (match) {
+        const seconds = parseInt(match[1]) * 60 + parseInt(match[2]);
+        return { time: seconds, text: match[3], raw: line };
       }
-      const absoluteBar = blockStartBar + barOffsetWithinBlock;
-      const startTimeSec = absoluteBar * secondsPerBar;
-      barOffsetWithinBlock++;
-      return { text, startTime: startTimeSec, isHeader: false, timestamp: `(${Math.floor(startTimeSec / 60)}:${Math.floor(startTimeSec % 60).toString().padStart(2, '0')})` };
-    });
-    setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint]);
-
-  useEffect(() => {
-    if (trimmingStem && trimWaveformRef.current) {
-      trimWavesurferRef.current = WaveSurfer.create({
-        container: trimWaveformRef.current, waveColor: '#555', progressColor: '#E60000',
-        cursorColor: '#fff', barWidth: 2, barGap: 1, height: 100, normalize: true,
-      });
-      trimWavesurferRef.current.load(trimmingStem.url);
-      trimWavesurferRef.current.on('ready', () => {
-        const dur = trimWavesurferRef.current?.getDuration() || 0;
-        setTrimDuration(dur);
-        setTrimStart(0);
-        setTrimEnd(dur);
-      });
-    }
-    return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
-  }, [trimmingStem]);
-
-  // --- PERSISTENT STORE SYNC ---
-  const handleUpdateTakeType = (id: string, newType: string) => {
-    const updatedStems = vocalStems.map(stem => 
-      stem.id === id ? { ...stem, type: newType } : stem
-    );
-    useMatrixStore.setState({ vocalStems: updatedStems } as any);
+      return { time: -1, text: line, raw: line };
+    }).filter(l => l.text.trim() !== "");
   };
 
-  // --- STRIPE CHECKOUT FOR ENGINEERING ---
-  const handlePurchaseEngineering = async () => {
-    if (!userSession?.id) return;
-    if(addToast) addToast("Routing to Secure Checkout...", "info");
-    try {
-      const res = await fetch('/api/stripe/engineering-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: userSession.id })
-      });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-      else throw new Error(data.error || "Failed to route to checkout.");
-    } catch (err: any) {
-      if(addToast) addToast("Checkout failed: " + err.message, "error");
-    }
-  };
+  const lyricLines = parseLyrics();
 
-  const applyTrim = async () => {
-    if (!trimmingStem || !trimmingStem.blob) return;
-    setIsProcessingTrim(true);
-    try {
-      const newBlob = await trimAudioBlob(trimmingStem.blob, trimStart, trimEnd);
-      const newUrl = URL.createObjectURL(newBlob);
-      
-      removeVocalStem(trimmingStem.id);
-      addVocalStem({
-        id: `TAKE_${Date.now()}`,
-        type: trimmingStem.type,
-        url: newUrl,
-        blob: newBlob,
-        volume: trimmingStem.volume,
-        offsetBars: trimmingStem.offsetBars
-      });
-      
-      setTrimmingStem(null);
-    } catch (err) {
-      console.error("Trim failed", err);
-    } finally {
-      setIsProcessingTrim(false);
-    }
-  };
-
-  const togglePlayback = () => {
-    if (!wavesurferRef.current || !audioCtxRef.current) return;
-    if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
-
-    const willPlay = !isPlaying;
-    setIsPlaying(willPlay);
-    const playheadTime = wavesurferRef.current.getCurrentTime();
-
-    if (willPlay) {
-      const scheduleTime = audioCtxRef.current.currentTime + 0.05; 
-      wavesurferRef.current.play();
-
-      activeSourcesRef.current.forEach(src => { try { src.disconnect() } catch(e){} });
-      activeSourcesRef.current = [];
-
-      vocalStems.forEach(stem => {
-        if (mutedStems.has(stem.id)) return;
-        const buffer = stemBuffersRef.current.get(stem.id);
-        if (buffer) {
-          const source = audioCtxRef.current!.createBufferSource();
-          const gainNode = audioCtxRef.current!.createGain();
-          source.buffer = buffer;
-          gainNode.gain.value = stem.volume ?? 1;
-          source.connect(gainNode);
-          gainNode.connect(audioCtxRef.current!.destination);
-          
-          const offsetSecs = (stem.offsetBars || 0) * secondsPerBar;
-          if (playheadTime < offsetSecs) {
-            source.start(scheduleTime + (offsetSecs - playheadTime));
-          } else {
-            const bufferOffset = playheadTime - offsetSecs;
-            if (bufferOffset < buffer.duration) source.start(scheduleTime, bufferOffset);
-          }
-          activeSourcesRef.current.push(source);
-        }
-      });
-    } else {
-      wavesurferRef.current.pause();
-      activeSourcesRef.current.forEach(src => { try { src.stop(); src.disconnect(); } catch (e) {} });
-      activeSourcesRef.current = [];
-    }
-  };
-
-  const stopEverything = () => {
-    wavesurferRef.current?.pause(); 
-    wavesurferRef.current?.seekTo(0);
-    activeSourcesRef.current.forEach(src => { try { src.stop(); src.disconnect(); } catch (e) {} });
-    activeSourcesRef.current = [];
-
-    if (isRecording && workletNodeRef.current && audioCtxRef.current) {
-      workletNodeRef.current.disconnect();
-      if (mediaSourceRef.current) mediaSourceRef.current.disconnect();
-      
-      const totalLength = recordedChunksRef.current.reduce((acc, val) => acc + val.length, 0);
-      const merged = new Float32Array(totalLength);
-      let offset = 0;
-      for (let chunk of recordedChunksRef.current) { merged.set(chunk, offset); offset += chunk.length; }
-      const wavBlob = encodeWAV(merged, audioCtxRef.current.sampleRate);
-      
-      addVocalStem({ id: `TAKE_${Date.now()}`, type: vocalStems.length === 0 ? "Lead" : "Adlib", url: URL.createObjectURL(wavBlob), blob: wavBlob, volume: 1, offsetBars: 0 });
-    }
-    
-    setIsPlaying(false); setIsRecording(false); setCurrentTime(0);
-  };
-
-  // --- CREDIT DEDUCTION & HARDWARE ACCESS ---
-  const startHardwareRecording = async () => {
+  // --- RECORDING LOGIC ---
+  const startRecording = async () => {
     const isMogul = (userSession?.tier as string) === "The Mogul";
-    // Using Number() cast to prevent mathematical errors if string values leak through
     const currentCredits = Number((userSession as any)?.creditsRemaining || (userSession as any)?.credits || 0);
 
     // DEDUCT CREDIT PER TAKE FROM FREE LOADER AND THE ARTIST
@@ -329,7 +152,6 @@ export default function Room04_Booth() {
           return;
         }
         
-        // Update local matrix store
         useMatrixStore.setState({ 
           userSession: { ...userSession, creditsRemaining: currentCredits - 1, credits: currentCredits - 1 } as any
         });
@@ -339,12 +161,12 @@ export default function Room04_Booth() {
     if (!audioCtxRef.current) return;
     try {
       if (audioCtxRef.current.state === 'suspended') await audioCtxRef.current.resume();
-      if (!mediaStreamRef.current) {
-        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-        mediaSourceRef.current = audioCtxRef.current.createMediaStreamSource(mediaStreamRef.current);
+      if (!streamRef.current) {
+        streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+        mediaSourceRef.current = audioCtxRef.current.createMediaStreamSource(streamRef.current);
       }
       
-      const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
+      const currentWS_Time = audioRef.current?.currentTime || 0;
       const LATENCY_OFFSET = 0.05; 
       let padTime = Math.max(0, currentWS_Time - LATENCY_OFFSET);
       recordedChunksRef.current = [new Float32Array(Math.floor(padTime * audioCtxRef.current.sampleRate))];
@@ -364,200 +186,282 @@ export default function Room04_Booth() {
       workletNode.connect(audioCtxRef.current.destination);
       
       setIsRecording(true); 
-      if (!isPlaying) togglePlayback();
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play();
+        setIsPlaying(true);
+      }
       
-    } catch (err) { alert("Hardware microphone access required for Worklet processing."); }
-  };
-  
-  const toggleMute = (id: string) => {
-    setMutedStems(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+    } catch (err) { 
+      if(addToast) addToast("Hardware microphone access required.", "error"); 
+    }
   };
 
-  return (
-    <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500 relative">
+  const stopRecording = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    }
+    
+    if (isRecording && workletNodeRef.current && audioCtxRef.current) {
+      workletNodeRef.current.disconnect();
+      if (mediaSourceRef.current) mediaSourceRef.current.disconnect();
       
-      {/* LEFT: TELEPROMPTER */}
-      <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
-        <div className="p-8 pb-4 border-b border-[#111] flex justify-between items-center">
-           <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
-           {audioData?.bpm && <span className="text-[10px] text-[#E60000] font-mono">{Math.round(audioData.bpm)} BPM</span>}
-        </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose">
-          {lyricLines.map((line, i) => {
-            const isActive = !line.isHeader && isPlaying && currentTime >= line.startTime && currentTime < (line.startTime + secondsPerBar);
+      const totalLength = recordedChunksRef.current.reduce((acc, val) => acc + val.length, 0);
+      const merged = new Float32Array(totalLength);
+      let offset = 0;
+      for (let chunk of recordedChunksRef.current) { merged.set(chunk, offset); offset += chunk.length; }
+      const wavBlob = encodeWAV(merged, audioCtxRef.current.sampleRate);
+      
+      addVocalStem({ 
+        id: `TAKE_${Date.now()}`, 
+        type: activeTrack, 
+        url: URL.createObjectURL(wavBlob), 
+        blob: wavBlob, 
+        volume: 1, 
+        offsetBars: 0 
+      });
+      if(addToast) addToast(`${activeTrack} Take Captured.`, "success");
+    }
+    
+    setIsRecording(false);
+  };
+
+  const stopEverything = () => {
+    if (isRecording) stopRecording();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setIsPlaying(false);
+  };
+
+  // --- STRIPE CHECKOUT FOR ENGINEERING ---
+  const handlePurchaseEngineering = async () => {
+    if (!userSession?.id) return;
+    if(addToast) addToast("Routing to Secure Checkout...", "info");
+    try {
+      const res = await fetch('/api/stripe/engineering-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userSession.id })
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else throw new Error(data.error || "Failed to route to checkout.");
+    } catch (err: any) {
+      if(addToast) addToast("Checkout failed: " + err.message, "error");
+    }
+  };
+
+  // --- HARDENED NAVIGATION LOGIC ---
+  const handleProceedToEngineering = () => {
+    if (vocalStems.length === 0) {
+      if(addToast) addToast("You must record at least one take to enter Engineering.", "error");
+      return;
+    }
+    stopEverything();
+    
+    // Force the checkout intercept if they don't have the key
+    if (isFreeLoader && !hasEngToken) {
+      handlePurchaseEngineering();
+    } else {
+      setActiveRoom("05");
+    }
+  };
+
+  // --- SYNCED SCROLLING ---
+  useEffect(() => {
+    const currentLineIndex = lyricLines.findIndex((l, i) => {
+      const nextLine = lyricLines[i + 1];
+      return currentTime >= l.time && (!nextLine || currentTime < nextLine.time);
+    });
+
+    if (currentLineIndex !== -1 && teleprompterRef.current) {
+      const activeEl = teleprompterRef.current.children[currentLineIndex] as HTMLElement;
+      if (activeEl) {
+        teleprompterRef.current.scrollTo({
+          top: activeEl.offsetTop - 150,
+          behavior: 'smooth'
+        });
+      }
+    }
+  }, [currentTime]);
+
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) audioRef.current.pause();
+    else audioRef.current.play();
+    setIsPlaying(!isPlaying);
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
+  };
+
+  if (!audioData) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-[#E60000] opacity-50">
+        <Layers size={64} className="mb-4" />
+        <p className="font-oswald text-2xl uppercase tracking-widest">No Instrumental Loaded</p>
+        <button onClick={() => setActiveRoom("01")} className="mt-4 text-white text-[10px] uppercase font-mono border border-[#333] px-4 py-2 hover:bg-white hover:text-black transition-all">Return to Lab</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500">
+      
+      <audio 
+        ref={audioRef} 
+        src={audioData.url} 
+        onTimeUpdate={handleTimeUpdate} 
+        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+        onEnded={() => setIsPlaying(false)}
+      />
+
+      {/* TOP: TELEPROMPTER ENVIRONMENT */}
+      <div className="flex-1 relative overflow-hidden flex flex-col">
+        <div className="absolute inset-0 pointer-events-none z-10 bg-gradient-to-b from-[#050505] via-transparent to-[#050505]" />
+        
+        <div 
+          ref={teleprompterRef}
+          className="flex-1 overflow-y-auto custom-scrollbar p-12 space-y-6 text-center"
+        >
+          {lyricLines.length > 0 ? lyricLines.map((line, i) => {
+            const isActive = currentTime >= line.time && (i === lyricLines.length - 1 || currentTime < lyricLines[i+1].time);
             return (
-              <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActive ? 'text-white text-lg font-bold bg-[#E60000]/20 py-1 px-3 border-l-2 border-[#E60000] translate-x-2' : ''}`}>
-                {!line.isHeader && line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
-                <span className="flex-1">{line.text}</span>
+              <div 
+                key={i} 
+                className={`transition-all duration-300 font-oswald uppercase tracking-widest text-3xl md:text-5xl
+                  ${isActive ? 'text-white scale-110 opacity-100' : 'text-[#222] opacity-30 scale-95'}`}
+              >
+                {line.text}
               </div>
             );
-          })}
+          }) : (
+            <div className="h-full flex flex-col items-center justify-center opacity-20">
+              <Info size={48} className="mb-4" />
+              <p className="font-mono text-xs uppercase tracking-widest">Awaiting Lyric Synchronization...</p>
+            </div>
+          )}
+        </div>
+
+        {/* HUD OVERLAY */}
+        <div className="absolute top-6 right-6 z-20 flex gap-3">
+          <div className="bg-black/80 border border-[#333] p-3 rounded-sm text-right">
+            <p className="text-[8px] font-mono text-[#555] uppercase mb-1">Timecode</p>
+            <p className="text-xl font-oswald text-[#E60000] font-bold tabular-nums">
+              {Math.floor(currentTime / 60)}:{(Math.floor(currentTime % 60)).toString().padStart(2, '0')}
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* RIGHT: TIMELINE & DAW */}
-      <div className="flex-1 flex flex-col relative bg-black">
-        <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10">
-          <div className="flex items-center gap-4">
-            <button onClick={togglePlayback} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all">
-              {isPlaying && !isRecording ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
+      {/* BOTTOM: TRACK STACK & CONTROLS */}
+      <div className="h-72 bg-black border-t border-[#222] flex flex-col">
+        
+        {/* Track Selector Tab */}
+        <div className="flex border-b border-[#111]">
+          {(["Lead", "Adlib", "Dub"] as TrackType[]).map(t => (
+            <button 
+              key={t}
+              onClick={() => setActiveTrack(t)}
+              className={`flex-1 py-3 font-oswald text-[10px] uppercase tracking-[0.2em] font-bold transition-all
+                ${activeTrack === t ? 'bg-[#E60000] text-white' : 'text-[#444] hover:text-white hover:bg-[#0a0a0a]'}`}
+            >
+              {t} Tracking
             </button>
-            <button onClick={stopEverything} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all text-[#888]">
-              <Square size={20} />
-            </button>
-            <button onClick={isRecording ? stopEverything : startHardwareRecording} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse' : 'bg-[#111] border border-[#333] text-white hover:text-[#E60000]'}`}>
-              <Mic size={24} />
-            </button>
-          </div>
-          <div className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
-            {Math.floor(currentTime / 60).toString().padStart(2, '0')}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
-          </div>
+          ))}
         </div>
 
-        <div className="p-6 border-b border-[#222] bg-[#050505]">
-           <div ref={waveformRef} className="w-full h-20 bg-black border border-[#111] rounded-lg"></div>
-        </div>
+        <div className="flex-1 flex items-center px-8 gap-8">
+          
+          {/* Main Record Trigger */}
+          <div className="flex flex-col items-center gap-4">
+            <button 
+              onClick={isRecording ? stopRecording : startRecording}
+              className={`w-24 h-24 rounded-full flex items-center justify-center transition-all border-4 shadow-2xl
+                ${isRecording 
+                  ? 'bg-transparent border-[#E60000] animate-pulse' 
+                  : 'bg-[#E60000] border-[#E60000] hover:scale-105 active:scale-95'}`}
+            >
+              {isRecording ? <Square size={32} className="text-[#E60000]" /> : <Mic2 size={32} className="text-white" />}
+            </button>
+            <p className={`font-mono text-[9px] uppercase tracking-widest font-bold ${isRecording ? 'text-[#E60000] animate-bounce' : 'text-[#555]'}`}>
+              {isRecording ? "Live Capture" : `Ready for ${activeTrack}`}
+            </p>
+          </div>
 
-        <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
-          <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Timeline Layers</h4>
-          <div className="space-y-3">
-            {vocalStems.map(s => {
-              const isMuted = mutedStems.has(s.id);
-              return (
-              <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
-                <div className="flex justify-between items-center mb-3">
-                  <div className="flex items-center gap-4">
-                    {/* PERSISTENT STATE SYNC DROPDOWN */}
-                    <select 
-                      value={s.type || "Lead"} 
-                      onChange={(e) => handleUpdateTakeType(s.id, e.target.value)}
-                      className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white"
-                    >
-                      <option value="Lead">Lead</option>
-                      <option value="Adlib">Adlib</option>
-                      <option value="Dub">Dub</option>
-                      <option value="Harm">Harmony</option>
-                    </select>
-                    <span className="font-mono text-[10px] text-[#444]">{s.id.substring(5, 12)}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 mr-4">
-                      <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors" title="Trim Dead Air">
-                        <Scissors size={14} />
-                      </button>
-                      <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>
-                        {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                      </button>
-                    </div>
-                    <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Start Bar</span>
-                  <div className="flex-1 flex items-center gap-3">
-                    <button onClick={() => updateStemOffset(s.id, Math.max(0, (s.offsetBars||0) - 1))} className="text-[#444] hover:text-white"><ChevronLeft size={16}/></button>
-                    <div className="flex-1 h-1 bg-[#111] rounded-full relative">
-                       <div className="absolute h-full bg-[#E60000] transition-all" style={{ width: `${((s.offsetBars||0) / 64) * 100}%` }}></div>
-                    </div>
-                    <button onClick={() => updateStemOffset(s.id, (s.offsetBars||0) + 1)} className="text-[#444] hover:text-white"><ChevronRight size={16}/></button>
-                  </div>
-                  <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{s.offsetBars || 0}</span>
-                </div>
+          {/* Stem History */}
+          <div className="flex-1 flex gap-4 overflow-x-auto custom-scrollbar h-40 items-center">
+            {vocalStems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center opacity-10 w-full border border-dashed border-[#333] h-32">
+                <Activity size={32} />
+                <p className="text-[8px] font-mono uppercase mt-2">Buffer Empty // Awaiting Takes</p>
               </div>
-            )})}
+            ) : vocalStems.map(stem => (
+              <div key={stem.id} className="w-32 h-32 bg-[#050505] border border-[#222] p-3 flex flex-col justify-between shrink-0 group relative hover:border-[#E60000] transition-colors">
+                <button 
+                  onClick={() => removeVocalStem(stem.id)}
+                  className="absolute -top-2 -right-2 bg-red-900 text-white w-5 h-5 rounded-full text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  ×
+                </button>
+                <div className="text-[8px] font-mono text-[#E60000] uppercase font-bold tracking-widest">{stem.type}</div>
+                <div className="flex-1 flex items-center justify-center text-[#333]"><Activity size={24} /></div>
+                <div className="text-[8px] font-mono text-[#555] truncate">Take_{stem.id.slice(0,4)}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Transport Controls - SECURED NAVIGATION */}
+          <div className="w-48 border-l border-[#111] pl-8 flex flex-col justify-center gap-4">
+            <div className="flex justify-between items-center text-[9px] font-mono text-[#555] uppercase font-bold tracking-widest mb-2">
+              <span>Mix Balance</span>
+              <Volume2 size={12} />
+            </div>
+            
+            <button 
+              onClick={handleProceedToEngineering}
+              className="bg-white text-black py-3 font-oswald text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_15px_rgba(255,255,255,0.1)]"
+            >
+              {isFreeLoader && !hasEngToken ? (
+                <><Lock size={12}/> Unlock Engineering</>
+              ) : (
+                <>To Engineering Suite <ChevronRight size={14} /></>
+              )}
+            </button>
+            
           </div>
         </div>
-
-        {/* --- STRIPE ENGINEERING GATE --- */}
-        <div className="h-16 bg-black border-t border-[#222] flex items-center justify-between px-10">
-          <div className="flex items-center gap-2 text-[10px] font-mono text-green-500 uppercase tracking-widest opacity-80">
-            {vocalStems.length > 0 && <><Save size={14} /> Wasm Synchronized</>}
+        
+        {/* STRIPE ENGINEERING GATE UI */}
+        <div className="h-14 bg-black border-t border-[#111] flex items-center justify-between px-8">
+          <div className="flex items-center gap-2 text-[9px] font-mono text-green-500 uppercase tracking-widest opacity-80">
+            {vocalStems.length > 0 && <><Activity size={12} /> Raw Audio Buffered</>}
           </div>
           
-          {(userSession?.tier as string) === "The Free Loader" && !(userSession as any)?.has_engineering_token ? (
+          {isFreeLoader && !hasEngToken ? (
             <button 
-              onClick={() => { stopEverything(); handlePurchaseEngineering(); }} 
+              onClick={handleProceedToEngineering} 
               disabled={vocalStems.length === 0} 
-              className="flex items-center gap-3 bg-[#E60000] text-white px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-red-700 transition-all disabled:opacity-30"
+              className="flex items-center gap-3 bg-[#E60000] text-white px-6 py-1.5 font-oswald font-bold uppercase tracking-widest text-[10px] hover:bg-red-700 transition-all disabled:opacity-30"
             >
-              Unlock Engineering ($4.99) <Lock size={14} />
+              Unlock Engineering ($4.99) <Lock size={12} />
             </button>
           ) : (
             <button 
-              onClick={() => { stopEverything(); setActiveRoom("05"); }} 
+              onClick={handleProceedToEngineering} 
               disabled={vocalStems.length === 0} 
-              className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              className="flex items-center gap-3 bg-[#111] text-[#888] border border-[#333] px-6 py-1.5 font-oswald font-bold uppercase tracking-widest text-[10px] hover:bg-white hover:text-black transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              Engineering Suite <ArrowRight size={16} />
+              Engineering Suite <ArrowRight size={12} />
             </button>
           )}
         </div>
+
       </div>
-
-      {trimmingStem && (
-        <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-8 animate-in zoom-in duration-300">
-          <div className="bg-[#050505] border border-[#E60000] rounded-lg w-full max-w-2xl p-8 shadow-[0_0_50px_rgba(230,0,0,0.2)]">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-oswald text-2xl uppercase tracking-widest text-[#E60000] font-bold flex items-center gap-3">
-                <Scissors size={24} /> Slice Region
-              </h3>
-              <button onClick={() => setTrimmingStem(null)} className="text-[#555] hover:text-white"><X size={24}/></button>
-            </div>
-            
-            <p className="font-mono text-[10px] text-gray-400 uppercase tracking-widest mb-6">Drag sliders to crop dead air from the microphone take.</p>
-
-            <div className="bg-black border border-[#222] p-4 rounded-lg relative">
-              <div ref={trimWaveformRef} className="w-full h-24 pointer-events-none"></div>
-              
-              <div className="absolute inset-0 px-4 flex flex-col justify-center">
-                <input 
-                  type="range" min={0} max={trimDuration} step={0.01} value={trimStart}
-                  onChange={(e) => setTrimStart(Math.min(parseFloat(e.target.value), trimEnd - 0.1))}
-                  className="w-full absolute opacity-50 cursor-ew-resize h-full top-0 left-0 accent-[#E60000]"
-                  style={{ zIndex: 10 }}
-                />
-                <input 
-                  type="range" min={0} max={trimDuration} step={0.01} value={trimEnd}
-                  onChange={(e) => setTrimEnd(Math.max(parseFloat(e.target.value), trimStart + 0.1))}
-                  className="w-full absolute opacity-50 cursor-ew-resize h-full top-0 left-0 accent-white"
-                  style={{ zIndex: 11 }}
-                />
-              </div>
-
-              {trimDuration > 0 && (
-                <div 
-                  className="absolute top-4 bottom-4 bg-[#E60000]/20 border-l-2 border-r-2 border-[#E60000] pointer-events-none"
-                  style={{
-                    left: `calc(1rem + ${(trimStart / trimDuration) * (100 - 2)}%)`,
-                    width: `${((trimEnd - trimStart) / trimDuration) * (100 - 2)}%`
-                  }}
-                />
-              )}
-            </div>
-
-            <div className="flex justify-between font-mono text-[10px] text-[#888] mt-4 uppercase">
-              <span>Start: {trimStart.toFixed(2)}s</span>
-              <span>Keep: {(trimEnd - trimStart).toFixed(2)}s</span>
-              <span>End: {trimEnd.toFixed(2)}s</span>
-            </div>
-
-            <button 
-              onClick={applyTrim} 
-              disabled={isProcessingTrim}
-              className="w-full mt-8 bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-            >
-              {isProcessingTrim ? <Loader2 size={20} className="animate-spin" /> : <><Scissors size={20} /> Execute Destructive Slice</>}
-            </button>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
