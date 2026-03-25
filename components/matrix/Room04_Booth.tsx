@@ -179,7 +179,7 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- TELEPROMPTER PARSING ---
+  // --- TELEPROMPTER PARSE ---
   useEffect(() => {
     if (!generatedLyrics) return;
     const lines = generatedLyrics.split('\n');
