@@ -321,7 +321,7 @@ export default function EntryGateway() {
               </span>
             </div>
 
-            <button type="submit" disabled={loading} className="w-full bg-[#E60000] text-white py-4 text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2">
+            <button type="submit" disabled={loading} className="w-full bg-[#E60000] text-white py-4 text-xs font-bold uppercase tracking-widest hover:bg-red-900 transition-all flex justify-center items-center gap-2">
               {loading ? "Processing..." : authMode === "login" ? "Initialize Matrix" : "Generate Node"}
             </button>
           </form>
