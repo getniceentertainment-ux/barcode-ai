@@ -218,12 +218,10 @@ export default function EntryGateway() {
             Unlock Your <br/> <span className="text-[#E60000]">Artistic DNA</span>
           </h1>
           
-<p className="max-w-2xl font-sans text-lg text-[#888] mb-10 leading-relaxed">
-            The Ultimate Cheat Code To Dominate The Modern Music Industry Is Here.<br />
-            Transforming Your Screen Into A Platinum Studio And An Unstoppable Digital Empire.<br />
-            Weaponize Your Flow, Generate Bulletproof Lyrics, And Syndicate Your Sound Globally.<br />
-            Stop Chasing The Culture. Command The Machine To Engineer Your Total Domination.
+<p className="max-w-3xl mx-auto text-center text-balance font-sans text-lg text-[#888] mb-10 leading-relaxed">
+            The Ultimate Cheat Code To Dominate The Modern Music Industry Is Here, Transforming Your Screen Into A Platinum Studio And An Unstoppable Digital Empire. Weaponize Your Flow, Generate Bulletproof Lyrics, And Syndicate Your Sound Globally. Stop Chasing The Culture. Command The Machine To Engineer Your Total Domination.
           </p>
+
           <button onClick={() => setAuthStep("auth")} className="gn-btn-primary text-sm px-10 py-5 group shadow-neon-red">
             Initialize Session 
             <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
