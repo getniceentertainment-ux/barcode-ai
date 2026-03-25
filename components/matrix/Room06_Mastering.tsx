@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Sliders, CheckCircle2, Activity, ArrowRight, AudioWaveform, Disc3, Download, RefreshCw, FileArchive, Loader2, Lock, DollarSign, ShieldCheck, Trash2 } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
@@ -42,9 +42,11 @@ export default function Room06_Mastering() {
   const [isZipping, setIsZipping] = useState(false);
   const [hasToken, setHasToken] = useState(false);
 
+  const isFreeLoader = (userSession?.tier as string) === "The Free Loader";
+
   useEffect(() => {
     // Both Moguls AND Artists get Mastering included in their tier.
-    if (userSession?.tier === "The Mogul" || userSession?.tier === "The Artist") {
+    if ((userSession?.tier as string) === "The Mogul" || (userSession?.tier as string) === "The Artist") {
       setHasToken(true);
     } else {
       checkTokens();
@@ -86,7 +88,17 @@ export default function Room06_Mastering() {
   };
 
   const handleMastering = async () => {
-    if (!audioData?.url || !hasToken) { addToast("Token or audio required.", "error"); return; }
+    if (!audioData?.url) { 
+      if(addToast) addToast("Audio required.", "error"); 
+      return; 
+    }
+    
+    // --- SURGICAL GATE: BLOCK INITIATION IF LOCKED ---
+    if (isFreeLoader && !hasToken) {
+      if(addToast) addToast("Mastering Token Required.", "error");
+      return;
+    }
+
     setStatus("processing");
 
     try {
@@ -168,9 +180,8 @@ export default function Room06_Mastering() {
   const handleArtifactExport = async () => {
     if (!finalMaster?.blob || !audioData?.url) return;
     const trackName = audioData.fileName.replace(/\.[^/.]+$/, "");
-    const isFreeLoader = (userSession?.tier as any) === "The Free Loader";
 
-    // --- SURGICAL ADDITION: FREE LOADER EXPORT LIMITATION ---
+    // --- SURGICAL FIX: FREE LOADER EXPORT (SINGLE FILE) ---
     if (isFreeLoader) {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(finalMaster.blob);
@@ -178,7 +189,8 @@ export default function Room06_Mastering() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      if (addToast) addToast("Free Tier: Master Audio Downloaded. Upgrade to Artist Tier for ZIP with Stems & Lyrics.", "info");
+      
+      if (addToast) addToast("Free Tier Export: Master Audio Downloaded. Upgrade for ZIP with Stems & Lyrics.", "info");
       return;
     }
 
@@ -258,7 +270,7 @@ export default function Room06_Mastering() {
                <Lock size={32} className="mx-auto text-yellow-600 mb-4" />
                <h3 className="font-oswald text-xl uppercase font-bold text-white mb-2">Mastering Gated</h3>
                <p className="font-mono text-[9px] text-[#888] uppercase mb-8 leading-relaxed">Free Tier nodes require a <strong className="text-white">$4.99 Token</strong> per track.</p>
-               <button onClick={handlePurchaseToken} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3">Purchase Token <DollarSign size={18} /></button>
+               <button onClick={handlePurchaseToken} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(230,0,0,0.2)]">Purchase Token <DollarSign size={18} /></button>
             </div>
           ) : (
             <div className="w-full mb-12 relative z-10">
@@ -300,7 +312,7 @@ export default function Room06_Mastering() {
                 <p className="text-[10px] text-[#E60000] font-mono uppercase tracking-widest mb-1 font-bold">Studio Export Ready</p>
                 <p className="font-oswald text-xl text-white tracking-widest truncate">{audioData?.fileName?.replace(/\.[^/.]+$/, "") || "TRACK"}</p>
                 <p className="text-[9px] text-[#555] font-mono uppercase mt-2">
-                  {(userSession?.tier as any) === "The Free Loader" ? "Contains: Master WAV Audio" : "Contains: Master WAV, Instrumentals, Vocal Stems, Lyrics PDF"}
+                  {isFreeLoader ? "Contains: Master WAV Audio" : "Contains: Master WAV, Instrumentals, Vocal Stems, Lyrics PDF"}
                 </p>
              </div>
              <button 
@@ -309,7 +321,7 @@ export default function Room06_Mastering() {
                className="bg-white text-black hover:bg-[#E60000] hover:text-white p-4 rounded-sm transition-all shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50 flex items-center justify-center"
              >
                {isZipping ? <Loader2 size={24} className="animate-spin" /> : 
-                 (userSession?.tier as any) === "The Free Loader" ? <Download size={24} /> : <FileArchive size={24} />
+                 isFreeLoader ? <Download size={24} /> : <FileArchive size={24} />
                }
              </button>
           </div>

@@ -23,8 +23,8 @@ export async function POST(req: Request) {
           price_data: {
             currency: 'usd',
             product_data: {
-              name: 'GetNice™ Mastering Token',
-              description: 'Commercial LUFS limiting and AI FFmpeg processing.',
+              name: 'GetNice™ Engineering Token',
+              description: 'Unlock the Vocal Suite & DSP Mixing Rack.',
             },
             unit_amount: 499, // $4.99
           },
@@ -32,18 +32,18 @@ export async function POST(req: Request) {
         },
       ],
       mode: 'payment',
-      // Pointing to root / ensures the UI instantly unlocks Room 06 on redirect
-      success_url: `${siteUrl}/?token_purchased=true`,
+      // Pointing to root / ensures the UI instantly unlocks Room 05 on redirect
+      success_url: `${siteUrl}/?engineering_unlocked=true`,
       cancel_url: `${siteUrl}/`,
       metadata: { 
         userId, 
-        type: 'mastering_token' // Directly triggers webhook fulfillment
+        type: 'engineering_token' // Directly triggers webhook fulfillment for Room 05
       }
     });
 
     return NextResponse.json({ url: session.url });
   } catch (error: any) {
-    console.error("Master Token Route Error:", error.message);
+    console.error("Engineering Token Route Error:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

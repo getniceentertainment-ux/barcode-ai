@@ -60,21 +60,31 @@ export default function MatrixController() {
     }));
   }, []);
 
+  // --- SURGICAL OVERRIDE: TOKEN AS A KEY ---
   const isRoomLockedForTier = (roomId: string) => {
     if (userSession?.id && userSession.id === CREATOR_ID) return false;
 
-    const tier = userSession?.tier || "Free Loader";
+    const tier = userSession?.tier || "The Free Loader";
+    const isFreeLoader = tier.includes("Free Loader");
+
+    // 1. Bypass lock if they hold the specific Room Token
+    if (isFreeLoader) {
+      if (roomId === "05" && (userSession as any)?.has_engineering_token) return false;
+      if (roomId === "06" && (userSession as any)?.has_mastering_token) return false;
+    }
+
+    // 2. Standard Tier Fallbacks
     const freeAllowed = ["01", "02", "03", "04", "09", "10", "11"];
     const artistAllowed = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"];
 
-    if (tier === "Free Loader" && !freeAllowed.includes(roomId)) return true;
+    if (isFreeLoader && !freeAllowed.includes(roomId)) return true;
     if (tier === "The Artist" && !artistAllowed.includes(roomId)) return true;
     return false;
   };
 
   const handleRoomTransition = (roomId: string) => {
     if (isRoomLockedForTier(roomId)) {
-      if (addToast) addToast(`Upgrade to 'The Artist' to unlock Room ${roomId}`, "error");
+      if (addToast) addToast(`Upgrade or purchase a Room Token to unlock R${roomId}`, "error");
       return;
     }
     setActiveRoom(roomId);
@@ -91,9 +101,18 @@ export default function MatrixController() {
         table: 'profiles',
         filter: `id=eq.${userSession.id}` 
       }, (payload) => {
+        // --- REALTIME SYNC: Update credits AND room tokens instantly ---
         const newCredits = payload.new.credits;
+        const hasEngToken = payload.new.has_engineering_token;
+        const hasMastToken = payload.new.has_mastering_token;
+        
         useMatrixStore.setState((state) => ({
-          userSession: state.userSession ? { ...state.userSession, creditsRemaining: newCredits } : null
+          userSession: state.userSession ? { 
+            ...state.userSession, 
+            creditsRemaining: newCredits,
+            has_engineering_token: hasEngToken,
+            has_mastering_token: hasMastToken
+          } as any : null
         }));
       })
       .subscribe();
