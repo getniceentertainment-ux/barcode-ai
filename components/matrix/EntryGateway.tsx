@@ -219,10 +219,10 @@ export default function EntryGateway() {
           </h1>
           
 <p className="max-w-2xl font-sans text-lg text-[#888] mb-12 leading-relaxed">
-            The traditional record label is officially obsolete.<br />
-            Welcome to the world's first autonomous hit-factory and algorithmic A&R.<br />
-            Forensic beat analysis, telepathic ghostwriting, and zero-latency tracking.<br />
-            We mix the master, score the hit, and automatically fund your viral ascent.
+            The cheat code for the modern music industry has been initialized.<br />
+            Your browser is now a platinum studio, a relentless A&R, and a royalty bank.<br />
+            Extract your flow, generate the lyrics, and syndicate globally.<br />
+            Don't just chase the culture. Let the machine engineer your takeover.
           </p>
 
           <button onClick={() => setAuthStep("auth")} className="gn-btn-primary text-sm px-10 py-5 group shadow-neon-red">
