@@ -179,7 +179,7 @@ export default function EntryGateway() {
     { id: "11", name: "Active Contracts", desc: "Active Contract Matrix. Monitor live escrow statuses and manage your B2B pipeline.", icon: <FileAudio size={24} /> },
   ];
 
-  // ==========================================
+// ==========================================
   // VIEW 1: THE FLASHY LANDING PAGE
   // ==========================================
   if (authStep === "landing") {
@@ -189,8 +189,8 @@ export default function EntryGateway() {
         {/* Background Grid Overlay */}
         <div 
           className="fixed inset-0 pointer-events-none opacity-[0.03] z-0" 
-          style={{ backgroundImage: 'linear-gradient(#E0E0E0 1px, transparent 1px), linear-gradient(90deg, #E0E0E0 1px, transparent 1px)', backgroundSize: '40px 40px' }} 
-	</div>
+          style={{ backgroundImage: 'linear-gradient(#E0E0E0 1px, transparent 1px), linear-gradient(90deg, #E0E0E0 1px, transparent 1px)', backgroundSize: '40px 40px' }}
+        ></div>
 
         {/* Navigation Bar */}
         <nav className={`fixed w-full top-0 z-50 transition-all duration-300 ${scrolled ? 'bg-[#121212]/90 backdrop-blur-md border-b border-[#333]' : 'bg-transparent'}`}>
@@ -209,12 +209,11 @@ export default function EntryGateway() {
         <header className="relative pt-40 pb-24 px-6 flex flex-col items-center text-center z-10 border-b border-[#333]">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#E60000]/5 via-[#121212] to-[#121212] -z-10"></div>
           
-          <div className="inline-flex items-center gap-2 border border-[#333] bg-[#1a1a1a] px-4 py-1.5 rounded-full mb-8">
+          <div className="inline-flex items-center gap-2 border border-[#333] bg-[#1a1a1a] px-4 py-1.5 rounded-full mb-8 mt-10">
             <span className="w-2 h-2 rounded-full bg-[#E60000] animate-pulse"></span>
             <span className="font-mono text-[9px] uppercase tracking-widest text-[#888]">Secure Ingestion Node Ready</span>
           </div>
 
-<header className="flex flex-col items-center justify-center text-center">
           <h1 className="font-oswald text-6xl md:text-8xl font-bold mb-6 tracking-tight uppercase text-white drop-shadow-neon-red">
             Crack The Code. <br/> <span className="text-[#E60000]">Own The Flow.</span>
           </h1>
@@ -228,7 +227,6 @@ export default function EntryGateway() {
             <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform inline-block ml-2" />
           </button>
         </header>
-
         {/* Systems Architecture Grid */}
         <section className="max-w-7xl mx-auto px-6 py-24 relative z-10">
           <div className="flex flex-col md:flex-row justify-between items-end border-b border-[#333] pb-4 mb-12">
