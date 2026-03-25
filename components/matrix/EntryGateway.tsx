@@ -279,8 +279,7 @@ export default function EntryGateway() {
         </footer>
       </div>
     );
-  }
-
+  
   // ==========================================
   // VIEW 2: ORIGINAL AUTHENTICATION FLOW
   // ==========================================
