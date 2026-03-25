@@ -219,11 +219,12 @@ export default function EntryGateway() {
           </h1>
           
 <p className="max-w-2xl font-sans text-lg text-[#888] mb-12 leading-relaxed">
-            The world's first fully weaponized music ecosystem.<br />
-            Your cloud studio, AI ghostwriter, and personal A&R.<br />
-            Integrated social scaling and global booking firepower.<br />
-            The entire music industry, engineered into one platform.
-          </p>          
+            The traditional record label is officially obsolete.<br />
+            Welcome to the world's first autonomous hit-factory and algorithmic A&R.<br />
+            Forensic beat analysis, telepathic ghostwriting, and zero-latency tracking.<br />
+            We mix the master, score the hit, and automatically fund your viral ascent.
+          </p>
+
           <button onClick={() => setAuthStep("auth")} className="gn-btn-primary text-sm px-10 py-5 group shadow-neon-red">
             Initialize Session 
             <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
