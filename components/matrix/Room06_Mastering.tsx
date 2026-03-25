@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { Sliders, CheckCircle2, Activity, ArrowRight, AudioWaveform, Disc3, Download, RefreshCw, FileArchive, Loader2, Lock, DollarSign, ShieldCheck, Trash2 } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
@@ -42,11 +42,11 @@ export default function Room06_Mastering() {
   const [isZipping, setIsZipping] = useState(false);
   const [hasToken, setHasToken] = useState(false);
 
-  const isFreeLoader = (userSession?.tier as string) === "The Free Loader";
+  // SECURE TIER CHECK
+  const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
 
   useEffect(() => {
-    // Both Moguls AND Artists get Mastering included in their tier.
-    if ((userSession?.tier as string) === "The Mogul" || (userSession?.tier as string) === "The Artist") {
+    if (userSession?.tier === "The Mogul" || userSession?.tier === "The Artist") {
       setHasToken(true);
     } else {
       checkTokens();
@@ -64,8 +64,8 @@ export default function Room06_Mastering() {
 
   const checkTokens = async () => {
     if (!userSession?.id) return;
-    const { data } = await supabase.from('profiles').select('has_mastering_token').eq('id', userSession.id).single();
-    if (data && (data as any).has_mastering_token) setHasToken(true);
+    const { data } = await supabase.from('profiles').select('mastering_tokens').eq('id', userSession.id).single();
+    if (data && (data as any).mastering_tokens > 0) setHasToken(true);
   };
 
   const handlePurchaseToken = async () => {
@@ -88,17 +88,7 @@ export default function Room06_Mastering() {
   };
 
   const handleMastering = async () => {
-    if (!audioData?.url) { 
-      if(addToast) addToast("Audio required.", "error"); 
-      return; 
-    }
-    
-    // --- SURGICAL GATE: BLOCK INITIATION IF LOCKED ---
-    if (isFreeLoader && !hasToken) {
-      if(addToast) addToast("Mastering Token Required.", "error");
-      return;
-    }
-
+    if (!audioData?.url || !hasToken) { addToast("Token or audio required.", "error"); return; }
     setStatus("processing");
 
     try {
@@ -150,29 +140,18 @@ export default function Room06_Mastering() {
 
       const renderedBuffer = await offlineCtx.startRendering();
       const wavBlob = audioBufferToWav(renderedBuffer);
+      const finalUrl = URL.createObjectURL(wavBlob);
+
+      setMasterUrl(finalUrl);
+      setFinalMaster({ url: finalUrl, blob: wavBlob }); 
       
-      const fileName = `${userSession?.id || 'ANON'}/${Date.now()}_MASTER.wav`;
-      const { data, error } = await supabase.storage
-        .from('mastered-audio')
-        .upload(fileName, wavBlob, { contentType: 'audio/wav', upsert: true });
+      // Update store to lock structurally
+      useMatrixStore.setState({ isProjectFinalized: true });
 
-      if (error) throw error;
-
-      const { data: { publicUrl } } = supabase.storage.from('mastered-audio').getPublicUrl(fileName);
-
-      setMasterUrl(publicUrl);
-      setFinalMaster({ url: publicUrl, blob: wavBlob }); 
-      
-      useMatrixStore.setState({
-        audioData: { ...audioData, url: publicUrl },
-        isProjectFinalized: true
-      });
-
-      if(addToast) addToast("Master encoded & permanently secured. Session locked.", "success");
+      if(addToast) addToast("Master encoded successfully.", "success");
       setStatus("success");
     } catch (err: any) {
-      console.error("Mastering/Upload Error:", err);
-      if(addToast) addToast("Error rendering or uploading master.", "error");
+      if(addToast) addToast("Error rendering master.", "error");
       setStatus("idle");
     }
   };
@@ -181,7 +160,7 @@ export default function Room06_Mastering() {
     if (!finalMaster?.blob || !audioData?.url) return;
     const trackName = audioData.fileName.replace(/\.[^/.]+$/, "");
 
-    // --- FREE LOADER EXPORT: INSTANT WAV DOWNLOAD ---
+    // --- SURGICAL FIX: FREE LOADER EXPORT (SINGLE FILE) ---
     if (isFreeLoader) {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(finalMaster.blob);
@@ -190,15 +169,14 @@ export default function Room06_Mastering() {
       a.click();
       document.body.removeChild(a);
       
-      if (addToast) addToast("Free Tier Export: Master Audio Downloaded. Upgrade for ZIP with Stems & Lyrics.", "info");
+      if (addToast) addToast("Master Audio Downloaded.", "success");
       return;
     }
 
-    // --- STANDARD ZIP EXPORT (ARTIST/MOGUL) ---
+    // --- PRO TIER EXPORT (ZIP PACKAGE) ---
     setIsZipping(true);
     try {
       const zip = new JSZip();
-
       zip.file(`1_${trackName}_MASTER.wav`, finalMaster.blob);
 
       const doc = new jsPDF();
@@ -239,6 +217,7 @@ export default function Room06_Mastering() {
   const handleStartNewProject = () => {
     if(confirm("This will permanently clear the current session and send you to The Lab. Are you sure?")) {
       clearMatrix();
+      setActiveRoom("01");
     }
   };
 
@@ -269,8 +248,8 @@ export default function Room06_Mastering() {
             <div className="w-full text-center animate-in zoom-in mb-8 relative z-10">
                <Lock size={32} className="mx-auto text-yellow-600 mb-4" />
                <h3 className="font-oswald text-xl uppercase font-bold text-white mb-2">Mastering Gated</h3>
-               <p className="font-mono text-[9px] text-[#888] uppercase mb-8 leading-relaxed">Free Tier nodes require a <strong className="text-white">$4.99 Token</strong> per track.</p>
-               <button onClick={handlePurchaseToken} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(230,0,0,0.2)]">Purchase Token <DollarSign size={18} /></button>
+               <p className="font-mono text-[9px] text-[#888] uppercase mb-8 leading-relaxed">Free and Artist tier nodes require a <strong className="text-white">$4.99 Token</strong> per track.</p>
+               <button onClick={handlePurchaseToken} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3">Purchase Token <DollarSign size={18} /></button>
             </div>
           ) : (
             <div className="w-full mb-12 relative z-10">
@@ -326,8 +305,7 @@ export default function Room06_Mastering() {
              </button>
           </div>
 
-          {/* SURGICAL FIX: Remove Route to Distribution for Free Loaders & Make Purge Button Apparent */}
-          <div className="w-full flex flex-col gap-3 mt-4">
+          <div className="w-full flex flex-col gap-3">
             {!isFreeLoader && (
               <button onClick={() => setActiveRoom("07")} className="w-full flex justify-center items-center gap-3 bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">Route to Distribution <ArrowRight size={20} /></button>
             )}
