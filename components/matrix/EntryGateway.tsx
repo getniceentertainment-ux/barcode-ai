@@ -190,7 +190,7 @@ export default function EntryGateway() {
         <div 
           className="fixed inset-0 pointer-events-none opacity-[0.03] z-0" 
           style={{ backgroundImage: 'linear-gradient(#E0E0E0 1px, transparent 1px), linear-gradient(90deg, #E0E0E0 1px, transparent 1px)', backgroundSize: '40px 40px' }} 
-        />
+	</div>
 
         {/* Navigation Bar */}
         <nav className={`fixed w-full top-0 z-50 transition-all duration-300 ${scrolled ? 'bg-[#121212]/90 backdrop-blur-md border-b border-[#333]' : 'bg-transparent'}`}>
@@ -270,7 +270,7 @@ export default function EntryGateway() {
               <Zap className="text-[#333]" size={24} />
             </div>
             <p className="font-mono text-[10px] text-[#555] uppercase tracking-[0.2em] mb-2">
-              PROPERTY OF GETNICE™ ENTERTAINMENT & RECORDS ©2026
+              PROPERTY OF GETNICE™ ENTERTAINMENT &amp; RECORDS ©2026
             </p>
             <p className="font-mono text-[10px] text-[#555] uppercase tracking-[0.2em]">
               ALL RIGHTS RESERVED BY: TALON ANDREW LLOYD
