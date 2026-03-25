@@ -5,7 +5,6 @@ import { Mic2, Play, Pause, Square, RefreshCw, Layers, ArrowRight, Activity, Vol
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
-type TrackType = "Lead" | "Adlib" | "Dub";
 
 // --- AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
