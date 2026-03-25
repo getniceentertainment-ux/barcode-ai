@@ -1,21 +1,76 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Code, Key, Zap, ShieldCheck, CreditCard, Activity, Copy, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
+import { useMatrixStore } from "../store/useMatrixStore";
+import { supabase } from "../lib/supabase";
 
 export default function DevPortal() {
+  const { userSession, addToast } = useMatrixStore();
+  
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  
+  // Metering State
+  const [apiCalls, setApiCalls] = useState(0);
+  const [usageCost, setUsageCost] = useState(0);
 
-  const handleGenerateKey = () => {
+  // Fetch existing Dev Data on mount
+  useEffect(() => {
+    if (!userSession?.id) return;
+    
+    const fetchDevProfile = async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('api_key, api_calls') 
+        .eq('id', userSession.id)
+        .single();
+
+      if (data) {
+        if (data.api_key) setApiKey(data.api_key);
+        if (data.api_calls) {
+          setApiCalls(data.api_calls);
+          // Simple blended average calculation for display ($0.10 blended rate)
+          setUsageCost(data.api_calls * 0.10);
+        }
+      }
+      if (error) console.error("Error fetching dev profile:", error);
+    };
+
+    fetchDevProfile();
+  }, [userSession?.id]);
+
+  const handleGenerateKey = async () => {
+    if (!userSession?.id) {
+      if (addToast) addToast("Authentication required.", "error");
+      return;
+    }
+    
     setIsGenerating(true);
-    // In production, this pings /api/dev/generate-key to write to Supabase
-    setTimeout(() => {
-      setApiKey("bc_live_9f8d7e6c5b4a3" + Math.random().toString(36).substr(2, 9));
+    
+    try {
+      const res = await fetch('/api/dev/generate-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userSession.id })
+      });
+      
+      const data = await res.json();
+      
+      if (data.apiKey) {
+        setApiKey(data.apiKey);
+        if (addToast) addToast("Production API Key Encrypted & Secured.", "success");
+      } else {
+        throw new Error(data.error || "Failed to generate key.");
+      }
+    } catch (err: any) {
+      console.error("Key Generation Error:", err);
+      if (addToast) addToast("Failed to assign secure key.", "error");
+    } finally {
       setIsGenerating(false);
-    }, 1500);
+    }
   };
 
   const copyToClipboard = () => {
@@ -58,11 +113,11 @@ export default function DevPortal() {
                   <ShieldCheck size={32} className="mx-auto text-[#E60000] mb-4" />
                   <p className="font-mono text-xs text-[#888] uppercase tracking-widest mb-6">Link a payment method to generate your live production key.</p>
                   <button onClick={handleGenerateKey} disabled={isGenerating} className="bg-[#E60000] text-white px-8 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-red-700 transition-colors flex items-center justify-center gap-2 mx-auto">
-                    {isGenerating ? "Encrypting Key..." : "Generate Production Key"}
+                    {isGenerating ? <><Loader2 size={16} className="animate-spin" /> Encrypting Key...</> : "Generate Production Key"}
                   </button>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4 animate-in zoom-in duration-300">
                   <p className="font-mono text-[10px] text-green-500 uppercase tracking-widest font-bold">Key Active & Secured</p>
                   <div className="flex bg-[#111] border border-[#333] p-2 items-center">
                     <code className="flex-1 font-mono text-xs text-white pl-2">{apiKey}</code>
@@ -105,10 +160,12 @@ export default function DevPortal() {
              
              <div className="space-y-4 mb-8">
                <div className="flex justify-between border-b border-[#222] pb-2 text-[10px] uppercase font-mono">
-                 <span className="text-[#555]">Current Cycle Usage</span> <span className="text-white">$0.00</span>
+                 <span className="text-[#555]">Current Cycle Usage</span> 
+                 <span className="text-white">${usageCost.toFixed(2)}</span>
                </div>
                <div className="flex justify-between border-b border-[#222] pb-2 text-[10px] uppercase font-mono">
-                 <span className="text-[#555]">API Calls (30d)</span> <span className="text-white">0</span>
+                 <span className="text-[#555]">API Calls (30d)</span> 
+                 <span className="text-white">{apiCalls.toLocaleString()}</span>
                </div>
              </div>
 

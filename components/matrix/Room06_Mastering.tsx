@@ -181,7 +181,7 @@ export default function Room06_Mastering() {
     if (!finalMaster?.blob || !audioData?.url) return;
     const trackName = audioData.fileName.replace(/\.[^/.]+$/, "");
 
-    // --- SURGICAL FIX: FREE LOADER EXPORT (SINGLE FILE) ---
+    // --- FREE LOADER EXPORT: INSTANT WAV DOWNLOAD ---
     if (isFreeLoader) {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(finalMaster.blob);
@@ -326,12 +326,15 @@ export default function Room06_Mastering() {
              </button>
           </div>
 
-          <div className="w-full flex flex-col gap-3">
-            <button onClick={() => setActiveRoom("07")} className="w-full flex justify-center items-center gap-3 bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">Route to Distribution <ArrowRight size={20} /></button>
+          {/* SURGICAL FIX: Remove Route to Distribution for Free Loaders & Make Purge Button Apparent */}
+          <div className="w-full flex flex-col gap-3 mt-4">
+            {!isFreeLoader && (
+              <button onClick={() => setActiveRoom("07")} className="w-full flex justify-center items-center gap-3 bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">Route to Distribution <ArrowRight size={20} /></button>
+            )}
             
             <button 
               onClick={handleStartNewProject} 
-              className="w-full border border-red-900/30 text-[#555] py-3 font-oswald text-xs font-bold uppercase tracking-widest hover:text-[#E60000] hover:border-[#E60000] transition-all flex justify-center items-center gap-2"
+              className={`w-full border py-3 font-oswald text-xs font-bold uppercase tracking-widest transition-all flex justify-center items-center gap-2 ${isFreeLoader ? 'border-[#E60000] text-white bg-[#E60000]/10 hover:bg-[#E60000] hover:text-white' : 'border-red-900/30 text-[#555] hover:text-[#E60000] hover:border-[#E60000]'}`}
             >
               <Trash2 size={14} /> Start New Project (Purge Matrix)
             </button>
