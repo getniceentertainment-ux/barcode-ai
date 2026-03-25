@@ -218,7 +218,7 @@ export default function EntryGateway() {
             Unlock Your <br/> <span className="text-[#E60000]">Artistic DNA</span>
           </h1>
           
-<p className="max-w-2xl font-sans text-lg text-[#888] mb-12 leading-relaxed">
+<p className="max-w-2xl font-sans text-lg text-[#888] mb-10 leading-relaxed">
             The Ultimate Cheat Code To Dominate The Modern Music Industry Is Now In Your Hands.<br />
             Your Browser Just Became A Platinum Studio, A Ruthless A&R, And A Royalty Vault.<br />
             Weaponize Your Flow, Generate Bulletproof Lyrics, And Syndicate Your Sound Globally.<br />
