@@ -219,15 +219,15 @@ export default function EntryGateway() {
             Crack The Code. <br/> <span className="text-[#E60000]">Own The Flow.</span>
           </h1>
           
-<h1 className="font-oswald text-6xl md:text-8xl font-bold mb-6 tracking-tight uppercase text-white drop-shadow-neon-red">
-            The World's First Identity-Aware AI Studio Built for Hip-Hop. Drop a beat, let our Neural Engine map your perfect flow, record your raw takes, and instantly master them to industry standards. We bridge the gap from a concept in your head to a commercial, global release. Your sound, amplified by the machine.
+          <p className="max-w-3xl mx-auto text-center text-balance font-sans text-lg text-[#888] mb-10 leading-relaxed">
+            The First Identity-Aware AI Studio Built For Hip-Hop. Drop A Beat, Let Our Neural Engine Map Your Perfect Flow, Record Your Raw Takes, And Instantly Master Them To Industry Standards. We Bridge The Gap From A Concept In Your Head To A Commercial, Global Release. Your Sound, Amplified By The Machine.
           </p>
-
+          
           <button onClick={() => setAuthStep("auth")} className="gn-btn-primary text-sm px-10 py-5 group shadow-neon-red uppercase tracking-widest">
             Initialize BarCode 
             <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform inline-block ml-2" />
           </button>
-        </header>        </header>
+        </header>
 
         {/* Systems Architecture Grid */}
         <section className="max-w-7xl mx-auto px-6 py-24 relative z-10">
