@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
-import { supabase } from "../../lib/supabase"; // SURGICAL ADDITION: Required for credit deduction
+import { supabase } from "../../lib/supabase"; 
 
 // --- AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
@@ -188,7 +188,15 @@ export default function Room04_Booth() {
     return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
   }, [trimmingStem]);
 
-  // --- SURGICAL ADDITION: STRIPE CHECKOUT FOR ENGINEERING ---
+  // --- PERSISTENT STORE SYNC ---
+  const handleUpdateTakeType = (id: string, newType: string) => {
+    const updatedStems = vocalStems.map(stem => 
+      stem.id === id ? { ...stem, type: newType } : stem
+    );
+    useMatrixStore.setState({ vocalStems: updatedStems } as any);
+  };
+
+  // --- STRIPE CHECKOUT FOR ENGINEERING ---
   const handlePurchaseEngineering = async () => {
     if (!userSession?.id) return;
     if(addToast) addToast("Routing to Secure Checkout...", "info");
@@ -296,31 +304,32 @@ export default function Room04_Booth() {
     setIsPlaying(false); setIsRecording(false); setCurrentTime(0);
   };
 
-  // --- SURGICAL ADDITION: CREDIT DEDUCTION PER TAKE ---
-const startHardwareRecording = async () => {
-    const isMogul = (userSession?.tier as any) === "The Mogul";
-    // Check both possible local state keys to be safe
-    const currentCredits = (userSession as any)?.credits || (userSession as any)?.creditsRemaining || 0;
+  // --- CREDIT DEDUCTION & HARDWARE ACCESS ---
+  const startHardwareRecording = async () => {
+    const isMogul = (userSession?.tier as string) === "The Mogul";
+    // Using Number() cast to prevent mathematical errors if string values leak through
+    const currentCredits = Number((userSession as any)?.creditsRemaining || (userSession as any)?.credits || 0);
 
-    // Deduct credit for Artists and Free Loaders
+    // DEDUCT CREDIT PER TAKE FROM FREE LOADER AND THE ARTIST
     if (!isMogul) {
       if (currentCredits <= 0) {
         if (addToast) addToast("Insufficient Credits. Top up to record a take.", "error");
         return;
       }
+      
       if (userSession?.id) {
-        // SURGICAL FIX: Using the exact column name 'credits' for your Supabase schema
         const { error } = await supabase
           .from('profiles')
           .update({ credits: currentCredits - 1 })
           .eq('id', userSession.id);
 
         if (error) {
-          console.error("Supabase Credit Sync Error:", error);
+          console.error("Credit Sync Error:", error);
           if (addToast) addToast("Ledger Sync Error. Take aborted.", "error");
           return;
         }
         
+        // Update local matrix store
         useMatrixStore.setState({ 
           userSession: { ...userSession, creditsRemaining: currentCredits - 1, credits: currentCredits - 1 } as any
         });
@@ -359,6 +368,7 @@ const startHardwareRecording = async () => {
       
     } catch (err) { alert("Hardware microphone access required for Worklet processing."); }
   };
+  
   const toggleMute = (id: string) => {
     setMutedStems(prev => {
       const next = new Set(prev);
@@ -421,8 +431,10 @@ const startHardwareRecording = async () => {
               <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
                 <div className="flex justify-between items-center mb-3">
                   <div className="flex items-center gap-4">
+                    {/* PERSISTENT STATE SYNC DROPDOWN */}
                     <select 
-                      defaultValue={s.type} 
+                      value={s.type || "Lead"} 
+                      onChange={(e) => handleUpdateTakeType(s.id, e.target.value)}
                       className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white"
                     >
                       <option value="Lead">Lead</option>
@@ -462,13 +474,13 @@ const startHardwareRecording = async () => {
           </div>
         </div>
 
-        {/* --- SURGICAL OVERLAY: ENGINEERING GATE --- */}
+        {/* --- STRIPE ENGINEERING GATE --- */}
         <div className="h-16 bg-black border-t border-[#222] flex items-center justify-between px-10">
           <div className="flex items-center gap-2 text-[10px] font-mono text-green-500 uppercase tracking-widest opacity-80">
             {vocalStems.length > 0 && <><Save size={14} /> Wasm Synchronized</>}
           </div>
           
-          {(userSession?.tier as any) === "The Free Loader" && !(userSession as any)?.has_engineering_token ? (
+          {(userSession?.tier as string) === "The Free Loader" && !(userSession as any)?.has_engineering_token ? (
             <button 
               onClick={() => { stopEverything(); handlePurchaseEngineering(); }} 
               disabled={vocalStems.length === 0} 
