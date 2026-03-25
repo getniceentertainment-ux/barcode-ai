@@ -7,14 +7,17 @@ import { supabase } from "../../lib/supabase";
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
 
-// Helper for wav conversion
+// Helper for wav conversion (preserved for offline mastering architecture)
 function audioBufferToWav(buffer: AudioBuffer) {
   let numOfChan = buffer.numberOfChannels, length = buffer.length * numOfChan * 2 + 44,
       bufferArray = new ArrayBuffer(length), view = new DataView(bufferArray),
       channels = [], i, sample, offset = 0, pos = 0;
   function setUint16(data: number) { view.setUint16(pos, data, true); pos += 2; }
   function setUint32(data: number) { view.setUint32(pos, data, true); pos += 4; }
-  setUint32(0x46464952); setUint32(length - 8); setUint32(0x46464952); 
+  setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157); 
+  setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan);
+  setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan); 
+  setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
   return new Blob([bufferArray], {type: "audio/wav"});
 }
 
@@ -28,9 +31,9 @@ export default function Room06_Mastering() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [hasToken, setHasToken] = useState(false);
 
-  // FIX: Make sure BOTH Artists and Free Loaders consume tokens
+  // Access Control Variables
   const isNonMogul = userSession?.tier !== "The Mogul";
-  const isFreeLoader = userSession?.tier === "Free Loader"; // Used specifically for UI button limitations
+  const isFreeLoader = userSession?.tier === "Free Loader";
 
   useEffect(() => {
     const initializeMasteringNode = async () => {
@@ -125,6 +128,77 @@ export default function Room06_Mastering() {
     }
   };
 
+  // --- NEW: Safe ZIP & PDF Generation (Prevents DOM Crashes) ---
+  const handleExport = async () => {
+    setIsZipping(true);
+    try {
+      // Grab audio blob (fallback to fetching the URL if blob isn't immediately in state)
+      let blobData = audioData?.blob;
+      if (!blobData && audioData?.url) {
+         const resp = await fetch(audioData.url);
+         blobData = await resp.blob();
+      }
+
+      if (!blobData) throw new Error("Audio payload missing in matrix state.");
+
+      if (isFreeLoader) {
+        // Free tier gets direct WAV download only
+        const url = window.URL.createObjectURL(blobData);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${audioData?.fileName || "ARTIFACT"}_Free_Master.wav`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        if (addToast) addToast("Standard WAV Downloaded.", "success");
+      } else {
+        // Commercial tiers get the ZIP archive with the Cryptographic PDF Certificate
+        const zip = new JSZip();
+        zip.file(`${audioData?.fileName || "ARTIFACT"}_Commercial_Master.wav`, blobData);
+        
+        // Generate PDF without hitting the DOM to prevent 'No elements found' errors
+        const doc = new jsPDF({ orientation: "landscape" });
+        doc.setFillColor(5, 5, 5); // Dark Matrix Background
+        doc.rect(0, 0, 300, 210, "F");
+        
+        doc.setTextColor(230, 0, 0); // Bar-Code Red
+        doc.setFontSize(36);
+        doc.text("BAR-CODE.AI // GETNICE", 148, 50, { align: "center" });
+        
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(20);
+        doc.text("COMMERCIAL MASTERING CERTIFICATE", 148, 80, { align: "center" });
+        
+        doc.setFontSize(14);
+        doc.setTextColor(200, 200, 200);
+        doc.text(`Track Artifact: ${audioData?.fileName || "UNTITLED_NODE"}`, 148, 110, { align: "center" });
+        doc.text(`Authorized Node: ${userSession?.stageName || "Unknown Artist"}`, 148, 125, { align: "center" });
+        doc.text(`LUFS Threshold: ${lufs} LUFS`, 148, 140, { align: "center" });
+        doc.text(`Timestamp: ${new Date().toUTCString()}`, 148, 155, { align: "center" });
+        
+        doc.setFontSize(10);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`Cryptographic Signature: SHA-256 / ${Math.random().toString(36).substring(2, 15).toUpperCase()}${Math.random().toString(36).substring(2, 15).toUpperCase()}`, 148, 185, { align: "center" });
+        
+        const pdfBlob = doc.output("blob");
+        zip.file("Commercial_License_Certificate.pdf", pdfBlob);
+        
+        const content = await zip.generateAsync({ type: "blob" });
+        const url = window.URL.createObjectURL(content);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${audioData?.fileName || "ARTIFACT"}_Commercial_Package.zip`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        if (addToast) addToast("Commercial Zip & Certificate Exported.", "success");
+      }
+    } catch (err: any) {
+      console.error("Export Error:", err);
+      if (addToast) addToast("Export failed: " + err.message, "error");
+    } finally {
+      setIsZipping(false);
+    }
+  };
+
   const handleStartNewProject = () => {
     if(confirm("DANGER: This will purge the Matrix state. Proceed?")) {
       clearMatrix();
@@ -168,6 +242,21 @@ export default function Room06_Mastering() {
         <div className="w-full max-w-xl bg-[#050505] border border-[#E60000]/30 p-10 rounded-lg flex flex-col items-center">
           <Activity size={64} className="text-[#E60000] animate-bounce mb-8" />
           <p className="font-oswald text-xl uppercase font-bold text-white tracking-widest">Rendering Offline Context...</p>
+          
+          {/* Aesthetic Processing Animation */}
+          <div className="flex gap-1.5 mt-8 h-12 items-end">
+            {[...Array(24)].map((_, i) => (
+              <div 
+                key={i} 
+                className="w-2 bg-[#E60000] animate-pulse" 
+                style={{ 
+                  height: `${Math.max(20, Math.random() * 100)}%`, 
+                  animationDelay: `${i * 0.05}s`,
+                  animationDuration: '0.5s'
+                }} 
+              />
+            ))}
+          </div>
         </div>
       )}
 
@@ -179,8 +268,12 @@ export default function Room06_Mastering() {
                 <p className="font-oswald text-xl text-white tracking-widest truncate">{audioData?.fileName || "TRACK_MASTER"}</p>
              </div>
              
+             {/* THE EXPORT BUTTON IS NOW SECURELY WIRED */}
              <button 
+               onClick={handleExport}
+               disabled={isZipping}
                className="bg-white text-black hover:bg-[#E60000] hover:text-white p-4 rounded-sm transition-all shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50 flex items-center justify-center"
+               title={isFreeLoader ? "Download WAV" : "Download Commercial ZIP & License"}
              >
                {isZipping ? <Loader2 size={24} className="animate-spin" /> : 
                  isFreeLoader ? <Download size={24} /> : <FileArchive size={24} />

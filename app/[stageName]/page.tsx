@@ -60,7 +60,7 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
           <p className="font-mono text-[10px] text-[#555] uppercase leading-relaxed">
             The requested artist alias <span className="text-[#E60000]">"{decodedName}"</span> does not exist in the Bar-Code registry.
           </p>
-          <a href="/studio" className="mt-8 inline-block border border-[#333] px-8 py-3 text-[10px] text-white uppercase font-bold hover:bg-white hover:text-black transition-all">
+          <a href="/" className="mt-8 inline-block border border-[#333] px-8 py-3 text-[10px] text-white uppercase font-bold hover:bg-white hover:text-black transition-all">
             Return to Matrix
           </a>
         </div>

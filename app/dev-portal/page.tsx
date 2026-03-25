@@ -109,7 +109,7 @@ export default function DevPortal() {
         
         <div className="mb-12 border-b border-[#222] pb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
           <div>
-            <Link href="/studio" className="text-[#E60000] font-oswald font-bold uppercase tracking-widest text-xs mb-4 inline-flex items-center gap-2 hover:text-white transition-colors group">
+            <Link href="/" className="text-[#E60000] font-oswald font-bold uppercase tracking-widest text-xs mb-4 inline-flex items-center gap-2 hover:text-white transition-colors group">
               <ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Return to Matrix
             </Link>
             <h1 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white flex items-center gap-4">
