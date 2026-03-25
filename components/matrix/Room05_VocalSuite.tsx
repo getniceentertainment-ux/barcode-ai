@@ -61,9 +61,23 @@ export default function Room05_VocalSuite() {
 
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
 
+  // --- RECOVERY LOGIC: Persistent "Success" View ---
+  useEffect(() => {
+    if (vocalStems.some(s => s.id.startsWith("MIXED_STEM_"))) {
+      setStatus("success");
+      setHasToken(true); // Effectively bypass gate if product already exists
+    }
+  }, [vocalStems]);
+
   // --- TOKEN SECURITY GATE ---
   useEffect(() => {
     const checkTokenStatus = async () => {
+      // If we already have a mixed stem, we are "Authorized" by result
+      if (vocalStems.some(s => s.id.startsWith("MIXED_STEM_"))) {
+        setHasToken(true);
+        return;
+      }
+
       // Artists and Moguls have this included
       if (userSession?.tier === "The Mogul" || userSession?.tier === "The Artist") {
         setHasToken(true);
@@ -82,7 +96,7 @@ export default function Room05_VocalSuite() {
       }
     };
     checkTokenStatus();
-  }, [userSession]);
+  }, [userSession, vocalStems]);
 
   const handlePurchaseToken = async () => {
     if (!userSession?.id) return;
@@ -194,7 +208,19 @@ export default function Room05_VocalSuite() {
       const renderedBuffer = await offlineCtx.startRendering();
       activeStemIds.forEach(id => removeVocalStem(id));
       addVocalStem({ id: `MIXED_STEM_${Date.now()}`, type: "Lead", url: URL.createObjectURL(audioBufferToWav(renderedBuffer)), blob: audioBufferToWav(renderedBuffer), volume: 0, offsetBars: 0 });
+
+      // --- CONSUME TOKEN IN LEDGER ---
+      if (isFreeLoader && userSession?.id) {
+        await supabase
+          .from('profiles')
+          .update({ has_engineering_token: false })
+          .eq('id', userSession.id);
+        
+        setHasToken(false); // UI gate will close if they purge the matrix
+      }
+
       setStatus("success");
+      if(addToast) addToast("Vocal processing complete. Artifact updated.", "success");
     } catch (err: any) { setStatus("idle"); if(addToast) addToast(err.message, "error"); }
   };
 
@@ -202,7 +228,7 @@ export default function Room05_VocalSuite() {
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 border border-[#222] relative overflow-hidden">
       
       {/* 1. GATED UI OVERLAY FOR FREE LOADERS */}
-      {isFreeLoader && !hasToken && (
+      {isFreeLoader && !hasToken && status !== "success" && (
         <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-8">
           <div className="max-w-md w-full bg-[#050505] border border-[#E60000] p-10 text-center rounded-lg shadow-[0_0_50px_rgba(230,0,0,0.3)] animate-in zoom-in duration-300">
             <Lock size={64} className="text-[#E60000] mx-auto mb-6" />
@@ -296,7 +322,7 @@ export default function Room05_VocalSuite() {
               <div className="bg-[#110000] border-2 border-[#E60000] p-10 flex flex-col items-center animate-pulse rounded-sm"><Loader2 size={32} className="text-[#E60000] animate-spin mb-4" /><p className="font-oswald text-xl uppercase font-bold text-white tracking-widest">Rendering Matrix...</p></div>
             )}
             {status === "success" && (
-              <div className="bg-green-950/20 border-2 border-green-500/50 p-10 flex flex-col items-center animate-in zoom-in rounded-sm"><CheckCircle2 size={32} className="text-green-500 mb-4" /><p className="font-oswald text-xl uppercase font-bold text-white mb-6 tracking-widest">Vocals Engineered</p><button onClick={() => setActiveRoom("06")} className="w-full bg-white text-black py-4 font-oswald text-md font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex justify-center items-center gap-3">Proceed to Mastering <ArrowRight size={18} /></button></div>
+              <div className="bg-green-950/20 border-2 border-green-500/50 p-10 flex flex-col items-center animate-in zoom-in rounded-sm shadow-[0_0_50px_rgba(34,197,94,0.1)]"><CheckCircle2 size={32} className="text-green-500 mb-4" /><p className="font-oswald text-xl uppercase font-bold text-white mb-6 tracking-widest">Vocals Engineered</p><button onClick={() => setActiveRoom("06")} className="w-full bg-white text-black py-4 font-oswald text-md font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex justify-center items-center gap-3">Proceed to Mastering <ArrowRight size={18} /></button></div>
             )}
           </div>
         </div>
