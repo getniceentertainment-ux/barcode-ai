@@ -21,18 +21,20 @@ export async function POST(req: Request) {
     const apiKey = `bc_live_${rawBuffer.toString('hex')}`;
 
     // Inject the newly generated key directly into the operator's profile
+    // Column name 'b2b_api_key' strictly matches your profiles table schema
     const { error } = await supabaseAdmin
       .from('profiles')
-      .update({ api_key: apiKey })
+      .update({ b2b_api_key: apiKey })
       .eq('id', userId);
 
     if (error) {
+      console.error("Database Update Error:", error.message);
       throw error;
     }
 
     return NextResponse.json({ apiKey });
   } catch (error: any) {
     console.error("API Key Generation Error:", error.message);
-    return NextResponse.json({ error: "Failed to generate API key sequence" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to generate secure API sequence" }, { status: 500 });
   }
 }
