@@ -214,19 +214,20 @@ export default function EntryGateway() {
             <span className="font-mono text-[9px] uppercase tracking-widest text-[#888]">Secure Ingestion Node Ready</span>
           </div>
 
+<header className="flex flex-col items-center justify-center text-center">
           <h1 className="font-oswald text-6xl md:text-8xl font-bold mb-6 tracking-tight uppercase text-white drop-shadow-neon-red">
-            Unlock Your <br/> <span className="text-[#E60000]">Artistic DNA</span>
+            Crack The Code. <br/> <span className="text-[#E60000]">Own The Flow.</span>
           </h1>
           
-<p className="max-w-3xl mx-auto text-center text-balance font-sans text-lg text-[#888] mb-10 leading-relaxed">
-            The Ultimate Cheat Code To Dominate The Modern Music Industry Is Here, Transforming Your Screen Into A Platinum Studio And An Unstoppable Digital Empire. Weaponize Your Flow, Generate Bulletproof Lyrics, And Syndicate Your Sound Globally. Stop Chasing The Culture. Command The Machine To Engineer Your Total Domination.
+          <p className="max-w-3xl mx-auto text-balance font-sans text-lg text-[#888] mb-10 leading-relaxed">
+            The World's First Identity-Aware Augmented Intelligence Built Exclusively For The Nuance Of Hip-Hop. We Cracked The Physics Between Raw Lyrical Bars And Executable Code. Bridge The Gap From A Bedroom Idea To A Radio-Ready Anthem. Deploy Your Proprietary Rhythmic Architect And Democratize Your Own Superstar Status.
           </p>
-
-          <button onClick={() => setAuthStep("auth")} className="gn-btn-primary text-sm px-10 py-5 group shadow-neon-red">
-            Initialize Session 
-            <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
+          
+          <button onClick={() => setAuthStep("auth")} className="gn-btn-primary text-sm px-10 py-5 group shadow-neon-red uppercase tracking-widest">
+            Initialize BarCode 
+            <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform inline-block ml-2" />
           </button>
-        </header>
+        </header>        </header>
 
         {/* Systems Architecture Grid */}
         <section className="max-w-7xl mx-auto px-6 py-24 relative z-10">
