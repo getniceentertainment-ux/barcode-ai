@@ -297,9 +297,10 @@ export default function Room04_Booth() {
   };
 
   // --- SURGICAL ADDITION: CREDIT DEDUCTION PER TAKE ---
-  const startHardwareRecording = async () => {
+const startHardwareRecording = async () => {
     const isMogul = (userSession?.tier as any) === "The Mogul";
-    const currentCredits = (userSession as any)?.creditsRemaining || 0;
+    // Check both possible local state keys to be safe
+    const currentCredits = (userSession as any)?.credits || (userSession as any)?.creditsRemaining || 0;
 
     // Deduct credit for Artists and Free Loaders
     if (!isMogul) {
@@ -308,18 +309,20 @@ export default function Room04_Booth() {
         return;
       }
       if (userSession?.id) {
+        // SURGICAL FIX: Using the exact column name 'credits' for your Supabase schema
         const { error } = await supabase
           .from('profiles')
-          .update({ credits_remaining: currentCredits - 1 })
+          .update({ credits: currentCredits - 1 })
           .eq('id', userSession.id);
 
         if (error) {
+          console.error("Supabase Credit Sync Error:", error);
           if (addToast) addToast("Ledger Sync Error. Take aborted.", "error");
           return;
         }
         
         useMatrixStore.setState({ 
-          userSession: { ...userSession, creditsRemaining: currentCredits - 1 } as any
+          userSession: { ...userSession, creditsRemaining: currentCredits - 1, credits: currentCredits - 1 } as any
         });
       }
     }
@@ -356,7 +359,6 @@ export default function Room04_Booth() {
       
     } catch (err) { alert("Hardware microphone access required for Worklet processing."); }
   };
-
   const toggleMute = (id: string) => {
     setMutedStems(prev => {
       const next = new Set(prev);
