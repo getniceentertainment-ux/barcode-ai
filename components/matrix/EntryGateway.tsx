@@ -303,8 +303,8 @@ export default function EntryGateway() {
       {authStep === "auth" && (
         <div className="w-full max-w-md bg-[#050505] border border-[#222] p-8 shadow-2xl">
           <div className="flex gap-4 mb-8 border-b border-[#222] pb-4">
-             <button onClick={() => setAuthMode("login")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold ${authMode === 'login' ? 'text-[#E60000]' : 'text-[#444]'}`}>Existing Artist's</button>
-             <button onClick={() => setAuthMode("signup")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold ${authMode === 'signup' ? 'text-[#E60000]' : 'text-[#444]'}`}>New Artist's</button>
+             <button onClick={() => setAuthMode("login")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold ${authMode === 'login' ? 'text-[#E60000]' : 'text-[#a8aba6]'}`}>Login</button>
+             <button onClick={() => setAuthMode("signup")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold ${authMode === 'signup' ? 'text-[#E60000]' : 'text-[#a8aba6]'}`}>Register</button>
           </div>
 
           <form onSubmit={handleEmailAuth} className="space-y-4">
