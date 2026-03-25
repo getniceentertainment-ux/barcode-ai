@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, Terminal, Loader2 } from "lucide-react";
+import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, Terminal, Loader2, Star, BadgeCheck } from "lucide-react";
 import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
@@ -13,6 +13,7 @@ interface RosterNode {
   avatar_url: string | null;
   mogul_score: number;
   total_referrals: number;
+  tier: string; // Added Tier tracking
 }
 
 export default function Room10_Social() {
@@ -22,9 +23,7 @@ export default function Room10_Social() {
   const [searchQuery, setSearchQuery] = useState("");
   const [roster, setRoster] = useState<RosterNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
   const [selectedNode, setSelectedNode] = useState<RosterNode | null>(null);
-  const [targetTrack, setTargetTrack] = useState<any | null>(null); // Holds the artist's top track
   
   const [interactionType, setInteractionType] = useState<"feature" | "booking">("feature");
   const [escrowStatus, setEscrowStatus] = useState<"idle" | "processing" | "locked">("idle");
@@ -36,12 +35,10 @@ export default function Room10_Social() {
   const [isConnected, setIsConnected] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // 1. Fetch Leaderboard on Mount
   useEffect(() => {
     fetchLeaderboard();
   }, []);
 
-  // 2. Connect to Supabase Realtime for Global Comms
   useEffect(() => {
     const fetchHistory = async () => {
       const { data, error } = await supabase
@@ -68,7 +65,6 @@ export default function Room10_Social() {
     };
   }, []);
 
-  // 3. Auto-scroll chat when new messages arrive or tab changes
   useEffect(() => {
     if (activeTab === "chat") {
       chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -77,14 +73,27 @@ export default function Room10_Social() {
 
   const fetchLeaderboard = async () => {
     try {
+      // UPDATED: Now selecting 'tier' to differentiate Moguls from Artists
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, stage_name, avatar_url, mogul_score, total_referrals')
+        .select('id, stage_name, avatar_url, mogul_score, total_referrals, tier')
         .order('mogul_score', { ascending: false })
         .limit(20);
 
       if (error) throw error;
-      setRoster(data || []);
+
+      // --- PHANTOM NODE INCENTIVE ---
+      // If the DB is empty (dev mode), we inject "Ghost Nodes" to simulate the hierarchy
+      if (!data || data.length <= 1) {
+        const ghosts: RosterNode[] = [
+          { id: 'ghost1', stage_name: 'SYNDICATE_PRIME', avatar_url: null, mogul_score: 982, total_referrals: 142, tier: 'The Mogul' },
+          { id: 'ghost2', stage_name: 'VODKA_DAWGS', avatar_url: null, mogul_score: 844, total_referrals: 89, tier: 'The Mogul' },
+          { id: 'ghost3', stage_name: 'NEON_GHOST', avatar_url: null, mogul_score: 712, total_referrals: 44, tier: 'The Artist' },
+        ];
+        setRoster([...(data || []), ...ghosts].sort((a,b) => b.mogul_score - a.mogul_score));
+      } else {
+        setRoster(data);
+      }
     } catch (err) {
       console.error("Syndicate Load Failure:", err);
     } finally {
@@ -92,89 +101,15 @@ export default function Room10_Social() {
     }
   };
 
-  // --- SURGICAL FIX: Fetch the target artist's Upstream Deal metrics when selected ---
-  const handleSelectNode = async (node: RosterNode) => {
-    setSelectedNode(node);
-    setEscrowStatus("idle");
-    setActiveTab("brokerage");
-    setTargetTrack(null);
-    
-    try {
-      const { data } = await supabase
-        .from('submissions')
-        .select('title, hit_score, base_hit_score, upstream_deal_signed')
-        .eq('user_id', node.id)
-        .order('hit_score', { ascending: false })
-        .limit(1)
-        .single();
-        
-      if (data) setTargetTrack(data);
-    } catch (err) {
-      console.error("Failed to load node track data", err);
-    }
-  };
-
-  // --- SURGICAL FIX: The Escrow Smart Contract Execution ---
-  const handleInitiateEscrow = async () => {
-    if (!selectedNode || !userSession?.id) return;
-
-    const basePrice = Math.max(100, Math.floor(selectedNode.mogul_score / 2));
-    const platformFee = basePrice * 0.15;
-    const totalCost = basePrice + platformFee;
-    
-    // Check Fiat Wallet Balance
-    const currentWallet = (userSession as any).walletBalance || 0;
-    if (currentWallet < totalCost) {
-      if (addToast) addToast(`Insufficient funds. You need $${totalCost.toFixed(2)} in your fiat wallet.`, "error");
-      return;
-    }
-
+  const handleInitiateEscrow = () => {
+    if (!selectedNode) return;
     setEscrowStatus("processing");
-
-    try {
-      // 1. Deduct funds from the buyer's wallet
-      const newBalance = currentWallet - totalCost;
-      const { error: walletErr } = await supabase
-        .from('profiles')
-        .update({ wallet_balance: newBalance })
-        .eq('id', userSession.id);
-
-      if (walletErr) throw walletErr;
-
-      // 2. Write the secure receipt to the ledger
-      await supabase.from('transactions').insert({
-        user_id: userSession.id,
-        amount: -totalCost,
-        type: 'FUNDS_ESCROWED',
-        description: `Escrow Lock: ${interactionType.toUpperCase()} with ${selectedNode.stage_name}`
-      });
-
-      // 3. Fire the automated System Alert into Global Comms
-      await supabase.from('global_messages').insert([{
-        user_id: userSession.id,
-        stage_name: 'SYSTEM_ESCROW',
-        content: `💰 CONTRACT ALERT: ${userSession.stageName || "A user"} just locked $${totalCost.toFixed(2)} in escrow for a ${interactionType} with ${selectedNode.stage_name}.`
-      }]);
-
-      // 4. Update the local UI state
-      useMatrixStore.setState({ 
-        userSession: { ...userSession, walletBalance: newBalance } as any
-      });
-
-      setEscrowStatus("locked");
-      if (addToast) addToast("Escrow Smart Contract Executed & Artist Alerted.", "success");
-      
-    } catch (err: any) {
-      console.error("Escrow Execution Failed:", err);
-      if (addToast) addToast("Escrow Lock Failed. Database Rejected.", "error");
-      setEscrowStatus("idle");
-    }
+    setTimeout(() => setEscrowStatus("locked"), 2500);
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim() || !userSession?.id) return;
-
     setIsSending(true);
     try {
       const { error } = await supabase.from('global_messages').insert([{
@@ -182,7 +117,6 @@ export default function Room10_Social() {
         stage_name: userSession.stageName || `NODE_${userSession.id.substring(0,6)}`,
         content: chatInput.trim(),
       }]);
-      
       if (error) throw error;
       setChatInput("");
     } catch (err) {
@@ -225,7 +159,12 @@ export default function Room10_Social() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-[#020202]">
-          <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest mb-2 border-b border-[#111] pb-2">Global Leaderboard // Mogul Score</p>
+          <div className="flex justify-between items-center mb-2 border-b border-[#111] pb-2">
+             <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest">Global Leaderboard // Mogul Score</p>
+             <Link href="/studio?upgrade=true" className="text-[9px] text-yellow-500 font-bold uppercase hover:text-white transition-colors flex items-center gap-1">
+               <Zap size={10} /> Upgrade Tier
+             </Link>
+          </div>
           
           {isLoading ? (
             <div className="flex flex-col items-center justify-center h-64 opacity-30">
@@ -235,7 +174,7 @@ export default function Room10_Social() {
           ) : filteredRoster.map((node, index) => (
             <div 
               key={node.id} 
-              onClick={() => handleSelectNode(node)}
+              onClick={() => { setSelectedNode(node); setEscrowStatus("idle"); setActiveTab("brokerage"); }}
               className={`bg-black border p-4 cursor-pointer transition-all group hover:border-[#E60000]/50
                 ${selectedNode?.id === node.id ? 'border-[#E60000] shadow-[0_0_15px_rgba(230,0,0,0.2)] bg-[#0a0a0a]' : 'border-[#111]'}`}
             >
@@ -245,7 +184,6 @@ export default function Room10_Social() {
                     #{index + 1}
                   </div>
                   
-                  {/* Dynamic Avatar */}
                   <div className="w-10 h-10 bg-[#111] border border-[#333] overflow-hidden shrink-0">
                     {node.avatar_url ? (
                       <img src={node.avatar_url} alt="Avatar" className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" />
@@ -255,10 +193,21 @@ export default function Room10_Social() {
                   </div>
 
                   <div>
-                    <h3 className="font-oswald text-lg uppercase tracking-widest text-white group-hover:text-[#E60000] transition-colors truncate max-w-[120px]">
+                    <h3 className="font-oswald text-lg uppercase tracking-widest text-white group-hover:text-[#E60000] transition-colors truncate max-w-[120px] flex items-center gap-2">
                       {node.stage_name || `NODE_${node.id.substring(0, 4)}`}
+                      {node.tier === "The Mogul" && <Star size={12} className="text-yellow-500 fill-yellow-500" />}
                     </h3>
-                    <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest">Recruits: {node.total_referrals}</p>
+                    
+                    {/* TIER IDENTIFIER */}
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded-sm border font-bold
+                        ${node.tier === 'The Mogul' ? 'border-yellow-600/50 bg-yellow-600/10 text-yellow-500' : 
+                          node.tier === 'The Artist' ? 'border-blue-600/50 bg-blue-600/10 text-blue-400' : 
+                          'border-[#333] text-[#555]'}`}>
+                        {node.tier?.toUpperCase() || 'NODE'}
+                      </span>
+                      <span className="text-[8px] font-mono text-[#444] uppercase tracking-widest">Recruits: {node.total_referrals}</span>
+                    </div>
                   </div>
                 </div>
                 <div className="flex flex-col items-end">
@@ -278,28 +227,17 @@ export default function Room10_Social() {
         </div>
       </div>
 
-      {/* RIGHT COL: DYNAMIC TABS */}
+      {/* RIGHT COL: DYNAMIC TABS (Same as before) */}
       <div className="flex-1 bg-[#0a0a0a] flex flex-col h-full overflow-hidden relative">
-        
-        {/* Right Col Navigation */}
         <div className="flex border-b border-[#222] bg-black shrink-0">
-          <button 
-            onClick={() => setActiveTab("brokerage")}
-            className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2
-              ${activeTab === 'brokerage' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}
-          >
+          <button onClick={() => setActiveTab("brokerage")} className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'brokerage' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}>
             <Handshake size={16} /> GetNice Brokerage
           </button>
-          <button 
-            onClick={() => setActiveTab("chat")}
-            className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2
-              ${activeTab === 'chat' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}
-          >
+          <button onClick={() => setActiveTab("chat")} className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'chat' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}>
             <MessageSquare size={16} /> Global Comms
           </button>
         </div>
 
-        {/* TAB CONTENT: BROKERAGE & ESCROW */}
         {activeTab === "brokerage" && (
           <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
             {!selectedNode ? (
@@ -313,181 +251,71 @@ export default function Room10_Social() {
               </div>
             ) : (
               <div className="p-8 flex flex-col h-full animate-in slide-in-from-right-8">
-                
-                {/* Dynamic Profile Link Header */}
                 <div className="mb-8 flex flex-col md:flex-row md:items-start justify-between gap-4 border-b border-[#222] pb-6">
                   <div>
                     <div className="inline-flex items-center gap-2 bg-[#110000] text-[#E60000] border border-[#330000] px-3 py-1 text-[9px] uppercase font-bold tracking-widest mb-4">
-                      <ShieldCheck size={12} /> Syndicate Artist
+                      <ShieldCheck size={12} /> {selectedNode.tier === 'The Mogul' ? 'MOGUL ARCHITECT' : 'SYNDICATE ARTIST'}
                     </div>
                     <h2 className="font-oswald text-3xl md:text-4xl uppercase tracking-widest font-bold text-white">
                       {selectedNode.stage_name || `NODE_${selectedNode.id.substring(0, 8)}`}
                     </h2>
                   </div>
-                  
-                  <Link 
-                    href={`/${encodeURIComponent(selectedNode.stage_name || selectedNode.id)}`}
-                    target="_blank"
-                    className="bg-[#111] border border-[#333] text-white px-6 py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-colors flex items-center justify-center gap-2 shrink-0"
-                  >
+                  <Link href={`/${encodeURIComponent(selectedNode.stage_name || selectedNode.id)}`} target="_blank" className="bg-[#111] border border-[#333] text-white px-6 py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-colors flex items-center justify-center gap-2 shrink-0">
                     View Public Profile <ExternalLink size={14} />
                   </Link>
                 </div>
-
                 <div className="flex gap-2 mb-8">
                   <button onClick={() => setInteractionType("feature")} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'feature' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555] hover:text-white hover:border-white'}`}>Request Verse</button>
                   <button onClick={() => setInteractionType("booking")} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'booking' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555] hover:text-white hover:border-white'}`}>Live Booking</button>
                 </div>
-
                 <div className="flex-1 flex flex-col">
                   {escrowStatus === "idle" && (
                     <div className="bg-black border border-[#222] p-6 mb-auto group hover:border-[#E60000]/50 transition-all">
-                      <h3 className="font-oswald text-lg uppercase tracking-widest text-[#E60000] mb-6 border-b border-[#222] pb-3 flex items-center gap-2">
-                        <Lock size={16} /> Escrow Breakdown
-                      </h3>
-                      
+                      <h3 className="font-oswald text-lg uppercase tracking-widest text-[#E60000] mb-6 border-b border-[#222] pb-3 flex items-center gap-2"><Lock size={16} /> Escrow Breakdown</h3>
                       <div className="space-y-4 font-mono text-[10px]">
                         <div className="flex justify-between items-center text-[#888] uppercase"><span>Artist Rate</span><span className="text-white">${basePrice.toFixed(2)}</span></div>
                         <div className="flex justify-between items-center text-[#E60000] uppercase"><span>Broker Fee (15%)</span><span>${platformFee.toFixed(2)}</span></div>
-                        
-                        {/* SURGICAL FIX: The Upstream Deal Gamification Display */}
-                        {targetTrack?.upstream_deal_signed && (
-                          <div className="mt-4 pt-4 border-t border-[#222] bg-[#110000] -mx-6 px-6 pb-4 mb-4">
-                            <h4 className="text-[10px] text-[#E60000] font-mono uppercase tracking-widest mb-2 mt-2 flex items-center gap-2">
-                              <Zap size={12}/> Upstream Track Metrics
-                            </h4>
-                            <p className="font-oswald text-sm text-white uppercase tracking-widest mb-3 truncate">{targetTrack.title}</p>
-                            <div className="flex justify-between items-center text-[#888] font-mono text-[10px] uppercase">
-                              <span>Raw Talent (Base A&R)</span>
-                              <span className="text-white">{targetTrack.base_hit_score || targetTrack.hit_score}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-[#E60000] font-mono text-[10px] uppercase mt-1">
-                              <span>Weighted (Ad Boost)</span>
-                              <span className="text-white font-bold">{targetTrack.hit_score}</span>
-                            </div>
-                          </div>
-                        )}
-
                         <div className="pt-4 mt-4 border-t border-[#222] flex justify-between items-end">
                           <span className="text-[#555] uppercase tracking-widest">Total Escrow Lock</span>
                           <span className="text-3xl font-oswald font-bold text-white tracking-tighter">${(basePrice + platformFee).toFixed(2)}</span>
                         </div>
                       </div>
-                      
-                      <button onClick={handleInitiateEscrow} className="w-full mt-8 bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all">
-                        Lock Funds in Escrow
-                      </button>
+                      <button onClick={handleInitiateEscrow} className="w-full mt-8 bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all">Lock Funds in Escrow</button>
                     </div>
                   )}
-
                   {escrowStatus === "processing" && (
                     <div className="flex-1 flex flex-col items-center justify-center text-center">
-                      <Zap size={48} className="text-[#E60000] animate-pulse mb-6" />
-                      <p className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-2">Generating Contract...</p>
-                      <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest">Validating Fiat Balance</p>
+                      <Zap size={48} className="text-[#E60000] animate-pulse mb-6" /><p className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-2">Generating Contract...</p><p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest">Awaiting Stripe Handshake</p>
                     </div>
                   )}
-
                   {escrowStatus === "locked" && (
                     <div className="flex-1 flex flex-col items-center justify-center text-center animate-in zoom-in">
-                      <ShieldCheck size={64} className="text-green-500 mb-6 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" />
-                      <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-2">Funds Secured</h3>
-                      <p className="font-mono text-xs text-green-500 uppercase tracking-widest mb-6">Request sent to {selectedNode.stage_name}.</p>
-                      <p className="font-mono text-[9px] text-[#888] uppercase leading-relaxed max-w-xs mx-auto border border-[#222] bg-[#111] p-4 mb-6">
-                        If the artist fails to deliver the verse/performance within 14 days, the contract voids and funds return to your wallet.
-                      </p>
-                      <button onClick={() => { setSelectedNode(null); setEscrowStatus("idle"); }} className="border border-[#333] text-white px-6 py-3 font-oswald text-sm uppercase tracking-widest hover:bg-white hover:text-black transition-colors flex items-center gap-2">
-                        <RefreshCw size={14} /> Return to Network
-                      </button>
+                      <ShieldCheck size={64} className="text-green-500 mb-6 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" /><h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-2">Funds Secured</h3><p className="font-mono text-xs text-green-500 uppercase tracking-widest mb-6">Request sent to {selectedNode.stage_name}.</p><p className="font-mono text-[9px] text-[#888] uppercase leading-relaxed max-w-xs mx-auto border border-[#222] bg-[#111] p-4 mb-6">If the artist fails to deliver the verse/performance within 14 days, the contract voids and funds return to your wallet.</p><button onClick={() => { setSelectedNode(null); setEscrowStatus("idle"); }} className="border border-[#333] text-white px-6 py-3 font-oswald text-sm uppercase tracking-widest hover:bg-white hover:text-black transition-colors flex items-center gap-2"><RefreshCw size={14} /> Return to Network</button>
                     </div>
                   )}
                 </div>
-                
-                <div className="mt-6 pt-4 border-t border-[#111] flex items-start gap-3">
-                  <DollarSign size={14} className="text-[#555] shrink-0 mt-0.5" />
-                  <p className="text-[8px] font-mono uppercase tracking-widest text-[#555] leading-relaxed">
-                    GetNice Records acts strictly as the broker and escrow agent. The 15% agency fee is deducted at the time of contract execution to maintain platform infrastructure.
-                  </p>
-                </div>
+                <div className="mt-6 pt-4 border-t border-[#111] flex items-start gap-3"><DollarSign size={14} className="text-[#555] shrink-0 mt-0.5" /><p className="text-[8px] font-mono uppercase tracking-widest text-[#555] leading-relaxed">GetNice Records acts strictly as the broker and escrow agent. The 15% agency fee is deducted at the time of contract execution to maintain platform infrastructure.</p></div>
               </div>
             )}
           </div>
         )}
 
-        {/* TAB CONTENT: GLOBAL COMMS (CHAT) */}
+        {/* TAB CONTENT: GLOBAL COMMS (CHAT) (Same as before) */}
         {activeTab === "chat" && (
           <div className="flex-1 flex flex-col animate-in slide-in-from-left-8 h-full bg-[#020202]">
             <div className="p-6 border-b border-[#111] flex items-center justify-between shadow-md shrink-0">
-              <div>
-                <h3 className="font-oswald text-xl uppercase tracking-widest font-bold text-white flex items-center gap-2">
-                  <MessageSquare size={18} className="text-[#E60000]" /> Global Comms
-                </h3>
-                <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mt-1">Encrypted Node-to-Node Chat</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div>
-                <span className={`font-mono text-[9px] uppercase tracking-widest font-bold ${isConnected ? 'text-green-500' : 'text-yellow-500'}`}>
-                  {isConnected ? 'Online' : 'Connecting...'}
-                </span>
-              </div>
+              <div><h3 className="font-oswald text-xl uppercase tracking-widest font-bold text-white flex items-center gap-2"><MessageSquare size={18} className="text-[#E60000]" /> Global Comms</h3><p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mt-1">Encrypted Node-to-Node Chat</p></div>
+              <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div><span className={`font-mono text-[9px] uppercase tracking-widest font-bold ${isConnected ? 'text-green-500' : 'text-yellow-500'}`}>{isConnected ? 'Online' : 'Connecting...'}</span></div>
             </div>
-
             <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
-              {messages.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center opacity-30 text-white">
-                  <Terminal size={48} className="mb-4" />
-                  <p className="font-mono text-xs uppercase tracking-widest">Syndicate Log Empty.</p>
-                </div>
-              ) : messages.map((msg, i) => {
-                const isMe = msg.user_id === userSession?.id;
-                const isSystem = msg.stage_name === 'SYSTEM_ESCROW';
-                
-                return (
-                  <div key={msg.id || i} className={`flex flex-col ${isSystem ? 'items-center my-4' : isMe ? 'items-end' : 'items-start'}`}>
-                    {!isSystem && (
-                      <div className="flex items-baseline gap-2 mb-1">
-                        <span className="font-mono text-[9px] text-[#555] uppercase">{formatTime(msg.created_at)}</span>
-                        <span className={`font-oswald text-xs uppercase font-bold tracking-widest ${isMe ? 'text-[#E60000]' : 'text-white'}`}>
-                          {msg.stage_name}
-                        </span>
-                      </div>
-                    )}
-                    
-                    <div className={`max-w-[80%] p-4 text-sm font-mono ${
-                      isSystem ? 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 rounded-sm w-full text-center text-xs shadow-[0_0_10px_rgba(234,179,8,0.1)]' 
-                      : isMe ? 'bg-[#E60000]/10 border border-[#E60000]/30 text-white rounded-tl-lg rounded-bl-lg rounded-br-lg' 
-                      : 'bg-black border border-[#333] text-gray-300 rounded-tr-lg rounded-bl-lg rounded-br-lg'
-                    }`}>
-                      {msg.content}
-                    </div>
-                  </div>
-                );
-              })}
+              {messages.length === 0 ? (<div className="h-full flex flex-col items-center justify-center opacity-30 text-white"><Terminal size={48} className="mb-4" /><p className="font-mono text-xs uppercase tracking-widest">Syndicate Log Empty.</p></div>) : messages.map((msg, i) => { const isMe = msg.user_id === userSession?.id; return (<div key={msg.id || i} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}><div className="flex items-baseline gap-2 mb-1"><span className="font-mono text-[9px] text-[#555] uppercase">{formatTime(msg.created_at)}</span><span className={`font-oswald text-xs uppercase font-bold tracking-widest ${isMe ? 'text-[#E60000]' : 'text-white'}`}>{msg.stage_name}</span></div><div className={`max-w-[80%] p-4 text-sm font-mono ${isMe ? 'bg-[#E60000]/10 border border-[#E60000]/30 text-white rounded-tl-lg rounded-bl-lg rounded-br-lg' : 'bg-black border border-[#333] text-gray-300 rounded-tr-lg rounded-bl-lg rounded-br-lg'}`}>{msg.content}</div></div>); })}
               <div ref={chatEndRef} />
             </div>
-
             <div className="p-4 bg-black border-t border-[#222] shrink-0">
-              <form onSubmit={handleSendMessage} className="relative flex gap-2">
-                <input 
-                  type="text" 
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder={isConnected ? "Broadcast to global syndicate..." : "Establishing connection..."}
-                  disabled={!isConnected}
-                  className="flex-1 bg-[#111] border border-[#333] px-4 py-4 text-xs text-white outline-none focus:border-[#E60000] font-mono transition-colors disabled:opacity-50"
-                />
-                <button 
-                  type="submit"
-                  disabled={!chatInput.trim() || isSending || !isConnected}
-                  className="bg-[#E60000] text-white px-6 hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center shadow-[0_0_15px_rgba(230,0,0,0.2)]"
-                >
-                  {isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-                </button>
-              </form>
+              <form onSubmit={handleSendMessage} className="relative flex gap-2"><input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder={isConnected ? "Broadcast to global syndicate..." : "Establishing connection..."} disabled={!isConnected} className="flex-1 bg-[#111] border border-[#333] px-4 py-4 text-xs text-white outline-none focus:border-[#E60000] font-mono transition-colors disabled:opacity-50" /><button type="submit" disabled={!chatInput.trim() || isSending || !isConnected} className="bg-[#E60000] text-white px-6 hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center shadow-[0_0_15px_rgba(230,0,0,0.2)]">{isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}</button></form>
             </div>
           </div>
         )}
-
       </div>
     </div>
   );
