@@ -219,10 +219,10 @@ export default function EntryGateway() {
           </h1>
           
 <p className="max-w-2xl font-sans text-lg text-[#888] mb-12 leading-relaxed">
-            The cheat code for the modern music industry has been initialized.<br />
-            Your browser is now a platinum studio, a relentless A&R, and a royalty bank.<br />
-            Extract your flow, generate the lyrics, and syndicate globally.<br />
-            Don't just chase the culture. Let the machine engineer your takeover.
+            The Ultimate Cheat Code To Dominate The Modern Music Industry Is Now In Your Hands.<br />
+            Your Browser Just Became A Platinum Studio, A Ruthless A&R, And A Royalty Vault.<br />
+            Weaponize Your Flow, Generate Bulletproof Lyrics, And Syndicate Your Sound Globally.<br />
+            Stop Chasing The Culture. Command The Machine To Engineer Your Total Domination.
           </p>
 
           <button onClick={() => setAuthStep("auth")} className="gn-btn-primary text-sm px-10 py-5 group shadow-neon-red">
