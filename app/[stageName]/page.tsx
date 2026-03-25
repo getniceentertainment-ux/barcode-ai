@@ -1,11 +1,20 @@
 import React from "react";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
-import { Mic2, Trophy, Users, Globe, ExternalLink, ShieldCheck, Star } from "lucide-react";
+import { Mic2, Globe, ShieldCheck, Star } from "lucide-react";
 
 // --- RESERVED SYSTEM KEYWORDS ---
-// This prevents the dynamic route from trying to "lookup" system pages as artists
-const RESERVED_NAMES = ["studio", "dev-portal", "admin-node", "api", "auth", "login", "signup"];
+const RESERVED_NAMES = [
+  "studio", 
+  "dev-portal", 
+  "admin-node", 
+  "api", 
+  "auth", 
+  "login", 
+  "signup",
+  "undefined", // Specifically block broken link artifacts
+  "null"
+];
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,36 +22,42 @@ const supabase = createClient(
 );
 
 interface ProfilePageProps {
-  params: { stageName: string };
+  params: Promise<{ stageName: string }>;
 }
 
 export default async function ArtistProfilePage({ params }: ProfilePageProps) {
-  const decodedName = decodeURIComponent(params.stageName);
+  // 1. Await params to ensure stability in Next.js 14/15
+  const resolvedParams = await params;
+  const decodedName = decodeURIComponent(resolvedParams.stageName);
 
-  // 1. HARD GUARD: If the alias is a reserved system route, abort profile lookup
+  // 2. HARD GUARD: If the alias is a reserved system route or "undefined", abort immediately
   if (RESERVED_NAMES.includes(decodedName.toLowerCase())) {
-    // Returning null or redirecting ensures the actual folder-based route (app/studio/page.tsx) handles it
+    // If it's a real system route, this return allows the static folder route to take over
+    // If it's "undefined", we redirect to root to clear the error
+    if (decodedName.toLowerCase() === "undefined") {
+        redirect("/");
+    }
     return null; 
   }
 
-  // 2. REAL DATABASE LOOKUP
+  // 3. REAL DATABASE LOOKUP
   const { data: profile, error } = await supabase
     .from("profiles")
     .select("*")
     .eq("stage_name", decodedName)
     .maybeSingle();
 
-  // 3. Fallback to 404 if user really doesn't exist
+  // 4. Fallback to 404/Registry Error if user really doesn't exist
   if (!profile || error) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-6 text-center">
-        <div className="max-w-md border border-[#222] p-12 bg-[#050505]">
+        <div className="max-w-md border border-[#222] p-12 bg-[#050505] shadow-[0_0_50px_rgba(230,0,0,0.1)]">
           <ShieldCheck size={48} className="mx-auto text-[#E60000] mb-6 opacity-50" />
           <h1 className="font-oswald text-2xl text-white uppercase tracking-widest mb-4">Registry Error</h1>
           <p className="font-mono text-[10px] text-[#555] uppercase leading-relaxed">
             The requested artist alias <span className="text-[#E60000]">"{decodedName}"</span> does not exist in the Bar-Code registry.
           </p>
-          <a href="/" className="mt-8 inline-block border border-[#333] px-6 py-2 text-[10px] text-white uppercase font-bold hover:bg-white hover:text-black transition-all">
+          <a href="/studio" className="mt-8 inline-block border border-[#333] px-8 py-3 text-[10px] text-white uppercase font-bold hover:bg-white hover:text-black transition-all">
             Return to Matrix
           </a>
         </div>
@@ -50,62 +65,63 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
     );
   }
 
-  // 4. RENDER VALID PROFILE
+  // 5. RENDER VALID PROFILE
   return (
     <div className="min-h-screen bg-[#050505] text-white font-mono selection:bg-[#E60000]">
       {/* Profile Header */}
-      <div className="h-[40vh] relative overflow-hidden border-b border-[#222]">
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black z-10" />
+      <div className="h-[45vh] relative overflow-hidden border-b border-[#222]">
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/40 to-[#050505] z-10" />
         {profile.avatar_url ? (
-          <img src={profile.avatar_url} alt={profile.stage_name} className="w-full h-full object-cover grayscale opacity-40" />
+          <img src={profile.avatar_url} alt={profile.stage_name} className="w-full h-full object-cover grayscale opacity-50" />
         ) : (
-          <div className="w-full h-full bg-[#111] flex items-center justify-center opacity-20">
-            <Mic2 size={120} />
+          <div className="w-full h-full bg-[#111] flex items-center justify-center opacity-10">
+            <Mic2 size={160} />
           </div>
         )}
         
-        <div className="absolute bottom-12 left-12 z-20">
-          <div className="flex items-center gap-4 mb-4">
-             <span className="bg-[#E60000] text-white text-[10px] px-3 py-1 font-bold uppercase tracking-widest">
+        <div className="absolute bottom-16 left-12 z-20">
+          <div className="flex items-center gap-4 mb-6">
+             <span className="bg-[#E60000] text-white text-[10px] px-4 py-1.5 font-bold uppercase tracking-[0.2em] shadow-lg">
                {profile.tier || "NODE"}
              </span>
-             {profile.tier === 'The Mogul' && <Star size={16} className="text-yellow-500 fill-yellow-500" />}
+             {profile.tier?.includes('Mogul') && <Star size={20} className="text-yellow-500 fill-yellow-500 drop-shadow-[0_0_10px_rgba(234,179,8,0.5)]" />}
           </div>
-          <h1 className="font-oswald text-6xl md:text-8xl uppercase font-bold tracking-tighter text-white">
+          <h1 className="font-oswald text-6xl md:text-9xl uppercase font-bold tracking-tighter text-white leading-none">
             {profile.stage_name}
           </h1>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-12 py-16 grid grid-cols-1 lg:grid-cols-3 gap-16">
+      <div className="max-w-7xl mx-auto px-12 py-20 grid grid-cols-1 lg:grid-cols-3 gap-20">
         
         {/* Left: Bio & Stats */}
-        <div className="lg:col-span-1 space-y-12">
-          <div>
-            <h3 className="font-oswald text-sm uppercase text-[#E60000] tracking-[0.3em] mb-6 font-bold">Node Intel</h3>
-            <p className="text-xs text-[#888] leading-relaxed uppercase tracking-widest italic">
-              "{profile.bio || "No biometric data transmitted."}"
+        <div className="lg:col-span-1 space-y-16">
+          <div className="border-l-2 border-[#E60000] pl-8">
+            <h3 className="font-oswald text-sm uppercase text-[#E60000] tracking-[0.4em] mb-6 font-bold opacity-50">Node Intel</h3>
+            <p className="text-sm text-[#AAA] leading-relaxed uppercase tracking-widest italic">
+              "{profile.bio || "No biometric data transmitted. Operator is ghosting the matrix."}"
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-             <div className="bg-black border border-[#111] p-6">
-                <p className="text-[8px] text-[#555] uppercase mb-1">Mogul Score</p>
-                <p className="text-3xl font-oswald font-bold text-white">{profile.mogul_score || 0}</p>
+          <div className="grid grid-cols-1 gap-6">
+             <div className="bg-[#0a0a0a] border border-[#111] p-8 group hover:border-[#E60000]/30 transition-colors">
+                <p className="text-[9px] text-[#555] uppercase mb-2 font-bold tracking-widest">Mogul Score</p>
+                <p className="text-5xl font-oswald font-bold text-white group-hover:text-[#E60000] transition-colors">{profile.mogul_score || 0}</p>
              </div>
-             <div className="bg-black border border-[#111] p-6">
-                <p className="text-[8px] text-[#555] uppercase mb-1">Total Referrals</p>
-                <p className="text-3xl font-oswald font-bold text-white">{profile.total_referrals || 0}</p>
+             <div className="bg-[#0a0a0a] border border-[#111] p-8 group hover:border-[#E60000]/30 transition-colors">
+                <p className="text-[9px] text-[#555] uppercase mb-2 font-bold tracking-widest">Total Referrals</p>
+                <p className="text-5xl font-oswald font-bold text-white group-hover:text-[#E60000] transition-colors">{profile.total_referrals || 0}</p>
              </div>
           </div>
         </div>
 
         {/* Right: Activity / Artifacts placeholder */}
         <div className="lg:col-span-2">
-           <h3 className="font-oswald text-sm uppercase text-[#E60000] tracking-[0.3em] mb-8 font-bold">Ledger Submissions</h3>
-           <div className="border border-dashed border-[#222] p-20 text-center opacity-20">
-              <Globe size={40} className="mx-auto mb-4" />
-              <p className="text-[10px] uppercase tracking-widest">No Public Artifacts Synchronized</p>
+           <h3 className="font-oswald text-sm uppercase text-[#E60000] tracking-[0.4em] mb-10 font-bold opacity-50">Ledger Submissions</h3>
+           <div className="border border-dashed border-[#222] py-32 text-center rounded-sm">
+              <Globe size={48} className="mx-auto mb-6 text-[#222]" />
+              <p className="text-[11px] uppercase tracking-[0.3em] text-[#444] font-bold">No Public Artifacts Synchronized</p>
+              <p className="text-[9px] uppercase tracking-widest text-[#222] mt-4">Node operating in stealth mode</p>
            </div>
         </div>
 
