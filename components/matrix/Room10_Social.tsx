@@ -13,7 +13,7 @@ interface RosterNode {
   avatar_url: string | null;
   mogul_score: number;
   total_referrals: number;
-  tier: string; // Added Tier tracking
+  tier: string;
 }
 
 export default function Room10_Social() {
@@ -73,29 +73,23 @@ export default function Room10_Social() {
 
   const fetchLeaderboard = async () => {
     try {
-      // UPDATED: Now selecting 'tier' to differentiate Moguls from Artists
+      // --- HARDENED SUPABASE QUERY ---
+      // 1. Pulling Stage Name, Mogul Score, and Tier
+      // 2. Sorting by mogul_score DESCENDING (Highest first)
+      // 3. Filtering OUT "Free Loader" to maintain exclusivity
       const { data, error } = await supabase
         .from('profiles')
         .select('id, stage_name, avatar_url, mogul_score, total_referrals, tier')
+        .not('tier', 'eq', 'Free Loader') 
         .order('mogul_score', { ascending: false })
-        .limit(20);
+        .limit(50);
 
       if (error) throw error;
-
-      // --- PHANTOM NODE INCENTIVE ---
-      // If the DB is empty (dev mode), we inject "Ghost Nodes" to simulate the hierarchy
-      if (!data || data.length <= 1) {
-        const ghosts: RosterNode[] = [
-          { id: 'ghost1', stage_name: 'SYNDICATE_PRIME', avatar_url: null, mogul_score: 982, total_referrals: 142, tier: 'The Mogul' },
-          { id: 'ghost2', stage_name: 'VODKA_DAWGS', avatar_url: null, mogul_score: 844, total_referrals: 89, tier: 'The Mogul' },
-          { id: 'ghost3', stage_name: 'NEON_GHOST', avatar_url: null, mogul_score: 712, total_referrals: 44, tier: 'The Artist' },
-        ];
-        setRoster([...(data || []), ...ghosts].sort((a,b) => b.mogul_score - a.mogul_score));
-      } else {
-        setRoster(data);
-      }
+      setRoster(data || []);
+      
     } catch (err) {
       console.error("Syndicate Load Failure:", err);
+      if (addToast) addToast("Failed to sync with global hierarchy.", "error");
     } finally {
       setIsLoading(false);
     }
@@ -160,7 +154,7 @@ export default function Room10_Social() {
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-[#020202]">
           <div className="flex justify-between items-center mb-2 border-b border-[#111] pb-2">
-             <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest">Global Leaderboard // Mogul Score</p>
+             <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest">Global Leaderboard // Realtime Ratings</p>
              <Link href="/studio?upgrade=true" className="text-[9px] text-yellow-500 font-bold uppercase hover:text-white transition-colors flex items-center gap-1">
                <Zap size={10} /> Upgrade Tier
              </Link>
@@ -171,6 +165,11 @@ export default function Room10_Social() {
                <Disc3 size={32} className="animate-spin text-[#E60000] mb-4" />
                <p className="font-mono text-[9px] uppercase tracking-widest">Syncing Matrix Hierarchy...</p>
             </div>
+          ) : filteredRoster.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 opacity-20 text-center">
+               <ShieldCheck size={48} className="mb-4" />
+               <p className="font-mono text-xs uppercase tracking-widest">No Qualified Nodes Found.<br/>Only Moguls & Artists Appear Here.</p>
+            </div>
           ) : filteredRoster.map((node, index) => (
             <div 
               key={node.id} 
@@ -180,7 +179,7 @@ export default function Room10_Social() {
             >
               <div className="flex justify-between items-start mb-2">
                 <div className="flex items-center gap-4">
-                  <div className={`font-oswald text-xl font-bold w-6 text-center ${index < 3 ? 'text-yellow-500' : 'text-[#444]'}`}>
+                  <div className={`font-oswald text-xl font-bold w-6 text-center ${index < 3 ? 'text-[#E60000]' : 'text-[#444]'}`}>
                     #{index + 1}
                   </div>
                   
@@ -198,12 +197,10 @@ export default function Room10_Social() {
                       {node.tier === "The Mogul" && <Star size={12} className="text-yellow-500 fill-yellow-500" />}
                     </h3>
                     
-                    {/* TIER IDENTIFIER */}
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <span className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded-sm border font-bold
                         ${node.tier === 'The Mogul' ? 'border-yellow-600/50 bg-yellow-600/10 text-yellow-500' : 
-                          node.tier === 'The Artist' ? 'border-blue-600/50 bg-blue-600/10 text-blue-400' : 
-                          'border-[#333] text-[#555]'}`}>
+                          'border-blue-600/50 bg-blue-600/10 text-blue-400'}`}>
                         {node.tier?.toUpperCase() || 'NODE'}
                       </span>
                       <span className="text-[8px] font-mono text-[#444] uppercase tracking-widest">Recruits: {node.total_referrals}</span>
@@ -227,7 +224,7 @@ export default function Room10_Social() {
         </div>
       </div>
 
-      {/* RIGHT COL: DYNAMIC TABS (Same as before) */}
+      {/* RIGHT COL: DYNAMIC TABS */}
       <div className="flex-1 bg-[#0a0a0a] flex flex-col h-full overflow-hidden relative">
         <div className="flex border-b border-[#222] bg-black shrink-0">
           <button onClick={() => setActiveTab("brokerage")} className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'brokerage' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}>
@@ -300,7 +297,6 @@ export default function Room10_Social() {
           </div>
         )}
 
-        {/* TAB CONTENT: GLOBAL COMMS (CHAT) (Same as before) */}
         {activeTab === "chat" && (
           <div className="flex-1 flex flex-col animate-in slide-in-from-left-8 h-full bg-[#020202]">
             <div className="p-6 border-b border-[#111] flex items-center justify-between shadow-md shrink-0">
