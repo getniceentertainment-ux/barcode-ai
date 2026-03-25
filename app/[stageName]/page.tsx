@@ -12,8 +12,10 @@ const RESERVED_NAMES = [
   "auth", 
   "login", 
   "signup",
-  "undefined", // Specifically block broken link artifacts
-  "null"
+  "undefined",
+  "null",
+  "favicon.ico",
+  "robots.txt"
 ];
 
 const supabase = createClient(
@@ -26,28 +28,29 @@ interface ProfilePageProps {
 }
 
 export default async function ArtistProfilePage({ params }: ProfilePageProps) {
-  // 1. Await params to ensure stability in Next.js 14/15
   const resolvedParams = await params;
   const decodedName = decodeURIComponent(resolvedParams.stageName);
 
-  // 2. HARD GUARD: If the alias is a reserved system route or "undefined", abort immediately
-  if (RESERVED_NAMES.includes(decodedName.toLowerCase())) {
-    // If it's a real system route, this return allows the static folder route to take over
-    // If it's "undefined", we redirect to root to clear the error
-    if (decodedName.toLowerCase() === "undefined") {
-        redirect("/");
-    }
-    return null; 
+  // 1. HARD GUARD: If the alias is "undefined" (broken link), redirect to root
+  if (decodedName.toLowerCase() === "undefined") {
+    redirect("/");
   }
 
-  // 3. REAL DATABASE LOOKUP
+  // 2. SYSTEM PROTECTION: If the alias is a reserved system path, 
+  // we trigger notFound() so this dynamic route stops capturing the request.
+  // Static folders like /studio will still take precedence in the Next.js router.
+  if (RESERVED_NAMES.includes(decodedName.toLowerCase())) {
+    notFound();
+  }
+
+  // 3. DATABASE LOOKUP
   const { data: profile, error } = await supabase
     .from("profiles")
     .select("*")
     .eq("stage_name", decodedName)
     .maybeSingle();
 
-  // 4. Fallback to 404/Registry Error if user really doesn't exist
+  // 4. REGISTRY ERROR UI
   if (!profile || error) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-6 text-center">
@@ -65,10 +68,9 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
     );
   }
 
-  // 5. RENDER VALID PROFILE
+  // 5. VALID PROFILE RENDER
   return (
     <div className="min-h-screen bg-[#050505] text-white font-mono selection:bg-[#E60000]">
-      {/* Profile Header */}
       <div className="h-[45vh] relative overflow-hidden border-b border-[#222]">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/40 to-[#050505] z-10" />
         {profile.avatar_url ? (
@@ -78,7 +80,6 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
             <Mic2 size={160} />
           </div>
         )}
-        
         <div className="absolute bottom-16 left-12 z-20">
           <div className="flex items-center gap-4 mb-6">
              <span className="bg-[#E60000] text-white text-[10px] px-4 py-1.5 font-bold uppercase tracking-[0.2em] shadow-lg">
@@ -93,8 +94,6 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
       </div>
 
       <div className="max-w-7xl mx-auto px-12 py-20 grid grid-cols-1 lg:grid-cols-3 gap-20">
-        
-        {/* Left: Bio & Stats */}
         <div className="lg:col-span-1 space-y-16">
           <div className="border-l-2 border-[#E60000] pl-8">
             <h3 className="font-oswald text-sm uppercase text-[#E60000] tracking-[0.4em] mb-6 font-bold opacity-50">Node Intel</h3>
@@ -102,29 +101,20 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
               "{profile.bio || "No biometric data transmitted. Operator is ghosting the matrix."}"
             </p>
           </div>
-
           <div className="grid grid-cols-1 gap-6">
              <div className="bg-[#0a0a0a] border border-[#111] p-8 group hover:border-[#E60000]/30 transition-colors">
                 <p className="text-[9px] text-[#555] uppercase mb-2 font-bold tracking-widest">Mogul Score</p>
                 <p className="text-5xl font-oswald font-bold text-white group-hover:text-[#E60000] transition-colors">{profile.mogul_score || 0}</p>
              </div>
-             <div className="bg-[#0a0a0a] border border-[#111] p-8 group hover:border-[#E60000]/30 transition-colors">
-                <p className="text-[9px] text-[#555] uppercase mb-2 font-bold tracking-widest">Total Referrals</p>
-                <p className="text-5xl font-oswald font-bold text-white group-hover:text-[#E60000] transition-colors">{profile.total_referrals || 0}</p>
-             </div>
           </div>
         </div>
-
-        {/* Right: Activity / Artifacts placeholder */}
         <div className="lg:col-span-2">
            <h3 className="font-oswald text-sm uppercase text-[#E60000] tracking-[0.4em] mb-10 font-bold opacity-50">Ledger Submissions</h3>
            <div className="border border-dashed border-[#222] py-32 text-center rounded-sm">
               <Globe size={48} className="mx-auto mb-6 text-[#222]" />
               <p className="text-[11px] uppercase tracking-[0.3em] text-[#444] font-bold">No Public Artifacts Synchronized</p>
-              <p className="text-[9px] uppercase tracking-widest text-[#222] mt-4">Node operating in stealth mode</p>
            </div>
         </div>
-
       </div>
     </div>
   );
