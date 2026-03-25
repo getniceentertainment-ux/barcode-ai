@@ -238,11 +238,16 @@ export default function MatrixController() {
     { id: "11", name: "Active Contracts", icon: <FileAudio size={16} /> }, 
   ];
 
-  const renderActiveRoom = () => {
+const renderActiveRoom = () => {
+    // Rooms 01-05 are structurally locked once finalized
+    // Room 06 (Mastering) remains open so the user can download and then reset
     const lockedRooms = ["01", "02", "03", "04", "05"];
-if (isProjectFinalized && lockedRooms.includes(activeRoom) && userSession?.id !== CREATOR_ID) {
+    
+    if (isProjectFinalized && lockedRooms.includes(activeRoom) && userSession?.id !== CREATOR_ID) {
       const isFreeLoader = (userSession?.tier || "").includes("Free Loader");
-<div className="h-full flex flex-col items-center justify-center text-center animate-in zoom-in duration-500">
+      
+      return (
+        <div className="h-full flex flex-col items-center justify-center text-center animate-in zoom-in duration-500">
           <div className="bg-[#110000] border border-[#E60000]/30 p-12 rounded-lg flex flex-col items-center max-w-xl">
             <Lock size={64} className="text-[#E60000] mb-6 shadow-[0_0_30px_rgba(230,0,0,0.5)] rounded-full" />
             <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-4">ARTIFACT LOCKED</h2>
@@ -250,7 +255,6 @@ if (isProjectFinalized && lockedRooms.includes(activeRoom) && userSession?.id !=
               Track permanently locked in ledger. Structural rooms are no longer editable.
             </p>
             <div className="flex gap-4 w-full">
-              {/* FIXED: Only show Vault if they aren't a Free Loader */}
               {!isFreeLoader ? (
                 <button onClick={() => setActiveRoom("08")} className="flex-1 bg-black border border-[#333] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:border-white transition-colors">
                   Vault
@@ -269,7 +273,9 @@ if (isProjectFinalized && lockedRooms.includes(activeRoom) && userSession?.id !=
         </div>
       );
     }
-switch (activeRoom) {
+
+    // Switch statement handles actual room rendering
+    switch (activeRoom) {
       case "01": return <Room01_Lab />;
       case "02": return <Room02_BrainTrain />;
       case "03": return <Room03_Ghostwriter />;
