@@ -7,7 +7,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16',
 });
 
-// Admin client to bypass RLS for secure fulfillment
+// Admin client to bypass RLS and secure the ledger
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -31,155 +31,151 @@ export async function POST(req: Request) {
       process.env.STRIPE_WEBHOOK_SECRET!
     );
   } catch (err: any) {
-    console.error(`Webhook Signature Error: ${err.message}`);
+    console.error(`[STRIPE WEBHOOK] Signature Error: ${err.message}`);
     return NextResponse.json({ error: "Webhook verification failed" }, { status: 400 });
   }
 
-  // Handle Successful Payments
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     
-    // Extract comprehensive metadata from all potential checkout routes
-    const { 
-      userId, 
-      buyerId,
-      type, 
-      purchaseType, 
-      tier, 
-      credit_amount, 
-      beat_id, 
-      targetNodeId, 
-      interactionType 
-    } = session.metadata || {};
-    
-    // Normalize the fulfillment type and the primary user (the payer)
-    const fulfillmentType = type || purchaseType;
-    const effectiveUserId = userId || buyerId;
+    // --- 1. ROBUST METADATA EXTRACTION ---
+    // Handles variations in keys (userId vs buyerId) across different checkout routes
+    const meta = session.metadata || {};
+    const fulfillmentType = meta.type || meta.purchaseType;
+    const effectiveUserId = meta.userId || meta.buyerId;
+    const amountPaid = session.amount_total ? session.amount_total / 100 : 0;
+
+    console.log(`[STRIPE WEBHOOK] Processing ${fulfillmentType} for Node: ${effectiveUserId}`);
 
     if (!effectiveUserId) {
-      console.error("Webhook Error: No identification metadata found.");
-      return NextResponse.json({ error: "Missing Metadata" }, { status: 400 });
+      console.error("[STRIPE WEBHOOK] CRITICAL: No User ID found in metadata.");
+      return NextResponse.json({ error: "Missing Identity Metadata" }, { status: 400 });
     }
 
     try {
-      // --- 1. SUBSCRIPTION / TIER UPGRADE LOGIC ---
-      if (tier) {
-        const initialCredits = tier === 'The Mogul' ? 999999 : tier === 'The Artist' ? 100 : 5;
-        const { error } = await supabaseAdmin
+      // --- 2. EMERGENCY PROFILE SYNC (Email Recovery) ---
+      // If the trigger failed or signup was interrupted, we capture the email here
+      if (session.customer_details?.email) {
+        await supabaseAdmin
+          .from('profiles')
+          .update({ email: session.customer_details.email })
+          .eq('id', effectiveUserId);
+      }
+
+      // --- 3. SUBSCRIPTION / TIER UPGRADE ---
+      if (meta.tier) {
+        const initialCredits = meta.tier === 'The Mogul' ? 999999 : meta.tier === 'The Artist' ? 100 : 5;
+        await supabaseAdmin
           .from('profiles')
           .update({ 
-            tier: tier, 
-            credits: initialCredits, // Standard credit column
-            credits_remaining: initialCredits, // Display column for Matrix
+            tier: meta.tier, 
+            credits: initialCredits, 
             stripe_customer_id: session.customer as string 
           })
           .eq('id', effectiveUserId);
-          
-        if (error) throw error;
-        console.log(`[STRIPE] Upgraded User ${effectiveUserId} to ${tier}`);
+        
+        await supabaseAdmin.from('transactions').insert({
+          user_id: effectiveUserId,
+          amount: -amountPaid,
+          type: 'TIER_UPGRADE',
+          description: `Matrix Tier Upgraded to ${meta.tier}`
+        });
       }
 
-      // --- 2. MULTI-CHANNEL FULFILLMENT SWITCH ---
+      // --- 4. MULTI-CHANNEL FULFILLMENT SWITCH ---
       if (fulfillmentType) {
         switch (fulfillmentType) {
           
-          // ESCROW PIPELINE: Financial Capture for Features/Bookings
           case 'escrow_contract':
-            // 1. Create the pending contract record in the ledger
+            // A. Create the Contract Record
             const { error: contractErr } = await supabaseAdmin.from('escrow_contracts').insert({
               buyer_id: effectiveUserId,
-              artist_id: targetNodeId,
-              amount: session.amount_total ? session.amount_total / 100 : 0,
+              artist_id: meta.targetNodeId,
+              amount: amountPaid,
               status: 'funded',
-              interaction_type: interactionType,
+              interaction_type: meta.interactionType || 'feature',
               stripe_session_id: session.id
             });
-
             if (contractErr) throw contractErr;
 
-            // 2. TRIGGER NEURAL PING: Notify the target artist
+            // B. Write to the Transaction Ledger (For the Payer)
+            await supabaseAdmin.from('transactions').insert({
+              user_id: effectiveUserId,
+              amount: -amountPaid,
+              type: 'ESCROW_LOCK',
+              description: `Escrow Secured: ${meta.interactionType || 'Interaction'} with ${meta.targetNodeId}`
+            });
+
+            // C. Neural Ping: Notify Target Artist
             await supabaseAdmin.from('notifications').insert({
-              user_id: targetNodeId,
+              user_id: meta.targetNodeId,
               type: 'escrow_received',
               title: 'NEW CONTRACT FUNDED',
-              message: `A node has locked funds for a ${interactionType}. Open Room 10 to respond.`,
-              payload: { buyer_id: effectiveUserId, amount: session.amount_total }
+              message: `A node has locked $${amountPaid} for a ${meta.interactionType}. Open Room 10 to respond.`,
+              payload: { buyer_id: effectiveUserId, amount: amountPaid }
             });
-            console.log(`[STRIPE] Escrow secured between ${effectiveUserId} and ${targetNodeId}`);
+
+            // D. Admin Alert
+            const creatorId = process.env.NEXT_PUBLIC_CREATOR_ID;
+            if (creatorId) {
+              await supabaseAdmin.from('notifications').insert({
+                user_id: creatorId,
+                type: 'admin_alert',
+                title: 'ESCROW REVENUE CAPTURED',
+                message: `Brokerage event: $${amountPaid} secured between ${effectiveUserId} and ${meta.targetNodeId}.`,
+              });
+            }
             break;
 
-          // ENGINEERING TOKEN: $4.99 Gate Unlock
           case 'engineering_token':
-            const { error: engErr } = await supabaseAdmin
-              .from('profiles')
-              .update({ has_engineering_token: true })
-              .eq('id', effectiveUserId);
-              
-            if (engErr) throw engErr;
-            console.log(`[STRIPE] Engineering Suite unlocked for ${effectiveUserId}`);
-            break;
-
-          // MASTERING TOKEN: $4.99 Counter Increment
-          case 'mastering_token':
-            const { data: profileT } = await supabaseAdmin
-              .from('profiles')
-              .select('mastering_tokens')
-              .eq('id', effectiveUserId)
-              .single();
-            
-            const { error: mastErr } = await supabaseAdmin
-              .from('profiles')
-              .update({ 
-                mastering_tokens: (profileT?.mastering_tokens || 0) + 1,
-                has_mastering_token: true 
-              })
-              .eq('id', effectiveUserId);
-              
-            if (mastErr) throw mastErr;
-            console.log(`[STRIPE] Mastering Token added for ${effectiveUserId}`);
-            break;
-
-          // CREDIT TOP UP
-          case 'credit_topup':
-            const { data: profileC } = await supabaseAdmin
-              .from('profiles')
-              .select('credits, credits_remaining') 
-              .eq('id', effectiveUserId)
-              .single();
-              
-            const amount = parseInt(credit_amount || '50');
-            const { error: topupErr } = await supabaseAdmin
-              .from('profiles')
-              .update({ 
-                credits: (profileC?.credits || 0) + amount,
-                credits_remaining: (profileC?.credits_remaining || 0) + amount
-              })
-              .eq('id', effectiveUserId);
-              
-            if (topupErr) throw topupErr;
-            console.log(`[STRIPE] Added ${amount} credits for ${effectiveUserId}`);
-            break;
-
-          // BEAT LEASING
-          case 'beat_lease':
-            const { error: beatErr } = await supabaseAdmin.from('purchases').insert({
-              user_id: effectiveUserId,
-              item_type: 'beat',
-              item_id: beat_id,
-              amount_paid: session.amount_total ? session.amount_total / 100 : 0
+            await supabaseAdmin.from('profiles').update({ has_engineering_token: true }).eq('id', effectiveUserId);
+            await supabaseAdmin.from('transactions').insert({
+              user_id: effectiveUserId, amount: -amountPaid, type: 'PURCHASE', description: 'Engineering Suite Unlock'
             });
-            
-            if (beatErr) throw beatErr;
-            console.log(`[STRIPE] Beat ${beat_id} leased by ${effectiveUserId}`);
+            break;
+
+          case 'mastering_token':
+            const { data: pT } = await supabaseAdmin.from('profiles').select('mastering_tokens').eq('id', effectiveUserId).single();
+            await supabaseAdmin.from('profiles').update({ 
+              mastering_tokens: (pT?.mastering_tokens || 0) + 1,
+              has_mastering_token: true 
+            }).eq('id', effectiveUserId);
+            await supabaseAdmin.from('transactions').insert({
+              user_id: effectiveUserId, amount: -amountPaid, type: 'PURCHASE', description: 'Mastering Token Key'
+            });
+            break;
+
+          case 'credit_topup':
+            const { data: pC } = await supabaseAdmin.from('profiles').select('credits').eq('id', effectiveUserId).single();
+            const creditPack = parseInt(meta.credit_amount || '50');
+            await supabaseAdmin.from('profiles').update({ 
+              credits: (pC?.credits || 0) + creditPack 
+            }).eq('id', effectiveUserId);
+            await supabaseAdmin.from('transactions').insert({
+              user_id: effectiveUserId, amount: -amountPaid, type: 'TOPUP', description: `Purchased ${creditPack} Credits`
+            });
+            break;
+
+          case 'beat_lease':
+            await supabaseAdmin.from('purchases').insert({
+              user_id: effectiveUserId, item_type: 'beat', item_id: meta.beat_id, amount_paid: amountPaid
+            });
+            await supabaseAdmin.from('transactions').insert({
+              user_id: effectiveUserId, amount: -amountPaid, type: 'PURCHASE', description: `Leased Artifact: ${meta.beat_id}`
+            });
             break;
 
           default:
-            console.warn("Unrecognized fulfillment type:", fulfillmentType);
+            console.warn(`[STRIPE WEBHOOK] Unhandled fulfillment type: ${fulfillmentType}`);
         }
       }
+
+      console.log(`[STRIPE WEBHOOK SUCCESS] Handshake complete for ${effectiveUserId}`);
+      return NextResponse.json({ received: true });
+
     } catch (dbErr: any) {
-      console.error("Fulfillment Database Error:", dbErr.message);
-      return NextResponse.json({ error: "Database sync failed" }, { status: 500 });
+      console.error(`[STRIPE WEBHOOK ERROR] DB Sync Failed: ${dbErr.message}`);
+      return NextResponse.json({ error: "Database fulfillment failed" }, { status: 500 });
     }
   }
 
