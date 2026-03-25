@@ -73,10 +73,6 @@ export default function Room10_Social() {
 
   const fetchLeaderboard = async () => {
     try {
-      // --- HARDENED SUPABASE QUERY ---
-      // 1. Pulling Stage Name, Mogul Score, and Tier
-      // 2. We filter for any tier that IS NOT exactly 'Free Loader'
-      // 3. We order by mogul_score DESC (Highest first)
       const { data, error } = await supabase
         .from('profiles')
         .select('id, stage_name, avatar_url, mogul_score, total_referrals, tier')
@@ -89,7 +85,6 @@ export default function Room10_Social() {
         throw error;
       }
 
-      console.log("Syndicate Roster Data Received:", data?.length, "nodes found.");
       setRoster(data || []);
       
     } catch (err) {
@@ -98,6 +93,33 @@ export default function Room10_Social() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // --- DYNAMIC PRIME PRICING ENGINE ---
+  const getDynamicPricing = (node: RosterNode | null, type: "feature" | "booking") => {
+    if (!node) return { base: 0, fee: 0, total: 0 };
+
+    const score = node.mogul_score || 0;
+    const isMogul = node.tier?.includes("Mogul");
+    
+    // Moguls command a significantly higher premium
+    const tierMultiplier = isMogul ? 2.5 : 1.0;
+
+    let base = 0;
+    if (type === "feature") {
+      // Verse/Feature pricing: Score based + minimum entry fee
+      base = Math.max(150, (score * 0.75) * tierMultiplier);
+    } else {
+      // Live Booking pricing: Performance premium
+      base = Math.max(500, (score * 2.25) * tierMultiplier);
+    }
+
+    const fee = base * 0.15;
+    return {
+      base: Math.floor(base),
+      fee: Math.floor(fee),
+      total: Math.floor(base + fee)
+    };
   };
 
   const handleInitiateEscrow = () => {
@@ -131,8 +153,7 @@ export default function Room10_Social() {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const basePrice = selectedNode ? Math.max(100, Math.floor(selectedNode.mogul_score / 2)) : 0;
-  const platformFee = basePrice * 0.15;
+  const pricing = getDynamicPricing(selectedNode, interactionType);
 
   const filteredRoster = roster.filter(node => 
     (node.stage_name || node.id).toLowerCase().includes(searchQuery.toLowerCase())
@@ -144,9 +165,11 @@ export default function Room10_Social() {
       {/* LEFT COL: LEADERBOARD */}
       <div className="w-full md:w-1/2 lg:w-5/12 border-r border-[#222] flex flex-col relative h-full shrink-0">
         <div className="p-6 border-b border-[#222] bg-black z-10">
-          <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-[#E60000] flex items-center gap-3 mb-4">
-            <Users size={28} /> Network Syndicate
-          </h2>
+          <div className="flex justify-between items-start mb-4">
+            <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-[#E60000] flex items-center gap-3">
+              <Users size={28} /> Network Syndicate
+            </h2>
+          </div>
           <div className="relative">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
             <input 
@@ -174,9 +197,11 @@ export default function Room10_Social() {
             <div className="flex flex-col items-center justify-center h-64 opacity-20 text-center">
                <ShieldCheck size={48} className="mb-4 text-[#444]" />
                <p className="font-mono text-xs uppercase tracking-widest">No Qualified Nodes Found.<br/>Only Moguls & Artists Appear Here.</p>
-               <p className="font-mono text-[8px] text-[#333] mt-4 uppercase">Ensure RLS Policies permit Public Read on Profiles.</p>
             </div>
-          ) : filteredRoster.map((node, index) => (
+          ) : filteredRoster.map((node, index) => {
+            // Preview the entry-level feature price
+            const previewPrice = getDynamicPricing(node, "feature").base;
+            return (
             <div 
               key={node.id} 
               onClick={() => { setSelectedNode(node); setEscrowStatus("idle"); setActiveTab("brokerage"); }}
@@ -219,14 +244,16 @@ export default function Room10_Social() {
                 </div>
               </div>
               <div className="flex gap-4 mt-2 pt-3 border-t border-[#111]">
-                 <span className="text-[9px] font-mono text-[#444] uppercase tracking-widest">EST. FEATURE: <span className="text-white">${Math.max(100, Math.floor(node.mogul_score / 2))}</span></span>
+                 <span className="text-[9px] font-mono text-[#444] uppercase tracking-widest">
+                   STARTING AT: <span className="text-white">${previewPrice}</span>
+                 </span>
                  <div className="ml-auto flex items-center gap-2">
                     <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
                     <span className="text-[8px] font-mono uppercase text-[#444]">Active</span>
                  </div>
               </div>
             </div>
-          ))}
+          )})}
         </div>
       </div>
 
@@ -267,20 +294,28 @@ export default function Room10_Social() {
                     View Public Profile <ExternalLink size={14} />
                   </Link>
                 </div>
+
                 <div className="flex gap-2 mb-8">
                   <button onClick={() => setInteractionType("feature")} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'feature' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555] hover:text-white hover:border-white'}`}>Request Verse</button>
                   <button onClick={() => setInteractionType("booking")} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'booking' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555] hover:text-white hover:border-white'}`}>Live Booking</button>
                 </div>
+
                 <div className="flex-1 flex flex-col">
                   {escrowStatus === "idle" && (
                     <div className="bg-black border border-[#222] p-6 mb-auto group hover:border-[#E60000]/50 transition-all">
                       <h3 className="font-oswald text-lg uppercase tracking-widest text-[#E60000] mb-6 border-b border-[#222] pb-3 flex items-center gap-2"><Lock size={16} /> Escrow Breakdown</h3>
                       <div className="space-y-4 font-mono text-[10px]">
-                        <div className="flex justify-between items-center text-[#888] uppercase"><span>Artist Rate</span><span className="text-white">${basePrice.toFixed(2)}</span></div>
-                        <div className="flex justify-between items-center text-[#E60000] uppercase"><span>Broker Fee (15%)</span><span>${platformFee.toFixed(2)}</span></div>
+                        <div className="flex justify-between items-center text-[#888] uppercase">
+                          <span>{interactionType === "feature" ? "Verse" : "Performance"} Base Rate</span>
+                          <span className="text-white">${pricing.base.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[#E60000] uppercase">
+                          <span>Agency Broker Fee (15%)</span>
+                          <span>${pricing.fee.toFixed(2)}</span>
+                        </div>
                         <div className="pt-4 mt-4 border-t border-[#222] flex justify-between items-end">
                           <span className="text-[#555] uppercase tracking-widest">Total Escrow Lock</span>
-                          <span className="text-3xl font-oswald font-bold text-white tracking-tighter">${(basePrice + platformFee).toFixed(2)}</span>
+                          <span className="text-3xl font-oswald font-bold text-white tracking-tighter">${pricing.total.toFixed(2)}</span>
                         </div>
                       </div>
                       <button onClick={handleInitiateEscrow} className="w-full mt-8 bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all">Lock Funds in Escrow</button>
