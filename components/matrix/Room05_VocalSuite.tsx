@@ -59,7 +59,8 @@ export default function Room05_VocalSuite() {
   const compRef = useRef<DynamicsCompressorNode | null>(null);
   const saturationRef = useRef<WaveShaperNode | null>(null);
 
-  const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
+  // FIX: Applies the gate to BOTH Free Loader and The Artist
+  const isNonMogul = userSession?.tier !== "The Mogul";
 
   // --- RECOVERY LOGIC: Persistent "Success" View ---
   useEffect(() => {
@@ -78,13 +79,13 @@ export default function Room05_VocalSuite() {
         return;
       }
 
-      // Artists and Moguls have this included
-      if (userSession?.tier === "The Mogul" || userSession?.tier === "The Artist") {
+      // ONLY Moguls bypass the token check automatically
+      if (userSession?.tier === "The Mogul") {
         setHasToken(true);
         return;
       }
 
-      // Free Loaders must check the bool column
+      // Check the bool column for everyone else (Artists & Free Loaders)
       if (userSession?.id) {
         const { data } = await supabase
           .from('profiles')
@@ -176,7 +177,7 @@ export default function Room05_VocalSuite() {
 
   const handleApplyEngineering = async () => {
     // --- MANDATORY TOKEN CHECK ---
-    if (isFreeLoader && !hasToken) {
+    if (isNonMogul && !hasToken) {
       if(addToast) addToast("Vocal Suite is Locked. Engineering Token required.", "error");
       return;
     }
@@ -187,6 +188,18 @@ export default function Room05_VocalSuite() {
     
     setStatus("processing");
     try {
+      // --- CONSUME TOKEN IN LEDGER ---
+      if (isNonMogul && userSession?.id) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ has_engineering_token: false })
+          .eq('id', userSession.id);
+        
+        if (error) throw error;
+        setHasToken(false); 
+      }
+
+      // Execute Rendering
       const tmpCtx = new window.AudioContext(); const decodedBuffers: AudioBuffer[] = []; const activeStemIds: string[] = []; let maxDuration = 0;
       for (const stem of vocalStems) { const resp = await fetch(stem.url); const audioBuf = await tmpCtx.decodeAudioData(await resp.arrayBuffer()); decodedBuffers.push(audioBuf); activeStemIds.push(stem.id); if (audioBuf.duration > maxDuration) maxDuration = audioBuf.duration; }
       
@@ -209,32 +222,25 @@ export default function Room05_VocalSuite() {
       activeStemIds.forEach(id => removeVocalStem(id));
       addVocalStem({ id: `MIXED_STEM_${Date.now()}`, type: "Lead", url: URL.createObjectURL(audioBufferToWav(renderedBuffer)), blob: audioBufferToWav(renderedBuffer), volume: 0, offsetBars: 0 });
 
-      // --- CONSUME TOKEN IN LEDGER ---
-      if (isFreeLoader && userSession?.id) {
-        await supabase
-          .from('profiles')
-          .update({ has_engineering_token: false })
-          .eq('id', userSession.id);
-        
-        setHasToken(false); // UI gate will close if they purge the matrix
-      }
-
       setStatus("success");
-      if(addToast) addToast("Vocal processing complete. Artifact updated.", "success");
-    } catch (err: any) { setStatus("idle"); if(addToast) addToast(err.message, "error"); }
+      if(addToast) addToast("Vocals Engineered & Token Deducted.", "success");
+    } catch (err: any) { 
+      setStatus("idle"); 
+      if(addToast) addToast(err.message, "error"); 
+    }
   };
 
   return (
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 border border-[#222] relative overflow-hidden">
       
-      {/* 1. GATED UI OVERLAY FOR FREE LOADERS */}
-      {isFreeLoader && !hasToken && status !== "success" && (
+      {/* 1. GATED UI OVERLAY */}
+      {isNonMogul && !hasToken && status !== "success" && (
         <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-8">
           <div className="max-w-md w-full bg-[#050505] border border-[#E60000] p-10 text-center rounded-lg shadow-[0_0_50px_rgba(230,0,0,0.3)] animate-in zoom-in duration-300">
             <Lock size={64} className="text-[#E60000] mx-auto mb-6" />
             <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-4">Suite Gated</h2>
             <p className="font-mono text-xs text-[#888] uppercase tracking-widest mb-8 leading-relaxed">
-              The Vocal Suite requires an <strong className="text-white">Engineering Token</strong> for Free Tier access.
+              The Vocal Suite requires an <strong className="text-white">Engineering Token</strong> for access.
             </p>
             <button 
               onClick={handlePurchaseToken}
