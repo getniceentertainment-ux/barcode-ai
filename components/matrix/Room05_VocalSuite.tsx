@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Sliders, PlayCircle, Loader2, CheckCircle2, Waves, Settings2, ArrowRight, Volume2, ListMusic, Play, Pause } from "lucide-react";
+import { Sliders, PlayCircle, Loader2, CheckCircle2, Waves, Settings2, ArrowRight, Volume2, ListMusic, Play, Pause, Lock } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 
 const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -38,13 +38,11 @@ function audioBufferToWav(buffer: AudioBuffer) {
 }
 
 export default function Room05_VocalSuite() {
-  // GLOBAL STATE INJECTION: Pull the mix settings directly from the store
-  const { audioData, vocalStems, addVocalStem, removeVocalStem, setActiveRoom, addToast, mixParams, updateMixParams } = useMatrixStore();
+  const { audioData, vocalStems, addVocalStem, removeVocalStem, setActiveRoom, addToast, mixParams, updateMixParams, userSession } = useMatrixStore();
   const { activeChain, presenceIntensity, reverbMix, eqGains } = mixParams;
   
   const [status, setStatus] = useState<"idle" | "processing" | "success">("idle");
   
-  // Master Transport State
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -57,7 +55,6 @@ export default function Room05_VocalSuite() {
   const compRef = useRef<DynamicsCompressorNode | null>(null);
   const saturationRef = useRef<WaveShaperNode | null>(null);
 
-  // Initialize Audio Graph
   useEffect(() => {
     if (!vocalStems.length) return;
     const ctx = new window.AudioContext(); 
@@ -113,7 +110,6 @@ export default function Room05_VocalSuite() {
     };
   }, [vocalStems]);
 
-  // Apply State Changes to Audio Graph Nodes dynamically
   useEffect(() => {
     if (wetGainRef.current && dryGainRef.current) { 
       wetGainRef.current.gain.value = reverbMix / 100; 
@@ -133,7 +129,6 @@ export default function Room05_VocalSuite() {
     if (saturationRef.current) saturationRef.current.curve = makeDistortionCurve(presenceIntensity / 2);
   }, [reverbMix, presenceIntensity, eqGains, activeChain]);
 
-  // PRESET CLICK HANDLER: Updates global store directly
   const handlePresetSelect = (chainId: string) => {
     const preset = VOCAL_CHAINS.find(c => c.id === chainId) || VOCAL_CHAINS[0];
     updateMixParams({
@@ -144,18 +139,14 @@ export default function Room05_VocalSuite() {
     });
   };
 
-  // EQ CHANGE HANDLER: Updates global store array
   const updateEqBand = (index: number, val: number) => {
     const newGains = [...eqGains];
     newGains[index] = val;
     updateMixParams({ eqGains: newGains });
   };
 
-  // SYNCHRONIZED PLAYBACK LOGIC
   const togglePreviewPlayback = () => {
-    if (audioCtxRef.current?.state === 'suspended') {
-      audioCtxRef.current.resume();
-    }
+    if (audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume();
     const willPlay = !isPreviewPlaying;
     setIsPreviewPlaying(willPlay);
     
@@ -184,11 +175,7 @@ export default function Room05_VocalSuite() {
     });
   };
 
-  const formatTime = (s: number) => {
-    const mins = Math.floor(s / 60);
-    const secs = Math.floor(s % 60).toString().padStart(2, '0');
-    return `${mins}:${secs}`;
-  };
+  const formatTime = (s: number) => `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
 
   const handleApplyEngineering = async () => {
     setIsPreviewPlaying(false);
@@ -238,7 +225,7 @@ export default function Room05_VocalSuite() {
         const band = offlineCtx.createBiquadFilter(); 
         band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; 
         band.frequency.value = freq; 
-        band.gain.value = eqGains[i]; // Retains your manual EQ tweaks
+        band.gain.value = eqGains[i];
         prevOfflineNode.connect(band); 
         prevOfflineNode = band; 
       });
@@ -269,10 +256,27 @@ export default function Room05_VocalSuite() {
     }
   };
 
+  // --- SURGICAL ADDITION: STRIPE CHECKOUT FOR MASTERING TOKEN ---
+  const handlePurchaseMasteringToken = async () => {
+    if (!userSession?.id) return;
+    if(addToast) addToast("Routing to Secure Checkout...", "info");
+    try {
+      const res = await fetch('/api/stripe/master-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userSession.id })
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else throw new Error(data.error || "Failed to route to checkout.");
+    } catch (err: any) {
+      if(addToast) addToast("Checkout failed: " + err.message, "error");
+    }
+  };
+
   return (
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 border border-[#222]">
       
-      {/* Hidden Audio Element for Instrumental Sync */}
       {audioData && (
         <audio 
           ref={beatAudioRef} 
@@ -295,7 +299,6 @@ export default function Room05_VocalSuite() {
         />
       ))}
       
-      {/* LEFT COLUMN: PRESETS */}
       <div className="w-full md:w-1/3 border-r border-[#222] flex flex-col bg-black">
         <div className="p-6 border-b border-[#222]">
           <h2 className="font-oswald text-2xl uppercase font-bold text-white flex items-center gap-3">
@@ -312,13 +315,11 @@ export default function Room05_VocalSuite() {
         </div>
       </div>
 
-      {/* RIGHT COLUMN: RACK */}
       <div className="flex-1 flex flex-col p-6 lg:p-12 relative overflow-y-auto custom-scrollbar bg-black">
         <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none"><Waves size={400} /></div>
         
         <div className="relative z-10 max-w-2xl mx-auto w-full flex-1 flex flex-col gap-6">
           
-          {/* PLAYBACK PREVIEW HEADER & MASTER TRANSPORT */}
           <div className="bg-[#111] border border-[#222] p-6 rounded-sm flex flex-col gap-5 shadow-lg">
              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -343,7 +344,6 @@ export default function Room05_VocalSuite() {
                 </div>
              </div>
              
-             {/* Seek Scrubber */}
              <div className="w-full flex items-center gap-3">
                <span className="text-[9px] font-mono text-[#555]">0:00</span>
                <input 
@@ -359,7 +359,6 @@ export default function Room05_VocalSuite() {
              </div>
           </div>
 
-          {/* 10-BAND EQ UI */}
           <div className="bg-black/80 backdrop-blur-sm border border-[#222] p-6 lg:p-8 rounded-sm">
             <h3 className="font-oswald text-lg uppercase text-white mb-6 border-b border-[#222] pb-3 flex items-center justify-between">
               <span className="flex items-center gap-2"><Sliders size={16} className="text-[#E60000]" /> Parametric EQ</span>
@@ -388,7 +387,6 @@ export default function Room05_VocalSuite() {
             </div>
           </div>
 
-          {/* MACRO ADJUSTMENTS */}
           <div className="bg-black/80 backdrop-blur-sm border border-[#222] p-6 lg:p-8 rounded-sm mb-8">
             <div className="space-y-8">
               <div>
@@ -408,7 +406,6 @@ export default function Room05_VocalSuite() {
             </div>
           </div>
 
-          {/* ACTION BUTTONS */}
           <div className="mt-auto shrink-0">
             {status === "idle" && (
               <button 
@@ -431,12 +428,23 @@ export default function Room05_VocalSuite() {
               <div className="bg-green-950/20 border-2 border-green-500/50 p-10 flex flex-col items-center animate-in zoom-in rounded-sm">
                 <CheckCircle2 size={32} className="text-green-500 mb-4" />
                 <p className="font-oswald text-xl uppercase font-bold text-white mb-6 tracking-widest">Vocals Engineered</p>
-                <button 
-                  onClick={() => setActiveRoom("06")} 
-                  className="w-full bg-white text-black py-4 font-oswald text-md font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex justify-center items-center gap-3"
-                >
-                  Proceed to Mastering <ArrowRight size={18} />
-                </button>
+                
+                {/* --- SURGICAL OVERLAY: MASTERING GATE --- */}
+                {(userSession?.tier as any) === "The Free Loader" && !(userSession as any)?.has_mastering_token ? (
+                  <button 
+                    onClick={handlePurchaseMasteringToken} 
+                    className="w-full bg-[#E60000] text-white py-4 font-oswald text-md font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-3"
+                  >
+                    Unlock AI Mastering ($4.99) <Lock size={16} />
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => setActiveRoom("06")} 
+                    className="w-full bg-white text-black py-4 font-oswald text-md font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex justify-center items-center gap-3"
+                  >
+                    Proceed to Mastering <ArrowRight size={18} />
+                  </button>
+                )}
               </div>
             )}
           </div>

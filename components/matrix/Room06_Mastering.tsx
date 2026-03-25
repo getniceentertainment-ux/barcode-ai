@@ -43,8 +43,12 @@ export default function Room06_Mastering() {
   const [hasToken, setHasToken] = useState(false);
 
   useEffect(() => {
-    if (userSession?.tier === "The Mogul") setHasToken(true);
-    else checkTokens();
+    // Both Moguls AND Artists get Mastering included in their tier.
+    if (userSession?.tier === "The Mogul" || userSession?.tier === "The Artist") {
+      setHasToken(true);
+    } else {
+      checkTokens();
+    }
 
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -58,8 +62,8 @@ export default function Room06_Mastering() {
 
   const checkTokens = async () => {
     if (!userSession?.id) return;
-    const { data } = await supabase.from('profiles').select('mastering_tokens').eq('id', userSession.id).single();
-    if (data && (data as any).mastering_tokens > 0) setHasToken(true);
+    const { data } = await supabase.from('profiles').select('has_mastering_token').eq('id', userSession.id).single();
+    if (data && (data as any).has_mastering_token) setHasToken(true);
   };
 
   const handlePurchaseToken = async () => {
@@ -135,34 +139,22 @@ export default function Room06_Mastering() {
       const renderedBuffer = await offlineCtx.startRendering();
       const wavBlob = audioBufferToWav(renderedBuffer);
       
-      // --- SURGICAL FIX: UPLOAD DIRECTLY TO SUPABASE STORAGE ---
       const fileName = `${userSession?.id || 'ANON'}/${Date.now()}_MASTER.wav`;
-      
       const { data, error } = await supabase.storage
-        .from('mastered-audio') // <--- Make sure you have a bucket named 'vault' set to Public!
-        .upload(fileName, wavBlob, {
-          contentType: 'audio/wav',
-          upsert: true,
-        });
+        .from('mastered-audio')
+        .upload(fileName, wavBlob, { contentType: 'audio/wav', upsert: true });
 
       if (error) throw error;
 
-      // Retrieve the permanent public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('mastered-audio')
-        .getPublicUrl(fileName);
+      const { data: { publicUrl } } = supabase.storage.from('mastered-audio').getPublicUrl(fileName);
 
       setMasterUrl(publicUrl);
-      
-      // Save the REAL URL to the matrix state, but keep the blob for the ZIP export feature
       setFinalMaster({ url: publicUrl, blob: wavBlob }); 
       
-      // Force the global audio player to use the real URL, destroying the blob dependency
       useMatrixStore.setState({
         audioData: { ...audioData, url: publicUrl },
         isProjectFinalized: true
       });
-      // ---------------------------------------------------------
 
       if(addToast) addToast("Master encoded & permanently secured. Session locked.", "success");
       setStatus("success");
@@ -175,11 +167,25 @@ export default function Room06_Mastering() {
 
   const handleArtifactExport = async () => {
     if (!finalMaster?.blob || !audioData?.url) return;
+    const trackName = audioData.fileName.replace(/\.[^/.]+$/, "");
+    const isFreeLoader = (userSession?.tier as any) === "The Free Loader";
+
+    // --- SURGICAL ADDITION: FREE LOADER EXPORT LIMITATION ---
+    if (isFreeLoader) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(finalMaster.blob);
+      a.download = `${trackName}_MASTER.wav`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      if (addToast) addToast("Free Tier: Master Audio Downloaded. Upgrade to Artist Tier for ZIP with Stems & Lyrics.", "info");
+      return;
+    }
+
+    // --- STANDARD ZIP EXPORT (ARTIST/MOGUL) ---
     setIsZipping(true);
-    
     try {
       const zip = new JSZip();
-      const trackName = audioData.fileName.replace(/\.[^/.]+$/, "");
 
       zip.file(`1_${trackName}_MASTER.wav`, finalMaster.blob);
 
@@ -251,7 +257,7 @@ export default function Room06_Mastering() {
             <div className="w-full text-center animate-in zoom-in mb-8 relative z-10">
                <Lock size={32} className="mx-auto text-yellow-600 mb-4" />
                <h3 className="font-oswald text-xl uppercase font-bold text-white mb-2">Mastering Gated</h3>
-               <p className="font-mono text-[9px] text-[#888] uppercase mb-8 leading-relaxed">Free and Artist tier nodes require a <strong className="text-white">$4.99 Token</strong> per track.</p>
+               <p className="font-mono text-[9px] text-[#888] uppercase mb-8 leading-relaxed">Free Tier nodes require a <strong className="text-white">$4.99 Token</strong> per track.</p>
                <button onClick={handlePurchaseToken} className="w-full bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3">Purchase Token <DollarSign size={18} /></button>
             </div>
           ) : (
@@ -292,22 +298,25 @@ export default function Room06_Mastering() {
           <div className="w-full bg-[#0a0a0a] border border-[#333] p-6 flex justify-between items-center group hover:border-[#E60000] transition-colors">
              <div>
                 <p className="text-[10px] text-[#E60000] font-mono uppercase tracking-widest mb-1 font-bold">Studio Export Ready</p>
-                <p className="font-oswald text-xl text-white tracking-widest truncate">{audioData?.fileName?.replace(/\.[^/.]+$/, "") || "TRACK"}_ARTIFACTS.zip</p>
-                <p className="text-[9px] text-[#555] font-mono uppercase mt-2">Contains: Master WAV, Instrumentals, Vocal Stems, Lyrics PDF</p>
+                <p className="font-oswald text-xl text-white tracking-widest truncate">{audioData?.fileName?.replace(/\.[^/.]+$/, "") || "TRACK"}</p>
+                <p className="text-[9px] text-[#555] font-mono uppercase mt-2">
+                  {(userSession?.tier as any) === "The Free Loader" ? "Contains: Master WAV Audio" : "Contains: Master WAV, Instrumentals, Vocal Stems, Lyrics PDF"}
+                </p>
              </div>
              <button 
                onClick={handleArtifactExport}
                disabled={isZipping}
-               className="bg-white text-black hover:bg-[#E60000] hover:text-white p-4 rounded-sm transition-all shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+               className="bg-white text-black hover:bg-[#E60000] hover:text-white p-4 rounded-sm transition-all shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50 flex items-center justify-center"
              >
-               {isZipping ? <Loader2 size={24} className="animate-spin" /> : <FileArchive size={24} />}
+               {isZipping ? <Loader2 size={24} className="animate-spin" /> : 
+                 (userSession?.tier as any) === "The Free Loader" ? <Download size={24} /> : <FileArchive size={24} />
+               }
              </button>
           </div>
 
           <div className="w-full flex flex-col gap-3">
             <button onClick={() => setActiveRoom("07")} className="w-full flex justify-center items-center gap-3 bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">Route to Distribution <ArrowRight size={20} /></button>
             
-            {/* SURGICAL FIX: The Definitive Vault Lock */}
             <button 
               onClick={handleStartNewProject} 
               className="w-full border border-red-900/30 text-[#555] py-3 font-oswald text-xs font-bold uppercase tracking-widest hover:text-[#E60000] hover:border-[#E60000] transition-all flex justify-center items-center gap-2"

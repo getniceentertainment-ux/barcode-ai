@@ -7,7 +7,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 });
 
 // We must use the SERVICE ROLE KEY here to securely bypass Row Level Security 
-// and forcefully update the user's credits from the backend server.
+// and forcefully update the user's data from the backend server.
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY! 
@@ -38,32 +38,54 @@ export async function POST(req: Request) {
     // Extract the custom metadata we passed during checkout
     const userId = session.metadata?.userId;
     const tier = session.metadata?.tier;
+    const purchaseType = session.metadata?.purchaseType; // SURGICAL ADDITION: For Tokens
 
-    if (userId && tier) {
-      // Calculate how many credits they get
-      const credits = tier === 'The Mogul' ? 999999 : tier === 'The Artist' ? 100 : 5;
-
+    if (userId) {
       try {
-        // 3. Upgrade their database profile!
-        const { error } = await supabaseAdmin
-          .from('profiles')
-          .update({ 
-            tier: tier, 
-            credits: credits,
-            stripe_customer_id: session.customer as string 
-          })
-          .eq('id', userId);
+        // --- UPGRADE TIER LOGIC ---
+        if (tier) {
+          const credits = tier === 'The Mogul' ? 999999 : tier === 'The Artist' ? 100 : 5;
+          const { error } = await supabaseAdmin
+            .from('profiles')
+            .update({ 
+              tier: tier, 
+              credits_remaining: credits,
+              stripe_customer_id: session.customer as string 
+            })
+            .eq('id', userId);
 
-        if (error) throw error;
+          if (error) throw error;
+          console.log(`[STRIPE] Successfully upgraded User ${userId} to ${tier}`);
+        }
         
-        console.log(`[STRIPE] Successfully upgraded User ${userId} to ${tier}`);
+        // --- SURGICAL FIX: MICRO-TRANSACTION TOKEN LOGIC ---
+        else if (purchaseType === 'engineering_token') {
+          const { error } = await supabaseAdmin
+            .from('profiles')
+            .update({ has_engineering_token: true })
+            .eq('id', userId);
+            
+          if (error) throw error;
+          console.log(`[STRIPE] User ${userId} unlocked Engineering Suite.`);
+        }
+        
+        else if (purchaseType === 'mastering_token') {
+          const { error } = await supabaseAdmin
+            .from('profiles')
+            .update({ has_mastering_token: true })
+            .eq('id', userId);
+            
+          if (error) throw error;
+          console.log(`[STRIPE] User ${userId} unlocked Mastering Suite.`);
+        }
+
       } catch (dbError) {
-        console.error("[SUPABASE] Failed to upgrade user:", dbError);
+        console.error("[SUPABASE] Failed to process Stripe event:", dbError);
         return NextResponse.json({ error: 'Database update failed' }, { status: 500 });
       }
     }
   }
 
-  // 4. Return a 200 OK to Stripe so they know we got the message
+  // Return a 200 OK to Stripe so they know we got the message
   return NextResponse.json({ received: true }, { status: 200 });
 }

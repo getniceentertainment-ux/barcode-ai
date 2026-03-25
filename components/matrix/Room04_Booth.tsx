@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2 } from "lucide-react";
+import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
+import { supabase } from "../../lib/supabase"; // SURGICAL ADDITION: Required for credit deduction
 
-// --- SURGICAL ADDITION: AUDIO TRIMMING UTILITIES ---
+// --- AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const numOfChan = buffer.numberOfChannels;
   const length = buffer.length * numOfChan * 2 + 44;
@@ -52,7 +53,6 @@ async function trimAudioBlob(originalBlob: Blob, startSec: number, endSec: numbe
   }
   return audioBufferToWavBlob(trimmedBuffer);
 }
-// ---------------------------------------------------
 
 function encodeWAV(samples: Float32Array, sampleRate: number) {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
@@ -77,7 +77,7 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
 }
 
 export default function Room04_Booth() {
-  const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, updateStemOffset, setActiveRoom, blueprint } = useMatrixStore();
+  const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, updateStemOffset, setActiveRoom, blueprint, userSession, addToast } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -171,7 +171,6 @@ export default function Room04_Booth() {
     setLyricLines(parsed);
   }, [generatedLyrics, audioData, blueprint]);
 
-  // --- TRIM MODAL LOGIC ---
   useEffect(() => {
     if (trimmingStem && trimWaveformRef.current) {
       trimWavesurferRef.current = WaveSurfer.create({
@@ -189,6 +188,24 @@ export default function Room04_Booth() {
     return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
   }, [trimmingStem]);
 
+  // --- SURGICAL ADDITION: STRIPE CHECKOUT FOR ENGINEERING ---
+  const handlePurchaseEngineering = async () => {
+    if (!userSession?.id) return;
+    if(addToast) addToast("Routing to Secure Checkout...", "info");
+    try {
+      const res = await fetch('/api/stripe/engineering-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userSession.id })
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else throw new Error(data.error || "Failed to route to checkout.");
+    } catch (err: any) {
+      if(addToast) addToast("Checkout failed: " + err.message, "error");
+    }
+  };
+
   const applyTrim = async () => {
     if (!trimmingStem || !trimmingStem.blob) return;
     setIsProcessingTrim(true);
@@ -196,7 +213,6 @@ export default function Room04_Booth() {
       const newBlob = await trimAudioBlob(trimmingStem.blob, trimStart, trimEnd);
       const newUrl = URL.createObjectURL(newBlob);
       
-      // Remove old stem, add newly sliced stem in its exact place
       removeVocalStem(trimmingStem.id);
       addVocalStem({
         id: `TAKE_${Date.now()}`,
@@ -280,7 +296,34 @@ export default function Room04_Booth() {
     setIsPlaying(false); setIsRecording(false); setCurrentTime(0);
   };
 
+  // --- SURGICAL ADDITION: CREDIT DEDUCTION PER TAKE ---
   const startHardwareRecording = async () => {
+    const isMogul = (userSession?.tier as any) === "The Mogul";
+    const currentCredits = (userSession as any)?.creditsRemaining || 0;
+
+    // Deduct credit for Artists and Free Loaders
+    if (!isMogul) {
+      if (currentCredits <= 0) {
+        if (addToast) addToast("Insufficient Credits. Top up to record a take.", "error");
+        return;
+      }
+      if (userSession?.id) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ credits_remaining: currentCredits - 1 })
+          .eq('id', userSession.id);
+
+        if (error) {
+          if (addToast) addToast("Ledger Sync Error. Take aborted.", "error");
+          return;
+        }
+        
+        useMatrixStore.setState({ 
+          userSession: { ...userSession, creditsRemaining: currentCredits - 1 } as any
+        });
+      }
+    }
+
     if (!audioCtxRef.current) return;
     try {
       if (audioCtxRef.current.state === 'suspended') await audioCtxRef.current.resume();
@@ -390,7 +433,6 @@ export default function Room04_Booth() {
                   
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 mr-4">
-                      {/* NEW: Trim Scissors Icon */}
                       <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors" title="Trim Dead Air">
                         <Scissors size={14} />
                       </button>
@@ -418,17 +460,32 @@ export default function Room04_Booth() {
           </div>
         </div>
 
+        {/* --- SURGICAL OVERLAY: ENGINEERING GATE --- */}
         <div className="h-16 bg-black border-t border-[#222] flex items-center justify-between px-10">
           <div className="flex items-center gap-2 text-[10px] font-mono text-green-500 uppercase tracking-widest opacity-80">
             {vocalStems.length > 0 && <><Save size={14} /> Wasm Synchronized</>}
           </div>
-          <button onClick={() => { stopEverything(); setActiveRoom("05"); }} disabled={vocalStems.length === 0} className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-            Engineering Suite <ArrowRight size={16} />
-          </button>
+          
+          {(userSession?.tier as any) === "The Free Loader" && !(userSession as any)?.has_engineering_token ? (
+            <button 
+              onClick={() => { stopEverything(); handlePurchaseEngineering(); }} 
+              disabled={vocalStems.length === 0} 
+              className="flex items-center gap-3 bg-[#E60000] text-white px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-red-700 transition-all disabled:opacity-30"
+            >
+              Unlock Engineering ($4.99) <Lock size={14} />
+            </button>
+          ) : (
+            <button 
+              onClick={() => { stopEverything(); setActiveRoom("05"); }} 
+              disabled={vocalStems.length === 0} 
+              className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Engineering Suite <ArrowRight size={16} />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* --- SURGICAL OVERLAY: TRIMMING MODAL --- */}
       {trimmingStem && (
         <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-8 animate-in zoom-in duration-300">
           <div className="bg-[#050505] border border-[#E60000] rounded-lg w-full max-w-2xl p-8 shadow-[0_0_50px_rgba(230,0,0,0.2)]">
@@ -444,7 +501,6 @@ export default function Room04_Booth() {
             <div className="bg-black border border-[#222] p-4 rounded-lg relative">
               <div ref={trimWaveformRef} className="w-full h-24 pointer-events-none"></div>
               
-              {/* Dual Range Sliders mapped precisely over the waveform */}
               <div className="absolute inset-0 px-4 flex flex-col justify-center">
                 <input 
                   type="range" min={0} max={trimDuration} step={0.01} value={trimStart}
@@ -460,7 +516,6 @@ export default function Room04_Booth() {
                 />
               </div>
 
-              {/* Visual Highlighting Mask */}
               {trimDuration > 0 && (
                 <div 
                   className="absolute top-4 bottom-4 bg-[#E60000]/20 border-l-2 border-r-2 border-[#E60000] pointer-events-none"
