@@ -75,16 +75,21 @@ export default function Room10_Social() {
     try {
       // --- HARDENED SUPABASE QUERY ---
       // 1. Pulling Stage Name, Mogul Score, and Tier
-      // 2. Sorting by mogul_score DESCENDING (Highest first)
-      // 3. Filtering OUT "Free Loader" to maintain exclusivity
+      // 2. We filter for any tier that IS NOT exactly 'Free Loader'
+      // 3. We order by mogul_score DESC (Highest first)
       const { data, error } = await supabase
         .from('profiles')
         .select('id, stage_name, avatar_url, mogul_score, total_referrals, tier')
-        .not('tier', 'eq', 'Free Loader') 
-        .order('mogul_score', { ascending: false })
+        .neq('tier', 'Free Loader') 
+        .order('mogul_score', { ascending: false, nullsFirst: false })
         .limit(50);
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase Query Error:", error.message);
+        throw error;
+      }
+
+      console.log("Syndicate Roster Data Received:", data?.length, "nodes found.");
       setRoster(data || []);
       
     } catch (err) {
@@ -167,8 +172,9 @@ export default function Room10_Social() {
             </div>
           ) : filteredRoster.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 opacity-20 text-center">
-               <ShieldCheck size={48} className="mb-4" />
+               <ShieldCheck size={48} className="mb-4 text-[#444]" />
                <p className="font-mono text-xs uppercase tracking-widest">No Qualified Nodes Found.<br/>Only Moguls & Artists Appear Here.</p>
+               <p className="font-mono text-[8px] text-[#333] mt-4 uppercase">Ensure RLS Policies permit Public Read on Profiles.</p>
             </div>
           ) : filteredRoster.map((node, index) => (
             <div 
@@ -194,12 +200,12 @@ export default function Room10_Social() {
                   <div>
                     <h3 className="font-oswald text-lg uppercase tracking-widest text-white group-hover:text-[#E60000] transition-colors truncate max-w-[120px] flex items-center gap-2">
                       {node.stage_name || `NODE_${node.id.substring(0, 4)}`}
-                      {node.tier === "The Mogul" && <Star size={12} className="text-yellow-500 fill-yellow-500" />}
+                      {node.tier?.includes("Mogul") && <Star size={12} className="text-yellow-500 fill-yellow-500" />}
                     </h3>
                     
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <span className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded-sm border font-bold
-                        ${node.tier === 'The Mogul' ? 'border-yellow-600/50 bg-yellow-600/10 text-yellow-500' : 
+                        ${node.tier?.includes('Mogul') ? 'border-yellow-600/50 bg-yellow-600/10 text-yellow-500' : 
                           'border-blue-600/50 bg-blue-600/10 text-blue-400'}`}>
                         {node.tier?.toUpperCase() || 'NODE'}
                       </span>
@@ -251,7 +257,7 @@ export default function Room10_Social() {
                 <div className="mb-8 flex flex-col md:flex-row md:items-start justify-between gap-4 border-b border-[#222] pb-6">
                   <div>
                     <div className="inline-flex items-center gap-2 bg-[#110000] text-[#E60000] border border-[#330000] px-3 py-1 text-[9px] uppercase font-bold tracking-widest mb-4">
-                      <ShieldCheck size={12} /> {selectedNode.tier === 'The Mogul' ? 'MOGUL ARCHITECT' : 'SYNDICATE ARTIST'}
+                      <ShieldCheck size={12} /> {selectedNode.tier?.includes('Mogul') ? 'MOGUL ARCHITECT' : 'SYNDICATE ARTIST'}
                     </div>
                     <h2 className="font-oswald text-3xl md:text-4xl uppercase tracking-widest font-bold text-white">
                       {selectedNode.stage_name || `NODE_${selectedNode.id.substring(0, 8)}`}
