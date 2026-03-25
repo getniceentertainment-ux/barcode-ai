@@ -215,7 +215,7 @@ export default function Room04_Booth() {
     return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
   }, [trimmingStem]);
 
-  // --- SYNCED SCROLLING ---
+  // --- SCROLLING SYNCED---
   useEffect(() => {
     const currentLineIndex = lyricLines.findIndex((l, i) => {
       const nextLine = lyricLines[i + 1];
