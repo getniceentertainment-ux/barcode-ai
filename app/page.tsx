@@ -303,7 +303,7 @@ const renderActiveRoom = () => {
               </p>
               <div className="flex justify-between items-end mt-3 pt-2 border-t border-[#111]">
                 <p className="font-mono text-[9px] text-green-500 uppercase font-bold tracking-widest">{userSession.tier}</p>
-                <button onClick={handleDisconnect} className="text-[#555] hover:text-[#E60000] transition-colors flex items-center gap-1 text-[9px] font-mono uppercase">
+                <button onClick={handleDisconnect} className="text-[#9c5454] hover:text-[#E60000] transition-colors flex items-center gap-1 text-[9px] font-mono uppercase">
                   <LogOut size={10} /> Logout
                 </button>
               </div>
