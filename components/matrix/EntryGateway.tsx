@@ -222,7 +222,7 @@ export default function EntryGateway() {
             The First Identity-Aware AI Studio Built For Hip-Hop. Drop A Beat, Let Our Neural Engine Map Your Perfect Flow, Record Your Raw Takes, And Instantly Master Them To Industry Standards. We Bridge The Gap From A Concept In Your Head To A Commercial, Global Release. Your Sound, Amplified By The Machine.
           </p>
           
-          <button onClick={() => setAuthStep("auth")} className="w-full bg-[#948e8e] text-sm px-10 py-5 group shadow-neon-red uppercase tracking-widest">
+          <button onClick={() => setAuthStep("auth")} className="gn-btn-outline bg-[#948e8e] text-sm px-10 py-5 group shadow-neon-red uppercase tracking-widest">
             Initialize BarCode 
             <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform inline-block ml-2" />
           </button>
