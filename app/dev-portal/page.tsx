@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Code, Key, Zap, ShieldCheck, CreditCard, Activity, Copy, CheckCircle2 } from "lucide-react";
+import { Code, Key, Zap, ShieldCheck, CreditCard, Activity, Copy, CheckCircle2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
