@@ -37,21 +37,38 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   return new Blob([view], { type: "audio/wav" });
 }
 
+// FIXED: Bulletproof cross-browser decoder wrapper to prevent Safari EncodingErrors
 async function trimAudioBlob(originalBlob: Blob, startSec: number, endSec: number): Promise<Blob> {
   const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  
+  // Safely resume suspended contexts on strict browsers
+  if (audioContext.state === 'suspended') await audioContext.resume();
+  
   const arrayBuffer = await originalBlob.arrayBuffer();
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  
+  // Use Callback-to-Promise wrap to prevent WebKit panics
+  const audioBuffer = await new Promise<AudioBuffer>((resolve, reject) => {
+    audioContext.decodeAudioData(
+      arrayBuffer,
+      (buffer) => resolve(buffer),
+      (err) => reject(new Error("Unable to decode audio format. " + (err?.message || "")))
+    );
+  });
   
   const sampleRate = audioBuffer.sampleRate;
   const startOffset = Math.floor(startSec * sampleRate);
   const endOffset = Math.floor(endSec * sampleRate);
-  const frameCount = endOffset - startOffset;
+  
+  // Prevent DOMException: IndexSizeError if length hits 0
+  const frameCount = Math.max(1, endOffset - startOffset);
 
   const trimmedBuffer = audioContext.createBuffer(audioBuffer.numberOfChannels, frameCount, sampleRate);
   for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
     const channelData = audioBuffer.getChannelData(channel);
     const trimmedData = trimmedBuffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) trimmedData[i] = channelData[startOffset + i];
+    for (let i = 0; i < frameCount; i++) {
+      trimmedData[i] = channelData[startOffset + i] || 0;
+    }
   }
   return audioBufferToWavBlob(trimmedBuffer);
 }
@@ -145,17 +162,42 @@ export default function Room04_Booth() {
     }
   }, [userSession, setActiveRoom, addToast]);
 
+  // FIXED: Bulletproof buffer loading logic
   useEffect(() => {
     const loadBuffers = async () => {
       if (!audioCtxRef.current) return;
+      
       for (const stem of vocalStems) {
         if (!stemBuffersRef.current.has(stem.id)) {
           try {
-            const resp = await fetch(stem.url);
-            const arrayBuf = await resp.arrayBuffer();
-            const audioBuf = await audioCtxRef.current.decodeAudioData(arrayBuf);
+            let arrayBuf: ArrayBuffer;
+            
+            if (stem.blob) {
+               arrayBuf = await stem.blob.arrayBuffer();
+            } else {
+               const resp = await fetch(stem.url);
+               if (!resp.ok) {
+                 console.warn(`Stem skipped: HTTP ${resp.status} on URL fetch.`);
+                 continue;
+               }
+               // Pre-flight check to stop HTML/JSON error payloads from crashing the decoder
+               const contentType = resp.headers.get('content-type') || '';
+               if (contentType.includes('text/html') || contentType.includes('application/json')) {
+                 console.warn("Stem skipped: Storage returned text instead of audio.");
+                 continue;
+               }
+               arrayBuf = await resp.arrayBuffer();
+            }
+            
+            // Safe Promise Wrapper for Safari compatibility
+            const audioBuf = await new Promise<AudioBuffer>((resolve, reject) => {
+               audioCtxRef.current!.decodeAudioData(arrayBuf, resolve, reject);
+            });
+            
             stemBuffersRef.current.set(stem.id, audioBuf);
-          } catch (e) { console.error("Failed to decode stem buffer", e); }
+          } catch (e) { 
+            console.error(`Failed to decode buffer for stem ${stem.id}:`, e); 
+          }
         }
       }
     };
@@ -273,18 +315,30 @@ export default function Room04_Booth() {
     }
   };
 
-  // --- 1. FIXED: Trim Upload to Supabase raw-audio ---
+  // --- FIXED: Fortified HTTP & MIME check for Trim Upload ---
   const applyTrim = async () => {
     if (!trimmingStem) return;
     setIsProcessingTrim(true);
     try {
-      // Gracefully handle missing local blob by fetching it from the existing URL
       let originalBlob = trimmingStem.blob;
+      
+      // Safely fetch if blob isn't loaded in active state
       if (!originalBlob && trimmingStem.url) {
         const resp = await fetch(trimmingStem.url);
+        
+        if (!resp.ok) {
+           throw new Error(`Storage Access Denied (HTTP ${resp.status}). Verify Supabase Bucket RLS Policies.`);
+        }
+        
         originalBlob = await resp.blob();
+        
+        // Prevent decoding of random HTML/JSON error payloads
+        if (originalBlob.type.includes('text/html') || originalBlob.type.includes('application/json')) {
+           throw new Error("Invalid audio payload received from vault. Audio corrupt.");
+        }
       }
-      if (!originalBlob) throw new Error("Audio payload missing");
+      
+      if (!originalBlob) throw new Error("Audio payload missing entirely");
 
       const newBlob = await trimAudioBlob(originalBlob, trimStart, trimEnd);
       const trimId = `TRIM_${Date.now()}`;
@@ -316,9 +370,9 @@ export default function Room04_Booth() {
       
       setTrimmingStem(null);
       if (addToast) addToast("Trimmed audio successfully synced to vault.", "success");
-    } catch (err) {
-      console.error("Trim failed", err);
-      if (addToast) addToast("Failed to upload trimmed file.", "error");
+    } catch (err: any) {
+      console.error("Trim math failed:", err);
+      if (addToast) addToast(err.message || "Failed to slice audio.", "error");
     } finally {
       setIsProcessingTrim(false);
     }
@@ -367,7 +421,6 @@ export default function Room04_Booth() {
     }
   };
 
-  // --- 2. FIXED: Record Upload to Supabase raw-audio ---
   const stopEverything = async () => {
     wavesurferRef.current?.pause(); 
     wavesurferRef.current?.seekTo(0);
@@ -420,7 +473,7 @@ export default function Room04_Booth() {
         console.error("Upload error", err);
         if (addToast) addToast("Storage sync failed. Temporarily mapped to local blob.", "error");
         
-        // Fallback to local Blob URL if Supabase throws an error (e.g. internet disconnects)
+        // Fallback to local Blob URL if Supabase throws an error
         addVocalStem({ 
           id: `TAKE_${Date.now()}`, 
           type: activeTrack, 
@@ -438,7 +491,7 @@ export default function Room04_Booth() {
   };
 
   const startHardwareRecording = async () => {
-    // SECURE SERVER DEDUCTION: Call backend ledger route to verify credits BEFORE starting
+    // SECURE SERVER DEDUCTION
     const isMogul = (userSession?.tier as string) === "The Mogul";
     const currentCredits = Number((userSession as any)?.creditsRemaining || (userSession as any)?.credits || 0);
 
@@ -470,7 +523,7 @@ export default function Room04_Booth() {
       } catch (err) {
         console.error("Secure Ledger Sync Error:", err);
         if (addToast) addToast("Ledger Sync Error. Take aborted.", "error");
-        return; // ABORT recording if we couldn't charge them securely
+        return; 
       }
     }
 
@@ -645,7 +698,6 @@ export default function Room04_Booth() {
                     <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{s.offsetBars || 0}</span>
                   </div>
 
-                  {/* NEW VOLUME / GAIN CONTROLS */}
                   <div className="flex items-center gap-4">
                     <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Take Gain</span>
                     <input 
