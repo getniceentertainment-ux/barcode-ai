@@ -178,43 +178,66 @@ export default function Room06_Mastering() {
       makeupGain.connect(analyser);
       analyser.connect(ctx.destination);
 
-      // Load & Play Beat
+      // --- FIXED: PRE-FETCH & DECODE ALL AUDIO PRIOR TO PLAYBACK ---
+      // 1. Fetch & Decode Beat
       let beatBlob = (audioData as any)?.blob;
-      if (!beatBlob) { const r = await fetch(audioData.url); beatBlob = await r.blob(); }
-      
-      // FIXED: Build-safe Promise Resolution
+      if (!beatBlob && audioData.url) { 
+        const r = await fetch(audioData.url); 
+        beatBlob = await r.blob(); 
+      }
       const beatArrayBuf = await beatBlob.arrayBuffer();
       const beatBuffer = await new Promise<AudioBuffer>((res, rej) => ctx.decodeAudioData(beatArrayBuf, res, rej));
       
+      // 2. Fetch & Decode All Vocals (Pulling securely from Supabase URLs)
+      const decodedVocals = [];
+      for (const stem of vocalStems) {
+          let vBlob = (stem as any).blob;
+          if (!vBlob && stem.url) { 
+            const r = await fetch(stem.url); 
+            if (r.ok) vBlob = await r.blob(); 
+          }
+          if (!vBlob) continue;
+
+          const vArrayBuf = await vBlob.arrayBuffer();
+          const vBuf = await new Promise<AudioBuffer>((resolve, reject) => {
+            ctx.decodeAudioData(vArrayBuf, resolve, reject);
+          });
+          
+          decodedVocals.push({
+            buffer: vBuf,
+            offset: (stem.offsetBars || 0) * secondsPerBar,
+            volume: stem.volume ?? 1
+          });
+      }
+
+      // --- FIXED: SYNCHRONIZED FIRING ---
+      // We calculate exactly when everything should start (100ms in the future)
+      // to guarantee perfect mathematical alignment.
+      const syncTime = ctx.currentTime + 0.1;
+
+      // 3. Connect & Schedule Beat
       const beatSource = ctx.createBufferSource();
       beatSource.buffer = beatBuffer;
       const beatGain = ctx.createGain();
       beatGain.gain.value = beatVolume;
       beatSource.connect(beatGain);
       beatGain.connect(limiter);
-      beatSource.start(0);
+      beatSource.start(syncTime);
       activeSourcesRef.current.push(beatSource);
 
-      // Load & Play Vocals
-      for (const stem of vocalStems) {
-          let vBlob = (stem as any).blob;
-          if (!vBlob) { const r = await fetch(stem.url); vBlob = await r.blob(); }
-          
-          // FIXED: Build-safe Promise Resolution
-          const vArrayBuf = await vBlob.arrayBuffer();
-          const vBuf = await new Promise<AudioBuffer>((resolve, reject) => {
-            ctx.decodeAudioData(vArrayBuf, resolve, reject);
-          });
-          
+      // 4. Connect & Schedule All Vocals
+      decodedVocals.forEach(v => {
           const vSource = ctx.createBufferSource();
-          vSource.buffer = vBuf;
+          vSource.buffer = v.buffer;
           const vGain = ctx.createGain();
-          vGain.gain.value = vocalVolume * (stem.volume ?? 1);
+          vGain.gain.value = vocalVolume * v.volume;
           vSource.connect(vGain);
           vGain.connect(limiter);
-          vSource.start((stem.offsetBars || 0) * secondsPerBar);
+          
+          // Fire exactly when the beat fires + the timeline offset
+          vSource.start(syncTime + v.offset);
           activeSourcesRef.current.push(vSource);
-      }
+      });
 
       beatSource.onended = () => stopPreview();
       drawMeter();
@@ -252,16 +275,15 @@ export default function Room06_Mastering() {
       let beatBlob = (audioData as any)?.blob;
       if (!beatBlob) { const r = await fetch(audioData.url); beatBlob = await r.blob(); }
       
-      // FIXED: Build-safe Promise Resolution
       const beatArrayBuf = await beatBlob.arrayBuffer();
       const beatBuffer = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(beatArrayBuf, res, rej));
       
       const vocalBuffers = [];
       for (const stem of vocalStems) {
           let vBlob = (stem as any).blob;
-          if (!vBlob) { const r = await fetch(stem.url); vBlob = await r.blob(); }
+          if (!vBlob && stem.url) { const r = await fetch(stem.url); if (r.ok) vBlob = await r.blob(); }
+          if (!vBlob) continue;
           
-          // FIXED: Build-safe Promise Resolution
           const vArrayBuf = await vBlob.arrayBuffer();
           const vBuf = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(vArrayBuf, res, rej));
           
@@ -351,9 +373,9 @@ export default function Room06_Mastering() {
           
           const decodedVocals = await Promise.all(vocalStems.map(async s => {
             let vBlob = (s as any).blob;
-            if (!vBlob) { const r = await fetch(s.url); vBlob = await r.blob(); }
+            if (!vBlob && s.url) { const r = await fetch(s.url); if (r.ok) vBlob = await r.blob(); }
+            if (!vBlob) return null;
             
-            // FIXED: Build-safe Promise Resolution
             const vArrayBuf = await vBlob.arrayBuffer();
             const vBuf = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(vArrayBuf, res, rej));
             
@@ -362,16 +384,18 @@ export default function Room06_Mastering() {
             return { buffer: vBuf, offset: (s.offsetBars || 0) * secondsPerBar, volume: s.volume ?? 1 };
           }));
 
-          if (maxDuration > 0) {
+          const validVocals = decodedVocals.filter(v => v !== null);
+
+          if (maxDuration > 0 && validVocals.length > 0) {
             const offlineAcapellaCtx = new OfflineAudioContext(2, tmpCtx.sampleRate * maxDuration, tmpCtx.sampleRate);
-            decodedVocals.forEach(v => {
+            validVocals.forEach(v => {
                 const source = offlineAcapellaCtx.createBufferSource();
-                source.buffer = v.buffer;
+                source.buffer = v!.buffer;
                 const gainNode = offlineAcapellaCtx.createGain();
-                gainNode.gain.value = vocalVolume * v.volume;
+                gainNode.gain.value = vocalVolume * v!.volume;
                 source.connect(gainNode);
                 gainNode.connect(offlineAcapellaCtx.destination);
-                source.start(v.offset);
+                source.start(v!.offset);
             });
             const renderedAcapella = await offlineAcapellaCtx.startRendering();
             const acapellaBlob = audioBufferToWavBlob(renderedAcapella);

@@ -388,7 +388,6 @@ export default function Room04_Booth() {
 
   const togglePlayback = async () => {
     if (!wavesurferRef.current || !audioCtxRef.current) {
-      // Lazy init AudioContext if it failed on mount due to strict browser policy
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!audioCtxRef.current) audioCtxRef.current = new AudioContextClass();
       if (!wavesurferRef.current) return;
@@ -555,7 +554,14 @@ export default function Room04_Booth() {
       workletNode.port.onmessage = (e) => recordedChunksRef.current.push(new Float32Array(e.data));
       
       if (mediaSourceRef.current) mediaSourceRef.current.connect(workletNode);
-      workletNode.connect(audioCtxRef.current.destination);
+      
+      // --- FIXED: LATENCY (SLAPBACK) PREVENTION ---
+      // We route the microphone to a node with 0 volume so it records, 
+      // but doesn't echo into your headphones and ruin your timing.
+      const silenceNode = audioCtxRef.current.createGain();
+      silenceNode.gain.value = 0;
+      workletNode.connect(silenceNode);
+      silenceNode.connect(audioCtxRef.current.destination);
       
       setIsRecording(true); 
       if (!isPlaying) await togglePlayback();
