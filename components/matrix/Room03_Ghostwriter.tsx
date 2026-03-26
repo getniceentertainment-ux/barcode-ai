@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Layout, ShieldCheck, Cpu, Activity, ArrowRight, Lock } from "lucide-react";
+import { 
+  PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, 
+  Loader2, Layout, ShieldCheck, Cpu, Activity, 
+  ArrowRight, Lock, Plus 
+} from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -11,6 +15,10 @@ export default function Room03_Ghostwriter() {
     gwTitle, setGwTitle, gwPrompt, setGwPrompt, gwStyle, setGwStyle, gwGender, setGwGender, 
     gwUseSlang, setGwUseSlang, gwUseIntel, setGwUseIntel, userSession
   } = useMatrixStore();
+
+  const [motive, setMotive] = useState("");
+  const [struggle, setStruggle] = useState("");
+  const [hustle, setHustle] = useState("");
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [lyrics, setLyrics] = useState(generatedLyrics || "");
@@ -22,72 +30,79 @@ export default function Room03_Ghostwriter() {
   const [selectedLine, setSelectedLine] = useState("");
 
   const styles = [
-    { id: "getnice_hybrid", name: "GetNice Hybrid" },
+    { id: "getnice_hybrid", name: "GetNice Hybrid [Melodic Trap]" },
     { id: "heartbeat", name: "Heartbeat (Boom-Bap)" },
     { id: "lazy", name: "Lazy (Wavy/Delayed)" },
     { id: "triplet", name: "Triplet (Trap)" },
     { id: "chopper", name: "Chopper (Fast/Tech)" }
   ];
 
-  // THE MATH: Calculate seconds per bar based on the precise DSP tempo
   const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
   const formatTime = (s: number) => `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;
 
   const calculateTotalBars = () => blueprint.reduce((acc, section) => acc + section.bars, 0);
 
-  // --- MONETIZATION: DYNAMIC COST CALCULATION ---
   const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID;
   const isCreator = userSession?.id && userSession.id === CREATOR_ID;
   const isMogul = userSession?.tier === "The Mogul";
-
-  // Rule: 1 Credit covers up to 2 blocks (e.g., 1 Hook + 1 Verse). 
-  // 3-4 blocks = 2 Credits, 5-6 blocks = 3 Credits, etc.
   const currentCost = isMogul ? 0 : Math.max(1, Math.ceil(blueprint.length / 2));
 
   const hasEnoughCredits = isCreator || isMogul || 
     (userSession?.creditsRemaining && (userSession.creditsRemaining === "UNLIMITED" || userSession.creditsRemaining >= currentCost));
 
-  // AUTOMATED TIMELINE RETENTION
-  // Assigns absolute startBars initially. If a block is deleted, remaining blocks retain their offset!
-  useEffect(() => {
-    let currentBar = 0;
-    let hasChanges = false;
-    const updatedBlueprint = blueprint.map((block) => {
-      if ((block as any).startBar === undefined) {
-        hasChanges = true;
-        const newBlock = { ...block, startBar: currentBar };
-        currentBar += block.bars;
-        return newBlock;
-      } else {
-        currentBar = (block as any).startBar + block.bars;
-        return block;
-      }
+  const syncTimeline = (newBlueprint: any[]) => {
+    let cursor = 0;
+    const synced = newBlueprint.map((block) => {
+      const start = Math.max(cursor, block.startBar ?? cursor);
+      const updated = { ...block, startBar: start };
+      cursor = start + block.bars;
+      return updated;
     });
-    if (hasChanges) {
-      setBlueprint(updatedBlueprint);
-    }
-  }, [blueprint, setBlueprint]);
+    setBlueprint(synced);
+  };
 
   const updateBlueprintStartBar = (index: number, newStart: number) => {
     const newBp = [...blueprint];
+    const oldStart = (newBp[index] as any).startBar || 0;
+    const delta = newStart - oldStart;
     (newBp[index] as any).startBar = Math.max(0, newStart);
-    setBlueprint(newBp);
+    for (let i = index + 1; i < newBp.length; i++) {
+        const currentPos = (newBp[i] as any).startBar || 0;
+        (newBp[i] as any).startBar = Math.max(0, currentPos + delta);
+    }
+    syncTimeline(newBp);
   };
 
   const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
-    // CAP EXPLOIT FIX: Prevent Free Loaders from bypassing the 2-block limit via Room 03
-    if (userSession?.tier === "Free Loader" && blueprint.length >= 2) {
-      if(addToast) addToast("Free Loaders are strictly capped at 2 structural blocks.", "error");
+    // --- REVENUE PROTECTION: TYPE-SAFE CHECK ---
+    // FIXED: Removed "The" from "The Free Loader" to perfectly match database enum
+    const isFreeLoader = (userSession?.tier as string) === "Free Loader";
+    const currentSectionCount = blueprint.length;
+
+    if (isFreeLoader && currentSectionCount >= 2) {
+      if (addToast) {
+        addToast(
+          "Free Tier Limited to 2 Sections (1 Hook & 1 Verse). Upgrade to 'The Artist' for unlimited blocks.", 
+          "error"
+        );
+      }
       return;
     }
-
     const lastBlock = blueprint[blueprint.length - 1] as any;
-    const nextStartBar = lastBlock && lastBlock.startBar !== undefined ? lastBlock.startBar + lastBlock.bars : 0;
-    setBlueprint([...blueprint, { id: Math.random().toString(), type, bars, startBar: nextStartBar } as any]);
+    const nextStart = lastBlock && lastBlock.startBar !== undefined ? lastBlock.startBar + lastBlock.bars : 0;
+    
+    const newBlock = { 
+      id: Math.random().toString(), 
+      type, 
+      bars, 
+      startBar: nextStart 
+    };
+    
+    syncTimeline([...blueprint, newBlock]);
   };
-  
+
   const removeSection = (id: string) => {
-    setBlueprint(blueprint.filter(b => b.id !== id));
+    syncTimeline(blueprint.filter(b => b.id !== id));
   };
 
   const handleGenerate = async () => {
@@ -96,13 +111,12 @@ export default function Room03_Ghostwriter() {
     if (!audioData) return addToast("Instrumental DSP data missing. Return to Room 01.", "error");
     
     if (!hasEnoughCredits) {
-      if(addToast) addToast(`Insufficient Credits. You need ${currentCost} CRD for this structure.`, "error");
+      if(addToast) addToast(`Insufficient Credits. You need ${currentCost} CRD.`, "error");
       return;
     }
 
     setIsGenerating(true);
-    setPollingAttempts(0);
-    setUxState("Securing JWT Token & Matrix Alignment...");
+    setUxState("Synthesizing Bars via TALON Engine...");
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -118,16 +132,20 @@ export default function Room03_Ghostwriter() {
         body: JSON.stringify({
           userId: userSession?.id,
           prompt: gwPrompt,
+          motive: motive || "Mastering the craft",
+          struggle: struggle || "Against the odds",
+          hustle: hustle || "Relentless execution",
           title: gwTitle,
           bpm: audioData?.bpm,
-          key: audioData?.key, 
-          stageName: userSession?.stageName, 
-          tag: flowDNA?.tag,
           style: gwStyle,
-          gender: gwGender,
+          tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
-          blueprint: blueprint.map(b => ({ type: b.type, bars: b.bars }))
+          blueprint: blueprint.map(b => ({ 
+            type: b.type, 
+            bars: b.bars, 
+            startBar: (b as any).startBar 
+          }))
         })
       });
 
@@ -140,7 +158,7 @@ export default function Room03_Ghostwriter() {
       const pollInterval = setInterval(async () => {
         attempts++;
         setPollingAttempts(attempts);
-        if (attempts > 2) setUxState("Warming up Neural Network (Cold Start)...");
+        if (attempts > 2) setUxState("Warming up Neural Network...");
         else setUxState("Synthesizing Bars...");
 
         try {
@@ -152,7 +170,7 @@ export default function Room03_Ghostwriter() {
             setIsGenerating(false);
             setLyrics(statusData.output.lyrics);
             setGeneratedLyrics(statusData.output.lyrics);
-            if(addToast) addToast(`Lyrics Synthesized. ${currentCost > 0 ? `${currentCost} CRD deducted.` : ''}`, "success");
+            if(addToast) addToast(`Lyrics Synthesized.`, "success");
           } else if (statusData.status === 'FAILED') {
             clearInterval(pollInterval);
             setIsGenerating(false);
@@ -219,9 +237,7 @@ export default function Room03_Ghostwriter() {
           <h2 className="font-oswald text-2xl uppercase tracking-widest font-bold text-[#E60000] flex items-center gap-3">
             <PenTool size={24} /> TALON Engine
           </h2>
-          <p className="font-mono text-[10px] text-[#555] uppercase mt-2 tracking-widest">
-            Neural Parameter Matrix
-          </p>
+          <p className="font-mono text-[10px] text-[#555] uppercase mt-2 tracking-widest">Neural Parameter Matrix</p>
         </div>
 
         <div className="p-6 space-y-6 flex-1">
@@ -236,14 +252,49 @@ export default function Room03_Ghostwriter() {
             />
           </div>
 
-          <div>
-            <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Thematic Prompt (Description)</label>
-            <textarea 
-              value={gwPrompt} 
-              onChange={(e) => setGwPrompt(e.target.value)} 
-              placeholder="Describe the vibe, the struggle, the story..." 
-              className="w-full h-24 bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] custom-scrollbar resize-none transition-colors" 
-            />
+          <div className="space-y-4">
+            <div>
+              <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-1 block font-bold">The Drive (Motive)</label>
+              <input 
+                type="text" 
+                value={motive} 
+                onChange={(e) => setMotive(e.target.value)} 
+                placeholder="E.g., Building a media brand..." 
+                className="w-full bg-[#111] border border-[#333] p-2 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" 
+              />
+            </div>
+            
+            <div>
+              <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-1 block font-bold">The Setback (Struggle)</label>
+              <input 
+                type="text" 
+                value={struggle} 
+                onChange={(e) => setStruggle(e.target.value)} 
+                placeholder="E.g., Equipment failures and tight margins..." 
+                className="w-full bg-[#111] border border-[#333] p-2 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" 
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-1 block font-bold">The Execution (Hustle)</label>
+              <input 
+                type="text" 
+                value={hustle} 
+                onChange={(e) => setHustle(e.target.value)} 
+                placeholder="E.g., Late night DAW sessions..." 
+                className="w-full bg-[#111] border border-[#333] p-2 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" 
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-1 block font-bold mt-4">Current Topic (Thematic Focus)</label>
+              <textarea 
+                value={gwPrompt} 
+                onChange={(e) => setGwPrompt(e.target.value)} 
+                placeholder="What is this specific song about?" 
+                className="w-full h-16 bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] custom-scrollbar resize-none transition-colors" 
+              />
+            </div>
           </div>
 
           <div>
@@ -252,13 +303,7 @@ export default function Room03_Ghostwriter() {
               {styles.map(s => (
                 <button 
                   key={s.id}
-                  onClick={() => {
-                    if (s.id === 'user_flow' && !flowDNA) {
-                      if(addToast) addToast("No User Flow DNA found. Return to Brain Train.", "error");
-                      return;
-                    }
-                    setGwStyle(s.id);
-                  }} 
+                  onClick={() => setGwStyle(s.id)} 
                   className={`p-3 border font-oswald text-[10px] uppercase tracking-widest transition-all ${gwStyle === s.id ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-[#111] border-[#333] text-[#888] hover:text-white hover:border-[#555]'}`}
                 >
                   {s.name}
@@ -279,8 +324,7 @@ export default function Room03_Ghostwriter() {
           </div>
         </div>
 
-        <div className="p-6 border-t border-[#222] bg-black sticky bottom-0 relative">
-          {/* CREDIT GATING OVERLAY ON BUTTON */}
+        <div className="p-6 border-t border-[#222] bg-black sticky bottom-0 z-20">
           {!hasEnoughCredits && (
             <div className="absolute inset-0 bg-black/80 backdrop-blur-[2px] z-20 flex flex-col items-center justify-center border-t border-[#E60000]/20">
               <Lock size={18} className="text-[#E60000] mb-1" />
@@ -306,7 +350,6 @@ export default function Room03_Ghostwriter() {
              <Layout size={16} /> Song Blueprint <span className="text-[#333]">|</span> <span className="text-[#E60000] text-sm">{calculateTotalBars()} Bars Target</span>
            </h3>
            <div className="flex items-center gap-4">
-             {/* DYNAMIC COST INDICATOR IN HEADER */}
              {!isMogul && (
                <span className={`text-[10px] font-mono uppercase px-2 py-1 font-bold ${hasEnoughCredits ? 'text-yellow-500 bg-yellow-500/10 border border-yellow-500/30' : 'text-red-500 bg-red-500/10 border border-red-500/30'}`}>
                  Cost: {currentCost} CRD
@@ -317,7 +360,7 @@ export default function Room03_Ghostwriter() {
            </div>
         </div>
 
-        {/* BLUEPRINT BLOCK BUILDER (With Absolute Offsets) */}
+        {/* BLUEPRINT BLOCK BUILDER */}
         <div className="h-44 bg-black border-b border-[#222] overflow-x-auto flex items-center px-8 gap-4 shrink-0 custom-scrollbar shadow-[inset_0_-10px_20px_rgba(0,0,0,0.5)]">
           {blueprint.map((block, index) => (
             <div key={block.id} className="w-40 shrink-0 bg-[#050505] border border-[#333] p-4 flex flex-col justify-between h-32 group relative hover:border-[#E60000] transition-colors">
@@ -330,7 +373,6 @@ export default function Room03_Ghostwriter() {
                 <p className="font-mono text-[10px] text-[#E60000] font-bold">{block.bars} BARS</p>
               </div>
 
-              {/* TIMELINE OFFSET CONTROLS */}
               <div className="flex justify-between items-center mt-2 border-t border-[#333] pt-2">
                 <span className="text-[9px] font-mono text-[#555] uppercase tracking-widest">Start Bar</span>
                 <div className="flex items-center gap-2">
@@ -345,19 +387,27 @@ export default function Room03_Ghostwriter() {
               </div>
             </div>
           ))}
-          <div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2">
+          
+          {/* ADD STRUCTURE BLOCK - SECURED WITH THE LOOPHOLE FIX */}
+          <div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2 relative">
+            {(userSession?.tier as string) === "Free Loader" && blueprint.length >= 2 && (
+              <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-10">
+                <Lock size={14} className="text-[#E60000] mb-1" />
+                <span className="text-[8px] font-mono text-white uppercase font-bold tracking-tighter text-center px-2">Sections Locked</span>
+              </div>
+            )}
             <p className="text-[8px] font-mono text-[#555] uppercase text-center tracking-widest">Add Structure</p>
             <div className="flex gap-1 justify-center">
               <button 
                 onClick={() => addSection("HOOK", 8)} 
-                disabled={userSession?.tier === "Free Loader" && blueprint.length >= 2}
+                disabled={(userSession?.tier as string) === "Free Loader" && blueprint.length >= 2}
                 className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 Hook
               </button>
               <button 
                 onClick={() => addSection("VERSE", 16)} 
-                disabled={userSession?.tier === "Free Loader" && blueprint.length >= 2}
+                disabled={(userSession?.tier as string) === "Free Loader" && blueprint.length >= 2}
                 className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 Verse
@@ -376,7 +426,6 @@ export default function Room03_Ghostwriter() {
             </div>
           ) : lyrics ? (
             <div className="max-w-2xl mx-auto space-y-2 pb-32">
-              
               <div className="flex items-center justify-between border-b border-[#222] pb-6 mb-8">
                 <div>
                   <h3 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white glow-red">{gwTitle || "UNTITLED ARTIFACT"}</h3>
@@ -387,7 +436,6 @@ export default function Room03_Ghostwriter() {
                 <Cpu size={32} className="text-[#E60000] opacity-50" />
               </div>
 
-              {/* RENDERED TEXT: Timeline Synced View */}
               {(() => {
                  let currentBlockIndex = -1;
                  let barOffsetWithinBlock = 0;
@@ -398,16 +446,14 @@ export default function Room03_Ghostwriter() {
 
                    if (text.startsWith('[')) {
                       currentBlockIndex++;
-                      barOffsetWithinBlock = 0; // Reset for new block
+                      barOffsetWithinBlock = 0;
                       return <p key={i} className="text-[#E60000] font-bold mt-8 mb-4 tracking-widest text-xs">{text}</p>;
                    }
                    
-                   // Extract exact start bar from the Matrix Blueprint array
                    let blockStartBar = 0;
                    if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
                        const block = blueprint[currentBlockIndex];
                        if ((block as any).startBar !== undefined) blockStartBar = (block as any).startBar;
-                       else { for(let b=0; b<currentBlockIndex; b++) blockStartBar += blueprint[b].bars; }
                    }
 
                    const absoluteBar = blockStartBar + barOffsetWithinBlock;
@@ -421,7 +467,7 @@ export default function Room03_Ghostwriter() {
                    return (
                      <div 
                         key={i} 
-                        onClick={() => setSelectedLine(text)} // Use raw text for editing
+                        onClick={() => setSelectedLine(text)}
                         className={`flex items-start gap-3 transition-all font-mono text-sm cursor-pointer rounded p-1
                           ${selectedLine === text ? 'bg-[#E60000]/20 border-l-2 border-[#E60000] pl-3 text-white font-bold' : 'text-gray-300 hover:text-white hover:bg-[#111]'}`}
                      >
@@ -437,7 +483,6 @@ export default function Room03_Ghostwriter() {
                   Send to Booth <ArrowRight size={16} />
                 </button>
               </div>
-
             </div>
           ) : (
             <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none text-center">
@@ -459,7 +504,7 @@ export default function Room03_Ghostwriter() {
           <div className="flex gap-3">
              <input 
                type="text" value={refineInstruction} onChange={(e) => setRefineInstruction(e.target.value)}
-               placeholder="E.g., Make it rhyme with 'cash', make it more aggressive..." 
+               placeholder="E.g., Make it rhyme with 'cash'..." 
                className="flex-1 bg-[#111] border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000]"
              />
              <button 
