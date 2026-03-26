@@ -334,9 +334,9 @@ export default function Room06_Mastering() {
             <button onClick={handleStartNewProject} className={`w-full border py-3 font-oswald text-xs font-bold uppercase tracking-widest transition-all flex justify-center items-center gap-2 ${isFreeLoader ? 'border-[#E60000] text-white bg-[#E60000]/10 hover:bg-[#E60000] hover:text-white' : 'border-red-900/30 text-[#555] hover:text-[#E60000]'}`}>
               <Trash2 size={14} /> Start New Project
             </button>
+      )}
           </div>
         </div>
-      )}
     </div>
   );
 }
