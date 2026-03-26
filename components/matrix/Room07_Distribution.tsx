@@ -77,11 +77,14 @@ export default function Room07_Distribution() {
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      setHitScore(analyzeData.hitScore);
+      // SAFEGUARD: Ensure the LLM didn't return a string instead of a number
+      const parsedScore = Number(analyzeData.hitScore) || 0;
+      setHitScore(parsedScore);
       setCoverUrl(analyzeData.coverUrl);
       setTiktokSnippet(analyzeData.tiktokSnippet);
       
-      handleFinalSubmit(analyzeData);
+      // Pass the safeguarded data to the submit function
+      handleFinalSubmit({ ...analyzeData, hitScore: parsedScore });
     } catch (error: any) {
       console.error("A&R Error:", error);
       if (addToast) addToast(error.message, "error");
@@ -92,6 +95,30 @@ export default function Room07_Distribution() {
   const handleFinalSubmit = async (aAndRData: any) => {
     setStatus("submitting");
     try {
+      // --- THE BLOB TRAP FIX ---
+      // 1. Extract the audio from local browser memory
+      let blobData = (finalMaster as any)?.blob;
+      if (!blobData && finalMaster?.url) {
+        const resp = await fetch(finalMaster.url);
+        blobData = await resp.blob();
+      }
+      if (!blobData) throw new Error("Audio payload missing from Matrix Store.");
+
+      // 2. Securely upload it to Supabase Storage
+      const masterId = `MASTER_${Date.now()}`;
+      const fileName = `${userSession?.id || 'anon'}/${masterId}.wav`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('raw-audio')
+        .upload(fileName, blobData, { contentType: 'audio/wav', upsert: true });
+        
+      if (uploadError) throw new Error("Failed to upload commercial master to vault.");
+
+      // 3. Generate the permanent Public URL
+      const { data: publicData } = supabase.storage.from('raw-audio').getPublicUrl(fileName);
+      const publicAudioUrl = publicData.publicUrl;
+
+      // 4. Send the REAL URL to the backend Ledger
       const { data: { session } } = await supabase.auth.getSession();
       
       const res = await fetch('/api/distribution/submit', {
@@ -102,7 +129,7 @@ export default function Room07_Distribution() {
         },
         body: JSON.stringify({
           title: trackTitle,
-          audioUrl: finalMaster?.url,
+          audioUrl: publicAudioUrl, // <--- FIXED: Now passing the permanent link
           coverUrl: aAndRData.coverUrl,
           hitScore: aAndRData.hitScore,
           tiktokSnippet: aAndRData.tiktokSnippet
@@ -111,7 +138,6 @@ export default function Room07_Distribution() {
 
       if (!res.ok) throw new Error("Failed to secure artifact in Ledger.");
 
-      // Fetch the generated submission ID so we can attach the Exec Rollout to it later
       const { data: latestSub } = await supabase
         .from('submissions')
         .select('id')
