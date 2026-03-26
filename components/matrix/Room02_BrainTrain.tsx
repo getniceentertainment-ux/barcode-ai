@@ -292,8 +292,9 @@ export default function Room02_BrainTrain() {
 
   const updateBlueprintBar = (index: number, delta: number) => {
     const newBp = [...blueprint];
-    // CAP EXPLOIT FIX: Limit Free Loaders to 16 bars max per block. Paid tiers cap at 64 to prevent LLM payload crashes.
-    const maxBars = userSession?.tier === "Free Loader" ? 16 : 64;
+    // STRICT CAP FIX: Limit ALL users to a maximum of 16 bars per block.
+    // Standard hip-hop structure prevents massive payloads while securing the credit economy.
+    const maxBars = 16;
     newBp[index].bars = Math.min(maxBars, Math.max(1, newBp[index].bars + delta));
     setBlueprint(newBp);
   };
@@ -424,7 +425,7 @@ export default function Room02_BrainTrain() {
                      <span className="w-12 text-center">{block.bars} BARS</span>
                      <button 
                        onClick={() => updateBlueprintBar(index, 1)} 
-                       disabled={userSession?.tier === "Free Loader" && block.bars >= 16}
+                       disabled={block.bars >= 16}
                        className="hover:text-green-500 disabled:opacity-20 disabled:hover:text-inherit disabled:cursor-not-allowed"
                      >
                        <Plus size={16} />
