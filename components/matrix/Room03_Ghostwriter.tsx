@@ -13,12 +13,13 @@ export default function Room03_Ghostwriter() {
   const { 
     audioData, flowDNA, blueprint, setBlueprint, generatedLyrics, setGeneratedLyrics, setActiveRoom, addToast,
     gwTitle, setGwTitle, gwPrompt, setGwPrompt, gwStyle, setGwStyle, gwGender, setGwGender, 
-    gwUseSlang, setGwUseSlang, gwUseIntel, setGwUseIntel, userSession
+    gwUseSlang, setGwUseSlang, gwUseIntel, setGwUseIntel, userSession,
+    
+    // NEW: Safely pulling from the global store to retain state across rooms
+    gwMotive = "", setGwMotive = () => {},
+    gwStruggle = "", setGwStruggle = () => {},
+    gwHustle = "", setGwHustle = () => {}
   } = useMatrixStore();
-
-  const [motive, setMotive] = useState("");
-  const [struggle, setStruggle] = useState("");
-  const [hustle, setHustle] = useState("");
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [lyrics, setLyrics] = useState(generatedLyrics || "");
@@ -75,7 +76,6 @@ export default function Room03_Ghostwriter() {
 
   const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
     // --- REVENUE PROTECTION: TYPE-SAFE CHECK ---
-    // FIXED: Removed "The" from "The Free Loader" to perfectly match database enum
     const isFreeLoader = (userSession?.tier as string) === "Free Loader";
     const currentSectionCount = blueprint.length;
 
@@ -116,7 +116,7 @@ export default function Room03_Ghostwriter() {
     }
 
     setIsGenerating(true);
-    setUxState("Synthesizing Bars via GetNice Engine...");
+    setUxState("Synthesizing Bars via TALON Engine...");
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -131,10 +131,11 @@ export default function Room03_Ghostwriter() {
         },
         body: JSON.stringify({
           userId: userSession?.id,
+          stageName: userSession?.stageName || "Unknown Artist", // <-- ADDED EXPLICIT STAGE NAME PASS
           prompt: gwPrompt,
-          motive: motive || "Mastering the craft",
-          struggle: struggle || "Against the odds",
-          hustle: hustle || "Relentless execution",
+          motive: gwMotive || "Mastering the craft", // Using global store variables
+          struggle: gwStruggle || "Against the odds",
+          hustle: gwHustle || "Relentless execution",
           title: gwTitle,
           bpm: audioData?.bpm,
           style: gwStyle,
@@ -150,7 +151,7 @@ export default function Room03_Ghostwriter() {
       });
 
       const initData = await initRes.json();
-      if (!initRes.ok) throw new Error(initData.error || "Failed to initialize GetNice.");
+      if (!initRes.ok) throw new Error(initData.error || "Failed to initialize TALON.");
 
       const jobId = initData.jobId;
       let attempts = 0;
@@ -205,6 +206,7 @@ export default function Room03_Ghostwriter() {
         },
         body: JSON.stringify({ 
           userId: userSession?.id,
+          stageName: userSession?.stageName || "Unknown Artist", // <-- ADDED HERE AS WELL
           originalLine: selectedLine, 
           instruction: refineInstruction,
           style: gwStyle 
@@ -235,7 +237,7 @@ export default function Room03_Ghostwriter() {
       <div className="w-1/3 border-r border-[#222] flex flex-col relative overflow-y-auto custom-scrollbar shrink-0">
         <div className="p-6 border-b border-[#222] bg-black sticky top-0 z-10">
           <h2 className="font-oswald text-2xl uppercase tracking-widest font-bold text-[#E60000] flex items-center gap-3">
-            <PenTool size={24} /> GetNice Engine
+            <PenTool size={24} /> TALON Engine
           </h2>
           <p className="font-mono text-[10px] text-[#555] uppercase mt-2 tracking-widest">Neural Parameter Matrix</p>
         </div>
@@ -257,8 +259,8 @@ export default function Room03_Ghostwriter() {
               <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-1 block font-bold">The Drive (Motive)</label>
               <input 
                 type="text" 
-                value={motive} 
-                onChange={(e) => setMotive(e.target.value)} 
+                value={gwMotive} 
+                onChange={(e) => setGwMotive(e.target.value)} 
                 placeholder="E.g., Building a media brand..." 
                 className="w-full bg-[#111] border border-[#333] p-2 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" 
               />
@@ -268,8 +270,8 @@ export default function Room03_Ghostwriter() {
               <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-1 block font-bold">The Setback (Struggle)</label>
               <input 
                 type="text" 
-                value={struggle} 
-                onChange={(e) => setStruggle(e.target.value)} 
+                value={gwStruggle} 
+                onChange={(e) => setGwStruggle(e.target.value)} 
                 placeholder="E.g., Equipment failures and tight margins..." 
                 className="w-full bg-[#111] border border-[#333] p-2 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" 
               />
@@ -279,8 +281,8 @@ export default function Room03_Ghostwriter() {
               <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-1 block font-bold">The Execution (Hustle)</label>
               <input 
                 type="text" 
-                value={hustle} 
-                onChange={(e) => setHustle(e.target.value)} 
+                value={gwHustle} 
+                onChange={(e) => setGwHustle(e.target.value)} 
                 placeholder="E.g., Late night DAW sessions..." 
                 className="w-full bg-[#111] border border-[#333] p-2 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" 
               />
