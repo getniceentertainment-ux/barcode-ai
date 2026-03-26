@@ -30,6 +30,13 @@ export default function Room03_Ghostwriter() {
   const [refineInstruction, setRefineInstruction] = useState("");
   const [selectedLine, setSelectedLine] = useState("");
 
+// --- SURGICAL FIX: CATCH THE HANDOFF FROM ROOM 02 ---
+  useEffect(() => {
+    if (flowDNA?.referenceText && !gwPrompt) {
+      setGwPrompt(flowDNA.referenceText);
+    }
+  }, [flowDNA?.referenceText, gwPrompt, setGwPrompt]);
+
   const styles = [
     { id: "getnice_hybrid", name: "GetNice Hybrid [Melodic Trap]" },
     { id: "heartbeat", name: "Heartbeat (Boom-Bap)" },
