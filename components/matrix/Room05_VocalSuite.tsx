@@ -41,10 +41,12 @@ function audioBufferToWav(buffer: AudioBuffer) {
 export default function Room05_VocalSuite() {
   const { audioData, vocalStems, engineeredVocal, setEngineeredVocal, setActiveRoom, addToast, userSession, mixParams, updateMixParams } = useMatrixStore();
   
-  const [activeChain, setActiveChain] = useState(VOCAL_CHAINS[0].id);
-  const [presenceIntensity, setPresenceIntensity] = useState(VOCAL_CHAINS[0].presence);
-  const [reverbMix, setReverbMix] = useState(VOCAL_CHAINS[0].reverb);
-  const [eqGains, setEqGains] = useState<number[]>([...VOCAL_CHAINS[0].eq]);
+  // --- STATE INITIALIZED WITH MIXPARAMS FOR PERSISTENCE ---
+  const [activeChain, setActiveChain] = useState(mixParams?.activeChain || VOCAL_CHAINS[0].id);
+  const [presenceIntensity, setPresenceIntensity] = useState(mixParams?.presenceIntensity ?? VOCAL_CHAINS[0].presence);
+  const [reverbMix, setReverbMix] = useState(mixParams?.reverbMix ?? VOCAL_CHAINS[0].reverb);
+  const [eqGains, setEqGains] = useState<number[]>(mixParams?.eqGains?.length ? [...mixParams.eqGains] : [...VOCAL_CHAINS[0].eq]);
+  
   const [status, setStatus] = useState<"idle" | "processing" | "success">("idle");
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -59,34 +61,27 @@ export default function Room05_VocalSuite() {
   const compRef = useRef<DynamicsCompressorNode | null>(null);
   const saturationRef = useRef<WaveShaperNode | null>(null);
 
-  // FIX: Applies the gate to BOTH Free Loader and The Artist
   const isNonMogul = userSession?.tier !== "The Mogul";
 
-  // --- SURGICAL REVISION: RECOVERY LOGIC ---
+  // --- RECOVERY LOGIC ---
   useEffect(() => {
-    // Check the new engineeredVocal state instead of searching vocalStems
     if (engineeredVocal) {
       setStatus("success");
-      setHasToken(true); // Effectively bypass gate if product already exists
+      setHasToken(true); 
     }
   }, [engineeredVocal]);
 
-  // --- SURGICAL REVISION: TOKEN SECURITY GATE ---
+  // --- TOKEN SECURITY GATE ---
   useEffect(() => {
     const checkTokenStatus = async () => {
-      // If we already have a mixed stem, we are "Authorized" by result
       if (engineeredVocal) {
         setHasToken(true);
         return;
       }
-
-      // ONLY Moguls bypass the token check automatically
       if (userSession?.tier === "The Mogul") {
         setHasToken(true);
         return;
       }
-
-      // Check the bool column for everyone else (Artists & Free Loaders)
       if (userSession?.id) {
         const { data } = await supabase
           .from('profiles')
@@ -99,6 +94,16 @@ export default function Room05_VocalSuite() {
     };
     checkTokenStatus();
   }, [userSession, engineeredVocal]);
+
+  // --- AUTO-SAVE MIX TWEAKS ---
+  useEffect(() => {
+    updateMixParams({
+      activeChain,
+      presenceIntensity,
+      reverbMix,
+      eqGains
+    });
+  }, [activeChain, presenceIntensity, reverbMix, eqGains, updateMixParams]);
 
   const handlePurchaseToken = async () => {
     if (!userSession?.id) return;
@@ -114,6 +119,15 @@ export default function Room05_VocalSuite() {
     } catch (err: any) {
       if(addToast) addToast("Checkout failed.", "error");
     }
+  };
+
+  // --- UI HANDLER: SELECT CHAIN ---
+  const handleChainSelect = (chainId: string) => {
+    setActiveChain(chainId);
+    const preset = VOCAL_CHAINS.find(c => c.id === chainId) || VOCAL_CHAINS[0];
+    setEqGains([...preset.eq]);
+    setPresenceIntensity(preset.presence);
+    setReverbMix(preset.reverb);
   };
 
   // --- AUDIO GRAPH INIT ---
@@ -151,31 +165,7 @@ export default function Room05_VocalSuite() {
     return () => { if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close(); };
   }, [vocalStems]);
 
-  useEffect(() => {
-  // If we have saved params in the store, use them; otherwise use the preset
-  if (mixParams && mixParams.eqGains.length > 0) {
-    setEqGains([...mixParams.eqGains]);
-    setPresenceIntensity(mixParams.presenceIntensity);
-    setReverbMix(mixParams.reverbMix);
-    setActiveChain(mixParams.activeChain);
-  } else {
-
-  useEffect(() => {
-    const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
-    setEqGains([...preset.eq]); 
-    setPresenceIntensity(preset.presence); 
-    setReverbMix(preset.reverb);
-  }, [activeChain]); // <--- Ensure this closing brace and bracket are here
-
-  useEffect(() => {
-  updateMixParams({
-    activeChain,
-    presenceIntensity,
-    reverbMix,
-    eqGains
-   });
-  }, [activeChain, presenceIntensity, reverbMix, eqGains]);
-
+  // --- REAL-TIME AUDIO UPDATES ---
   useEffect(() => {
     if (wetGainRef.current && dryGainRef.current) { wetGainRef.current.gain.value = reverbMix / 100; dryGainRef.current.gain.value = 1 - (reverbMix / 100); }
     if (eqBandsRef.current.length === 10) eqBandsRef.current.forEach((band, i) => { band.gain.value = eqGains[i]; });
@@ -197,7 +187,6 @@ export default function Room05_VocalSuite() {
   };
 
   const handleApplyEngineering = async () => {
-    // --- MANDATORY TOKEN CHECK ---
     if (isNonMogul && !hasToken) {
       if(addToast) addToast("Vocal Suite is Locked. Engineering Token required.", "error");
       return;
@@ -209,18 +198,12 @@ export default function Room05_VocalSuite() {
     
     setStatus("processing");
     try {
-      // --- CONSUME TOKEN IN LEDGER ---
       if (isNonMogul && userSession?.id) {
-        const { error } = await supabase
-          .from('profiles')
-          .update({ has_engineering_token: false })
-          .eq('id', userSession.id);
-        
+        const { error } = await supabase.from('profiles').update({ has_engineering_token: false }).eq('id', userSession.id);
         if (error) throw error;
         setHasToken(false); 
       }
 
-      // Execute Rendering
       const tmpCtx = new window.AudioContext(); const decodedBuffers: AudioBuffer[] = []; let maxDuration = 0;
       for (const stem of vocalStems) { const resp = await fetch(stem.url); const audioBuf = await tmpCtx.decodeAudioData(await resp.arrayBuffer()); decodedBuffers.push(audioBuf); if (audioBuf.duration > maxDuration) maxDuration = audioBuf.duration; }
       
@@ -244,23 +227,19 @@ export default function Room05_VocalSuite() {
         const source = offlineCtx.createBufferSource(); 
         source.buffer = buf; 
         
-        // Apply individual take volume
         const stemGain = offlineCtx.createGain();
         stemGain.gain.value = vocalStems[i].volume ?? 1;
         
         source.connect(stemGain);
         stemGain.connect(masterGain); 
         
-        // Start playing at the correct timeline offset
         const startTime = (vocalStems[i].offsetBars || 0) * secondsPerBar;
         source.start(startTime); 
       });
       
       const renderedBuffer = await offlineCtx.startRendering();
       
-      // --- SURGICAL REVISION: NON-DESTRUCTIVE SAVE ---
-      // We removed activeStemIds.forEach(id => removeVocalStem(id))
-      // We also changed the volume from 0 to 1 so the Master room can hear it.
+      // THE NON-DESTRUCTIVE SAVE
       setEngineeredVocal({ 
         id: `MIXED_STEM_${Date.now()}`, 
         type: "Lead", 
@@ -322,7 +301,7 @@ export default function Room05_VocalSuite() {
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {VOCAL_CHAINS.map(c => (
-            <button key={c.id} onClick={() => setActiveChain(c.id)} className={`w-full text-left p-4 border transition-all ${activeChain === c.id ? 'border-[#E60000] bg-[#110000]' : 'border-[#222] bg-[#0a0a0a] hover:border-[#555]'}`}>
+            <button key={c.id} onClick={() => handleChainSelect(c.id)} className={`w-full text-left p-4 border transition-all ${activeChain === c.id ? 'border-[#E60000] bg-[#110000]' : 'border-[#222] bg-[#0a0a0a] hover:border-[#555]'}`}>
               <span className={`font-oswald text-lg uppercase font-bold ${activeChain === c.id ? 'text-white' : 'text-gray-400'}`}>{c.name}</span>
               <span className="font-mono text-[9px] text-[#888] block mt-1">{c.desc}</span>
             </button>

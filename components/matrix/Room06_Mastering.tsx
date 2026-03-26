@@ -140,14 +140,21 @@ export default function Room06_Mastering() {
       const beatArrayBuf = await beatBlob.arrayBuffer();
       const beatBuffer = await new Promise<AudioBuffer>((res, rej) => ctx.decodeAudioData(beatArrayBuf, res, rej));
       
-      const decodedVocals = [];
-      for (const stem of vocalStems) {
-          let vBlob = (stem as any).blob;
-          if (!vBlob && stem.url) { const r = await fetch(stem.url); if (r.ok) vBlob = await r.blob(); }
-          if (!vBlob) continue;
+      // PREVIEW PRIORITIZES THE ENGINEERED VOCAL OVER RAW STEMS
+      const sourceVocal = engineeredVocal || (vocalStems.length > 0 ? vocalStems[0] : null);
+      let vBuf: AudioBuffer | null = null;
+      let vOffset = 0;
+      let vVol = 1;
+
+      if (sourceVocal) {
+        let vBlob = (sourceVocal as any).blob;
+        if (!vBlob && sourceVocal.url) { const r = await fetch(sourceVocal.url); if (r.ok) vBlob = await r.blob(); }
+        if (vBlob) {
           const vArrayBuf = await vBlob.arrayBuffer();
-          const vBuf = await new Promise<AudioBuffer>((resolve, reject) => { ctx.decodeAudioData(vArrayBuf, resolve, reject); });
-          decodedVocals.push({ buffer: vBuf, offset: (stem.offsetBars || 0) * secondsPerBar, volume: stem.volume ?? 1 });
+          vBuf = await new Promise<AudioBuffer>((resolve, reject) => { ctx.decodeAudioData(vArrayBuf, resolve, reject); });
+          vOffset = (sourceVocal.offsetBars || 0) * secondsPerBar;
+          vVol = sourceVocal.volume ?? 1;
+        }
       }
 
       const syncTime = ctx.currentTime + 0.1;
@@ -159,13 +166,13 @@ export default function Room06_Mastering() {
       beatSource.start(syncTime);
       activeSourcesRef.current.push(beatSource);
 
-      decodedVocals.forEach(v => {
-          const vSource = ctx.createBufferSource(); vSource.buffer = v.buffer;
-          const vGain = ctx.createGain(); vGain.gain.value = vocalVolume * v.volume;
+      if (vBuf) {
+          const vSource = ctx.createBufferSource(); vSource.buffer = vBuf;
+          const vGain = ctx.createGain(); vGain.gain.value = vocalVolume * vVol;
           vSource.connect(vGain); vGain.connect(limiter);
-          vSource.start(syncTime + v.offset);
+          vSource.start(syncTime + vOffset);
           activeSourcesRef.current.push(vSource);
-      });
+      }
 
       beatSource.onended = () => stopPreview();
       drawMeter();
@@ -201,16 +208,6 @@ export default function Room06_Mastering() {
       const beatArrayBuf = await beatBlob.arrayBuffer();
       const beatBuffer = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(beatArrayBuf, res, rej));
       
-      const vocalBuffers = [];
-      for (const stem of vocalStems) {
-          let vBlob = (stem as any).blob;
-          if (!vBlob && stem.url) { const r = await fetch(stem.url); if (r.ok) vBlob = await r.blob(); }
-          if (!vBlob) continue;
-          const vArrayBuf = await vBlob.arrayBuffer();
-          const vBuf = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(vArrayBuf, res, rej));
-          vocalBuffers.push({ buffer: vBuf, offset: (stem.offsetBars || 0) * secondsPerBar, volume: stem.volume ?? 1 });
-      }
-
       const offlineCtx = new OfflineAudioContext(2, beatBuffer.length, beatBuffer.sampleRate);
       
       const limiter = offlineCtx.createDynamicsCompressor();
@@ -224,7 +221,7 @@ export default function Room06_Mastering() {
       beatSource.connect(beatGainNode); beatGainNode.connect(limiter);
       beatSource.start(0);
 
-  // --- SURGICAL REVISION: APPLY THE BAKED VOCAL ---
+      // --- SURGICAL REVISION: APPLY THE BAKED VOCAL ---
       const sourceVocal = engineeredVocal || (vocalStems.length > 0 ? vocalStems[0] : null);
 
       if (sourceVocal) {
@@ -242,13 +239,11 @@ export default function Room06_Mastering() {
           vSource.buffer = vBuf;
           
           const vGainNode = offlineCtx.createGain();
-          // Scale based on both the Mastering slider and the original Take volume
           vGainNode.gain.value = vocalVolume * (sourceVocal.volume ?? 1);
           
           vSource.connect(vGainNode);
-          vSource.connect(limiter);
+          vGainNode.connect(limiter);
           
-          // Start at the correct bar offset
           const startTime = (sourceVocal.offsetBars || 0) * secondsPerBar;
           vSource.start(startTime);
         }
@@ -261,41 +256,12 @@ export default function Room06_Mastering() {
       const outputUrl = URL.createObjectURL(finalWavBlob);
       setFinalMaster({ url: outputUrl, blob: finalWavBlob } as any);
       
-      // Lock the project so it can't be destructively edited after mastering
       useMatrixStore.setState({ isProjectFinalized: true });
       
       setStatus("success");
       if(addToast) addToast("Commercial Master Rendered. EQ Chain Fused.", "success");
 
     } catch (err: any) {
-      console.error(err);
-      setStatus("idle");
-      if(addToast) addToast(err.message || "Mastering engine crashed.", "error");
-    }
-  };
-
-  vocalBuffers.forEach(v => {
-          const vSource = offlineCtx.createBufferSource(); 
-          vSource.buffer = v.buffer;
-          const vGainNode = offlineCtx.createGain(); 
-          vGainNode.gain.value = vocalVolume * v.volume;
-          vSource.connect(vGainNode); 
-          vGainNode.connect(limiter);
-          vSource.start(v.offset);
-      }); // <--- CHECK THIS CLOSING BRACE
-
-      const renderedBuffer = await offlineCtx.startRendering();
-      const finalWavBlob = audioBufferToWavBlob(renderedBuffer);
-      
-      const outputUrl = URL.createObjectURL(finalWavBlob);
-      setFinalMaster({ url: outputUrl, blob: finalWavBlob } as any);
-      useMatrixStore.setState({ isProjectFinalized: true });
-      setStatus("success");
-      if(addToast) addToast("Commercial Master Rendered. Vocals & Beat Fused.", "success");
-
-    } 
-
-      catch (err: any) {
       console.error(err);
       setStatus("idle");
       if(addToast) addToast(err.message || "Mastering engine crashed.", "error");
@@ -318,37 +284,14 @@ export default function Room06_Mastering() {
         const zip = new JSZip();
         zip.file(`${audioData?.fileName || "ARTIFACT"}_Commercial_Master.wav`, blobData);
         
-        if (vocalStems.length > 0) {
-          const tmpCtx = new window.AudioContext();
-          const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
-          let maxDuration = 0;
-          
-          const decodedVocals = await Promise.all(vocalStems.map(async s => {
-            let vBlob = (s as any).blob;
-            if (!vBlob && s.url) { const r = await fetch(s.url); if (r.ok) vBlob = await r.blob(); }
-            if (!vBlob) return null;
-            const vArrayBuf = await vBlob.arrayBuffer();
-            const vBuf = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(vArrayBuf, res, rej));
-            const endTime = ((s.offsetBars || 0) * secondsPerBar) + vBuf.duration;
-            if (endTime > maxDuration) maxDuration = endTime;
-            return { buffer: vBuf, offset: (s.offsetBars || 0) * secondsPerBar, volume: s.volume ?? 1 };
-          }));
-
-          const validVocals = decodedVocals.filter(v => v !== null);
-
-          if (maxDuration > 0 && validVocals.length > 0) {
-            const offlineAcapellaCtx = new OfflineAudioContext(2, tmpCtx.sampleRate * maxDuration, tmpCtx.sampleRate);
-            validVocals.forEach(v => {
-                const source = offlineAcapellaCtx.createBufferSource(); source.buffer = v!.buffer;
-                const gainNode = offlineAcapellaCtx.createGain(); gainNode.gain.value = vocalVolume * v!.volume;
-                source.connect(gainNode); gainNode.connect(offlineAcapellaCtx.destination);
-                source.start(v!.offset);
-            });
-            const renderedAcapella = await offlineAcapellaCtx.startRendering();
-            const acapellaBlob = audioBufferToWavBlob(renderedAcapella);
-            zip.file(`${audioData?.fileName || "ARTIFACT"}_Acapella_Stem.wav`, acapellaBlob);
+        // Export the Engineered Stem if it exists
+        const exportStem = engineeredVocal || (vocalStems.length > 0 ? vocalStems[0] : null);
+        if (exportStem) {
+          let vBlob = (exportStem as any).blob;
+          if (!vBlob && exportStem.url) { const r = await fetch(exportStem.url); if (r.ok) vBlob = await r.blob(); }
+          if (vBlob) {
+            zip.file(`${audioData?.fileName || "ARTIFACT"}_Acapella_Stem.wav`, vBlob);
           }
-          tmpCtx.close();
         }
 
         const doc = new jsPDF({ orientation: "portrait" });
@@ -400,20 +343,15 @@ export default function Room06_Mastering() {
   };
 
   // --- ALL USE EFFECTS ---
-
-
   useEffect(() => {
     if (mixParams) {
-      // Scale presence (0-100) to a slight gain boost to mirror the "Energy"
       const presenceBoost = (mixParams.presenceIntensity / 100) * 0.2;
       setVocalVolume(1.0 + presenceBoost);
       
-      // Sync the Mastering LUFS threshold based on the selected Chain
-      if (mixParams.activeChain === "modern_eq") setLufs(-10); // Louder for Drill
-      else if (mixParams.activeChain === "foundation_eq") setLufs(-12); // Dynamic for Boom Bap
+      if (mixParams.activeChain === "modern_eq") setLufs(-10);
+      else if (mixParams.activeChain === "foundation_eq") setLufs(-12);
     }
   }, [mixParams]);
-
 
   useEffect(() => {
     const initializeMasteringNode = async () => {
