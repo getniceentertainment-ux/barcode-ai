@@ -70,7 +70,6 @@ export default function Room02_BrainTrain() {
       mediaStreamRef.current = stream; 
       const mediaRecorder = new MediaRecorder(stream);
       
-      // NEW: Wrap the recording process in a Promise so we can extract the real Blob
       const audioPromise = new Promise<Blob>((resolve) => {
         const audioChunks: BlobPart[] = [];
         mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
@@ -124,7 +123,6 @@ export default function Room02_BrainTrain() {
       if (!isMounted.current) return;
       mediaRecorder.stop();
       
-      // NEW: Wait for the actual audio file to compile
       const audioBlob = await audioPromise;
       setRecordedAudioUrl(URL.createObjectURL(audioBlob));
 
@@ -133,7 +131,6 @@ export default function Room02_BrainTrain() {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       setMicStatus("analyzing_cadence");
 
-      // NEW: THE REAL AI UPLOAD
       try {
         const formData = new FormData();
         formData.append('audio', audioBlob, 'cadence.webm');
@@ -148,11 +145,9 @@ export default function Room02_BrainTrain() {
         
         if (!res.ok) throw new Error(analysisData.error || "Neural Extraction Failed");
 
-        // Apply real AI analysis results
         setDetectedStyle({ id: analysisData.styleId, name: analysisData.styleName });
         setGwStyle(analysisData.styleId);
         
-        // Auto-fill the Lyrical DNA box with what Whisper actually heard you mumble
         if (analysisData.transcription) {
            setTextInput((prev) => prev ? prev + "\n" + analysisData.transcription : analysisData.transcription);
            if(addToast) addToast(`Analyzed ${analysisData.totalWords} words. Cadence locked.`, "success");
@@ -161,7 +156,6 @@ export default function Room02_BrainTrain() {
       } catch (aiErr: any) {
         console.error("AI Cadence Error:", aiErr);
         if(addToast) addToast(aiErr.message, "error");
-        // Fallback to default if API fails
         setDetectedStyle({ id: "getnice_hybrid", name: STYLES["getnice_hybrid" as keyof typeof STYLES] });
         setGwStyle("getnice_hybrid");
       }
@@ -185,7 +179,6 @@ export default function Room02_BrainTrain() {
     }
   };
 
-  // --- REAL RUNPOD EXECUTION & POLLING ---
   const handleSynthesize = async () => {
     if (!hasCredits) {
       if(addToast) addToast("Insufficient Credits.", "error");
@@ -203,7 +196,6 @@ export default function Room02_BrainTrain() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
-      // 1. INITIATE REAL TASK
       const res = await fetch('/api/dsp', {
         method: 'POST',
         headers: { 
@@ -211,7 +203,7 @@ export default function Room02_BrainTrain() {
           'Authorization': `Bearer ${session?.access_token}`
         },
         body: JSON.stringify({ 
-          task_type: "analyze", // FIX: Exactly what the Python worker expects
+          task_type: "analyze",
           file_url: audioData.url
         })
       });
@@ -221,7 +213,6 @@ export default function Room02_BrainTrain() {
 
       const jobId = initData.jobId;
       
-      // 2. REAL POLLING LOOP
       const pollInterval = setInterval(async () => {
         try {
           const statusRes = await fetch(`/api/dsp?jobId=${jobId}&t=${Date.now()}`);
@@ -230,7 +221,6 @@ export default function Room02_BrainTrain() {
           if (statusData.status === 'COMPLETED') {
             clearInterval(pollInterval);
             
-            // 3. SECURE LOCAL BLUEPRINT GENERATION
             let finalStyleId = detectedStyle?.id || "getnice_hybrid";
             let finalStyleName = detectedStyle?.name || STYLES.getnice_hybrid;
 
@@ -258,7 +248,10 @@ export default function Room02_BrainTrain() {
               let remaining = audioData.totalBars;
               const calc: any[] = [];
               
-              if (userSession?.tier === "The Mogul") {
+              // --- INCENTIVE UPGRADE LOGIC ---
+              // The Mogul & The Artist get full song structure mappings. 
+              // Free Loaders only get 2 blocks.
+              if (userSession?.tier === "The Mogul" || userSession?.tier === "The Artist") {
                 if (remaining >= 4) { calc.push({ id: "intro", type: "INTRO", bars: 4 }); remaining -= 4; }
                 let idCounter = 1;
                 while (remaining >= 24) {
@@ -269,7 +262,7 @@ export default function Room02_BrainTrain() {
                 if (remaining >= 8) { calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8 }); remaining -= 8; }
                 calc.push({ id: "outro", type: "OUTRO", bars: remaining });
               } else {
-                // Tier Limiting: Free/Artist get 1 Hook and 1 Verse
+                // Tier Limiting: Free Loader strictly limited
                 calc.push({ id: "hook_1", type: "HOOK", bars: 8 });
                 calc.push({ id: "verse_1", type: "VERSE", bars: 16 });
               }
@@ -397,16 +390,26 @@ export default function Room02_BrainTrain() {
                <h3 className="text-xl text-[#E60000] font-oswald uppercase tracking-widest font-bold">DSP Structural Blueprint</h3>
                {userSession?.tier !== "The Mogul" && (
                  <span className="text-[10px] font-mono text-yellow-500 uppercase border border-yellow-500/20 px-2 py-1 tracking-widest bg-yellow-500/10">
-                   Ghostwriter Cost: {Math.max(1, Math.ceil(blueprint.length / 2))} CRD
+                   Ghostwriter Est: {Math.max(1, Math.ceil(blueprint.length / 2))} CRD
                  </span>
                )}
              </div>
              
-             {userSession?.tier !== "The Mogul" && (
-               <p className="font-mono text-[9px] text-[#888] uppercase tracking-widest mb-4 border-b border-[#111] pb-4">
-                 Tier Limit: 1 Hook & 1 Block per Credit. Upgrade to Mogul to unlock full-song automated mapping.
-               </p>
-             )}
+             {/* --- INCENTIVE UI TIERS --- */}
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                <div className={`p-4 border text-[9px] font-mono uppercase tracking-widest ${userSession?.tier === 'Free Loader' ? 'bg-[#E60000]/10 border-[#E60000] text-white shadow-[0_0_15px_rgba(230,0,0,0.2)]' : 'bg-black border-[#222] text-[#555]'}`}>
+                  <strong className="block text-white mb-2 text-xs">Free Loader</strong>
+                  Max 2 Blocks mapped.<br/>Cost: 1 CRD for lyrics.
+                </div>
+                <div className={`p-4 border text-[9px] font-mono uppercase tracking-widest ${userSession?.tier === 'The Artist' ? 'bg-[#E60000]/10 border-[#E60000] text-white shadow-[0_0_15px_rgba(230,0,0,0.2)]' : 'bg-black border-[#222] text-[#555]'}`}>
+                  <strong className="block text-white mb-2 text-xs">The Artist</strong>
+                  Full song structure.<br/>Cost: 1 CRD per 2 blocks.
+                </div>
+                <div className={`p-4 border text-[9px] font-mono uppercase tracking-widest ${userSession?.tier === 'The Mogul' ? 'bg-yellow-500/10 border-yellow-500 text-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.2)]' : 'bg-black border-[#222] text-[#555]'}`}>
+                  <strong className="block text-white mb-2 text-xs">The Mogul</strong>
+                  Unlimited mapping.<br/>Cost: 0 CRD (Free).
+                </div>
+             </div>
              
              <div className="space-y-3">
                {blueprint.map((block, index) => (
