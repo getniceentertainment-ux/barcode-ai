@@ -109,7 +109,6 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
 export default function Room04_Booth() {
   const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, addToast } = useMatrixStore();
 
-  // --- STATE DECLARATIONS ---
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -124,7 +123,6 @@ export default function Room04_Booth() {
   const [trimDuration, setTrimDuration] = useState(0);
   const [isProcessingTrim, setIsProcessingTrim] = useState(false);
 
-  // --- REFS ---
   const trimWaveformRef = useRef<HTMLDivElement>(null);
   const trimWavesurferRef = useRef<WaveSurfer | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -139,12 +137,10 @@ export default function Room04_Booth() {
   const workletLoadedRef = useRef(false);
   const teleprompterRef = useRef<HTMLDivElement>(null);
 
-  // --- VARIABLES ---
   const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
-  // --- ALL HANDLER FUNCTIONS DEFINED EARLY TO PREVENT TDZ CRASHES ---
   const handleUpdateTakeType = (id: string, newType: string) => {
     const updatedStems = vocalStems.map(stem => stem.id === id ? { ...stem, type: newType as TrackType } : stem);
     useMatrixStore.setState({ vocalStems: updatedStems } as any);
@@ -372,7 +368,6 @@ export default function Room04_Booth() {
     } catch (err) { alert("Hardware microphone access required for Worklet processing."); }
   };
 
-  // --- USE EFFECTS ---
   useEffect(() => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     try { audioCtxRef.current = new AudioContextClass(); } catch (e) {}
@@ -488,7 +483,6 @@ export default function Room04_Booth() {
     }
   }, [currentTime, lyricLines]);
 
-  // --- EARLY RETURNS AT THE VERY END TO PREVENT TDZ CRASHES ---
   if (!audioData) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-[#E60000] opacity-50">
@@ -499,9 +493,10 @@ export default function Room04_Booth() {
     );
   }
 
-  // --- MAIN JSX RENDER ---
   return (
     <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500 relative">
+      
+      {/* LEFT SIDEBAR: TELEPROMPTER */}
       <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
         <div className="p-8 pb-4 border-b border-[#111] flex justify-between items-center">
            <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
@@ -517,8 +512,10 @@ export default function Room04_Booth() {
               </div>
             );
           })}
-        </div>{/* <--- ADD THIS MISSING CLOSING DIV HERE! */}
+        </div>
+      </div>
 
+      {/* RIGHT PANEL: MIXER & RECORDER */}
       <div className="flex-1 flex flex-col relative bg-black">
         <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10 relative">
           <div className="flex items-center gap-4">
@@ -544,7 +541,9 @@ export default function Room04_Booth() {
           </div>
         </div>
 
-        <div className="p-6 border-b border-[#222] bg-[#050505]"><div ref={waveformRef} className="w-full h-20 bg-black border border-[#111] rounded-lg"></div></div>
+        <div className="p-6 border-b border-[#222] bg-[#050505]">
+          <div ref={waveformRef} className="w-full h-20 bg-black border border-[#111] rounded-lg"></div>
+        </div>
 
         <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
           <div className="flex border-b border-[#111] mb-6">
@@ -598,7 +597,9 @@ export default function Room04_Booth() {
         </div>
 
         <div className="h-16 bg-black border-t border-[#222] flex items-center justify-between px-10">
-          <div className="flex items-center gap-2 text-[10px] font-mono text-green-500 uppercase tracking-widest opacity-80">{vocalStems.length > 0 && <><Save size={14} /> Storage Synchronized</>}</div>
+          <div className="flex items-center gap-2 text-[10px] font-mono text-green-500 uppercase tracking-widest opacity-80">
+            {vocalStems.length > 0 && <><Save size={14} /> Storage Synchronized</>}
+          </div>
           {isFreeLoader && !hasEngToken ? (
             <button onClick={handleProceedToEngineering} disabled={vocalStems.length === 0} className="flex items-center gap-3 bg-[#E60000] text-white px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-red-700 transition-all disabled:opacity-30">Unlock Engineering ($4.99) <Lock size={14} /></button>
           ) : (
@@ -607,6 +608,7 @@ export default function Room04_Booth() {
         </div>
       </div>
 
+      {/* OVERLAYS: TRIMMING STEM */}
       {trimmingStem && (
         <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-8 animate-in zoom-in duration-300">
           <div className="bg-[#050505] border border-[#E60000] rounded-lg w-full max-w-2xl p-8 shadow-[0_0_50px_rgba(230,0,0,0.2)]">
