@@ -694,7 +694,6 @@ export default function Room04_Booth() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
