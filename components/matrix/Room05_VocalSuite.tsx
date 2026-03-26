@@ -39,7 +39,7 @@ function audioBufferToWav(buffer: AudioBuffer) {
 }
 
 export default function Room05_VocalSuite() {
-  const { audioData, vocalStems, engineeredVocal, setEngineeredVocal, setActiveRoom, addToast, userSession } = useMatrixStore();
+  const { audioData, vocalStems, engineeredVocal, setEngineeredVocal, setActiveRoom, addToast, userSession, mixParams, updateMixParams } = useMatrixStore();
   
   const [activeChain, setActiveChain] = useState(VOCAL_CHAINS[0].id);
   const [presenceIntensity, setPresenceIntensity] = useState(VOCAL_CHAINS[0].presence);
@@ -152,9 +152,25 @@ export default function Room05_VocalSuite() {
   }, [vocalStems]);
 
   useEffect(() => {
+  // If we have saved params in the store, use them; otherwise use the preset
+  if (mixParams && mixParams.eqGains.length > 0) {
+    setEqGains([...mixParams.eqGains]);
+    setPresenceIntensity(mixParams.presenceIntensity);
+    setReverbMix(mixParams.reverbMix);
+    setActiveChain(mixParams.activeChain);
+  } else {
     const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
     setEqGains([...preset.eq]); setPresenceIntensity(preset.presence); setReverbMix(preset.reverb);
   }, [activeChain]);
+
+  useEffect(() => {
+  updateMixParams({
+    activeChain,
+    presenceIntensity,
+    reverbMix,
+    eqGains
+   });
+  }, [activeChain, presenceIntensity, reverbMix, eqGains]);
 
   useEffect(() => {
     if (wetGainRef.current && dryGainRef.current) { wetGainRef.current.gain.value = reverbMix / 100; dryGainRef.current.gain.value = 1 - (reverbMix / 100); }

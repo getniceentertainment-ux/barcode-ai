@@ -49,7 +49,7 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
 }
 
 export default function Room06_Mastering() {
-  const { audioData, vocalStems, generatedLyrics, setActiveRoom, addToast, finalMaster, setFinalMaster, userSession, clearMatrix } = useMatrixStore();
+  const { audioData, vocalStems, engineeredVocal, generatedLyrics, setActiveRoom, addToast, finalMaster, setFinalMaster, userSession, clearMatrix, mixParams } = useMatrixStore();
   
   // --- STATE DECLARATIONS ---
   const [lufs, setLufs] = useState(-14); 
@@ -224,6 +224,56 @@ export default function Room06_Mastering() {
       beatSource.connect(beatGainNode); beatGainNode.connect(limiter);
       beatSource.start(0);
 
+  // --- SURGICAL REVISION: APPLY THE BAKED VOCAL ---
+      const sourceVocal = engineeredVocal || (vocalStems.length > 0 ? vocalStems[0] : null);
+
+      if (sourceVocal) {
+        let vBlob = (sourceVocal as any).blob;
+        if (!vBlob && sourceVocal.url) { 
+          const r = await fetch(sourceVocal.url); 
+          if (r.ok) vBlob = await r.blob(); 
+        }
+
+        if (vBlob) {
+          const vArrayBuf = await vBlob.arrayBuffer();
+          const vBuf = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(vArrayBuf, res, rej));
+          
+          const vSource = offlineCtx.createBufferSource();
+          vSource.buffer = vBuf;
+          
+          const vGainNode = offlineCtx.createGain();
+          // Scale based on both the Mastering slider and the original Take volume
+          vGainNode.gain.value = vocalVolume * (sourceVocal.volume ?? 1);
+          
+          vSource.connect(vGainNode);
+          vSource.connect(limiter);
+          
+          // Start at the correct bar offset
+          const startTime = (sourceVocal.offsetBars || 0) * secondsPerBar;
+          vSource.start(startTime);
+        }
+      }
+
+      // --- EXECUTE THE COMMERCIAL RENDER ---
+      const renderedBuffer = await offlineCtx.startRendering();
+      const finalWavBlob = audioBufferToWavBlob(renderedBuffer);
+      
+      const outputUrl = URL.createObjectURL(finalWavBlob);
+      setFinalMaster({ url: outputUrl, blob: finalWavBlob } as any);
+      
+      // Lock the project so it can't be destructively edited after mastering
+      useMatrixStore.setState({ isProjectFinalized: true });
+      
+      setStatus("success");
+      if(addToast) addToast("Commercial Master Rendered. EQ Chain Fused.", "success");
+
+    } catch (err: any) {
+      console.error(err);
+      setStatus("idle");
+      if(addToast) addToast(err.message || "Mastering engine crashed.", "error");
+    }
+  };
+
       vocalBuffers.forEach(v => {
           const vSource = offlineCtx.createBufferSource(); vSource.buffer = v.buffer;
           const vGainNode = offlineCtx.createGain(); vGainNode.gain.value = vocalVolume * v.volume;
@@ -345,6 +395,21 @@ export default function Room06_Mastering() {
   };
 
   // --- ALL USE EFFECTS ---
+
+
+  useEffect(() => {
+    if (mixParams) {
+      // Scale presence (0-100) to a slight gain boost to mirror the "Energy"
+      const presenceBoost = (mixParams.presenceIntensity / 100) * 0.2;
+      setVocalVolume(1.0 + presenceBoost);
+      
+      // Sync the Mastering LUFS threshold based on the selected Chain
+      if (mixParams.activeChain === "modern_eq") setLufs(-10); // Louder for Drill
+      else if (mixParams.activeChain === "foundation_eq") setLufs(-12); // Dynamic for Boom Bap
+    }
+  }, [mixParams]);
+
+
   useEffect(() => {
     const initializeMasteringNode = async () => {
       if (!userSession) return;
