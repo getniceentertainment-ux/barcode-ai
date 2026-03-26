@@ -159,9 +159,13 @@ export default function Room05_VocalSuite() {
     setReverbMix(mixParams.reverbMix);
     setActiveChain(mixParams.activeChain);
   } else {
+
+  useEffect(() => {
     const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
-    setEqGains([...preset.eq]); setPresenceIntensity(preset.presence); setReverbMix(preset.reverb);
-  }, [activeChain]);
+    setEqGains([...preset.eq]); 
+    setPresenceIntensity(preset.presence); 
+    setReverbMix(preset.reverb);
+  }, [activeChain]); // <--- Ensure this closing brace and bracket are here
 
   useEffect(() => {
   updateMixParams({

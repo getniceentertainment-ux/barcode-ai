@@ -274,12 +274,15 @@ export default function Room06_Mastering() {
     }
   };
 
-      vocalBuffers.forEach(v => {
-          const vSource = offlineCtx.createBufferSource(); vSource.buffer = v.buffer;
-          const vGainNode = offlineCtx.createGain(); vGainNode.gain.value = vocalVolume * v.volume;
-          vSource.connect(vGainNode); vGainNode.connect(limiter);
+  vocalBuffers.forEach(v => {
+          const vSource = offlineCtx.createBufferSource(); 
+          vSource.buffer = v.buffer;
+          const vGainNode = offlineCtx.createGain(); 
+          vGainNode.gain.value = vocalVolume * v.volume;
+          vSource.connect(vGainNode); 
+          vGainNode.connect(limiter);
           vSource.start(v.offset);
-      });
+      }); // <--- CHECK THIS CLOSING BRACE
 
       const renderedBuffer = await offlineCtx.startRendering();
       const finalWavBlob = audioBufferToWavBlob(renderedBuffer);
@@ -290,7 +293,9 @@ export default function Room06_Mastering() {
       setStatus("success");
       if(addToast) addToast("Commercial Master Rendered. Vocals & Beat Fused.", "success");
 
-    } catch (err: any) {
+    } 
+
+      catch (err: any) {
       console.error(err);
       setStatus("idle");
       if(addToast) addToast(err.message || "Mastering engine crashed.", "error");
