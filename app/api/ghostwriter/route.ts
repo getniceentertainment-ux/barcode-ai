@@ -88,7 +88,7 @@ export async function POST(req: Request) {
     // NEW: Extracted the new parameters sent from Room 03
     const { 
       prompt, title, bpm, key, stageName, tag, style, blueprint, 
-      motive, struggle, hustle, useSlang, useIntel 
+      motive, struggle, hustle, useSlang, useIntel,flowReference 
     } = body;
 
     // --- DYNAMIC CREDIT COST CALCULATION ---
