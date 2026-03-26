@@ -30,13 +30,6 @@ export default function Room03_Ghostwriter() {
   const [refineInstruction, setRefineInstruction] = useState("");
   const [selectedLine, setSelectedLine] = useState("");
 
-// --- SURGICAL FIX: CATCH THE HANDOFF FROM ROOM 02 ---
-  useEffect(() => {
-    if (flowDNA?.referenceText && !gwPrompt) {
-      setGwPrompt(flowDNA.referenceText);
-    }
-  }, [flowDNA?.referenceText, gwPrompt, setGwPrompt]);
-
   const styles = [
     { id: "getnice_hybrid", name: "GetNice Hybrid [Melodic Trap]" },
     { id: "heartbeat", name: "Heartbeat (Boom-Bap)" },
@@ -140,6 +133,7 @@ export default function Room03_Ghostwriter() {
           userId: userSession?.id,
           stageName: userSession?.stageName || "Unknown Artist", // <-- ADDED EXPLICIT STAGE NAME PASS
           prompt: gwPrompt,
+	  flowReference: flowDNA?.referenceText, // <-- NEW: Passing your recorded cadence secretly
           motive: gwMotive || "Mastering the craft", // Using global store variables
           struggle: gwStruggle || "Against the odds",
           hustle: gwHustle || "Relentless execution",

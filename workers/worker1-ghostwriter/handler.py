@@ -168,7 +168,7 @@ def init_model():
     print("Deep Burn-In Complete. Worker Ready.")
 
 # --- REVISION 3: THE PARAMETRIC GRINDER (SAAS ENGINE) ---
-def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive, struggle, hustle, topic, bpm=120):
+def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive, struggle, hustle, topic,flow_reference="", bpm=120):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
     slang_list = ", ".join(load_street_slang(genre_style)) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
@@ -200,7 +200,16 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive,
 - FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause."""
     else:
         flow_architecture = f"[FLOW ARCHITECTURE: {genre_style.upper()}]\n- CADENCE: Standard 4/4 rhythm structure.\n- FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line."
+
+    # --- NEW: THE CADENCE THEFT LOGIC ---
+    flow_mimicry = ""
+    if flow_reference and len(flow_reference) > 5 and flow_reference != "Focus on survival and rhythm.":
+        flow_mimicry = f"""[USER'S VOCAL CADENCE BLUEPRINT]
+The artist recorded this exact mumble-flow to establish their personal bounce:
+"{flow_reference}"
+-> CRITICAL INSTRUCTION: Analyze the syllable density, internal rhyme placement, and rhythm of that quote. You MUST format your generated lyrics to perfectly match that specific bounce and flow structure so the artist can rap it easily. Do NOT copy the words, copy the RHYTHMIC ARCHITECTURE."""
     
+    # --- THE INJECTION ---
     return f"""<|im_start|>system
 You are the GETNICE Ghostwriter Engine. You are a highly articulate, business-minded creator who refuses to quit. You embody the modern independent entrepreneur.
 
@@ -339,6 +348,7 @@ def handler(event):
     topic = job_input.get("prompt", "Securing the legacy")
     
     # --- SAAS VARIABLES ---
+    flow_reference = job_input.get("flowReference", "")    
     motive = job_input.get("motive", "Mastering the technical craft")
     struggle = job_input.get("struggle", "Industry doors closing")
     hustle = job_input.get("hustle", "Relentless execution")
@@ -352,7 +362,7 @@ def handler(event):
     seconds_per_bar = (60.0 / bpm) * 4.0
     
     # --- PASS SAAS VARIABLES TO PROMPT ---
-    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel, motive, struggle, hustle, topic, bpm)
+    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel, motive, struggle, hustle, topic, flow_reference, bpm)
     
     if task_type == "refine":
         original_line = job_input.get("originalLine", "")

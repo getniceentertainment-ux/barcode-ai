@@ -138,6 +138,7 @@ export async function POST(req: Request) {
         input: {
           task_type: "generate",
           prompt: thematicPrompt,
+	  flowReference: flowReference, // <-- NEW: Hand it to the Python worker
           // NEW: Passing parameters explicitly to the worker
           motive: motive || "Mastering the craft",
           struggle: struggle || "Against the odds",
