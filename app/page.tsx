@@ -1,18 +1,21 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { 
-  LayoutDashboard, Mic2, Cpu, Music, Layers, Settings2, Disc, Send, 
-  Wallet, Radio, Users, FileText, Lock, Power, Bell, Zap, Loader2, 
-  ChevronRight, Play, Pause, SkipForward, Volume2, Globe, Terminal, 
-  ShieldCheck, RefreshCw, Menu, X
+  UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, 
+  Send, Wallet, Radio, Users, ShieldAlert, LogOut,
+  Play, Pause, SkipBack, SkipForward, Volume2, Lock, User, Zap, Loader2,
+  ShieldCheck, Terminal, FileAudio, Trash2, Menu, X
 } from "lucide-react";
-
-// Store & Supabase
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
 
-// Matrix Components (Rooms)
+// The Gateway & Global UI
+import EntryGateway from "../components/matrix/EntryGateway";
+import GlobalSyncIndicator from "../components/matrix/GlobalSyncIndicator";
+
+// The 11 Matrix Rooms
 import Room01_Lab from "../components/matrix/Room01_Lab";
 import Room02_BrainTrain from "../components/matrix/Room02_BrainTrain";
 import Room03_Ghostwriter from "../components/matrix/Room03_Ghostwriter";
@@ -24,131 +27,264 @@ import Room08_Bank from "../components/matrix/Room08_Bank";
 import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
 import Room11_Contracts from "../components/matrix/Room11_Contracts";
-import EntryGateway from "../components/matrix/EntryGateway";
-import MatrixAutoSave from "../components/matrix/MatrixAutoSave";
 
-const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID;
+const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID; 
 
-export default function App() {
+export default function MatrixController() {
   const { 
-    activeRoom, setActiveRoom, hasAccess, userSession, 
-    isProjectFinalized, clearMatrix, addToast, audioData 
+    hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix, 
+    audioData, isProjectFinalized, playbackMode, setPlaybackMode, 
+    radioTrack, setRadioTrack, addToast, hydrateDiskAudio 
   } = useMatrixStore();
 
   const [isHydrated, setIsHydrated] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  
-  // Radio State
-  const [isRadioPlaying, setIsRadioPlaying] = useState(false);
+  const [isBoosting, setIsBoosting] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.8);
+  
+  // --- NEW: MOBILE RESPONSIVE STATE ---
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // --- 1. INITIAL HYDRATION & RESPONSIVE CHECK ---
+  // Auto-close sidebar on mobile devices upon load
   useEffect(() => {
-    // Auto-close sidebar on mobile devices upon load
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       setSidebarOpen(false);
     }
-    setIsHydrated(true);
   }, []);
 
-  // --- 2. REAL-TIME PROFILE SYNCHRONIZER ---
+  useEffect(() => {
+    hydrateDiskAudio().then(() => {
+      setIsHydrated(true);
+    });
+  }, []);
+
+  useEffect(() => {    
+    setIsHydrated(true);
+    useMatrixStore.setState((state) => ({
+      vocalStems: [], 
+      finalMaster: null, 
+      audioData: state.audioData?.url?.startsWith('blob:') ? null : state.audioData
+    }));
+  }, []);
+
+  // --- SURGICAL OVERRIDE: TOKEN AS A KEY ---
+  const isRoomLockedForTier = (roomId: string) => {
+    if (userSession?.id && userSession.id === CREATOR_ID) return false;
+
+    const tier = userSession?.tier || "The Free Loader";
+    const isFreeLoader = tier.includes("Free Loader");
+
+    // 1. Bypass lock if they hold the specific Room Token
+    if (isFreeLoader) {
+      if (roomId === "05" && (userSession as any)?.has_engineering_token) return false;
+      if (roomId === "06" && (userSession as any)?.has_mastering_token) return false;
+    }
+
+    // 2. Standard Tier Fallbacks
+    const freeAllowed = ["01", "02", "03", "04", "09", "10", "11"];
+    const artistAllowed = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"];
+
+    if (isFreeLoader && !freeAllowed.includes(roomId)) return true;
+    if (tier === "The Artist" && !artistAllowed.includes(roomId)) return true;
+    return false;
+  };
+
+  const handleRoomTransition = (roomId: string) => {
+    if (isRoomLockedForTier(roomId)) {
+      if (addToast) addToast(`Upgrade or purchase a Room Token to unlock R${roomId}`, "error");
+      return;
+    }
+    setActiveRoom(roomId);
+  };
+
   useEffect(() => {
     if (!userSession?.id) return;
 
     const channel = supabase
-      .channel(`profile_sync_${userSession.id}`)
+      .channel('profile_sync')
       .on('postgres_changes', { 
         event: 'UPDATE', 
         schema: 'public', 
-        table: 'profiles', 
+        table: 'profiles',
         filter: `id=eq.${userSession.id}` 
       }, (payload) => {
-        const updated = payload.new;
+        // --- REALTIME SYNC: Update credits AND room tokens instantly ---
+        const newCredits = payload.new.credits;
+        const hasEngToken = payload.new.has_engineering_token;
+        const hasMastToken = payload.new.has_mastering_token;
+        
         useMatrixStore.setState((state) => ({
-          userSession: state.userSession ? {
-            ...state.userSession,
-            tier: updated.tier,
-            creditsRemaining: updated.tier === "The Mogul" ? "UNLIMITED" : updated.credits,
-            walletBalance: updated.wallet_balance,
-            marketingCredits: updated.marketing_credits
-          } : null
-        }) as any);
+          userSession: state.userSession ? { 
+            ...state.userSession, 
+            creditsRemaining: newCredits,
+            has_engineering_token: hasEngToken,
+            has_mastering_token: hasMastToken
+          } as any : null
+        }));
       })
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [userSession?.id]);
 
-  // --- 3. GLOBAL STRIPE REDIRECT HANDLER ---
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    
-    if (params.get('topup_success') === 'true') {
-      window.history.replaceState({}, document.title, window.location.pathname);
-      addToast("Ledger Synchronized. 50 Credits Added.", "success");
-    }
-    
-    if (params.get('master_purchased') === 'true') {
-      window.history.replaceState({}, document.title, window.location.pathname);
-      addToast("Mastering Token Secured. System Unlocked.", "success");
-      setActiveRoom("06");
-    }
-  }, [addToast, setActiveRoom]);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = "/";
-  };
-
-  const handleNewProject = () => {
-    if (confirm("WARNING: This will purge the current Matrix state and initialize a new artifact session. Proceed?")) {
-      clearMatrix();
-      setActiveRoom("01");
-      addToast("Matrix Purged. New session initialized.", "info");
-    }
-  };
-
-  const toggleRadio = () => {
+  const togglePlay = () => {
     if (!audioRef.current) return;
-    if (isRadioPlaying) {
+    const url = playbackMode === 'radio' ? radioTrack?.url : audioData?.url;
+    if (!url) return;
+    if (isPlaying) {
       audioRef.current.pause();
+      window.dispatchEvent(new Event('matrix-global-sys-pause'));
     } else {
-      audioRef.current.play().catch(() => {});
+      audioRef.current.play();
+      window.dispatchEvent(new Event('matrix-global-sys-play'));
     }
-    setIsRadioPlaying(!isRadioPlaying);
   };
 
-  // --- ROOM RENDERING ENGINE ---
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      const time = audioRef.current.currentTime;
+      setCurrentTime(time);
+      window.dispatchEvent(new CustomEvent('matrix-global-timeupdate', { detail: time }));
+    }
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!audioRef.current) return;
+    const bounds = e.currentTarget.getBoundingClientRect();
+    const percent = (e.clientX - bounds.left) / bounds.width;
+    const newTime = percent * duration;
+    audioRef.current.currentTime = newTime;
+    window.dispatchEvent(new CustomEvent('matrix-global-sys-seek', { detail: newTime }));
+  };
+
+  const toggleRadioMode = () => {
+    setIsPlaying(false);
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
+    
+    if (playbackMode === 'radio') {
+      setPlaybackMode('session');
+    } else {
+      if (!radioTrack) {
+        setRadioTrack({ 
+          url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", 
+          title: "GETNICE FM LIVE", 
+          artist: "SYNDICATE", 
+          score: 99 
+        });
+      }
+      setPlaybackMode('radio');
+    }
+  };
+
+  const handleBoostPack = async () => {
+    if (!userSession) return;
+    setIsBoosting(true);
+    try {
+      const res = await fetch('/api/stripe/topup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userSession.id })
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+    } catch (err) {
+      if(addToast) addToast("Failed to route to Stripe.", "error");
+    } finally {
+      setIsBoosting(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    await supabase.auth.signOut();
+    
+    // SURGICAL FIX: We lock the UI but DO NOT call clearMatrix(). 
+    // This prevents the audio hard drive from being destroyed on logout.
+    useMatrixStore.setState({ hasAccess: false, userSession: null });
+    
+    localStorage.clear();
+    sessionStorage.clear();
+    document.cookie.split(";").forEach((c) => {
+      document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+    });
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.warn("Server wipe bypassed.");
+    }
+    setTimeout(() => {
+      window.location.replace('/'); 
+    }, 500);
+  };
+
+  const handleNewProject = async () => {
+    if (userSession?.id) {
+      // 1. Nuke the Cloud Save so it doesn't try to pull you back here
+      await supabase.from('matrix_sessions').delete().eq('user_id', userSession.id);
+    }
+    // 2. Erase the local state and hard drive
+    clearMatrix();
+    // 3. Drop back to Room 1
+    setActiveRoom("01");
+    if (addToast) addToast("Matrix Formatted. Ready for new artifact.", "info");
+  };
+
+  if (!isHydrated) return null;
+  if (!hasAccess) return <EntryGateway />;
+
+  const rooms = [
+    { id: "01", name: "The Lab", icon: <UploadCloud size={16} /> },
+    { id: "02", name: "Brain Train", icon: <Cpu size={16} /> },
+    { id: "03", name: "Ghostwriter", icon: <PenTool size={16} /> },
+    { id: "04", name: "The Booth", icon: <Mic2 size={16} /> },
+    { id: "05", name: "Engineering", icon: <Layers size={16} /> },
+    { id: "06", name: "Mastering", icon: <Sliders size={16} /> },
+    { id: "07", name: "Distribution", icon: <Send size={16} /> },
+    { id: "08", name: "The Bank & Vault", icon: <Wallet size={16} /> },
+    { id: "09", name: "The Radio", icon: <Radio size={16} /> },
+    { id: "10", name: "Social Syndicate", icon: <Users size={16} /> },
+    { id: "11", name: "Active Contracts", icon: <FileAudio size={16} /> }, 
+  ];
+
   const renderActiveRoom = () => {
+    // Rooms 01-05 are structurally locked once finalized
+    // Room 06 (Mastering) remains open so the user can download and then reset
     const lockedRooms = ["01", "02", "03", "04", "05"];
     
     if (isProjectFinalized && lockedRooms.includes(activeRoom) && userSession?.id !== CREATOR_ID) {
       const isFreeLoader = (userSession?.tier || "").includes("Free Loader");
+      
       return (
-        <div className="h-full flex flex-col items-center justify-center text-center animate-in zoom-in duration-500 bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-[#0a0000] border border-[#E60000]/30 p-8 md:p-12 rounded-lg flex flex-col items-center w-full max-w-xl shadow-[0_0_50px_rgba(230,0,0,0.1)]">
-            <Lock size={64} className="text-[#E60000] mb-6 shadow-[0_0_30px_rgba(230,0,0,0.5)] rounded-full p-4 bg-[#111]" />
-            <h2 className="font-oswald text-3xl md:text-4xl uppercase tracking-widest font-bold text-white mb-4">Artifact Gated</h2>
+        <div className="h-full flex flex-col items-center justify-center text-center animate-in zoom-in duration-500 px-4">
+          <div className="bg-[#110000] border border-[#E60000]/30 p-8 md:p-12 rounded-lg flex flex-col items-center w-full max-w-xl">
+            <Lock size={64} className="text-[#E60000] mb-6 shadow-[0_0_30px_rgba(230,0,0,0.5)] rounded-full" />
+            <h2 className="font-oswald text-3xl md:text-4xl uppercase tracking-widest font-bold text-white mb-4">ARTIFACT LOCKED</h2>
             <p className="font-mono text-[10px] md:text-xs text-[#888] uppercase tracking-widest mb-8 leading-relaxed">
-              This track has been finalized and secured in the ledger. <br className="hidden md:block"/> 
-              Structural parameters are no longer editable for this node.
+              Track permanently locked in ledger. Structural rooms are no longer editable.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 w-full">
               {!isFreeLoader ? (
-                <button onClick={() => setActiveRoom("08")} className="flex-1 bg-black border border-[#222] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:border-[#E60000] transition-all">Open Vault</button>
+                <button onClick={() => setActiveRoom("08")} className="flex-1 bg-black border border-[#333] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:border-white transition-colors">
+                  Vault
+                </button>
               ) : (
-                <button onClick={() => setActiveRoom("06")} className="flex-1 bg-black border border-[#222] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:border-[#E60000] transition-all">Mastering Suite</button>
+                <button onClick={() => setActiveRoom("06")} className="flex-1 bg-black border border-[#333] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:border-white transition-colors">
+                  Return to Master
+                </button>
               )}
-              <button onClick={handleNewProject} className="flex-1 bg-[#E60000] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:bg-red-700 transition-colors shadow-[0_0_15px_rgba(230,0,0,0.3)]">Initialize New</button>
+              
+              <button onClick={handleNewProject} className="flex-1 bg-[#E60000] text-white py-4 font-bold uppercase tracking-widest text-[10px] hover:bg-red-700 transition-colors shadow-[0_0_15px_rgba(230,0,0,0.3)]">
+                Initialize New
+              </button>
             </div>
           </div>
         </div>
       );
     }
 
+    // Switch statement handles actual room rendering
     switch (activeRoom) {
       case "01": return <Room01_Lab />;
       case "02": return <Room02_BrainTrain />;
@@ -161,40 +297,14 @@ export default function App() {
       case "09": return <Room09_Radio />;
       case "10": return <Room10_Social />;
       case "11": return <Room11_Contracts />;
-      default: return <Room01_Lab />;
+      default: return <div />;
     }
   };
 
-  const rooms = [
-    { id: "01", name: "The Lab", icon: <LayoutDashboard size={18} />, category: "Structural" },
-    { id: "02", name: "Brain Train", icon: <Cpu size={18} />, category: "Structural" },
-    { id: "03", name: "Ghostwriter", icon: <FileText size={18} />, category: "Structural" },
-    { id: "04", name: "The Booth", icon: <Mic2 size={18} />, category: "Production" },
-    { id: "05", name: "Vocal Suite", icon: <Settings2 size={18} />, category: "Production" },
-    { id: "06", name: "Mastering", icon: <Layers size={18} />, category: "Production" },
-    { id: "07", name: "Distribution", icon: <Send size={18} />, category: "Market" },
-    { id: "08", name: "The Bank", icon: <Wallet size={18} />, category: "Market" },
-    { id: "09", name: "Ad Manager", icon: <Radio size={18} />, category: "Market" },
-    { id: "10", name: "Syndicate", icon: <Users size={18} />, category: "Social" },
-    { id: "11", name: "Legal / AI", icon: <Disc size={18} />, category: "Social" },
-  ];
-
-  if (!isHydrated) {
-    return (
-      <div className="h-screen bg-black flex flex-col items-center justify-center">
-        <Loader2 className="text-[#E60000] animate-spin mb-4" size={40} />
-        <p className="font-mono text-[10px] text-[#E60000] uppercase tracking-[0.3em] animate-pulse">Initialising OS Node...</p>
-      </div>
-    );
-  }
-
-  if (!hasAccess) return <EntryGateway />;
-
   return (
-    <div className="h-screen bg-[#050505] text-white flex overflow-hidden font-mono selection:bg-[#E60000]">
-      <MatrixAutoSave />
+    <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-24 font-mono">
       
-      {/* MOBILE OVERLAY (Closes sidebar when tapping outside) */}
+      {/* --- NEW: MOBILE OVERLAY BACKDROP --- */}
       {sidebarOpen && (
         <div 
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 md:hidden"
@@ -202,149 +312,158 @@ export default function App() {
         />
       )}
 
-      {/* RESPONSIVE SIDEBAR NAVIGATION */}
+      {/* --- RESPONSIVE SIDEBAR --- */}
       <aside className={`
-        fixed md:relative z-50 h-full bg-black border-r border-[#111] transition-transform duration-300 flex flex-col shrink-0
-        ${sidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full md:translate-x-0 md:w-20'}
+        fixed md:relative z-50 h-full w-72 bg-black border-r border-[#111] flex flex-col shrink-0 shadow-2xl transition-transform duration-300
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0 md:flex'}
       `}>
-        <div className="p-6 border-b border-[#111] flex items-center justify-between">
-          <div className={`font-oswald text-xl font-bold tracking-tighter text-[#E60000] ${!sidebarOpen && 'hidden md:block md:opacity-0'}`}>
-            BAR-CODE<span className="text-white">.AI</span>
+        <div className="p-8 border-b border-[#111] flex justify-between items-start">
+          <div>
+            <h1 className="font-oswald text-2xl uppercase tracking-[0.2em] font-bold text-[#E60000]">Bar-Code.ai</h1>
+            {userSession && (
+              <div className="mt-4 p-3 bg-[#050505] border border-[#222]">
+                <p className="font-mono text-[9px] text-[#555] uppercase mb-1">Active Operator:</p>
+                <p className="font-mono text-[10px] text-white truncate font-bold tracking-widest">
+                  NODE_{userSession.id.substring(0, 8).toUpperCase()}
+                </p>
+                <div className="flex justify-between items-end mt-3 pt-2 border-t border-[#111]">
+                  <p className="font-mono text-[9px] text-green-500 uppercase font-bold tracking-widest">{userSession.tier}</p>
+                  <button onClick={handleDisconnect} className="text-[#9c5454] hover:text-[#E60000] transition-colors flex items-center gap-1 text-[9px] font-mono uppercase">
+                    <LogOut size={10} /> Logout
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="text-[#333] hover:text-white transition-colors">
-            {/* Show X on mobile when open, Chevron on desktop */}
-            <span className="md:hidden">{sidebarOpen ? <X size={20} /> : <Menu size={20} />}</span>
-            <ChevronRight size={20} className={`hidden md:block transition-transform ${sidebarOpen ? 'rotate-180' : ''}`} />
+          {/* Mobile Close Button */}
+          <button onClick={() => setSidebarOpen(false)} className="md:hidden text-[#555] hover:text-white mt-1">
+             <X size={20} />
           </button>
         </div>
+        <nav className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar pb-32 md:pb-6">
+          <div className="space-y-1 mb-8">
+            {rooms.map((room) => {
+              const isLockedByProject = isProjectFinalized && ["01", "02", "03", "04", "05", "06"].includes(room.id);
+              const isLockedByTier = isRoomLockedForTier(room.id);
+              return (
+                <button
+                  key={room.id} 
+                  onClick={() => {
+                    handleRoomTransition(room.id);
+                    if (window.innerWidth < 768) setSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-5 py-4 text-left transition-all rounded-lg group relative ${activeRoom === room.id ? "bg-[#E60000] text-white shadow-[0_4px_15px_rgba(230,0,0,0.2)]" : "text-[#444] hover:bg-[#0a0a0a] hover:text-white"}`}
+                >
+                  <span className={`${activeRoom === room.id ? 'text-white' : 'text-[#888]'} ${(isLockedByProject || isLockedByTier) ? 'opacity-30' : ''}`}>{room.icon}</span>
+                  <span className={`font-oswald text-sm uppercase tracking-widest font-bold ${(isLockedByProject || isLockedByTier) ? 'opacity-30' : ''}`}>R{room.id} - {room.name}</span>
+                  {isLockedByTier && <ShieldCheck size={12} className="absolute right-4 text-yellow-600" />}
+                  {isLockedByProject && !isLockedByTier && <Lock size={10} className="absolute right-4 text-[#E60000]" />}
+                </button>
+              );
+            })}
+          </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1">
-          {rooms.map((room) => {
-            const isActive = activeRoom === room.id;
-            return (
-              <button
-                key={room.id}
-                onClick={() => {
-                  setActiveRoom(room.id);
-                  // Auto-close sidebar on mobile after selection
-                  if (window.innerWidth < 768) setSidebarOpen(false);
-                }}
-                className={`w-full flex items-center gap-4 px-4 py-3 rounded-sm transition-all group
-                  ${isActive ? 'bg-[#E60000] text-white shadow-[0_0_15px_rgba(230,0,0,0.3)]' : 'text-[#444] hover:bg-[#111] hover:text-white'}`}
-              >
-                <span className={isActive ? 'text-white' : 'text-[#333] group-hover:text-[#E60000]'}>{room.icon}</span>
-                {sidebarOpen && (
-                  <div className="flex flex-col items-start overflow-hidden">
-                    <span className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">{room.name}</span>
-                    <span className={`text-[7px] uppercase tracking-tighter opacity-50 ${isActive ? 'text-white' : 'text-[#555]'}`}>Room {room.id}</span>
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
+          <div className="pt-4 border-t border-[#111] space-y-1">
+            <Link href="/dev-portal" className="w-full flex items-center gap-3 px-5 py-4 text-left text-[#555] hover:text-white hover:bg-[#0a0a0a] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold">
+              <ShieldAlert size={16} /> API Portal
+            </Link>
 
-        <div className="p-4 border-t border-[#111] bg-[#020202]">
-          <button onClick={handleLogout} className="w-full flex items-center gap-4 px-4 py-3 text-[#333] hover:text-red-500 transition-colors">
-            <Power size={18} />
-            {sidebarOpen && <span className="text-[10px] font-bold uppercase tracking-widest">Terminate Session</span>}
-          </button>
-        </div>
+            {CREATOR_ID && userSession?.id === CREATOR_ID && (
+              <Link href="/admin-node" className="w-full flex items-center gap-3 px-5 py-4 text-left text-yellow-600 hover:text-yellow-400 hover:bg-[#111] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold border border-yellow-600/20">
+                <Terminal size={16} /> Admin Node
+              </Link>
+            )}
+          </div>
+        </nav>
       </aside>
 
-      {/* MAIN VIEWPORT */}
-      <main className="flex-1 flex flex-col relative overflow-hidden bg-black w-full">
-        
-        {/* RESPONSIVE GLOBAL HEADER */}
-        <header className="h-16 border-b border-[#111] bg-black flex items-center justify-between px-4 md:px-8 z-30">
-           <div className="flex items-center gap-3 md:gap-6">
-              
-              {/* MOBILE HAMBURGER TRIGGER */}
-              <button onClick={() => setSidebarOpen(true)} className="md:hidden text-[#E60000] p-1 -ml-2">
-                <Menu size={24} />
-              </button>
-
-              <div className="flex flex-col">
-                <span className="hidden md:inline text-[9px] text-[#555] uppercase tracking-[0.2em] font-bold">Node Operator</span>
-                <span className="text-[10px] md:text-xs font-bold text-white uppercase tracking-widest truncate max-w-[100px] md:max-w-[200px]">
-                  {userSession?.stageName || "Artist"}
-                </span>
-              </div>
-              <div className="h-6 md:h-8 w-[1px] bg-[#222]" />
-              <div className="flex flex-col">
-                <span className="hidden md:inline text-[9px] text-[#555] uppercase tracking-[0.2em] font-bold">Neural Balance</span>
-                <span className="text-[10px] md:text-xs font-bold text-white tracking-widest flex items-center gap-1.5 md:gap-2">
-                  <Zap size={10} className="fill-[#E60000] text-[#E60000]" /> {userSession?.creditsRemaining} <span className="hidden sm:inline">CRD</span>
-                </span>
-              </div>
+      <main className="flex-1 relative flex flex-col bg-black overflow-hidden w-full">
+        {/* --- MOBILE RESPONSIVE HEADER --- */}
+        <div className="h-14 border-b border-[#111] bg-black/80 backdrop-blur-md flex items-center justify-between px-4 md:px-10 z-10 shrink-0">
+           <div className="flex items-center gap-3">
+             <button onClick={() => setSidebarOpen(true)} className="md:hidden text-[#E60000] hover:text-white transition-colors">
+               <Menu size={24} />
+             </button>
+             <span className="font-mono text-[9px] text-[#444] uppercase tracking-[0.4em] hidden sm:inline">
+               Matrix // {rooms.find(r => r.id === activeRoom)?.name.toUpperCase()}
+             </span>
            </div>
-
-           <div className="flex items-center gap-4">
-              <div className="hidden md:flex flex-col items-end mr-4">
-                 <span className="text-[8px] text-[#333] uppercase font-bold tracking-widest">Uplink Status</span>
-                 <span className="text-[10px] text-green-500 font-bold uppercase flex items-center gap-1.5">
-                   <div className="w-1 h-1 bg-green-500 rounded-full animate-pulse" /> Encrypted
-                 </span>
-              </div>
-              <button className="p-2 text-[#333] hover:text-white transition-colors relative">
-                <Bell size={18} />
-                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-[#E60000] rounded-full animate-pulse" />
-              </button>
-           </div>
-        </header>
-
-        {/* ROOM CONTAINER */}
-        <section className="flex-1 relative overflow-hidden">
-           <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
-           <div className="h-full relative z-10 p-4 sm:p-6 lg:p-10 overflow-y-auto custom-scrollbar">
-             {renderActiveRoom()}
-           </div>
-        </section>
-
-        {/* RESPONSIVE NEURAL RADIO FOOTER */}
-        <footer className="h-16 md:h-20 border-t border-[#111] bg-black px-4 md:px-8 flex items-center justify-between z-30 shrink-0">
-           <div className="flex items-center gap-3 md:gap-6 w-auto md:w-1/3">
-              <div className="w-8 h-8 md:w-10 md:h-10 bg-[#111] border border-[#222] flex items-center justify-center rounded-sm overflow-hidden shrink-0">
-                 <Radio size={16} className={isRadioPlaying ? "text-[#E60000] animate-pulse" : "text-[#333]"} />
-              </div>
-              <div className="hidden sm:block">
-                <p className="text-[9px] md:text-[10px] font-bold text-white uppercase tracking-widest">Brain-Train FM</p>
-                <p className="text-[7px] md:text-[8px] text-[#555] uppercase mt-1 tracking-tighter flex items-center gap-1.5">
-                   <Globe size={8} /> Global Broadcast
-                </p>
-              </div>
-           </div>
-
-           <div className="flex flex-col items-center gap-2 flex-1 md:w-1/3">
-              <div className="flex items-center gap-4 md:gap-6">
-                 <button className="hidden sm:block text-[#333] hover:text-white transition-colors"><RefreshCw size={14}/></button>
-                 <button onClick={toggleRadio} className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-white text-black flex items-center justify-center hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_15px_rgba(255,255,255,0.1)]">
-                   {isRadioPlaying ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
+           
+           <div className="flex items-center gap-4 md:gap-6 ml-auto">
+             {userSession && (
+               <div className="flex items-center gap-3 md:gap-4">
+                 {/* THE EMERGENCY ESCAPE HATCH */}
+                 <button 
+                   onClick={handleNewProject} 
+                   className="hidden sm:flex items-center gap-2 text-[#555] hover:text-[#E60000] transition-colors font-mono text-[9px] uppercase tracking-widest px-3 py-1 border border-transparent hover:border-[#E60000]/30 rounded-full"
+                   title="Nuke Matrix and Start Fresh"
+                 >
+                   <Trash2 size={12} /> Format
                  </button>
-                 <button className="hidden sm:block text-[#333] hover:text-white transition-colors"><SkipForward size={14}/></button>
-              </div>
-              <div className="hidden sm:block w-32 md:w-64 h-1 bg-[#111] rounded-full overflow-hidden relative">
-                 <div className={`h-full bg-[#E60000] transition-all duration-1000 ${isRadioPlaying ? 'w-2/3' : 'w-0'}`} />
-              </div>
-           </div>
-
-           <div className="hidden md:flex items-center justify-end gap-6 w-1/3">
-              <div className="flex items-center gap-3">
-                 <Volume2 size={14} className="text-[#333]" />
-                 <div className="w-16 lg:w-20 h-1 bg-[#111] rounded-full overflow-hidden">
-                    <div className="w-3/4 h-full bg-[#333]" />
+                 
+                 <div className="flex items-center gap-2 bg-[#110000] border border-[#330000] pl-3 pr-1 py-1 rounded-full shadow-[inset_0_0_10px_rgba(230,0,0,0.1)]">
+                   <Zap size={12} className={userSession.creditsRemaining === 0 ? "text-[#555]" : "text-yellow-500"} />
+                   <span className="font-mono text-[10px] text-white uppercase tracking-widest font-bold">{userSession.creditsRemaining} <span className="hidden sm:inline">CRD</span></span>
+                   {userSession.tier !== "The Mogul" && (
+                     <button onClick={handleBoostPack} disabled={isBoosting} className="ml-2 bg-[#E60000] text-white px-2 md:px-3 py-1 text-[9px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors rounded-full">
+                       {isBoosting ? <Loader2 size={10} className="animate-spin" /> : "Top Up"}
+                     </button>
+                   )}
                  </div>
-              </div>
-              <div className="h-6 w-[1px] bg-[#111]" />
-              <div className="text-[8px] font-mono text-[#333] uppercase text-right">
-                 <p>OS: v.2.5.0-PROD</p>
-                 <p className="text-[#555]">LAT: 0.04ms</p>
-              </div>
+               </div>
+             )}
            </div>
-
-           <audio ref={audioRef} src="https://stream.zeno.fm/078r6zsz9u8uv" className="hidden" crossOrigin="anonymous" />
-        </footer>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-4 md:p-10 relative">
+          <div className="absolute inset-0 pointer-events-none opacity-5" style={{ backgroundImage: 'linear-gradient(#222 1px, transparent 1px), linear-gradient(90deg, #222 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+          {renderActiveRoom()}
+        </div>
       </main>
+
+      <GlobalSyncIndicator />
+
+      {/* --- RESPONSIVE FOOTER PLAYER --- */}
+      <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-4 md:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
+        <audio ref={audioRef} src={playbackMode === 'radio' && radioTrack ? radioTrack.url : audioData?.url || ""} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onEnded={() => setIsPlaying(false)} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} className="hidden" />
+        
+        <div className="w-auto md:w-1/3 flex items-center gap-2 md:gap-4">
+          <button onClick={toggleRadioMode} className={`w-10 h-10 md:w-12 md:h-12 flex shrink-0 items-center justify-center border transition-all ${playbackMode === 'radio' ? 'bg-[#E60000] border-[#E60000] shadow-[0_0_15px_rgba(230,0,0,0.4)]' : 'bg-black border-[#333] hover:bg-white hover:text-black hover:border-white'}`}>
+            <Radio size={16} className={playbackMode === 'radio' ? "text-white animate-pulse" : "text-[#555]"} />
+          </button>
+          <div className="overflow-hidden hidden sm:block">
+            <p className="font-oswald text-xs md:text-sm uppercase tracking-widest font-bold text-white truncate">{playbackMode === 'radio' && radioTrack ? radioTrack.title : (audioData?.fileName || "IDLE")}</p>
+            <p className="font-mono text-[8px] md:text-[9px] uppercase tracking-widest mt-1 text-[#E60000]">{playbackMode === 'radio' ? `FM BROADCAST` : `STUDIO SESSION`}</p>
+          </div>
+        </div>
+        
+        <div className="flex-1 flex flex-col items-center max-w-xl px-2 md:px-10">
+          <div className="flex items-center gap-4 md:gap-6 mb-2">
+            <button onClick={togglePlay} className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:bg-[#E60000] hover:text-white transition-all">
+              {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-1" />}
+            </button>
+          </div>
+          <div className="w-full flex items-center gap-2 md:gap-3">
+            <span className="text-[9px] font-mono text-[#444]">{formatTime(currentTime)}</span>
+            <div className="flex-1 h-1 bg-[#222] rounded-full overflow-hidden cursor-pointer" onClick={handleSeek}>
+              <div className="h-full bg-[#E60000]" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}></div>
+            </div>
+            <span className="text-[9px] font-mono text-[#444]">{formatTime(duration)}</span>
+          </div>
+        </div>
+        
+        <div className="hidden md:flex w-1/3 justify-end items-center gap-3">
+          <Volume2 size={14} className="text-[#444]" />
+          <input type="range" min="0" max="1" step="0.01" value={volume} onChange={(e) => { setVolume(parseFloat(e.target.value)); if(audioRef.current) audioRef.current.volume = parseFloat(e.target.value); }} className="w-24 h-1 accent-[#E60000] bg-[#222] rounded-full appearance-none cursor-pointer" />
+        </div>
+      </div>
     </div>
   );
+
+  function formatTime(t: number) {
+    if (isNaN(t)) return "00:00";
+    const m = Math.floor(t / 60).toString().padStart(2, '0');
+    const s = Math.floor(t % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
 }
