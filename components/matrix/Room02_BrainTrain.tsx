@@ -136,10 +136,15 @@ export default function Room02_BrainTrain() {
         formData.append('audio', audioBlob, 'cadence.webm');
         formData.append('bpm', audioData?.bpm?.toString() || '120');
 
-        const res = await fetch('/api/dsp/cadence', {
-          method: 'POST',
-          body: formData
-        });
+        const { data: { session } } = await supabase.auth.getSession();
+
+	const res = await fetch('/api/dsp/cadence', {
+        method: 'POST',
+  	headers: {
+  	  'Authorization': `Bearer ${session?.access_token}`
+	},
+  	body: formData // Note: Do NOT add 'Content-Type': 'multipart/form-data', the browser handles the boundary automatically for FormData
+      });
 
         const analysisData = await res.json();
         
