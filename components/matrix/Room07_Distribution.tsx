@@ -77,14 +77,32 @@ export default function Room07_Distribution() {
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      // SAFEGUARD: Ensure the LLM didn't return a string instead of a number
-      const parsedScore = Number(analyzeData.hitScore) || 0;
-      setHitScore(parsedScore);
+      // --- NEW: DIAGNOSTIC LOG ---
+      // Press F12 to open your browser console and see exactly what the AI said
+      console.log("RAW A&R PAYLOAD:", analyzeData);
+
+      // --- NEW: BULLETPROOF NUMBER EXTRACTION ---
+      // Check both common keys the LLM might hallucinate
+      let rawScore = analyzeData.hitScore || analyzeData.score || analyzeData.HitScore || 0;
+      let finalCalculatedScore = 0;
+
+      if (typeof rawScore === 'number') {
+        finalCalculatedScore = rawScore;
+      } else if (typeof rawScore === 'string') {
+        // Regex: Find the first cluster of numbers in the string
+        const match = rawScore.match(/\d+/);
+        finalCalculatedScore = match ? parseInt(match[0], 10) : 0;
+      }
+
+      // Cap it between 0 and 100 just in case it hallucinated "1000"
+      finalCalculatedScore = Math.min(100, Math.max(0, finalCalculatedScore));
+
+      setHitScore(finalCalculatedScore);
       setCoverUrl(analyzeData.coverUrl);
       setTiktokSnippet(analyzeData.tiktokSnippet);
       
-      // Pass the safeguarded data to the submit function
-      handleFinalSubmit({ ...analyzeData, hitScore: parsedScore });
+      // Pass the fully sanitized data forward
+      handleFinalSubmit({ ...analyzeData, hitScore: finalCalculatedScore });
     } catch (error: any) {
       console.error("A&R Error:", error);
       if (addToast) addToast(error.message, "error");
