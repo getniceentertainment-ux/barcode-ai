@@ -7,33 +7,59 @@ import { supabase } from "../../lib/supabase";
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
 
-// Robust WAV Encoder
+// FIXED: Bulletproof PCM 16-bit WAV Encoder with strict absolute byte offsets
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
-  const numOfChan = buffer.numberOfChannels;
-  const length = buffer.length * numOfChan * 2 + 44;
-  const out = new ArrayBuffer(length);
-  const view = new DataView(out);
-  const channels = [];
-  let sample = 0; let offset = 0; let pos = 0;
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const format = 1; // PCM
+  const bitDepth = 16;
+  const bytesPerSample = bitDepth / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = buffer.length * blockAlign;
 
-  const setUint16 = (data: number) => { view.setUint16(pos, data, true); pos += 2; };
-  const setUint32 = (data: number) => { view.setUint32(pos, data, true); pos += 4; };
-  const writeString = (offset: number, string: string) => { for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i)); };
-  
-  writeString(0, 'RIFF'); setUint32(length - 8); writeString(8, 'WAVE'); writeString(12, 'fmt '); setUint32(16); setUint16(1); setUint16(numOfChan);
-  setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16); writeString(36, 'data'); setUint32(length - pos - 4);
+  const wavBuffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(wavBuffer);
 
-  for (let i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
-
-  while (pos < length) {
-    for (let i = 0; i < numOfChan; i++) {
-      sample = Math.max(-1, Math.min(1, channels[i][offset])); 
-      sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
-      view.setInt16(pos, sample, true); pos += 2;
+  const writeString = (view: DataView, offset: number, string: string) => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
     }
-    offset++;
+  };
+
+  // Write strict WAV header using absolute offsets
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // Subchunk1Size
+  view.setUint16(20, format, true); // AudioFormat
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitDepth, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  // Write interleaved PCM audio data
+  let offset = 44;
+  const channels = [];
+  for (let i = 0; i < numChannels; i++) {
+    channels.push(buffer.getChannelData(i));
   }
-  return new Blob([view], { type: "audio/wav" });
+
+  for (let i = 0; i < buffer.length; i++) {
+    for (let channel = 0; channel < numChannels; channel++) {
+      let sample = Math.max(-1, Math.min(1, channels[channel][i]));
+      // Convert 32-bit float to 16-bit PCM
+      sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      view.setInt16(offset, sample, true);
+      offset += 2;
+    }
+  }
+
+  return new Blob([view], { type: 'audio/wav' });
 }
 
 export default function Room06_Mastering() {
