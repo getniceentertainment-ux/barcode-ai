@@ -517,7 +517,7 @@ export default function Room04_Booth() {
               </div>
             );
           })}
-        </div>
+        </div>{/* <--- ADD THIS MISSING CLOSING DIV HERE! */}
 
       <div className="flex-1 flex flex-col relative bg-black">
         <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10 relative">
