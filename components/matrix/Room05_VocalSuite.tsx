@@ -216,7 +216,24 @@ export default function Room05_VocalSuite() {
       FREQUENCIES.forEach((freq, i) => { const band = offlineCtx.createBiquadFilter(); band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; band.frequency.value = freq; band.gain.value = eqGains[i]; prevOfflineNode.connect(band); prevOfflineNode = band; });
       prevOfflineNode.connect(offlineComp); offlineComp.connect(offlineSaturation); offlineSaturation.connect(offlineCtx.destination);
       masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(offlineCtx.destination);
-      decodedBuffers.forEach(buf => { const source = offlineCtx.createBufferSource(); source.buffer = buf; source.connect(masterGain); source.start(0); });
+      
+      const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
+
+      decodedBuffers.forEach((buf, i) => { 
+        const source = offlineCtx.createBufferSource(); 
+        source.buffer = buf; 
+        
+        // Apply individual take volume
+        const stemGain = offlineCtx.createGain();
+        stemGain.gain.value = vocalStems[i].volume ?? 1;
+        
+        source.connect(stemGain);
+        stemGain.connect(masterGain); 
+        
+        // Start playing at the correct timeline offset
+        const startTime = (vocalStems[i].offsetBars || 0) * secondsPerBar;
+        source.start(startTime); 
+      });
       
       const renderedBuffer = await offlineCtx.startRendering();
       activeStemIds.forEach(id => removeVocalStem(id));

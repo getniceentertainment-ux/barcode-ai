@@ -6,7 +6,6 @@ import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase"; 
 
-// --- FIXED TYPE DEFINITION ---
 type TrackType = "Lead" | "Adlib" | "Double";
 
 // --- AUDIO TRIMMING UTILITIES ---
@@ -84,6 +83,7 @@ export default function Room04_Booth() {
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isUploading, setIsUploading] = useState(false); // New state to show upload progress
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean, timestamp?: string}[]>([]);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
@@ -128,7 +128,7 @@ export default function Room04_Booth() {
     };
   }, []);
 
-  // --- STRIPE REDIRECT CATCHER: AUTO-ADVANCE TO ENGINEERING ---
+  // --- STRIPE REDIRECT CATCHER ---
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -215,7 +215,7 @@ export default function Room04_Booth() {
     return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
   }, [trimmingStem]);
 
-  // --- SCROLLING SYNC---
+  // --- SYNCED SCROLLING ---
   useEffect(() => {
     const currentLineIndex = lyricLines.findIndex((l, i) => {
       const nextLine = lyricLines[i + 1];
@@ -259,7 +259,6 @@ export default function Room04_Booth() {
     }
   };
 
-  // --- HARDENED NAVIGATION LOGIC ---
   const handleProceedToEngineering = () => {
     if (vocalStems.length === 0) {
       if(addToast) addToast("You must record at least one take to enter Engineering.", "error");
@@ -274,26 +273,52 @@ export default function Room04_Booth() {
     }
   };
 
+  // --- 1. FIXED: Trim Upload to Supabase raw-audio ---
   const applyTrim = async () => {
-    if (!trimmingStem || !trimmingStem.blob) return;
+    if (!trimmingStem) return;
     setIsProcessingTrim(true);
     try {
-      const newBlob = await trimAudioBlob(trimmingStem.blob, trimStart, trimEnd);
-      const newUrl = URL.createObjectURL(newBlob);
-      
+      // Gracefully handle missing local blob by fetching it from the existing URL
+      let originalBlob = trimmingStem.blob;
+      if (!originalBlob && trimmingStem.url) {
+        const resp = await fetch(trimmingStem.url);
+        originalBlob = await resp.blob();
+      }
+      if (!originalBlob) throw new Error("Audio payload missing");
+
+      const newBlob = await trimAudioBlob(originalBlob, trimStart, trimEnd);
+      const trimId = `TRIM_${Date.now()}`;
+      const fileName = `${userSession?.id || 'anon'}/${trimId}.wav`;
+
+      // Upload newly trimmed blob directly to Supabase storage
+      const { data, error } = await supabase.storage
+        .from('raw-audio')
+        .upload(fileName, newBlob, {
+          contentType: 'audio/wav',
+          upsert: true
+        });
+
+      if (error) throw error;
+
+      const { data: publicData } = supabase.storage
+        .from('raw-audio')
+        .getPublicUrl(fileName);
+
       removeVocalStem(trimmingStem.id);
       addVocalStem({
-        id: `TAKE_${Date.now()}`,
+        id: trimId,
         type: trimmingStem.type,
-        url: newUrl,
-        blob: newBlob,
+        url: publicData.publicUrl, // Persistent storage URL
+        blob: newBlob, // Kept in memory to prevent refetching during session
         volume: trimmingStem.volume,
         offsetBars: trimmingStem.offsetBars
       });
       
       setTrimmingStem(null);
+      if (addToast) addToast("Trimmed audio successfully synced to vault.", "success");
     } catch (err) {
       console.error("Trim failed", err);
+      if (addToast) addToast("Failed to upload trimmed file.", "error");
     } finally {
       setIsProcessingTrim(false);
     }
@@ -342,7 +367,8 @@ export default function Room04_Booth() {
     }
   };
 
-  const stopEverything = () => {
+  // --- 2. FIXED: Record Upload to Supabase raw-audio ---
+  const stopEverything = async () => {
     wavesurferRef.current?.pause(); 
     wavesurferRef.current?.seekTo(0);
     activeSourcesRef.current.forEach(src => { try { src.stop(); src.disconnect(); } catch (e) {} });
@@ -358,20 +384,59 @@ export default function Room04_Booth() {
       for (let chunk of recordedChunksRef.current) { merged.set(chunk, offset); offset += chunk.length; }
       const wavBlob = encodeWAV(merged, audioCtxRef.current.sampleRate);
       
-      addVocalStem({ 
-        id: `TAKE_${Date.now()}`, 
-        type: activeTrack, 
-        url: URL.createObjectURL(wavBlob), 
-        blob: wavBlob, 
-        volume: 1, 
-        offsetBars: 0 
-      });
+      setIsRecording(false);
+      setIsUploading(true);
+      
+      try {
+        const takeId = `TAKE_${Date.now()}`;
+        const fileName = `${userSession?.id || 'anon'}/${takeId}.wav`;
+
+        // Upload directly to Supabase storage bucket
+        const { data, error } = await supabase.storage
+          .from('raw-audio')
+          .upload(fileName, wavBlob, {
+            contentType: 'audio/wav',
+            upsert: true
+          });
+
+        if (error) throw error;
+
+        // Retrieve public URL
+        const { data: publicData } = supabase.storage
+          .from('raw-audio')
+          .getPublicUrl(fileName);
+
+        addVocalStem({ 
+          id: takeId, 
+          type: activeTrack, 
+          url: publicData.publicUrl, // Setting state to the permanent Supabase URL
+          blob: wavBlob, // Keep local copy active in memory for instant engineering rendering
+          volume: 1, 
+          offsetBars: 0 
+        });
+
+        if (addToast) addToast("Vocal take secured in raw-audio ledger.", "success");
+      } catch (err) {
+        console.error("Upload error", err);
+        if (addToast) addToast("Storage sync failed. Temporarily mapped to local blob.", "error");
+        
+        // Fallback to local Blob URL if Supabase throws an error (e.g. internet disconnects)
+        addVocalStem({ 
+          id: `TAKE_${Date.now()}`, 
+          type: activeTrack, 
+          url: URL.createObjectURL(wavBlob), 
+          blob: wavBlob, 
+          volume: 1, 
+          offsetBars: 0 
+        });
+      } finally {
+        setIsUploading(false);
+      }
     }
     
     setIsPlaying(false); setIsRecording(false); setCurrentTime(0);
   };
 
-  // --- CREDIT DEDUCTION & HARDWARE ACCESS ---
   const startHardwareRecording = async () => {
     const isMogul = (userSession?.tier as string) === "The Mogul";
     const currentCredits = Number((userSession as any)?.creditsRemaining || (userSession as any)?.credits || 0);
@@ -479,18 +544,27 @@ export default function Room04_Booth() {
 
       {/* RIGHT: TIMELINE & DAW */}
       <div className="flex-1 flex flex-col relative bg-black">
-        <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10">
+        <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10 relative">
           <div className="flex items-center gap-4">
-            <button onClick={togglePlayback} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all">
+            <button onClick={togglePlayback} disabled={isUploading} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all disabled:opacity-50">
               {isPlaying && !isRecording ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
             </button>
-            <button onClick={stopEverything} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all text-[#888]">
+            <button onClick={stopEverything} disabled={isUploading} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all text-[#888] disabled:opacity-50">
               <Square size={20} />
             </button>
-            <button onClick={isRecording ? stopEverything : startHardwareRecording} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse' : 'bg-[#111] border border-[#333] text-white hover:text-[#E60000]'}`}>
-              <Mic size={24} />
+            <button onClick={isRecording ? stopEverything : startHardwareRecording} disabled={isUploading} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all disabled:opacity-50 ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse' : 'bg-[#111] border border-[#333] text-white hover:text-[#E60000]'}`}>
+              {isUploading ? <Loader2 size={24} className="animate-spin" /> : <Mic size={24} />}
             </button>
           </div>
+          
+          {/* UPLOAD STATUS INDICATOR */}
+          {isUploading && (
+             <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 text-[#E60000] bg-[#110000] px-4 py-1.5 border border-[#E60000]/30 rounded-full animate-pulse">
+               <Activity size={14} />
+               <span className="font-mono text-[9px] uppercase tracking-widest font-bold">Syncing storage node...</span>
+             </div>
+          )}
+
           <div className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
             {Math.floor(currentTime / 60).toString().padStart(2, '0')}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
           </div>
@@ -523,32 +597,19 @@ export default function Room04_Booth() {
               <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
                 <div className="flex justify-between items-center mb-3">
                   <div className="flex items-center gap-4">
-                    {/* PERSISTENT STATE SYNC DROPDOWN */}
-                    <select 
-                      value={s.type || "Lead"} 
-                      onChange={(e) => handleUpdateTakeType(s.id, e.target.value)}
-                      className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white"
-                    >
-                      <option value="Lead">Lead</option>
-                      <option value="Adlib">Adlib</option>
-                      <option value="Double">Double</option>
-                    </select>
-                    <span className="font-mono text-[10px] text-[#444]">{s.id.substring(5, 12)}</span>
+                  <div className="flex items-center gap-2 mr-4">
+                    <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors" title="Trim Dead Air">
+                      <Scissors size={14} />
+                    </button>
+                    <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>
+                      {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                    </button>
                   </div>
-                  
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 mr-4">
-                      <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors" title="Trim Dead Air">
-                        <Scissors size={14} />
-                      </button>
-                      <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>
-                        {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                      </button>
-                    </div>
-                    <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
-                  </div>
+                  <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
                 </div>
+              </div>
 
+              <div className="flex flex-col gap-4 mt-3 border-t border-[#111] pt-4">
                 <div className="flex items-center gap-4">
                   <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Start Bar</span>
                   <div className="flex-1 flex items-center gap-3">
@@ -560,34 +621,19 @@ export default function Room04_Booth() {
                   </div>
                   <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{s.offsetBars || 0}</span>
                 </div>
-              </div>
-            )})}
-          </div>
-        </div>
 
-        {/* --- STRIPE ENGINEERING GATE --- */}
-        <div className="h-16 bg-black border-t border-[#222] flex items-center justify-between px-10">
-          <div className="flex items-center gap-2 text-[10px] font-mono text-green-500 uppercase tracking-widest opacity-80">
-            {vocalStems.length > 0 && <><Save size={14} /> Wasm Synchronized</>}
-          </div>
-          
-          {isFreeLoader && !hasEngToken ? (
-            <button 
-              onClick={handleProceedToEngineering} 
-              disabled={vocalStems.length === 0} 
-              className="flex items-center gap-3 bg-[#E60000] text-white px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-red-700 transition-all disabled:opacity-30"
-            >
-              Unlock Engineering ($4.99) <Lock size={14} />
-            </button>
-          ) : (
-            <button 
-              onClick={handleProceedToEngineering} 
-              disabled={vocalStems.length === 0} 
-              className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              Engineering Suite <ArrowRight size={16} />
-            </button>
-          )}
+                <div className="flex items-center gap-4">
+                  <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Take Gain</span>
+                  <input 
+                    type="range" min="0" max="2" step="0.05" value={s.volume ?? 1} 
+                    onChange={(e) => updateStemVolume(s.id, parseFloat(e.target.value))} 
+                    className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" 
+                  />
+                  <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{Math.round((s.volume ?? 1) * 100)}%</span>
+                </div>
+              </div>
+            </div>
+          )})}
         </div>
       </div>
 
@@ -643,7 +689,7 @@ export default function Room04_Booth() {
               disabled={isProcessingTrim}
               className="w-full mt-8 bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
             >
-              {isProcessingTrim ? <Loader2 size={20} className="animate-spin" /> : <><Scissors size={20} /> Execute Destructive Slice</>}
+              {isProcessingTrim ? <Loader2 size={20} className="animate-spin" /> : <><Scissors size={20} /> Execute Destructive Slice & Upload</>}
             </button>
           </div>
         </div>

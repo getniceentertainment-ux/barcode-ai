@@ -7,24 +7,41 @@ import { supabase } from "../../lib/supabase";
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
 
-// Helper for wav conversion (preserved for offline mastering architecture)
-function audioBufferToWav(buffer: AudioBuffer) {
-  let numOfChan = buffer.numberOfChannels, length = buffer.length * numOfChan * 2 + 44,
-      bufferArray = new ArrayBuffer(length), view = new DataView(bufferArray),
-      channels = [], i, sample, offset = 0, pos = 0;
-  function setUint16(data: number) { view.setUint16(pos, data, true); pos += 2; }
-  function setUint32(data: number) { view.setUint32(pos, data, true); pos += 4; }
-  setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157); 
-  setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan);
-  setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan); 
-  setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
-  return new Blob([bufferArray], {type: "audio/wav"});
+// FIXED: Robust WAV Encoder that actually writes the raw float audio data
+function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
+  const numOfChan = buffer.numberOfChannels;
+  const length = buffer.length * numOfChan * 2 + 44;
+  const out = new ArrayBuffer(length);
+  const view = new DataView(out);
+  const channels = [];
+  let sample = 0; let offset = 0; let pos = 0;
+
+  const setUint16 = (data: number) => { view.setUint16(pos, data, true); pos += 2; };
+  const setUint32 = (data: number) => { view.setUint32(pos, data, true); pos += 4; };
+  const writeString = (offset: number, string: string) => { for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i)); };
+  
+  writeString(0, 'RIFF'); setUint32(length - 8); writeString(8, 'WAVE'); writeString(12, 'fmt '); setUint32(16); setUint16(1); setUint16(numOfChan);
+  setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16); writeString(36, 'data'); setUint32(length - pos - 4);
+
+  for (let i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
+
+  while (pos < length) {
+    for (let i = 0; i < numOfChan; i++) {
+      sample = Math.max(-1, Math.min(1, channels[i][offset])); 
+      sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
+      view.setInt16(pos, sample, true); pos += 2;
+    }
+    offset++;
+  }
+  return new Blob([view], { type: "audio/wav" });
 }
 
 export default function Room06_Mastering() {
   const { audioData, vocalStems, generatedLyrics, setActiveRoom, addToast, finalMaster, setFinalMaster, userSession, clearMatrix } = useMatrixStore();
   
   const [lufs, setLufs] = useState(-14); 
+  const [beatVolume, setBeatVolume] = useState(0.85); // Mix Bus Beat Gain
+  const [vocalVolume, setVocalVolume] = useState(1.0); // Mix Bus Vocal Gain
   const [status, setStatus] = useState<"idle" | "processing" | "success">(finalMaster ? "success" : "idle");
   const [isZipping, setIsZipping] = useState(false);
   
@@ -38,28 +55,12 @@ export default function Room06_Mastering() {
   useEffect(() => {
     const initializeMasteringNode = async () => {
       if (!userSession) return;
+      if (userSession.tier === "The Mogul") { setHasToken(true); setIsInitializing(false); return; }
 
-      // 1. ONLY The Mogul gets a free pass unconditionally
-      if (userSession.tier === "The Mogul") {
-        setHasToken(true);
-        setIsInitializing(false);
-        return;
-      }
-
-      // 2. Database Token Check for Everyone Else
-      const { data } = await supabase
-        .from('profiles')
-        .select('mastering_tokens, has_mastering_token')
-        .eq('id', userSession.id)
-        .single();
-
-      if (data?.mastering_tokens > 0 || data?.has_mastering_token) {
-        setHasToken(true);
-      }
-
+      const { data } = await supabase.from('profiles').select('mastering_tokens, has_mastering_token').eq('id', userSession.id).single();
+      if (data?.mastering_tokens > 0 || data?.has_mastering_token) setHasToken(true);
       setIsInitializing(false);
     };
-
     initializeMasteringNode();
   }, [userSession]);
 
@@ -77,9 +78,7 @@ export default function Room06_Mastering() {
     if(addToast) addToast("Opening Secure Gateway...", "info");
     try {
       const res = await fetch('/api/stripe/master-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: userSession.id })
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: userSession.id })
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
@@ -89,62 +88,111 @@ export default function Room06_Mastering() {
   };
 
   const handleMastering = async () => {
-    if (!audioData?.url) { addToast("No artifact blueprint found.", "error"); return; }
+    if (!audioData?.url) { addToast("No instrumental blueprint found.", "error"); return; }
     
     setStatus("processing");
     
     try {
-      // --- SECURE SERVER-SIDE TOKEN CONSUMPTION ---
+      // --- 1. SECURE SERVER-SIDE TOKEN CONSUMPTION ---
       if (isNonMogul && userSession?.id) {
         const { data: { session } } = await supabase.auth.getSession();
-        
         const res = await fetch('/api/ledger/consume', {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token}`
-          },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
           body: JSON.stringify({ action: 'mastering' })
         });
-
         const consumeData = await res.json();
-        
-        // If the secure backend rejects them (or they tried to block the request), ABORT processing.
         if (!res.ok) throw new Error(consumeData.error || "Failed to securely consume token.");
-        
         setHasToken(false);
       }
 
-      // Simulation of Mastering Logic
-      setTimeout(() => {
-          useMatrixStore.setState({ isProjectFinalized: true });
-          setStatus("success");
-          if(addToast) addToast("Commercial Master Exported. Token Consumed.", "success");
-      }, 3000);
+      // --- 2. TRUE AUDIO SUMMATION & MASTERING ---
+      const tmpCtx = new window.AudioContext();
+      const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
+      
+      // Decode Beat
+      let beatBlob = (audioData as any)?.blob;
+      if (!beatBlob) { const r = await fetch(audioData.url); beatBlob = await r.blob(); }
+      const beatBuffer = await tmpCtx.decodeAudioData(await beatBlob.arrayBuffer());
+      
+      // Decode All Active Vocals (Usually the single MIXED_STEM from Room 05)
+      const vocalBuffers = [];
+      for (const stem of vocalStems) {
+          let vBlob = (stem as any).blob;
+          if (!vBlob) { const r = await fetch(stem.url); vBlob = await r.blob(); }
+          const vBuf = await tmpCtx.decodeAudioData(await vBlob.arrayBuffer());
+          vocalBuffers.push({ buffer: vBuf, offset: (stem.offsetBars || 0) * secondsPerBar, volume: stem.volume ?? 1 });
+      }
+
+      // Setup Offline Render Engine
+      const offlineCtx = new OfflineAudioContext(2, beatBuffer.length, beatBuffer.sampleRate);
+      
+      // Configure LUFS Limiter (Master Bus Compressor)
+      const limiter = offlineCtx.createDynamicsCompressor();
+      limiter.threshold.value = lufs;
+      limiter.knee.value = 0.0;
+      limiter.ratio.value = 20.0;
+      limiter.attack.value = 0.005;
+      limiter.release.value = 0.050;
+      
+      const makeupGain = offlineCtx.createGain();
+      makeupGain.gain.value = Math.pow(10, (Math.abs(lufs) - 6) / 20); // Adaptive volume boost
+      
+      limiter.connect(makeupGain);
+      makeupGain.connect(offlineCtx.destination);
+
+      // Connect & Balance Beat
+      const beatSource = offlineCtx.createBufferSource();
+      beatSource.buffer = beatBuffer;
+      const beatGainNode = offlineCtx.createGain();
+      beatGainNode.gain.value = beatVolume;
+      beatSource.connect(beatGainNode);
+      beatGainNode.connect(limiter);
+      beatSource.start(0);
+
+      // Connect & Balance Vocals
+      vocalBuffers.forEach(v => {
+          const vSource = offlineCtx.createBufferSource();
+          vSource.buffer = v.buffer;
+          const vGainNode = offlineCtx.createGain();
+          vGainNode.gain.value = vocalVolume * v.volume;
+          vSource.connect(vGainNode);
+          vGainNode.connect(limiter);
+          vSource.start(v.offset);
+      });
+
+      // Execute Render Math
+      const renderedBuffer = await offlineCtx.startRendering();
+      const finalWavBlob = audioBufferToWavBlob(renderedBuffer);
+      
+      // Save globally
+      const outputUrl = URL.createObjectURL(finalWavBlob);
+      setFinalMaster({ url: outputUrl, blob: finalWavBlob } as any);
+      useMatrixStore.setState({ isProjectFinalized: true });
+
+      setStatus("success");
+      if(addToast) addToast("Commercial Master Rendered. Vocals & Beat Fused.", "success");
 
     } catch (err: any) {
       console.error(err);
       setStatus("idle");
-      if(addToast) addToast(err.message || "Ledger sync failed.", "error");
+      if(addToast) addToast(err.message || "Mastering engine crashed.", "error");
     }
   };
 
-  // --- NEW: Safe ZIP & PDF Generation (Prevents DOM Crashes) ---
   const handleExport = async () => {
     setIsZipping(true);
     try {
-      // FIX: Typecast as any to bypass strict TypeScript build error for the missing 'blob' property
-      let blobData = (audioData as any)?.blob;
-      
-      if (!blobData && audioData?.url) {
-         const resp = await fetch(audioData.url);
+      // PROPER EXPORT: Grab the final rendered blob, not the raw audioData beat
+      let blobData = (finalMaster as any)?.blob;
+      if (!blobData && finalMaster?.url) {
+         const resp = await fetch(finalMaster.url);
          blobData = await resp.blob();
       }
 
       if (!blobData) throw new Error("Audio payload missing in matrix state.");
 
       if (isFreeLoader) {
-        // Free tier gets direct WAV download only
         const url = window.URL.createObjectURL(blobData);
         const a = document.createElement('a');
         a.href = url;
@@ -153,32 +201,19 @@ export default function Room06_Mastering() {
         window.URL.revokeObjectURL(url);
         if (addToast) addToast("Standard WAV Downloaded.", "success");
       } else {
-        // Commercial tiers get the ZIP archive with the Cryptographic PDF Certificate
         const zip = new JSZip();
         zip.file(`${audioData?.fileName || "ARTIFACT"}_Commercial_Master.wav`, blobData);
         
-        // Generate PDF without hitting the DOM to prevent 'No elements found' errors
         const doc = new jsPDF({ orientation: "landscape" });
-        doc.setFillColor(5, 5, 5); // Dark Matrix Background
-        doc.rect(0, 0, 300, 210, "F");
-        
-        doc.setTextColor(230, 0, 0); // Bar-Code Red
-        doc.setFontSize(36);
-        doc.text("BAR-CODE.AI // GETNICE", 148, 50, { align: "center" });
-        
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(20);
-        doc.text("COMMERCIAL MASTERING CERTIFICATE", 148, 80, { align: "center" });
-        
-        doc.setFontSize(14);
-        doc.setTextColor(200, 200, 200);
+        doc.setFillColor(5, 5, 5); doc.rect(0, 0, 300, 210, "F");
+        doc.setTextColor(230, 0, 0); doc.setFontSize(36); doc.text("BAR-CODE.AI // GETNICE", 148, 50, { align: "center" });
+        doc.setTextColor(255, 255, 255); doc.setFontSize(20); doc.text("COMMERCIAL MASTERING CERTIFICATE", 148, 80, { align: "center" });
+        doc.setFontSize(14); doc.setTextColor(200, 200, 200);
         doc.text(`Track Artifact: ${audioData?.fileName || "UNTITLED_NODE"}`, 148, 110, { align: "center" });
         doc.text(`Authorized Node: ${userSession?.stageName || "Unknown Artist"}`, 148, 125, { align: "center" });
         doc.text(`LUFS Threshold: ${lufs} LUFS`, 148, 140, { align: "center" });
         doc.text(`Timestamp: ${new Date().toUTCString()}`, 148, 155, { align: "center" });
-        
-        doc.setFontSize(10);
-        doc.setTextColor(100, 100, 100);
+        doc.setFontSize(10); doc.setTextColor(100, 100, 100);
         doc.text(`Cryptographic Signature: SHA-256 / ${Math.random().toString(36).substring(2, 15).toUpperCase()}${Math.random().toString(36).substring(2, 15).toUpperCase()}`, 148, 185, { align: "center" });
         
         const pdfBlob = doc.output("blob");
@@ -214,12 +249,12 @@ export default function Room06_Mastering() {
       <div className="text-center mb-12">
         <h2 className="font-oswald text-5xl uppercase tracking-widest mb-4 font-bold text-white">R06: Mastering Suite</h2>
         <p className="font-mono text-xs text-[#555] uppercase tracking-[0.2em]">
-          {status === "success" ? "Commercial Standard Reached" : "Final Output Limiters // LUFS Normalization"}
+          {status === "success" ? "Commercial Standard Reached" : "Final Output Limiters // Offline Render Engine"}
         </p>
       </div>
 
       {status === "idle" && (
-        <div className="w-full max-w-xl bg-[#050505] border border-[#222] p-10 flex flex-col items-center rounded-lg relative overflow-hidden group hover:border-[#E60000]/50 transition-all">
+        <div className="w-full max-w-2xl bg-[#050505] border border-[#222] p-10 flex flex-col items-center rounded-lg relative overflow-hidden group hover:border-[#E60000]/50 transition-all">
           {!hasToken ? (
             <div className="w-full text-center animate-in zoom-in mb-8 relative z-10">
                <Lock size={32} className="mx-auto text-yellow-600 mb-4" />
@@ -228,13 +263,36 @@ export default function Room06_Mastering() {
                <button onClick={handlePurchaseToken} className="w-full bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3">Purchase Token <DollarSign size={18} /></button>
             </div>
           ) : (
-            <div className="w-full mb-12 relative z-10">
-              <div className="flex justify-between items-center mb-10">
+            <div className="w-full relative z-10">
+              <div className="flex justify-between items-center mb-8">
                  <div className="flex items-center gap-2 text-green-500 font-mono text-[10px] uppercase font-bold tracking-widest border border-green-500/20 bg-green-500/5 px-3 py-1 rounded-full"><ShieldCheck size={14} /> System Authorized</div>
-                 <span className="font-oswald text-3xl font-bold text-white">{lufs} <span className="text-xs font-mono text-[#555]">LUFS</span></span>
               </div>
-              <input type="range" min="-20" max="-6" step="0.5" value={lufs} onChange={(e) => setLufs(parseFloat(e.target.value))} className="w-full accent-[#E60000] h-2 bg-[#111] appearance-none cursor-pointer rounded-full" />
-              <button onClick={handleMastering} className="mt-12 w-full bg-[#E60000] text-white py-5 font-oswald text-xl font-bold uppercase tracking-[0.3em] hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">Initiate Final Master</button>
+
+              {/* NEW MIX BUS CONSOLE */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10 border-b border-[#222] pb-10">
+                <div className="bg-[#0a0a0a] border border-[#111] p-4 rounded-sm">
+                   <div className="flex justify-between items-center mb-4">
+                     <span className="text-[10px] font-mono uppercase text-[#888] font-bold">Beat Gain</span>
+                     <span className="text-xs font-mono text-white">{Math.round(beatVolume * 100)}%</span>
+                   </div>
+                   <input type="range" min="0" max="1.5" step="0.05" value={beatVolume} onChange={(e) => setBeatVolume(parseFloat(e.target.value))} className="w-full accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
+                </div>
+                <div className="bg-[#0a0a0a] border border-[#111] p-4 rounded-sm">
+                   <div className="flex justify-between items-center mb-4">
+                     <span className="text-[10px] font-mono uppercase text-[#888] font-bold">Vocal Gain</span>
+                     <span className="text-xs font-mono text-white">{Math.round(vocalVolume * 100)}%</span>
+                   </div>
+                   <input type="range" min="0" max="1.5" step="0.05" value={vocalVolume} onChange={(e) => setVocalVolume(parseFloat(e.target.value))} className="w-full accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
+                </div>
+              </div>
+
+              <div className="mb-4 flex justify-between items-end">
+                <span className="text-[10px] font-mono uppercase text-[#888] font-bold">Master Limiter (LUFS)</span>
+                <span className="font-oswald text-3xl font-bold text-white">{lufs} <span className="text-xs font-mono text-[#555]">LUFS</span></span>
+              </div>
+              <input type="range" min="-20" max="-6" step="0.5" value={lufs} onChange={(e) => setLufs(parseFloat(e.target.value))} className="w-full accent-[#E60000] h-2 bg-[#111] appearance-none cursor-pointer rounded-full mb-10" />
+              
+              <button onClick={handleMastering} className="w-full bg-[#E60000] text-white py-5 font-oswald text-xl font-bold uppercase tracking-[0.3em] hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">Render Audio Engine</button>
             </div>
           )}
         </div>
@@ -243,20 +301,10 @@ export default function Room06_Mastering() {
       {status === "processing" && (
         <div className="w-full max-w-xl bg-[#050505] border border-[#E60000]/30 p-10 rounded-lg flex flex-col items-center">
           <Activity size={64} className="text-[#E60000] animate-bounce mb-8" />
-          <p className="font-oswald text-xl uppercase font-bold text-white tracking-widest">Rendering Offline Context...</p>
-          
-          {/* Aesthetic Processing Animation */}
+          <p className="font-oswald text-xl uppercase font-bold text-white tracking-widest">Mathematical Audio Fusing...</p>
           <div className="flex gap-1.5 mt-8 h-12 items-end">
             {[...Array(24)].map((_, i) => (
-              <div 
-                key={i} 
-                className="w-2 bg-[#E60000] animate-pulse" 
-                style={{ 
-                  height: `${Math.max(20, Math.random() * 100)}%`, 
-                  animationDelay: `${i * 0.05}s`,
-                  animationDuration: '0.5s'
-                }} 
-              />
+              <div key={i} className="w-2 bg-[#E60000] animate-pulse" style={{ height: `${Math.max(20, Math.random() * 100)}%`, animationDelay: `${i * 0.05}s`, animationDuration: '0.5s' }} />
             ))}
           </div>
         </div>
@@ -270,16 +318,12 @@ export default function Room06_Mastering() {
                 <p className="font-oswald text-xl text-white tracking-widest truncate">{audioData?.fileName || "TRACK_MASTER"}</p>
              </div>
              
-             {/* THE EXPORT BUTTON IS NOW SECURELY WIRED */}
              <button 
                onClick={handleExport}
                disabled={isZipping}
                className="bg-white text-black hover:bg-[#E60000] hover:text-white p-4 rounded-sm transition-all shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50 flex items-center justify-center"
-               title={isFreeLoader ? "Download WAV" : "Download Commercial ZIP & License"}
              >
-               {isZipping ? <Loader2 size={24} className="animate-spin" /> : 
-                 isFreeLoader ? <Download size={24} /> : <FileArchive size={24} />
-               }
+               {isZipping ? <Loader2 size={24} className="animate-spin" /> : isFreeLoader ? <Download size={24} /> : <FileArchive size={24} />}
              </button>
           </div>
 
@@ -287,11 +331,7 @@ export default function Room06_Mastering() {
             {!isFreeLoader && (
               <button onClick={() => setActiveRoom("07")} className="w-full flex justify-center items-center gap-3 bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]">Route to Distribution <ArrowRight size={20} /></button>
             )}
-            
-            <button 
-              onClick={handleStartNewProject} 
-              className={`w-full border py-3 font-oswald text-xs font-bold uppercase tracking-widest transition-all flex justify-center items-center gap-2 ${isFreeLoader ? 'border-[#E60000] text-white bg-[#E60000]/10 hover:bg-[#E60000] hover:text-white' : 'border-red-900/30 text-[#555] hover:text-[#E60000]'}`}
-            >
+            <button onClick={handleStartNewProject} className={`w-full border py-3 font-oswald text-xs font-bold uppercase tracking-widest transition-all flex justify-center items-center gap-2 ${isFreeLoader ? 'border-[#E60000] text-white bg-[#E60000]/10 hover:bg-[#E60000] hover:text-white' : 'border-red-900/30 text-[#555] hover:text-[#E60000]'}`}>
               <Trash2 size={14} /> Start New Project
             </button>
           </div>
