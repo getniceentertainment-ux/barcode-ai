@@ -181,7 +181,11 @@ export default function Room06_Mastering() {
       // Load & Play Beat
       let beatBlob = (audioData as any)?.blob;
       if (!beatBlob) { const r = await fetch(audioData.url); beatBlob = await r.blob(); }
-      const beatBuffer = await ctx.decodeAudioData(await beatBlob.arrayBuffer());
+      
+      // FIXED: Build-safe Promise Resolution
+      const beatArrayBuf = await beatBlob.arrayBuffer();
+      const beatBuffer = await new Promise<AudioBuffer>((res, rej) => ctx.decodeAudioData(beatArrayBuf, res, rej));
+      
       const beatSource = ctx.createBufferSource();
       beatSource.buffer = beatBuffer;
       const beatGain = ctx.createGain();
@@ -195,10 +199,13 @@ export default function Room06_Mastering() {
       for (const stem of vocalStems) {
           let vBlob = (stem as any).blob;
           if (!vBlob) { const r = await fetch(stem.url); vBlob = await r.blob(); }
-          // Safari-safe decode
+          
+          // FIXED: Build-safe Promise Resolution
+          const vArrayBuf = await vBlob.arrayBuffer();
           const vBuf = await new Promise<AudioBuffer>((resolve, reject) => {
-            ctx.decodeAudioData(await vBlob.arrayBuffer(), resolve, reject);
+            ctx.decodeAudioData(vArrayBuf, resolve, reject);
           });
+          
           const vSource = ctx.createBufferSource();
           vSource.buffer = vBuf;
           const vGain = ctx.createGain();
@@ -244,13 +251,20 @@ export default function Room06_Mastering() {
       
       let beatBlob = (audioData as any)?.blob;
       if (!beatBlob) { const r = await fetch(audioData.url); beatBlob = await r.blob(); }
-      const beatBuffer = await tmpCtx.decodeAudioData(await beatBlob.arrayBuffer());
+      
+      // FIXED: Build-safe Promise Resolution
+      const beatArrayBuf = await beatBlob.arrayBuffer();
+      const beatBuffer = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(beatArrayBuf, res, rej));
       
       const vocalBuffers = [];
       for (const stem of vocalStems) {
           let vBlob = (stem as any).blob;
           if (!vBlob) { const r = await fetch(stem.url); vBlob = await r.blob(); }
-          const vBuf = await tmpCtx.decodeAudioData(await vBlob.arrayBuffer());
+          
+          // FIXED: Build-safe Promise Resolution
+          const vArrayBuf = await vBlob.arrayBuffer();
+          const vBuf = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(vArrayBuf, res, rej));
+          
           vocalBuffers.push({ buffer: vBuf, offset: (stem.offsetBars || 0) * secondsPerBar, volume: stem.volume ?? 1 });
       }
 
@@ -338,7 +352,11 @@ export default function Room06_Mastering() {
           const decodedVocals = await Promise.all(vocalStems.map(async s => {
             let vBlob = (s as any).blob;
             if (!vBlob) { const r = await fetch(s.url); vBlob = await r.blob(); }
-            const vBuf = await tmpCtx.decodeAudioData(await vBlob.arrayBuffer());
+            
+            // FIXED: Build-safe Promise Resolution
+            const vArrayBuf = await vBlob.arrayBuffer();
+            const vBuf = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(vArrayBuf, res, rej));
+            
             const endTime = ((s.offsetBars || 0) * secondsPerBar) + vBuf.duration;
             if (endTime > maxDuration) maxDuration = endTime;
             return { buffer: vBuf, offset: (s.offsetBars || 0) * secondsPerBar, volume: s.volume ?? 1 };
