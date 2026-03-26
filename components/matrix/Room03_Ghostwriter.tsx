@@ -116,7 +116,7 @@ export default function Room03_Ghostwriter() {
     }
 
     setIsGenerating(true);
-    setUxState("Synthesizing Bars via TALON Engine...");
+    setUxState("Synthesizing Bars via GetNice Engine...");
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -150,7 +150,7 @@ export default function Room03_Ghostwriter() {
       });
 
       const initData = await initRes.json();
-      if (!initRes.ok) throw new Error(initData.error || "Failed to initialize TALON.");
+      if (!initRes.ok) throw new Error(initData.error || "Failed to initialize GetNice.");
 
       const jobId = initData.jobId;
       let attempts = 0;
@@ -235,7 +235,7 @@ export default function Room03_Ghostwriter() {
       <div className="w-1/3 border-r border-[#222] flex flex-col relative overflow-y-auto custom-scrollbar shrink-0">
         <div className="p-6 border-b border-[#222] bg-black sticky top-0 z-10">
           <h2 className="font-oswald text-2xl uppercase tracking-widest font-bold text-[#E60000] flex items-center gap-3">
-            <PenTool size={24} /> TALON Engine
+            <PenTool size={24} /> GetNice Engine
           </h2>
           <p className="font-mono text-[10px] text-[#555] uppercase mt-2 tracking-widest">Neural Parameter Matrix</p>
         </div>
