@@ -79,11 +79,11 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
 }
 
 export default function Room04_Booth() {
-  const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, updateStemOffset, setActiveRoom, blueprint, userSession, addToast } = useMatrixStore();
+  const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, addToast } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [isUploading, setIsUploading] = useState(false); // New state to show upload progress
+  const [isUploading, setIsUploading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean, timestamp?: string}[]>([]);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
@@ -236,7 +236,7 @@ export default function Room04_Booth() {
   // --- PERSISTENT STORE SYNC ---
   const handleUpdateTakeType = (id: string, newType: string) => {
     const updatedStems = vocalStems.map(stem => 
-      stem.id === id ? { ...stem, type: newType } : stem
+      stem.id === id ? { ...stem, type: newType as TrackType } : stem
     );
     useMatrixStore.setState({ vocalStems: updatedStems } as any);
   };
@@ -291,7 +291,7 @@ export default function Room04_Booth() {
       const fileName = `${userSession?.id || 'anon'}/${trimId}.wav`;
 
       // Upload newly trimmed blob directly to Supabase storage
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('raw-audio')
         .upload(fileName, newBlob, {
           contentType: 'audio/wav',
@@ -392,7 +392,7 @@ export default function Room04_Booth() {
         const fileName = `${userSession?.id || 'anon'}/${takeId}.wav`;
 
         // Upload directly to Supabase storage bucket
-        const { data, error } = await supabase.storage
+        const { error } = await supabase.storage
           .from('raw-audio')
           .upload(fileName, wavBlob, {
             contentType: 'audio/wav',
@@ -438,6 +438,7 @@ export default function Room04_Booth() {
   };
 
   const startHardwareRecording = async () => {
+    // SECURE SERVER DEDUCTION: Call backend ledger route to verify credits BEFORE starting
     const isMogul = (userSession?.tier as string) === "The Mogul";
     const currentCredits = Number((userSession as any)?.creditsRemaining || (userSession as any)?.credits || 0);
 
@@ -446,22 +447,30 @@ export default function Room04_Booth() {
         if (addToast) addToast("Insufficient Credits. Top up to record a take.", "error");
         return;
       }
-      
-      if (userSession?.id) {
-        const { error } = await supabase
-          .from('profiles')
-          .update({ credits: currentCredits - 1 })
-          .eq('id', userSession.id);
 
-        if (error) {
-          console.error("Credit Sync Error:", error);
-          if (addToast) addToast("Ledger Sync Error. Take aborted.", "error");
-          return;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch('/api/ledger/consume', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`
+          },
+          body: JSON.stringify({ action: 'record_take', description: 'The Booth: Hardware Vocal Take' })
+        });
+
+        if (!res.ok) {
+          throw new Error("Ledger Sync Verification Failed.");
         }
-        
+
+        // Optimistically update the UI so it feels instant
         useMatrixStore.setState({ 
           userSession: { ...userSession, creditsRemaining: currentCredits - 1, credits: currentCredits - 1 } as any
         });
+      } catch (err) {
+        console.error("Secure Ledger Sync Error:", err);
+        if (addToast) addToast("Ledger Sync Error. Take aborted.", "error");
+        return; // ABORT recording if we couldn't charge them securely
       }
     }
 
@@ -597,46 +606,88 @@ export default function Room04_Booth() {
               <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
                 <div className="flex justify-between items-center mb-3">
                   <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2 mr-4">
-                    <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors" title="Trim Dead Air">
-                      <Scissors size={14} />
-                    </button>
-                    <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>
-                      {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                    </button>
+                    <select 
+                      value={s.type || "Lead"} 
+                      onChange={(e) => handleUpdateTakeType(s.id, e.target.value)}
+                      className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white"
+                    >
+                      <option value="Lead">Lead</option>
+                      <option value="Adlib">Adlib</option>
+                      <option value="Double">Double</option>
+                    </select>
+                    <span className="font-mono text-[10px] text-[#444]">{s.id.substring(5, 12)}</span>
+                    <span className="font-mono text-[8px] px-1 bg-green-500/10 text-green-500 border border-green-500/20" title="Secure Remote Storage">RAW-AUDIO</span>
                   </div>
-                  <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-4 mt-3 border-t border-[#111] pt-4">
-                <div className="flex items-center gap-4">
-                  <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Start Bar</span>
-                  <div className="flex-1 flex items-center gap-3">
-                    <button onClick={() => updateStemOffset(s.id, Math.max(0, (s.offsetBars||0) - 1))} className="text-[#444] hover:text-white"><ChevronLeft size={16}/></button>
-                    <div className="flex-1 h-1 bg-[#111] rounded-full relative">
-                       <div className="absolute h-full bg-[#E60000] transition-all" style={{ width: `${((s.offsetBars||0) / 64) * 100}%` }}></div>
+                  
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 mr-4">
+                      <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors" title="Trim Dead Air">
+                        <Scissors size={14} />
+                      </button>
+                      <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>
+                        {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                      </button>
                     </div>
-                    <button onClick={() => updateStemOffset(s.id, (s.offsetBars||0) + 1)} className="text-[#444] hover:text-white"><ChevronRight size={16}/></button>
+                    <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
                   </div>
-                  <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{s.offsetBars || 0}</span>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Take Gain</span>
-                  <input 
-                    type="range" min="0" max="2" step="0.05" value={s.volume ?? 1} 
-                    onChange={(e) => updateStemVolume(s.id, parseFloat(e.target.value))} 
-                    className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" 
-                  />
-                  <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{Math.round((s.volume ?? 1) * 100)}%</span>
+                <div className="flex flex-col gap-4 mt-3 border-t border-[#111] pt-4">
+                  <div className="flex items-center gap-4">
+                    <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Start Bar</span>
+                    <div className="flex-1 flex items-center gap-3">
+                      <button onClick={() => updateStemOffset(s.id, Math.max(0, (s.offsetBars||0) - 1))} className="text-[#444] hover:text-white"><ChevronLeft size={16}/></button>
+                      <div className="flex-1 h-1 bg-[#111] rounded-full relative">
+                         <div className="absolute h-full bg-[#E60000] transition-all" style={{ width: `${((s.offsetBars||0) / 64) * 100}%` }}></div>
+                      </div>
+                      <button onClick={() => updateStemOffset(s.id, (s.offsetBars||0) + 1)} className="text-[#444] hover:text-white"><ChevronRight size={16}/></button>
+                    </div>
+                    <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{s.offsetBars || 0}</span>
+                  </div>
+
+                  {/* NEW VOLUME / GAIN CONTROLS */}
+                  <div className="flex items-center gap-4">
+                    <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Take Gain</span>
+                    <input 
+                      type="range" min="0" max="2" step="0.05" value={s.volume ?? 1} 
+                      onChange={(e) => updateStemVolume(s.id, parseFloat(e.target.value))} 
+                      className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" 
+                    />
+                    <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{Math.round((s.volume ?? 1) * 100)}%</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          )})}
+            )})}
+          </div>
+        </div>
+
+        {/* --- STRIPE ENGINEERING GATE --- */}
+        <div className="h-16 bg-black border-t border-[#222] flex items-center justify-between px-10">
+          <div className="flex items-center gap-2 text-[10px] font-mono text-green-500 uppercase tracking-widest opacity-80">
+            {vocalStems.length > 0 && <><Save size={14} /> Storage Synchronized</>}
+          </div>
+          
+          {isFreeLoader && !hasEngToken ? (
+            <button 
+              onClick={handleProceedToEngineering} 
+              disabled={vocalStems.length === 0} 
+              className="flex items-center gap-3 bg-[#E60000] text-white px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-red-700 transition-all disabled:opacity-30"
+            >
+              Unlock Engineering ($4.99) <Lock size={14} />
+            </button>
+          ) : (
+            <button 
+              onClick={handleProceedToEngineering} 
+              disabled={vocalStems.length === 0 || isUploading} 
+              className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Engineering Suite <ArrowRight size={16} />
+            </button>
+          )}
         </div>
       </div>
 
+      {/* TRIM MODAL */}
       {trimmingStem && (
         <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-8 animate-in zoom-in duration-300">
           <div className="bg-[#050505] border border-[#E60000] rounded-lg w-full max-w-2xl p-8 shadow-[0_0_50px_rgba(230,0,0,0.2)]">
@@ -694,6 +745,7 @@ export default function Room04_Booth() {
           </div>
         </div>
       )}
+
     </div>
   );
 }
