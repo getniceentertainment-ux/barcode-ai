@@ -511,7 +511,6 @@ export default function Room04_Booth() {
           {lyricLines.map((line, i) => {
             const isActive = !line.isHeader && isPlaying && currentTime >= line.startTime && currentTime < (line.startTime + secondsPerBar);
             return (
-              // ✅ THE SMOOTH TRANSPARENCY FIX
               <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActive ? 'text-white bg-[#E60000]/20 py-1 px-3 rounded' : 'py-1 px-3'}`}>
                 {!line.isHeader && line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
                 <span className="flex-1">{line.text}</span>
