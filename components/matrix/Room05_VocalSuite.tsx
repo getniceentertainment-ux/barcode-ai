@@ -39,7 +39,7 @@ function audioBufferToWav(buffer: AudioBuffer) {
 }
 
 export default function Room05_VocalSuite() {
-  const { audioData, vocalStems, removeVocalStem, addVocalStem, setActiveRoom, addToast, userSession } = useMatrixStore();
+  const { audioData, vocalStems, engineeredVocal, setEngineeredVocal, setActiveRoom, addToast, userSession } = useMatrixStore();
   
   const [activeChain, setActiveChain] = useState(VOCAL_CHAINS[0].id);
   const [presenceIntensity, setPresenceIntensity] = useState(VOCAL_CHAINS[0].presence);
@@ -62,19 +62,20 @@ export default function Room05_VocalSuite() {
   // FIX: Applies the gate to BOTH Free Loader and The Artist
   const isNonMogul = userSession?.tier !== "The Mogul";
 
-  // --- RECOVERY LOGIC: Persistent "Success" View ---
+  // --- SURGICAL REVISION: RECOVERY LOGIC ---
   useEffect(() => {
-    if (vocalStems.some(s => s.id.startsWith("MIXED_STEM_"))) {
+    // Check the new engineeredVocal state instead of searching vocalStems
+    if (engineeredVocal) {
       setStatus("success");
       setHasToken(true); // Effectively bypass gate if product already exists
     }
-  }, [vocalStems]);
+  }, [engineeredVocal]);
 
-  // --- TOKEN SECURITY GATE ---
+  // --- SURGICAL REVISION: TOKEN SECURITY GATE ---
   useEffect(() => {
     const checkTokenStatus = async () => {
       // If we already have a mixed stem, we are "Authorized" by result
-      if (vocalStems.some(s => s.id.startsWith("MIXED_STEM_"))) {
+      if (engineeredVocal) {
         setHasToken(true);
         return;
       }
@@ -97,7 +98,7 @@ export default function Room05_VocalSuite() {
       }
     };
     checkTokenStatus();
-  }, [userSession, vocalStems]);
+  }, [userSession, engineeredVocal]);
 
   const handlePurchaseToken = async () => {
     if (!userSession?.id) return;
@@ -200,8 +201,8 @@ export default function Room05_VocalSuite() {
       }
 
       // Execute Rendering
-      const tmpCtx = new window.AudioContext(); const decodedBuffers: AudioBuffer[] = []; const activeStemIds: string[] = []; let maxDuration = 0;
-      for (const stem of vocalStems) { const resp = await fetch(stem.url); const audioBuf = await tmpCtx.decodeAudioData(await resp.arrayBuffer()); decodedBuffers.push(audioBuf); activeStemIds.push(stem.id); if (audioBuf.duration > maxDuration) maxDuration = audioBuf.duration; }
+      const tmpCtx = new window.AudioContext(); const decodedBuffers: AudioBuffer[] = []; let maxDuration = 0;
+      for (const stem of vocalStems) { const resp = await fetch(stem.url); const audioBuf = await tmpCtx.decodeAudioData(await resp.arrayBuffer()); decodedBuffers.push(audioBuf); if (audioBuf.duration > maxDuration) maxDuration = audioBuf.duration; }
       
       const offlineCtx = new OfflineAudioContext(2, tmpCtx.sampleRate * maxDuration, tmpCtx.sampleRate);
       const masterGain = offlineCtx.createGain(); const convolver = offlineCtx.createConvolver(); convolver.buffer = createReverb(offlineCtx, 2.5, 2.0);
@@ -236,11 +237,21 @@ export default function Room05_VocalSuite() {
       });
       
       const renderedBuffer = await offlineCtx.startRendering();
-      activeStemIds.forEach(id => removeVocalStem(id));
-      addVocalStem({ id: `MIXED_STEM_${Date.now()}`, type: "Lead", url: URL.createObjectURL(audioBufferToWav(renderedBuffer)), blob: audioBufferToWav(renderedBuffer), volume: 0, offsetBars: 0 });
+      
+      // --- SURGICAL REVISION: NON-DESTRUCTIVE SAVE ---
+      // We removed activeStemIds.forEach(id => removeVocalStem(id))
+      // We also changed the volume from 0 to 1 so the Master room can hear it.
+      setEngineeredVocal({ 
+        id: `MIXED_STEM_${Date.now()}`, 
+        type: "Lead", 
+        url: URL.createObjectURL(audioBufferToWav(renderedBuffer)), 
+        blob: audioBufferToWav(renderedBuffer), 
+        volume: 1, 
+        offsetBars: 0 
+      });
 
       setStatus("success");
-      if(addToast) addToast("Vocals Engineered & Token Deducted.", "success");
+      if(addToast) addToast("Vocals Engineered & Saved to Memory.", "success");
     } catch (err: any) { 
       setStatus("idle"); 
       if(addToast) addToast(err.message, "error"); 
