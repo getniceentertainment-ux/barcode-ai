@@ -1,11 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { 
-  PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, 
-  Loader2, Layout, ShieldCheck, Cpu, Activity, 
-  ArrowRight, Lock, Plus 
-} from "lucide-react";
+import { PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, Loader2, Layout, ShieldCheck, Cpu, Activity, ArrowRight, Lock } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -15,10 +11,6 @@ export default function Room03_Ghostwriter() {
     gwTitle, setGwTitle, gwPrompt, setGwPrompt, gwStyle, setGwStyle, gwGender, setGwGender, 
     gwUseSlang, setGwUseSlang, gwUseIntel, setGwUseIntel, userSession
   } = useMatrixStore();
-
-  const [motive, setMotive] = useState("");
-  const [struggle, setStruggle] = useState("");
-  const [hustle, setHustle] = useState("");
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [lyrics, setLyrics] = useState(generatedLyrics || "");
@@ -30,18 +22,20 @@ export default function Room03_Ghostwriter() {
   const [selectedLine, setSelectedLine] = useState("");
 
   const styles = [
-    { id: "getnice_hybrid", name: "GetNice Hybrid [Melodic Trap]" },
+    { id: "getnice_hybrid", name: "GetNice Hybrid" },
     { id: "heartbeat", name: "Heartbeat (Boom-Bap)" },
     { id: "lazy", name: "Lazy (Wavy/Delayed)" },
     { id: "triplet", name: "Triplet (Trap)" },
     { id: "chopper", name: "Chopper (Fast/Tech)" }
   ];
 
+  // THE MATH: Calculate seconds per bar based on the precise DSP tempo
   const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
   const formatTime = (s: number) => `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;
 
   const calculateTotalBars = () => blueprint.reduce((acc, section) => acc + section.bars, 0);
 
+  // --- MONETIZATION: DYNAMIC COST CALCULATION ---
   const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID;
   const isCreator = userSession?.id && userSession.id === CREATOR_ID;
   const isMogul = userSession?.tier === "The Mogul";
@@ -50,9 +44,13 @@ export default function Room03_Ghostwriter() {
   const hasEnoughCredits = isCreator || isMogul || 
     (userSession?.creditsRemaining && (userSession.creditsRemaining === "UNLIMITED" || userSession.creditsRemaining >= currentCost));
 
+  // --- THE MASTER RIPPLE ALGORITHM ---
+  // This ensures that when one block is adjusted, the rest of the song reacts.
   const syncTimeline = (newBlueprint: any[]) => {
     let cursor = 0;
     const synced = newBlueprint.map((block) => {
+      // Logic: A block starts at its manual startBar UNLESS that would 
+      // cause an overlap with the block before it.
       const start = Math.max(cursor, block.startBar ?? cursor);
       const updated = { ...block, startBar: start };
       cursor = start + block.bars;
@@ -65,29 +63,27 @@ export default function Room03_Ghostwriter() {
     const newBp = [...blueprint];
     const oldStart = (newBp[index] as any).startBar || 0;
     const delta = newStart - oldStart;
+    
+    // 1. Move the targeted block
     (newBp[index] as any).startBar = Math.max(0, newStart);
+    
+    // 2. Ripple the shift to all blocks following this one (preserving their relative gaps)
     for (let i = index + 1; i < newBp.length; i++) {
         const currentPos = (newBp[i] as any).startBar || 0;
         (newBp[i] as any).startBar = Math.max(0, currentPos + delta);
     }
+
+    // 3. Final safety pass to prevent overlap "pile-ups"
     syncTimeline(newBp);
   };
 
-const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
-    // --- REVENUE PROTECTION: TYPE-SAFE CHECK ---
-    // We cast to string to avoid the AccessTier overlap error
-    const isFreeLoader = (userSession?.tier as string) === "The Free Loader";
-    const currentSectionCount = blueprint.length;
-
-    if (isFreeLoader && currentSectionCount >= 2) {
-      if (addToast) {
-        addToast(
-          "Free Tier Limited to 2 Sections (1 Hook & 1 Verse). Upgrade to 'The Artist' for unlimited blocks.", 
-          "error"
-        );
-      }
+  const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
+    // CAP EXPLOIT FIX: Prevent Free Loaders from bypassing the 2-block limit via Room 03
+    if (userSession?.tier === "Free Loader" && blueprint.length >= 2) {
+      if(addToast) addToast("Free Loaders are strictly capped at 2 structural blocks.", "error");
       return;
     }
+
     const lastBlock = blueprint[blueprint.length - 1] as any;
     const nextStart = lastBlock && lastBlock.startBar !== undefined ? lastBlock.startBar + lastBlock.bars : 0;
     
@@ -132,15 +128,13 @@ const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars:
         body: JSON.stringify({
           userId: userSession?.id,
           prompt: gwPrompt,
-          motive: motive || "Mastering the craft",
-          struggle: struggle || "Against the odds",
-          hustle: hustle || "Relentless execution",
           title: gwTitle,
           bpm: audioData?.bpm,
           style: gwStyle,
           tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
+          // Sending the startBar to your handler.py so timestamps are accurate!
           blueprint: blueprint.map(b => ({ 
             type: b.type, 
             bars: b.bars, 
@@ -252,49 +246,14 @@ const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars:
             />
           </div>
 
-          <div className="space-y-4">
-            <div>
-              <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-1 block font-bold">The Drive (Motive)</label>
-              <input 
-                type="text" 
-                value={motive} 
-                onChange={(e) => setMotive(e.target.value)} 
-                placeholder="E.g., Building a media brand..." 
-                className="w-full bg-[#111] border border-[#333] p-2 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" 
-              />
-            </div>
-            
-            <div>
-              <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-1 block font-bold">The Setback (Struggle)</label>
-              <input 
-                type="text" 
-                value={struggle} 
-                onChange={(e) => setStruggle(e.target.value)} 
-                placeholder="E.g., Equipment failures and tight margins..." 
-                className="w-full bg-[#111] border border-[#333] p-2 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" 
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-1 block font-bold">The Execution (Hustle)</label>
-              <input 
-                type="text" 
-                value={hustle} 
-                onChange={(e) => setHustle(e.target.value)} 
-                placeholder="E.g., Late night DAW sessions..." 
-                className="w-full bg-[#111] border border-[#333] p-2 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors" 
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-1 block font-bold mt-4">Current Topic (Thematic Focus)</label>
-              <textarea 
-                value={gwPrompt} 
-                onChange={(e) => setGwPrompt(e.target.value)} 
-                placeholder="What is this specific song about?" 
-                className="w-full h-16 bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] custom-scrollbar resize-none transition-colors" 
-              />
-            </div>
+          <div>
+            <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Thematic Prompt</label>
+            <textarea 
+              value={gwPrompt} 
+              onChange={(e) => setGwPrompt(e.target.value)} 
+              placeholder="Describe the vibe, the struggle, the story..." 
+              className="w-full h-24 bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] custom-scrollbar resize-none transition-colors" 
+            />
           </div>
 
           <div>
@@ -360,49 +319,55 @@ const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars:
            </div>
         </div>
 
-{/* BLUEPRINT BLOCK BUILDER */}
-<div className="h-44 bg-black border-b border-[#222] overflow-x-auto flex items-center px-8 gap-4 shrink-0 custom-scrollbar shadow-[inset_0_-10px_20px_rgba(0,0,0,0.5)]">
-  {blueprint.map((block, index) => (
-    <div key={block.id} className="w-40 shrink-0 bg-[#050505] border border-[#333] p-4 flex flex-col justify-between h-32 group relative hover:border-[#E60000] transition-colors">
-      <button onClick={() => removeSection(block.id)} className="absolute -top-2 -right-2 bg-red-900 text-white w-5 h-5 rounded-full text-[10px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-lg">×</button>
-      <div className="text-[9px] font-mono text-[#888] uppercase tracking-widest flex justify-between">
-        <span>Block {index + 1}</span>
-      </div>
-      <div>
-        <h4 className="font-oswald text-lg uppercase tracking-widest text-white">{block.type}</h4>
-        <p className="font-mono text-[10px] text-[#E60000] font-bold">{block.bars} BARS</p>
-      </div>
+        {/* BLUEPRINT BLOCK BUILDER (With Ripple Offsets) */}
+        <div className="h-44 bg-black border-b border-[#222] overflow-x-auto flex items-center px-8 gap-4 shrink-0 custom-scrollbar shadow-[inset_0_-10px_20px_rgba(0,0,0,0.5)]">
+          {blueprint.map((block, index) => (
+            <div key={block.id} className="w-40 shrink-0 bg-[#050505] border border-[#333] p-4 flex flex-col justify-between h-32 group relative hover:border-[#E60000] transition-colors">
+              <button onClick={() => removeSection(block.id)} className="absolute -top-2 -right-2 bg-red-900 text-white w-5 h-5 rounded-full text-[10px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-lg">×</button>
+              <div className="text-[9px] font-mono text-[#888] uppercase tracking-widest flex justify-between">
+                <span>Block {index + 1}</span>
+              </div>
+              <div>
+                <h4 className="font-oswald text-lg uppercase tracking-widest text-white">{block.type}</h4>
+                <p className="font-mono text-[10px] text-[#E60000] font-bold">{block.bars} BARS</p>
+              </div>
 
-      <div className="flex justify-between items-center mt-2 border-t border-[#333] pt-2">
-        <span className="text-[9px] font-mono text-[#555] uppercase tracking-widest">Start Bar</span>
-        <div className="flex items-center gap-2">
-           <span className="text-[9px] text-[#E60000] font-mono">{formatTime(((block as any).startBar || 0) * secondsPerBar)}</span>
-           <input 
-             type="number" 
-             value={(block as any).startBar ?? 0}
-             onChange={(e) => updateBlueprintStartBar(index, parseInt(e.target.value) || 0)}
-             className="w-10 bg-black border border-[#444] text-white text-xs text-center font-mono outline-none focus:border-[#E60000]"
-           />
+              {/* TIMELINE OFFSET CONTROLS - TRIGGERING RELATIVE RIPPLE */}
+              <div className="flex justify-between items-center mt-2 border-t border-[#333] pt-2">
+                <span className="text-[9px] font-mono text-[#555] uppercase tracking-widest">Start Bar</span>
+                <div className="flex items-center gap-2">
+                   <span className="text-[9px] text-[#E60000] font-mono">{formatTime(((block as any).startBar || 0) * secondsPerBar)}</span>
+                   <input 
+                     type="number" 
+                     value={(block as any).startBar ?? 0}
+                     onChange={(e) => updateBlueprintStartBar(index, parseInt(e.target.value) || 0)}
+                     className="w-10 bg-black border border-[#444] text-white text-xs text-center font-mono outline-none focus:border-[#E60000]"
+                   />
+                </div>
+              </div>
+            </div>
+          ))}
+          <div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2">
+            <p className="text-[8px] font-mono text-[#555] uppercase text-center tracking-widest">Add Structure</p>
+            <div className="flex gap-1 justify-center">
+              <button 
+                onClick={() => addSection("HOOK", 8)} 
+                disabled={userSession?.tier === "Free Loader" && blueprint.length >= 2}
+                className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Hook
+              </button>
+              <button 
+                onClick={() => addSection("VERSE", 16)} 
+                disabled={userSession?.tier === "Free Loader" && blueprint.length >= 2}
+                className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Verse
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
-  ))}
-  
-  {/* ADD STRUCTURE BLOCK */}
-  <div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2 relative">
-    {(userSession?.tier as string) === "The Free Loader" && blueprint.length >= 2 && (
-      <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-10">
-        <Lock size={14} className="text-[#E60000] mb-1" />
-        <span className="text-[8px] font-mono text-white uppercase font-bold tracking-tighter text-center px-2">Sections Locked</span>
-      </div>
-    )}
-    <p className="text-[8px] font-mono text-[#555] uppercase text-center tracking-widest">Add Structure</p>
-    <div className="flex gap-1 justify-center">
-      <button onClick={() => addSection("HOOK", 8)} className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors">Hook</button>
-      <button onClick={() => addSection("VERSE", 16)} className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors">Verse</button>
-    </div>
-  </div>
-</div>
+
         {/* LYRICS DISPLAY ENVIRONMENT */}
         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar relative bg-[#020202]">
           {isGenerating ? (
@@ -423,6 +388,7 @@ const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars:
                 <Cpu size={32} className="text-[#E60000] opacity-50" />
               </div>
 
+              {/* RENDERED TEXT: Timeline Synced View */}
               {(() => {
                  let currentBlockIndex = -1;
                  let barOffsetWithinBlock = 0;
