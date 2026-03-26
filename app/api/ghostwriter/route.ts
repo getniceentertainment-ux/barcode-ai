@@ -85,7 +85,11 @@ export async function POST(req: Request) {
     if (!success) return NextResponse.json({ error: "Rate Limit Exceeded. Please hold." }, { status: 429 });
 
     const body = await req.json();
-    const { prompt, title, bpm, key, stageName, tag, style, blueprint } = body;
+    // NEW: Extracted the new parameters sent from Room 03
+    const { 
+      prompt, title, bpm, key, stageName, tag, style, blueprint, 
+      motive, struggle, hustle, useSlang, useIntel 
+    } = body;
 
     // --- DYNAMIC CREDIT COST CALCULATION ---
     let profileTier = 'Free Loader';
@@ -114,9 +118,14 @@ export async function POST(req: Request) {
     4. STRUCTURAL ARCHITECTURE: Rigidly structure the output with timestamps and exact bar counts.
     `;
 
-    const thematicPrompt = title 
-      ? `SONG TITLE: "${title}". USER PROMPT: ${prompt}\n\n${getNiceOverride}` 
-      : `${prompt}\n\n${getNiceOverride}`;
+    // NEW: Injected Motive, Struggle, and Hustle directly into the prompt context
+    const thematicPrompt = `SONG TITLE: "${title || 'UNTITLED'}".
+    USER PROMPT: ${prompt}
+    THE MOTIVE (Drive): ${motive || "Mastering the craft"}
+    THE STRUGGLE (Setback): ${struggle || "Against the odds"}
+    THE HUSTLE (Execution): ${hustle || "Relentless execution"}
+
+    ${getNiceOverride}`;
 
     // Force the LoRA to trigger by secretly appending our custom style string
     const forcedStyle = style ? `${style} (GetNice Hybrid Blueprint)` : "getnice_hybrid";
@@ -129,10 +138,17 @@ export async function POST(req: Request) {
         input: {
           task_type: "generate",
           prompt: thematicPrompt,
+          // NEW: Passing parameters explicitly to the worker
+          motive: motive || "Mastering the craft",
+          struggle: struggle || "Against the odds",
+          hustle: hustle || "Relentless execution",
           bpm: bpm || 120,
           key: key || "Unknown Key",            
-          style: forcedStyle, // <--- Sent to Python Worker (Guaranteed LoRA Wakeup)
+          style: forcedStyle, 
           stageName: stageName || "The Artist", 
+          tag: tag,
+          useSlang: useSlang,
+          useIntel: useIntel,
           blueprint: blueprint 
         }
       })
@@ -159,6 +175,14 @@ export async function POST(req: Request) {
         const { data: currentProfile } = await supabaseAdmin.from('profiles').select('credits').eq('id', userId).single();
         if (currentProfile) {
           await supabaseAdmin.from('profiles').update({ credits: currentProfile.credits - cost }).eq('id', userId);
+          
+          // NEW: Log the deduction to the Audit Ledger for Room 08 visibility
+          await supabaseAdmin.from('transactions').insert({
+            user_id: userId,
+            amount: -cost,
+            type: 'GENERATION',
+            description: `Ghostwriter: Synthesized ${blueprint?.length || 0} Blocks`
+          });
         }
       }
       

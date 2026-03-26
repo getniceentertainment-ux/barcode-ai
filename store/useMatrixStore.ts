@@ -63,12 +63,23 @@ interface MatrixState {
   gwGender: string;
   gwUseSlang: boolean;
   gwUseIntel: boolean;
+  
+  // --- NEW: THEMATIC DIRECTIVES ---
+  gwMotive: string;
+  gwStruggle: string;
+  gwHustle: string;
+  
   setGwTitle: (t: string) => void;
   setGwPrompt: (p: string) => void;
   setGwStyle: (s: string) => void;
   setGwGender: (g: string) => void;
   setGwUseSlang: (b: boolean) => void;
   setGwUseIntel: (b: boolean) => void;
+  
+  // --- NEW: THEMATIC SETTERS ---
+  setGwMotive: (m: string) => void;
+  setGwStruggle: (s: string) => void;
+  setGwHustle: (h: string) => void;
 
   blueprint: BlueprintSection[];
   setBlueprint: (blueprint: BlueprintSection[]) => void;
@@ -118,6 +129,11 @@ export const useMatrixStore = create<MatrixState>()(
       gwUseSlang: true,
       gwUseIntel: true,
       
+      // --- INITIAL THEMATIC STATE ---
+      gwMotive: "",
+      gwStruggle: "",
+      gwHustle: "",
+      
       mixParams: {
         activeChain: "getnice_eq",
         presenceIntensity: 30,
@@ -162,6 +178,12 @@ export const useMatrixStore = create<MatrixState>()(
       setGwGender: (g) => set({ gwGender: g }),
       setGwUseSlang: (b) => set({ gwUseSlang: b }),
       setGwUseIntel: (b) => set({ gwUseIntel: b }),
+      
+      // --- THEMATIC STATE MUTATORS ---
+      setGwMotive: (m) => set({ gwMotive: m }),
+      setGwStruggle: (s) => set({ gwStruggle: s }),
+      setGwHustle: (h) => set({ gwHustle: h }),
+
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
       
@@ -222,6 +244,10 @@ export const useMatrixStore = create<MatrixState>()(
           audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
           gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
           mdxJobId: null, mdxStatus: "idle", syncStatus: "idle",
+          
+          // --- CLEAR THEMATIC STATE ON NEW PROJECT ---
+          gwMotive: "", gwStruggle: "", gwHustle: "",
+
           mixParams: {
             activeChain: "getnice_eq",
             presenceIntensity: 30,
@@ -277,6 +303,12 @@ export const useMatrixStore = create<MatrixState>()(
            gwTitle: state.gwTitle,
            gwPrompt: state.gwPrompt,
            gwStyle: state.gwStyle,
+           
+           // --- BACKUP THEMATIC STATE TO CLOUD ---
+           gwMotive: state.gwMotive,
+           gwStruggle: state.gwStruggle,
+           gwHustle: state.gwHustle,
+           
            mixParams: state.mixParams,
            anrData: state.anrData,
            activeProjectId: state.activeProjectId,
@@ -372,6 +404,12 @@ export const useMatrixStore = create<MatrixState>()(
         gwTitle: state.gwTitle,
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
+        
+        // --- PERSIST THEMATIC STATE LOCALLY ON REFRESH ---
+        gwMotive: state.gwMotive,
+        gwStruggle: state.gwStruggle,
+        gwHustle: state.gwHustle,
+        
         mixParams: state.mixParams,
         anrData: state.anrData,
         playbackMode: state.playbackMode,
