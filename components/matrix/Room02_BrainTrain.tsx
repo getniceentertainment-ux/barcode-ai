@@ -292,7 +292,9 @@ export default function Room02_BrainTrain() {
 
   const updateBlueprintBar = (index: number, delta: number) => {
     const newBp = [...blueprint];
-    newBp[index].bars = Math.max(1, newBp[index].bars + delta);
+    // CAP EXPLOIT FIX: Limit Free Loaders to 16 bars max per block. Paid tiers cap at 64 to prevent LLM payload crashes.
+    const maxBars = userSession?.tier === "Free Loader" ? 16 : 64;
+    newBp[index].bars = Math.min(maxBars, Math.max(1, newBp[index].bars + delta));
     setBlueprint(newBp);
   };
 
@@ -420,7 +422,13 @@ export default function Room02_BrainTrain() {
                    <div className="ml-auto flex items-center gap-4 font-mono text-sm">
                      <button onClick={() => updateBlueprintBar(index, -1)} className="hover:text-[#E60000]"><Minus size={16} /></button>
                      <span className="w-12 text-center">{block.bars} BARS</span>
-                     <button onClick={() => updateBlueprintBar(index, 1)} className="hover:text-green-500"><Plus size={16} /></button>
+                     <button 
+                       onClick={() => updateBlueprintBar(index, 1)} 
+                       disabled={userSession?.tier === "Free Loader" && block.bars >= 16}
+                       className="hover:text-green-500 disabled:opacity-20 disabled:hover:text-inherit disabled:cursor-not-allowed"
+                     >
+                       <Plus size={16} />
+                     </button>
                    </div>
                  </div>
                ))}
