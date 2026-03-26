@@ -1,42 +1,67 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon, Globe, Zap, Music } from "lucide-react";
+import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon, Globe, Zap, FileText } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import Link from "next/link"; 
 
 export default function Room07_Distribution() {
-  const { setActiveRoom, userSession, generatedLyrics, addToast, audioData, finalMaster, setFinalMaster, anrData, updateAnrData } = useMatrixStore();
-  const { trackTitle, status, hitScore, coverUrl, tiktokSnippet } = anrData;
-
+  const { setActiveRoom, userSession, generatedLyrics, addToast, audioData, finalMaster } = useMatrixStore();
+  
+  const [trackId, setTrackId] = useState<string | null>(null);
+  const [trackTitle, setTrackTitle] = useState("");
+  const [status, setStatus] = useState<"idle" | "analyzing" | "submitting" | "success">("idle");
+  const [hitScore, setHitScore] = useState<number>(0);
+  const [coverUrl, setCoverUrl] = useState<string>("");
+  const [tiktokSnippet, setTiktokSnippet] = useState<string>("");
+  
+  // Upsell States
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
+  const [execRollout, setExecRollout] = useState<string>("");
+  const [isGeneratingRollout, setIsGeneratingRollout] = useState(false);
 
+  // --- SURGICAL INSERTION 1: Catch returning Stripe redirects for Upsells ---
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
+      
+      // Catch Cover Art
       if (params.get('cover_purchased') === 'true') {
         const generatedCoverUrl = params.get('cover_url');
         window.history.replaceState({}, document.title, window.location.pathname);
         if (generatedCoverUrl) {
-          updateAnrData({ coverUrl: generatedCoverUrl, status: "success" });
+          setCoverUrl(generatedCoverUrl);
+          setStatus("success");
           if(addToast) addToast("DALL-E 3 Cover Art Generated & Attached.", "success");
         }
       }
+
+      // Catch Exec Rollout
+      if (params.get('rollout_purchased') === 'true') {
+        const returnedTrackId = params.get('track_id');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        if (returnedTrackId) {
+          setTrackId(returnedTrackId);
+          setStatus("success");
+          triggerRolloutGeneration(returnedTrackId);
+        }
+      }
     }
-  }, [userSession, addToast, updateAnrData]);
+  }, [userSession, addToast]);
+  // ------------------------------------------------------------------------------------------
 
   const handleAnalyze = async () => {
     if (!trackTitle.trim()) {
       if (addToast) addToast("A track title is required for distribution.", "error");
       return;
     }
-    if (!finalMaster?.url) {
+    if (!finalMaster) {
       if (addToast) addToast("No master track found. Complete Room 06 first.", "error");
       return;
     }
 
-    updateAnrData({ status: "analyzing" });
+    setStatus("analyzing");
 
     try {
       const analyzeRes = await fetch('/api/distribution/analyze', {
@@ -44,87 +69,31 @@ export default function Room07_Distribution() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           title: trackTitle, 
-          lyrics: generatedLyrics || "",
-          bpm: audioData?.bpm || 120,
-          energy: (audioData as any)?.energy || 0.8 
+          lyrics: generatedLyrics || "No lyrics provided",
+          bpm: audioData?.bpm || 120
         })
       });
       
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      let snippetBlobUrl = "";
-      try {
-        if (finalMaster?.url) {
-          const targetStartTime = analyzeData.snippetStartTime || 15;
-          snippetBlobUrl = await extractTikTokSnippet(finalMaster.url, targetStartTime);
-        }
-      } catch (sliceErr) {
-        console.error("Local audio slicing failed:", sliceErr);
-        if (addToast) addToast("Snippet isolation bypassed. Securing artifact.", "info");
-      }
-
-      updateAnrData({
-        hitScore: analyzeData.hitScore, 
-        coverUrl: analyzeData.coverUrl || "",
-        tiktokSnippet: snippetBlobUrl
-      });
+      setHitScore(analyzeData.hitScore);
+      setCoverUrl(analyzeData.coverUrl);
+      setTiktokSnippet(analyzeData.tiktokSnippet);
       
-      handleFinalSubmit({ ...analyzeData, tiktokSnippet: snippetBlobUrl });
-
+      handleFinalSubmit(analyzeData);
     } catch (error: any) {
       console.error("A&R Error:", error);
       if (addToast) addToast(error.message, "error");
-      updateAnrData({ status: "idle" });
+      setStatus("idle");
     }
   };
 
   const handleFinalSubmit = async (aAndRData: any) => {
-    updateAnrData({ status: "submitting" });
+    setStatus("submitting");
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
-      // ========================================================================
-      // CLOUD HARDENING PROTOCOL: Convert ephemeral Blobs to permanent URLs
-      // ========================================================================
-      let cloudMasterUrl = finalMaster?.url;
-      let cloudSnippetUrl = aAndRData.tiktokSnippet;
-
-      const secureToSupabase = async (urlToSecure: string, prefix: string) => {
-        if (!urlToSecure || !urlToSecure.startsWith('blob:')) return urlToSecure;
-        
-        const blobRes = await fetch(urlToSecure);
-        const rawBlob = await blobRes.blob();
-        const fileName = `${userSession?.id}/${Date.now()}_${prefix}.wav`;
-        
-        const { error: uploadErr } = await supabase.storage
-          .from('mastered-audio')
-          .upload(fileName, rawBlob, { contentType: 'audio/wav', upsert: true });
-          
-        if (uploadErr) throw new Error(`Storage upload failed: ${uploadErr.message}`);
-        
-        const { data: { publicUrl } } = supabase.storage
-          .from('mastered-audio')
-          .getPublicUrl(fileName);
-          
-        return publicUrl;
-      };
-
-      // 1. Secure the Master Track
-      if (cloudMasterUrl?.startsWith('blob:')) {
-        cloudMasterUrl = await secureToSupabase(cloudMasterUrl, 'MASTER');
-        if (finalMaster) {
-          setFinalMaster({ ...finalMaster, url: cloudMasterUrl }); 
-        }
-      }
-
-      // 2. Secure the TikTok Snippet
-      if (cloudSnippetUrl?.startsWith('blob:')) {
-        cloudSnippetUrl = await secureToSupabase(cloudSnippetUrl, 'TIKTOK');
-        updateAnrData({ tiktokSnippet: cloudSnippetUrl });
-      }
-      // ========================================================================
-
       const res = await fetch('/api/distribution/submit', {
         method: 'POST',
         headers: { 
@@ -133,51 +102,93 @@ export default function Room07_Distribution() {
         },
         body: JSON.stringify({
           title: trackTitle,
-          audioUrl: cloudMasterUrl, // NOW PERMANENT
+          audioUrl: finalMaster?.url,
           coverUrl: aAndRData.coverUrl,
           hitScore: aAndRData.hitScore,
-          tiktokSnippet: cloudSnippetUrl // NOW PERMANENT
+          tiktokSnippet: aAndRData.tiktokSnippet
         })
       });
 
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ error: "Unknown API Crash" }));
-        throw new Error(`API Error: ${errorData.error || "Failed to secure artifact"}`);
-      }
+      if (!res.ok) throw new Error("Failed to secure artifact in Ledger.");
 
-      updateAnrData({ status: "success" });
+      // Fetch the generated submission ID so we can attach the Exec Rollout to it later
+      const { data: latestSub } = await supabase
+        .from('submissions')
+        .select('id')
+        .eq('user_id', userSession?.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+        
+      if (latestSub) setTrackId(latestSub.id);
+
+      setStatus("success");
       if (addToast) addToast("Artifact secured. Global Nodes synchronized.", "success");
     } catch (err: any) {
       console.error("Submission Error:", err);
       if (addToast) addToast(err.message, "error");
-      updateAnrData({ status: "idle" });
+      setStatus("idle");
     }
   };
 
+  // --- UPSELL ROUTING ---
   const handlePurchaseCoverArt = async () => {
     setIsGeneratingCover(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      
       const res = await fetch('/api/stripe/cover-art', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ userId: userSession?.id, trackTitle })
       });
       const data = await res.json();
-      
-      if (data.url) {
-        window.location.href = data.url; 
-      } else {
-        throw new Error(data.error || "Failed to initialize Stripe.");
-      }
+      if (data.url) window.location.href = data.url; 
+      else throw new Error(data.error || "Failed to initialize Stripe.");
     } catch (err: any) {
-      console.error("Cover Art Checkout Error:", err);
       if (addToast) addToast("Checkout failed: " + err.message, "error");
       setIsGeneratingCover(false);
+    }
+  };
+
+  const handlePurchaseRollout = async () => {
+    if (!trackId) {
+      if (addToast) addToast("Submission ID missing. Resubmit track.", "error");
+      return;
+    }
+    setIsGeneratingRollout(true);
+    try {
+      const res = await fetch('/api/stripe/rollout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userSession?.id, trackTitle, trackId })
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url; 
+      else throw new Error(data.error || "Failed to initialize Stripe.");
+    } catch (err: any) {
+      if (addToast) addToast("Checkout failed: " + err.message, "error");
+      setIsGeneratingRollout(false);
+    }
+  };
+
+  const triggerRolloutGeneration = async (tId: string) => {
+    setIsGeneratingRollout(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/distribution/rollout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ trackId: tId })
+      });
+      const data = await res.json();
+      if (data.rollout) {
+        setExecRollout(data.rollout);
+        if(addToast) addToast("The Exec has deployed your 30-Day Strategy.", "success");
+      }
+    } catch (err) {
+      console.error("Rollout Error:", err);
+    } finally {
+      setIsGeneratingRollout(false);
     }
   };
 
@@ -209,7 +220,7 @@ export default function Room07_Distribution() {
               <input 
                 type="text" 
                 value={trackTitle}
-                onChange={(e) => updateAnrData({ trackTitle: e.target.value })}
+                onChange={(e) => setTrackTitle(e.target.value)}
                 className="w-full bg-black border border-[#222] p-4 font-mono text-xs uppercase text-white outline-none focus:border-[#E60000] transition-colors" 
                 placeholder="E.g., MATRIX INFILTRATION..." 
               />
@@ -226,19 +237,20 @@ export default function Room07_Distribution() {
             <div className="flex items-start gap-3 mt-6 p-4 bg-[#110000] border border-[#330000]">
               <ShieldAlert size={16} className="text-[#E60000] shrink-0 mt-0.5" />
               <p className="text-[9px] text-[#888] uppercase font-mono text-left leading-relaxed">
-                By submitting, Groq will scan your lyrics to find the viral hook, and DSP intelligence will calculate your global A&R Score.
+                By submitting, the AI A&R algorithm will analyze your master and generate social media viral snippets. High Hit Scores unlock algorithmic advances in The Bank.
               </p>
             </div>
           </div>
         )}
 
         {status === "analyzing" && (
-          <div className="space-y-6 py-10 relative z-10 flex flex-col items-center">
+          <div className="space-y-6 py-10 relative z-10">
             <p className="font-oswald text-2xl text-[#E60000] uppercase tracking-widest font-bold">A&R Neural Scan In Progress...</p>
-            <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest space-y-2 text-center">
-              <p>Analyzing DSP frequencies...</p>
-              <p className="text-[#E60000] font-bold">Groq AI identifying viral hook timestamp...</p>
+            <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest space-y-2">
+              <p>Extracting sonic features...</p>
+              <p>Evaluating cadence rhythm...</p>
               <p>Generating Cover Art via DALL-E 3...</p>
+              <p>Isolating TikTok Viral Snippet...</p>
             </div>
           </div>
         )}
@@ -247,7 +259,7 @@ export default function Room07_Distribution() {
           <div className="space-y-6 py-10 relative z-10">
             <p className="font-oswald text-2xl text-white uppercase tracking-widest font-bold">Securing Artifact...</p>
             <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest">
-              Writing metadata and uploading WAVs to Supabase Ledger...
+              Writing metadata to Supabase Ledger...
             </div>
           </div>
         )}
@@ -256,8 +268,8 @@ export default function Room07_Distribution() {
           <div className="py-6 animate-in zoom-in relative z-10">
              <h3 className="font-oswald text-3xl uppercase tracking-widest mb-8 text-white">Project Finalized</h3>
              
-             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
-               
+             {/* ROW 1: Art & Score */}
+             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-6">
                <div className="flex flex-col md:flex-row gap-6">
                   <div className="w-full md:w-48 flex flex-col gap-2 shrink-0">
                     <div className="w-full h-48 bg-[#111] border border-[#333] relative overflow-hidden shadow-xl">
@@ -295,43 +307,50 @@ export default function Room07_Distribution() {
                     </p>
                   </div>
                </div>
+             </div>
 
-               <div className="bg-[#110000] border border-[#330000] p-6 text-left relative overflow-hidden flex flex-col justify-center">
-                  <div className="absolute top-0 right-0 p-2 opacity-10">
-                    <Zap size={64} className="text-[#E60000]" />
-                  </div>
+             {/* ROW 2: Viral Intelligence & The Exec Rollout */}
+             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+               <div className="bg-[#110000] border border-[#330000] p-6 text-left relative overflow-hidden flex flex-col">
+                  <div className="absolute top-0 right-0 p-2 opacity-10"><Zap size={64} className="text-[#E60000]" /></div>
                   <span className="text-[10px] font-mono text-[#E60000] uppercase tracking-[0.3em] font-bold mb-4 block">
-                    Viral Intelligence // TikTok Snippet
+                    Viral Intelligence // TikTok Slicer
                   </span>
-                  
-                  {tiktokSnippet ? (
-                    <div className="z-10 bg-black/50 p-4 border border-[#E60000]/30 rounded-lg">
-                      <div className="flex items-center gap-3 mb-3">
-                        <Music size={16} className="text-white" />
-                        <span className="text-xs font-mono uppercase text-white">Groq-Isolated Hook</span>
-                      </div>
-                      <audio controls src={tiktokSnippet} className="w-full h-8 mb-3 outline-none" />
-                      <a 
-                        href={tiktokSnippet} 
-                        download={`${trackTitle.replace(/\s+/g, '_')}_TikTok_Snippet.wav`} 
-                        className="text-[9px] font-mono bg-[#E60000] text-white px-3 py-1 uppercase tracking-widest hover:bg-red-700 transition-colors inline-block text-center"
-                      >
-                        Download WAV
-                      </a>
-                    </div>
-                  ) : (
-                    <div className="font-mono text-xs text-gray-300 leading-relaxed italic whitespace-pre-wrap border-l-2 border-[#E60000] pl-4 z-10">
-                      Instrumental artifact. No snippet isolated.
-                    </div>
-                  )}
-
-                  <p className="mt-4 text-[8px] text-[#555] uppercase tracking-widest font-mono z-10">
-                    This timestamp was identified by Groq LLM for maximum virality.
+                  <div className="font-mono text-xs text-gray-300 leading-relaxed italic whitespace-pre-wrap border-l-2 border-[#E60000] pl-4 flex-1">
+                    {tiktokSnippet || "Instrumental artifact. No lyrical snippet isolated."}
+                  </div>
+                  <p className="mt-4 text-[8px] text-[#555] uppercase tracking-widest font-mono">
+                    This selection is algorithmically optimized for 15-second audience retention.
                   </p>
                </div>
 
+               <div className="bg-black border border-[#222] p-6 text-left relative overflow-hidden flex flex-col">
+                  <span className="text-[10px] font-mono text-purple-500 uppercase tracking-[0.3em] font-bold mb-4 block">
+                    The Exec // 30-Day Marketing Rollout
+                  </span>
+                  
+                  {execRollout ? (
+                    <div className="font-mono text-[10px] text-gray-300 leading-relaxed overflow-y-auto h-32 custom-scrollbar pr-2 whitespace-pre-wrap border-l-2 border-purple-500 pl-4 flex-1">
+                      {execRollout}
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center opacity-70">
+                      <FileText size={32} className="mb-2 text-[#555]" />
+                      <p className="text-[8px] font-mono uppercase tracking-widest text-[#888] mb-4">No algorithmic strategy attached.</p>
+                      <button 
+                        onClick={handlePurchaseRollout}
+                        disabled={isGeneratingRollout}
+                        className="flex items-center justify-center gap-2 bg-[#111] border border-[#333] text-purple-500 px-6 py-3 text-[9px] font-bold uppercase tracking-widest hover:border-purple-500 transition-colors disabled:opacity-50 shadow-lg"
+                      >
+                        {isGeneratingRollout ? <Loader2 size={12} className="animate-spin" /> : <BarChart size={12} />}
+                        Unlock Rollout ($14.99)
+                      </button>
+                    </div>
+                  )}
+               </div>
              </div>
 
+             {/* ROW 3: Navigation */}
              <div className="flex flex-col md:flex-row gap-4 max-w-2xl mx-auto">
                <button 
                   onClick={() => setActiveRoom("08")}
@@ -351,89 +370,4 @@ export default function Room07_Distribution() {
       </div>
     </div>
   );
-}
-
-// ============================================================================
-// WEB AUDIO API ENGINE: AUTOMATIC 15-SECOND WAV SLICER (DYNAMIC START TIME)
-// ============================================================================
-async function extractTikTokSnippet(audioUrl: string, targetStartTime: number): Promise<string> {
-  const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-  const response = await fetch(audioUrl);
-  const arrayBuffer = await response.arrayBuffer();
-  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-
-  const snippetLength = 15; 
-  
-  const maxAllowedStart = Math.max(0, audioBuffer.duration - snippetLength);
-  const startOffset = Math.min(targetStartTime, maxAllowedStart);
-
-  const frameCount = audioCtx.sampleRate * snippetLength;
-  const offlineCtx = new OfflineAudioContext(
-    audioBuffer.numberOfChannels,
-    frameCount,
-    audioBuffer.sampleRate
-  );
-
-  const source = offlineCtx.createBufferSource();
-  source.buffer = audioBuffer;
-  source.connect(offlineCtx.destination);
-  source.start(0, startOffset, snippetLength);
-
-  const renderedBuffer = await offlineCtx.startRendering();
-
-  const interleaved = interleave(renderedBuffer);
-  const wavBlob = encodeWAV(interleaved, renderedBuffer.sampleRate, renderedBuffer.numberOfChannels);
-  
-  return URL.createObjectURL(wavBlob);
-}
-
-function interleave(buffer: AudioBuffer) {
-  const numChannels = buffer.numberOfChannels;
-  const length = buffer.length * numChannels;
-  const result = new Float32Array(length);
-  const channels = [];
-  for (let i = 0; i < numChannels; i++) {
-    channels.push(buffer.getChannelData(i));
-  }
-  let index = 0;
-  let inputIndex = 0;
-  while (index < length) {
-    for (let i = 0; i < numChannels; i++) {
-      result[index++] = channels[i][inputIndex];
-    }
-    inputIndex++;
-  }
-  return result;
-}
-
-function encodeWAV(samples: Float32Array, sampleRate: number, numChannels: number) {
-  const buffer = new ArrayBuffer(44 + samples.length * 2);
-  const view = new DataView(buffer);
-  
-  writeString(view, 0, 'RIFF');
-  view.setUint32(4, 36 + samples.length * 2, true);
-  writeString(view, 8, 'WAVE');
-  writeString(view, 12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * numChannels * 2, true);
-  view.setUint16(32, numChannels * 2, true);
-  view.setUint16(34, 16, true);
-  writeString(view, 36, 'data');
-  view.setUint32(40, samples.length * 2, true);
-  
-  let offset = 44;
-  for (let i = 0; i < samples.length; i++, offset += 2) {
-    let s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-  }
-  return new Blob([view], { type: 'audio/wav' });
-}
-
-function writeString(view: DataView, offset: number, string: string) {
-  for (let i = 0; i < string.length; i++) {
-    view.setUint8(offset + i, string.charCodeAt(i));
-  }
 }
