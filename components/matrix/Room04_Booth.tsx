@@ -37,16 +37,12 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   return new Blob([view], { type: "audio/wav" });
 }
 
-// FIXED: Bulletproof cross-browser decoder wrapper to prevent Safari EncodingErrors
 async function trimAudioBlob(originalBlob: Blob, startSec: number, endSec: number): Promise<Blob> {
   const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-  
-  // Safely resume suspended contexts on strict browsers
   if (audioContext.state === 'suspended') await audioContext.resume();
   
   const arrayBuffer = await originalBlob.arrayBuffer();
   
-  // Use Callback-to-Promise wrap to prevent WebKit panics
   const audioBuffer = await new Promise<AudioBuffer>((resolve, reject) => {
     audioContext.decodeAudioData(
       arrayBuffer,
@@ -58,8 +54,6 @@ async function trimAudioBlob(originalBlob: Blob, startSec: number, endSec: numbe
   const sampleRate = audioBuffer.sampleRate;
   const startOffset = Math.floor(startSec * sampleRate);
   const endOffset = Math.floor(endSec * sampleRate);
-  
-  // Prevent DOMException: IndexSizeError if length hits 0
   const frameCount = Math.max(1, endOffset - startOffset);
 
   const trimmedBuffer = audioContext.createBuffer(audioBuffer.numberOfChannels, frameCount, sampleRate);
@@ -115,7 +109,6 @@ export default function Room04_Booth() {
   const trimWaveformRef = useRef<HTMLDivElement>(null);
   const trimWavesurferRef = useRef<WaveSurfer | null>(null);
 
-  // Web Audio API & Wasm Architecture Refs
   const audioCtxRef = useRef<AudioContext | null>(null);
   const stemBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
@@ -131,39 +124,43 @@ export default function Room04_Booth() {
   const teleprompterRef = useRef<HTMLDivElement>(null);
 
   const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
-
-  // --- SECURITY GATE VARS ---
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
+  // INITIALIZE CONTEXT
   useEffect(() => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    audioCtxRef.current = new AudioContextClass();
+    try {
+      audioCtxRef.current = new AudioContextClass();
+    } catch (e) {
+      console.warn("AudioContext initialization delayed until user gesture.");
+    }
+    
     return () => {
       if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(t => t.stop());
-      audioCtxRef.current?.close();
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(() => {});
+      }
     };
   }, []);
 
-  // --- STRIPE REDIRECT CATCHER ---
+  // STRIPE CATCHER
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('engineering_unlocked') === 'true') {
         window.history.replaceState({}, document.title, window.location.pathname);
-        
-        useMatrixStore.setState((state) => ({
-          userSession: state.userSession ? { ...state.userSession, has_engineering_token: true } as any : null
-        }));
-        
+        useMatrixStore.setState((state) => ({ userSession: state.userSession ? { ...state.userSession, has_engineering_token: true } as any : null }));
         if (addToast) addToast("Engineering Token Secured. Suite Unlocked.", "success");
         setActiveRoom("05");
       }
     }
   }, [userSession, setActiveRoom, addToast]);
 
-  // FIXED: Bulletproof buffer loading logic
+  // SAFE BUFFER LOADER
   useEffect(() => {
+    let isMounted = true;
+
     const loadBuffers = async () => {
       if (!audioCtxRef.current) return;
       
@@ -175,42 +172,55 @@ export default function Room04_Booth() {
             if (stem.blob) {
                arrayBuf = await stem.blob.arrayBuffer();
             } else {
-               const resp = await fetch(stem.url);
-               if (!resp.ok) {
-                 console.warn(`Stem skipped: HTTP ${resp.status} on URL fetch.`);
-                 continue;
-               }
-               // Pre-flight check to stop HTML/JSON error payloads from crashing the decoder
+               const controller = new AbortController();
+               const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+               const resp = await fetch(stem.url, { signal: controller.signal });
+               clearTimeout(timeoutId);
+               
+               if (!resp.ok) continue;
                const contentType = resp.headers.get('content-type') || '';
-               if (contentType.includes('text/html') || contentType.includes('application/json')) {
-                 console.warn("Stem skipped: Storage returned text instead of audio.");
-                 continue;
-               }
+               if (contentType.includes('text/html') || contentType.includes('application/json')) continue;
+               
                arrayBuf = await resp.arrayBuffer();
             }
             
-            // Safe Promise Wrapper for Safari compatibility
+            if (!isMounted) return;
+
             const audioBuf = await new Promise<AudioBuffer>((resolve, reject) => {
-               audioCtxRef.current!.decodeAudioData(arrayBuf, resolve, reject);
+               audioCtxRef.current!.decodeAudioData(
+                 arrayBuf, 
+                 (buffer) => resolve(buffer), 
+                 (err) => reject(err)
+               );
             });
             
-            stemBuffersRef.current.set(stem.id, audioBuf);
-          } catch (e) { 
-            console.error(`Failed to decode buffer for stem ${stem.id}:`, e); 
+            if (isMounted) stemBuffersRef.current.set(stem.id, audioBuf);
+            
+          } catch (e: any) { 
+            if (e.name !== 'AbortError') console.warn(`Soft-fail decoding stem ${stem.id}:`, e); 
           }
         }
       }
     };
+    
     loadBuffers();
+    
+    return () => { isMounted = false; };
   }, [vocalStems]);
 
+  // WAVESURFER MAIN INIT (WITH ERROR CATCHING)
   useEffect(() => {
     if (waveformRef.current && audioData?.url && !wavesurferRef.current) {
       wavesurferRef.current = WaveSurfer.create({
         container: waveformRef.current, waveColor: '#333333', progressColor: '#E60000',
         cursorColor: '#ffffff', barWidth: 2, barGap: 1, barRadius: 2, height: 80, normalize: true,
       });
-      wavesurferRef.current.load(audioData.url);
+      
+      wavesurferRef.current.on('error', (err) => {
+        console.warn("WaveSurfer Soft-fail:", err);
+      });
+
+      wavesurferRef.current.load(audioData.url).catch(e => console.warn("WaveSurfer Load Aborted:", e.message));
       
       let lastRender = 0;
       wavesurferRef.current.on('audioprocess', (time) => {
@@ -218,10 +228,14 @@ export default function Room04_Booth() {
       });
       wavesurferRef.current.on('finish', () => stopEverything());
     }
-    return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
+    
+    return () => { 
+      wavesurferRef.current?.destroy(); 
+      wavesurferRef.current = null; 
+    };
   }, [audioData]);
 
-  // --- TELEPROMPTER PARSING ---
+  // TELEPROMPTER PARSING
   useEffect(() => {
     if (!generatedLyrics) return;
     const lines = generatedLyrics.split('\n');
@@ -238,15 +252,20 @@ export default function Room04_Booth() {
       return { text, startTime: startTimeSec, isHeader: false, timestamp: `(${Math.floor(startTimeSec / 60)}:${Math.floor(startTimeSec % 60).toString().padStart(2, '0')})` };
     });
     setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint]);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar]);
 
+  // WAVESURFER TRIM INIT (WITH ERROR CATCHING)
   useEffect(() => {
     if (trimmingStem && trimWaveformRef.current) {
       trimWavesurferRef.current = WaveSurfer.create({
         container: trimWaveformRef.current, waveColor: '#555', progressColor: '#E60000',
         cursorColor: '#fff', barWidth: 2, barGap: 1, height: 100, normalize: true,
       });
-      trimWavesurferRef.current.load(trimmingStem.url);
+      
+      trimWavesurferRef.current.on('error', (err) => console.warn("Trim WaveSurfer Soft-fail:", err));
+
+      trimWavesurferRef.current.load(trimmingStem.url).catch(e => console.warn("Trim Load Aborted:", e.message));
+      
       trimWavesurferRef.current.on('ready', () => {
         const dur = trimWavesurferRef.current?.getDuration() || 0;
         setTrimDuration(dur);
@@ -254,10 +273,13 @@ export default function Room04_Booth() {
         setTrimEnd(dur);
       });
     }
-    return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
+    return () => { 
+      trimWavesurferRef.current?.destroy(); 
+      trimWavesurferRef.current = null; 
+    };
   }, [trimmingStem]);
 
-  // --- SYNCED SCROLLING ---
+  // SYNCED SCROLLING
   useEffect(() => {
     const currentLineIndex = lyricLines.findIndex((l, i) => {
       const nextLine = lyricLines[i + 1];
@@ -273,9 +295,8 @@ export default function Room04_Booth() {
         });
       }
     }
-  }, [currentTime]);
+  }, [currentTime, lyricLines]);
 
-  // --- PERSISTENT STORE SYNC ---
   const handleUpdateTakeType = (id: string, newType: string) => {
     const updatedStems = vocalStems.map(stem => 
       stem.id === id ? { ...stem, type: newType as TrackType } : stem
@@ -283,7 +304,6 @@ export default function Room04_Booth() {
     useMatrixStore.setState({ vocalStems: updatedStems } as any);
   };
 
-  // --- STRIPE CHECKOUT FOR ENGINEERING ---
   const handlePurchaseEngineering = async () => {
     if (!userSession?.id) return;
     if(addToast) addToast("Routing to Secure Checkout...", "info");
@@ -315,24 +335,18 @@ export default function Room04_Booth() {
     }
   };
 
-  // --- FIXED: Fortified HTTP & MIME check for Trim Upload ---
   const applyTrim = async () => {
     if (!trimmingStem) return;
     setIsProcessingTrim(true);
     try {
       let originalBlob = trimmingStem.blob;
       
-      // Safely fetch if blob isn't loaded in active state
       if (!originalBlob && trimmingStem.url) {
         const resp = await fetch(trimmingStem.url);
-        
-        if (!resp.ok) {
-           throw new Error(`Storage Access Denied (HTTP ${resp.status}). Verify Supabase Bucket RLS Policies.`);
-        }
+        if (!resp.ok) throw new Error(`Storage Access Denied (HTTP ${resp.status}).`);
         
         originalBlob = await resp.blob();
         
-        // Prevent decoding of random HTML/JSON error payloads
         if (originalBlob.type.includes('text/html') || originalBlob.type.includes('application/json')) {
            throw new Error("Invalid audio payload received from vault. Audio corrupt.");
         }
@@ -344,26 +358,20 @@ export default function Room04_Booth() {
       const trimId = `TRIM_${Date.now()}`;
       const fileName = `${userSession?.id || 'anon'}/${trimId}.wav`;
 
-      // Upload newly trimmed blob directly to Supabase storage
       const { error } = await supabase.storage
         .from('raw-audio')
-        .upload(fileName, newBlob, {
-          contentType: 'audio/wav',
-          upsert: true
-        });
+        .upload(fileName, newBlob, { contentType: 'audio/wav', upsert: true });
 
       if (error) throw error;
 
-      const { data: publicData } = supabase.storage
-        .from('raw-audio')
-        .getPublicUrl(fileName);
+      const { data: publicData } = supabase.storage.from('raw-audio').getPublicUrl(fileName);
 
       removeVocalStem(trimmingStem.id);
       addVocalStem({
         id: trimId,
         type: trimmingStem.type,
-        url: publicData.publicUrl, // Persistent storage URL
-        blob: newBlob, // Kept in memory to prevent refetching during session
+        url: publicData.publicUrl,
+        blob: newBlob,
         volume: trimmingStem.volume,
         offsetBars: trimmingStem.offsetBars
       });
@@ -378,9 +386,15 @@ export default function Room04_Booth() {
     }
   };
 
-  const togglePlayback = () => {
-    if (!wavesurferRef.current || !audioCtxRef.current) return;
-    if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+  const togglePlayback = async () => {
+    if (!wavesurferRef.current || !audioCtxRef.current) {
+      // Lazy init AudioContext if it failed on mount due to strict browser policy
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!audioCtxRef.current) audioCtxRef.current = new AudioContextClass();
+      if (!wavesurferRef.current) return;
+    }
+    
+    if (audioCtxRef.current.state === 'suspended') await audioCtxRef.current.resume();
 
     const willPlay = !isPlaying;
     setIsPlaying(willPlay);
@@ -444,26 +458,19 @@ export default function Room04_Booth() {
         const takeId = `TAKE_${Date.now()}`;
         const fileName = `${userSession?.id || 'anon'}/${takeId}.wav`;
 
-        // Upload directly to Supabase storage bucket
         const { error } = await supabase.storage
           .from('raw-audio')
-          .upload(fileName, wavBlob, {
-            contentType: 'audio/wav',
-            upsert: true
-          });
+          .upload(fileName, wavBlob, { contentType: 'audio/wav', upsert: true });
 
         if (error) throw error;
 
-        // Retrieve public URL
-        const { data: publicData } = supabase.storage
-          .from('raw-audio')
-          .getPublicUrl(fileName);
+        const { data: publicData } = supabase.storage.from('raw-audio').getPublicUrl(fileName);
 
         addVocalStem({ 
           id: takeId, 
           type: activeTrack, 
-          url: publicData.publicUrl, // Setting state to the permanent Supabase URL
-          blob: wavBlob, // Keep local copy active in memory for instant engineering rendering
+          url: publicData.publicUrl, 
+          blob: wavBlob, 
           volume: 1, 
           offsetBars: 0 
         });
@@ -473,7 +480,6 @@ export default function Room04_Booth() {
         console.error("Upload error", err);
         if (addToast) addToast("Storage sync failed. Temporarily mapped to local blob.", "error");
         
-        // Fallback to local Blob URL if Supabase throws an error
         addVocalStem({ 
           id: `TAKE_${Date.now()}`, 
           type: activeTrack, 
@@ -491,7 +497,6 @@ export default function Room04_Booth() {
   };
 
   const startHardwareRecording = async () => {
-    // SECURE SERVER DEDUCTION
     const isMogul = (userSession?.tier as string) === "The Mogul";
     const currentCredits = Number((userSession as any)?.creditsRemaining || (userSession as any)?.credits || 0);
 
@@ -505,18 +510,12 @@ export default function Room04_Booth() {
         const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch('/api/ledger/consume', {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token}`
-          },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
           body: JSON.stringify({ action: 'record_take', description: 'The Booth: Hardware Vocal Take' })
         });
 
-        if (!res.ok) {
-          throw new Error("Ledger Sync Verification Failed.");
-        }
+        if (!res.ok) throw new Error("Ledger Sync Verification Failed.");
 
-        // Optimistically update the UI so it feels instant
         useMatrixStore.setState({ 
           userSession: { ...userSession, creditsRemaining: currentCredits - 1, credits: currentCredits - 1 } as any
         });
@@ -527,7 +526,11 @@ export default function Room04_Booth() {
       }
     }
 
-    if (!audioCtxRef.current) return;
+    if (!audioCtxRef.current) {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      audioCtxRef.current = new AudioContextClass();
+    }
+
     try {
       if (audioCtxRef.current.state === 'suspended') await audioCtxRef.current.resume();
       if (!mediaStreamRef.current) {
@@ -555,7 +558,7 @@ export default function Room04_Booth() {
       workletNode.connect(audioCtxRef.current.destination);
       
       setIsRecording(true); 
-      if (!isPlaying) togglePlayback();
+      if (!isPlaying) await togglePlayback();
       
     } catch (err) { alert("Hardware microphone access required for Worklet processing."); }
   };
@@ -566,10 +569,6 @@ export default function Room04_Booth() {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  };
-
-  const handleTimeUpdate = () => {
-    if (wavesurferRef.current) setCurrentTime(wavesurferRef.current.getCurrentTime());
   };
 
   if (!audioData) {
@@ -619,7 +618,6 @@ export default function Room04_Booth() {
             </button>
           </div>
           
-          {/* UPLOAD STATUS INDICATOR */}
           {isUploading && (
              <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 text-[#E60000] bg-[#110000] px-4 py-1.5 border border-[#E60000]/30 rounded-full animate-pulse">
                <Activity size={14} />
