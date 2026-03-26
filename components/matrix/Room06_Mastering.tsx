@@ -7,7 +7,7 @@ import { supabase } from "../../lib/supabase";
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
 
-// FIXED: Bulletproof PCM 16-bit WAV Encoder with strict absolute byte offsets
+// --- BULLETPROOF PCM 16-BIT WAV ENCODER ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const numChannels = buffer.numberOfChannels;
   const sampleRate = buffer.sampleRate;
@@ -22,111 +22,57 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const view = new DataView(wavBuffer);
 
   const writeString = (view: DataView, offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
+    for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
   };
 
-  // Write strict WAV header using absolute offsets
-  writeString(view, 0, 'RIFF');
-  view.setUint32(4, 36 + dataSize, true);
-  writeString(view, 8, 'WAVE');
-  writeString(view, 12, 'fmt ');
-  view.setUint32(16, 16, true); // Subchunk1Size
-  view.setUint16(20, format, true); // AudioFormat
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, byteRate, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, bitDepth, true);
-  writeString(view, 36, 'data');
+  writeString(view, 0, 'RIFF'); view.setUint32(4, 36 + dataSize, true);
+  writeString(view, 8, 'WAVE'); writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, format, true);
+  view.setUint16(22, numChannels, true); view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true); view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitDepth, true); writeString(view, 36, 'data');
   view.setUint32(40, dataSize, true);
 
-  // Write interleaved PCM audio data
   let offset = 44;
   const channels = [];
-  for (let i = 0; i < numChannels; i++) {
-    channels.push(buffer.getChannelData(i));
-  }
+  for (let i = 0; i < numChannels; i++) channels.push(buffer.getChannelData(i));
 
   for (let i = 0; i < buffer.length; i++) {
     for (let channel = 0; channel < numChannels; channel++) {
       let sample = Math.max(-1, Math.min(1, channels[channel][i]));
-      // Convert 32-bit float to 16-bit PCM
       sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
       view.setInt16(offset, sample, true);
       offset += 2;
     }
   }
-
   return new Blob([view], { type: 'audio/wav' });
 }
 
 export default function Room06_Mastering() {
   const { audioData, vocalStems, generatedLyrics, setActiveRoom, addToast, finalMaster, setFinalMaster, userSession, clearMatrix } = useMatrixStore();
   
+  // --- STATE DECLARATIONS ---
   const [lufs, setLufs] = useState(-14); 
   const [beatVolume, setBeatVolume] = useState(0.85); 
   const [vocalVolume, setVocalVolume] = useState(1.0); 
   const [status, setStatus] = useState<"idle" | "processing" | "success">(finalMaster ? "success" : "idle");
   const [isZipping, setIsZipping] = useState(false);
-  
   const [isInitializing, setIsInitializing] = useState(true);
   const [hasToken, setHasToken] = useState(false);
-
-  // --- REAL-TIME LUFS METERING STATE ---
   const [isPreviewing, setIsPreviewing] = useState(false);
+
+  // --- REFS ---
   const previewCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
 
-  // Access Control Variables
+  // --- VARIABLES ---
   const isNonMogul = userSession?.tier !== "The Mogul";
   const isFreeLoader = userSession?.tier === "Free Loader";
 
-  useEffect(() => {
-    const initializeMasteringNode = async () => {
-      if (!userSession) return;
-      if (userSession.tier === "The Mogul") { setHasToken(true); setIsInitializing(false); return; }
-
-      const { data } = await supabase.from('profiles').select('mastering_tokens, has_mastering_token').eq('id', userSession.id).single();
-      if (data?.mastering_tokens > 0 || data?.has_mastering_token) setHasToken(true);
-      setIsInitializing(false);
-    };
-    initializeMasteringNode();
-
-    // Cleanup Audio Preview on unmount
-    return () => {
-      stopPreview();
-    };
-  }, [userSession]);
-
-  if (isInitializing) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center opacity-30 animate-pulse">
-        <Loader2 className="text-[#E60000] animate-spin mb-4" size={32} />
-        <p className="font-mono text-[9px] uppercase tracking-widest text-[#E60000]">Verifying Ledger Authorization...</p>
-      </div>
-    );
-  }
-
-  const handlePurchaseToken = async () => {
-    if (!userSession?.id) return;
-    if(addToast) addToast("Opening Secure Gateway...", "info");
-    try {
-      const res = await fetch('/api/stripe/master-token', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: userSession.id })
-      });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-    } catch (err: any) {
-      if(addToast) addToast("Checkout failed.", "error");
-    }
-  };
-
-  // --- REAL-TIME AUDIO PREVIEW & LUFS VISUALIZER ---
+  // --- ALL HANDLERS DECLARED BEFORE USEEFFECTS TO PREVENT TDZ CRASHES ---
   const stopPreview = () => {
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
     activeSourcesRef.current.forEach(src => { try { src.stop(); src.disconnect(); } catch(e){} });
@@ -151,29 +97,21 @@ export default function Room06_Mastering() {
         sumSquares += val * val;
     }
     const rms = Math.sqrt(sumSquares / dataArray.length);
-    const level = Math.min(1, rms * 5); // Visual boost mapping
+    const level = Math.min(1, rms * 5); 
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
     const segments = 30;
     const activeSegments = Math.floor(level * segments);
     
     for (let i = 0; i < segments; i++) {
-        ctx.fillStyle = i < activeSegments 
-            ? (i > 24 ? '#E60000' : (i > 18 ? '#EAB308' : '#22C55E')) 
-            : '#222';
+        ctx.fillStyle = i < activeSegments ? (i > 24 ? '#E60000' : (i > 18 ? '#EAB308' : '#22C55E')) : '#222';
         ctx.fillRect(i * (canvas.width / segments), 0, (canvas.width / segments) - 2, canvas.height);
     }
-
     animationRef.current = requestAnimationFrame(drawMeter);
   };
 
   const togglePreviewPlayback = async () => {
-    if (isPreviewing) {
-      stopPreview();
-      return;
-    }
-
+    if (isPreviewing) { stopPreview(); return; }
     if (!audioData?.url) return;
 
     try {
@@ -184,83 +122,47 @@ export default function Room06_Mastering() {
 
       const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
 
-      // Limiter Setup
       const limiter = ctx.createDynamicsCompressor();
-      limiter.threshold.value = lufs;
-      limiter.knee.value = 0.0;
-      limiter.ratio.value = 20.0;
-      limiter.attack.value = 0.005;
-      limiter.release.value = 0.050;
+      limiter.threshold.value = lufs; limiter.knee.value = 0.0; limiter.ratio.value = 20.0;
+      limiter.attack.value = 0.005; limiter.release.value = 0.050;
       
       const makeupGain = ctx.createGain();
       makeupGain.gain.value = Math.pow(10, (Math.abs(lufs) - 6) / 20);
       
-      // Analyser Setup
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 1024;
       analyserRef.current = analyser;
 
-      limiter.connect(makeupGain);
-      makeupGain.connect(analyser);
-      analyser.connect(ctx.destination);
+      limiter.connect(makeupGain); makeupGain.connect(analyser); analyser.connect(ctx.destination);
 
-      // --- FIXED: PRE-FETCH & DECODE ALL AUDIO PRIOR TO PLAYBACK ---
-      // 1. Fetch & Decode Beat
       let beatBlob = (audioData as any)?.blob;
-      if (!beatBlob && audioData.url) { 
-        const r = await fetch(audioData.url); 
-        beatBlob = await r.blob(); 
-      }
+      if (!beatBlob && audioData.url) { const r = await fetch(audioData.url); beatBlob = await r.blob(); }
       const beatArrayBuf = await beatBlob.arrayBuffer();
       const beatBuffer = await new Promise<AudioBuffer>((res, rej) => ctx.decodeAudioData(beatArrayBuf, res, rej));
       
-      // 2. Fetch & Decode All Vocals (Pulling securely from Supabase URLs)
       const decodedVocals = [];
       for (const stem of vocalStems) {
           let vBlob = (stem as any).blob;
-          if (!vBlob && stem.url) { 
-            const r = await fetch(stem.url); 
-            if (r.ok) vBlob = await r.blob(); 
-          }
+          if (!vBlob && stem.url) { const r = await fetch(stem.url); if (r.ok) vBlob = await r.blob(); }
           if (!vBlob) continue;
-
           const vArrayBuf = await vBlob.arrayBuffer();
-          const vBuf = await new Promise<AudioBuffer>((resolve, reject) => {
-            ctx.decodeAudioData(vArrayBuf, resolve, reject);
-          });
-          
-          decodedVocals.push({
-            buffer: vBuf,
-            offset: (stem.offsetBars || 0) * secondsPerBar,
-            volume: stem.volume ?? 1
-          });
+          const vBuf = await new Promise<AudioBuffer>((resolve, reject) => { ctx.decodeAudioData(vArrayBuf, resolve, reject); });
+          decodedVocals.push({ buffer: vBuf, offset: (stem.offsetBars || 0) * secondsPerBar, volume: stem.volume ?? 1 });
       }
 
-      // --- FIXED: SYNCHRONIZED FIRING ---
-      // We calculate exactly when everything should start (100ms in the future)
-      // to guarantee perfect mathematical alignment.
       const syncTime = ctx.currentTime + 0.1;
 
-      // 3. Connect & Schedule Beat
       const beatSource = ctx.createBufferSource();
       beatSource.buffer = beatBuffer;
-      const beatGain = ctx.createGain();
-      beatGain.gain.value = beatVolume;
-      beatSource.connect(beatGain);
-      beatGain.connect(limiter);
+      const beatGain = ctx.createGain(); beatGain.gain.value = beatVolume;
+      beatSource.connect(beatGain); beatGain.connect(limiter);
       beatSource.start(syncTime);
       activeSourcesRef.current.push(beatSource);
 
-      // 4. Connect & Schedule All Vocals
       decodedVocals.forEach(v => {
-          const vSource = ctx.createBufferSource();
-          vSource.buffer = v.buffer;
-          const vGain = ctx.createGain();
-          vGain.gain.value = vocalVolume * v.volume;
-          vSource.connect(vGain);
-          vGain.connect(limiter);
-          
-          // Fire exactly when the beat fires + the timeline offset
+          const vSource = ctx.createBufferSource(); vSource.buffer = v.buffer;
+          const vGain = ctx.createGain(); vGain.gain.value = vocalVolume * v.volume;
+          vSource.connect(vGain); vGain.connect(limiter);
           vSource.start(syncTime + v.offset);
           activeSourcesRef.current.push(vSource);
       });
@@ -276,17 +178,14 @@ export default function Room06_Mastering() {
 
   const handleMastering = async () => {
     if (!audioData?.url) { addToast("No instrumental blueprint found.", "error"); return; }
-    
-    stopPreview(); // Stop the real-time analyzer before locking the CPU for offline render
+    stopPreview(); 
     setStatus("processing");
     
     try {
-      // --- 1. SECURE SERVER-SIDE TOKEN CONSUMPTION ---
       if (isNonMogul && userSession?.id) {
         const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch('/api/ledger/consume', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
           body: JSON.stringify({ action: 'mastering' })
         });
         const consumeData = await res.json();
@@ -294,13 +193,11 @@ export default function Room06_Mastering() {
         setHasToken(false);
       }
 
-      // --- 2. TRUE AUDIO SUMMATION & MASTERING ---
       const tmpCtx = new window.AudioContext();
       const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
       
       let beatBlob = (audioData as any)?.blob;
       if (!beatBlob) { const r = await fetch(audioData.url); beatBlob = await r.blob(); }
-      
       const beatArrayBuf = await beatBlob.arrayBuffer();
       const beatBuffer = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(beatArrayBuf, res, rej));
       
@@ -309,43 +206,28 @@ export default function Room06_Mastering() {
           let vBlob = (stem as any).blob;
           if (!vBlob && stem.url) { const r = await fetch(stem.url); if (r.ok) vBlob = await r.blob(); }
           if (!vBlob) continue;
-          
           const vArrayBuf = await vBlob.arrayBuffer();
           const vBuf = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(vArrayBuf, res, rej));
-          
           vocalBuffers.push({ buffer: vBuf, offset: (stem.offsetBars || 0) * secondsPerBar, volume: stem.volume ?? 1 });
       }
 
       const offlineCtx = new OfflineAudioContext(2, beatBuffer.length, beatBuffer.sampleRate);
       
       const limiter = offlineCtx.createDynamicsCompressor();
-      limiter.threshold.value = lufs;
-      limiter.knee.value = 0.0;
-      limiter.ratio.value = 20.0;
-      limiter.attack.value = 0.005;
-      limiter.release.value = 0.050;
-      
-      const makeupGain = offlineCtx.createGain();
-      makeupGain.gain.value = Math.pow(10, (Math.abs(lufs) - 6) / 20); 
-      
-      limiter.connect(makeupGain);
-      makeupGain.connect(offlineCtx.destination);
+      limiter.threshold.value = lufs; limiter.knee.value = 0.0; limiter.ratio.value = 20.0;
+      limiter.attack.value = 0.005; limiter.release.value = 0.050;
+      const makeupGain = offlineCtx.createGain(); makeupGain.gain.value = Math.pow(10, (Math.abs(lufs) - 6) / 20); 
+      limiter.connect(makeupGain); makeupGain.connect(offlineCtx.destination);
 
-      const beatSource = offlineCtx.createBufferSource();
-      beatSource.buffer = beatBuffer;
-      const beatGainNode = offlineCtx.createGain();
-      beatGainNode.gain.value = beatVolume;
-      beatSource.connect(beatGainNode);
-      beatGainNode.connect(limiter);
+      const beatSource = offlineCtx.createBufferSource(); beatSource.buffer = beatBuffer;
+      const beatGainNode = offlineCtx.createGain(); beatGainNode.gain.value = beatVolume;
+      beatSource.connect(beatGainNode); beatGainNode.connect(limiter);
       beatSource.start(0);
 
       vocalBuffers.forEach(v => {
-          const vSource = offlineCtx.createBufferSource();
-          vSource.buffer = v.buffer;
-          const vGainNode = offlineCtx.createGain();
-          vGainNode.gain.value = vocalVolume * v.volume;
-          vSource.connect(vGainNode);
-          vGainNode.connect(limiter);
+          const vSource = offlineCtx.createBufferSource(); vSource.buffer = v.buffer;
+          const vGainNode = offlineCtx.createGain(); vGainNode.gain.value = vocalVolume * v.volume;
+          vSource.connect(vGainNode); vGainNode.connect(limiter);
           vSource.start(v.offset);
       });
 
@@ -355,7 +237,6 @@ export default function Room06_Mastering() {
       const outputUrl = URL.createObjectURL(finalWavBlob);
       setFinalMaster({ url: outputUrl, blob: finalWavBlob } as any);
       useMatrixStore.setState({ isProjectFinalized: true });
-
       setStatus("success");
       if(addToast) addToast("Commercial Master Rendered. Vocals & Beat Fused.", "success");
 
@@ -370,28 +251,18 @@ export default function Room06_Mastering() {
     setIsZipping(true);
     try {
       let blobData = (finalMaster as any)?.blob;
-      if (!blobData && finalMaster?.url) {
-         const resp = await fetch(finalMaster.url);
-         blobData = await resp.blob();
-      }
-
+      if (!blobData && finalMaster?.url) { const resp = await fetch(finalMaster.url); blobData = await resp.blob(); }
       if (!blobData) throw new Error("Audio payload missing in matrix state.");
 
       if (isFreeLoader) {
         const url = window.URL.createObjectURL(blobData);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${audioData?.fileName || "ARTIFACT"}_Free_Master.wav`;
-        a.click();
+        const a = document.createElement('a'); a.href = url; a.download = `${audioData?.fileName || "ARTIFACT"}_Free_Master.wav`; a.click();
         window.URL.revokeObjectURL(url);
         if (addToast) addToast("Standard WAV Downloaded.", "success");
       } else {
         const zip = new JSZip();
-        
-        // 1. ADD MASTER
         zip.file(`${audioData?.fileName || "ARTIFACT"}_Commercial_Master.wav`, blobData);
         
-        // 2. ISOLATE AND ADD ACAPELLA STEM
         if (vocalStems.length > 0) {
           const tmpCtx = new window.AudioContext();
           const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
@@ -401,10 +272,8 @@ export default function Room06_Mastering() {
             let vBlob = (s as any).blob;
             if (!vBlob && s.url) { const r = await fetch(s.url); if (r.ok) vBlob = await r.blob(); }
             if (!vBlob) return null;
-            
             const vArrayBuf = await vBlob.arrayBuffer();
             const vBuf = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(vArrayBuf, res, rej));
-            
             const endTime = ((s.offsetBars || 0) * secondsPerBar) + vBuf.duration;
             if (endTime > maxDuration) maxDuration = endTime;
             return { buffer: vBuf, offset: (s.offsetBars || 0) * secondsPerBar, volume: s.volume ?? 1 };
@@ -415,12 +284,9 @@ export default function Room06_Mastering() {
           if (maxDuration > 0 && validVocals.length > 0) {
             const offlineAcapellaCtx = new OfflineAudioContext(2, tmpCtx.sampleRate * maxDuration, tmpCtx.sampleRate);
             validVocals.forEach(v => {
-                const source = offlineAcapellaCtx.createBufferSource();
-                source.buffer = v!.buffer;
-                const gainNode = offlineAcapellaCtx.createGain();
-                gainNode.gain.value = vocalVolume * v!.volume;
-                source.connect(gainNode);
-                gainNode.connect(offlineAcapellaCtx.destination);
+                const source = offlineAcapellaCtx.createBufferSource(); source.buffer = v!.buffer;
+                const gainNode = offlineAcapellaCtx.createGain(); gainNode.gain.value = vocalVolume * v!.volume;
+                source.connect(gainNode); gainNode.connect(offlineAcapellaCtx.destination);
                 source.start(v!.offset);
             });
             const renderedAcapella = await offlineAcapellaCtx.startRendering();
@@ -430,21 +296,15 @@ export default function Room06_Mastering() {
           tmpCtx.close();
         }
 
-        // 3. GENERATE AND ADD PDF LYRICS
         const doc = new jsPDF({ orientation: "portrait" });
         doc.setFillColor(10, 10, 10); doc.rect(0, 0, 210, 297, "F");
-        doc.setTextColor(230, 0, 0); doc.setFontSize(28); 
-        doc.text("BAR-CODE.AI // GETNICE", 105, 20, { align: "center" });
-        doc.setTextColor(255, 255, 255); doc.setFontSize(16); 
-        doc.text(audioData?.fileName || "UNTITLED ARTIFACT", 105, 35, { align: "center" });
+        doc.setTextColor(230, 0, 0); doc.setFontSize(28); doc.text("BAR-CODE.AI // GETNICE", 105, 20, { align: "center" });
+        doc.setTextColor(255, 255, 255); doc.setFontSize(16); doc.text(audioData?.fileName || "UNTITLED ARTIFACT", 105, 35, { align: "center" });
         doc.setFontSize(10); doc.setTextColor(150, 150, 150);
-        
         const rawLyrics = generatedLyrics || "No lyrics registered in matrix.";
-        const splitLyrics = doc.splitTextToSize(rawLyrics, 170);
-        doc.text(splitLyrics, 20, 50);
+        const splitLyrics = doc.splitTextToSize(rawLyrics, 170); doc.text(splitLyrics, 20, 50);
         zip.file(`${audioData?.fileName || "ARTIFACT"}_Official_Lyrics.pdf`, doc.output("blob"));
         
-        // 4. ADD COMMERCIAL LICENSE CERTIFICATE
         const certDoc = new jsPDF({ orientation: "landscape" });
         certDoc.setFillColor(5, 5, 5); certDoc.rect(0, 0, 300, 210, "F");
         certDoc.setTextColor(230, 0, 0); certDoc.setFontSize(36); certDoc.text("BAR-CODE.AI // GETNICE", 148, 50, { align: "center" });
@@ -456,16 +316,11 @@ export default function Room06_Mastering() {
         certDoc.text(`Timestamp: ${new Date().toUTCString()}`, 148, 155, { align: "center" });
         certDoc.setFontSize(10); certDoc.setTextColor(100, 100, 100);
         certDoc.text(`Cryptographic Signature: SHA-256 / ${Math.random().toString(36).substring(2, 15).toUpperCase()}${Math.random().toString(36).substring(2, 15).toUpperCase()}`, 148, 185, { align: "center" });
-        
         zip.file("Commercial_License_Certificate.pdf", certDoc.output("blob"));
         
-        // FINALIZE ZIP
         const content = await zip.generateAsync({ type: "blob" });
         const url = window.URL.createObjectURL(content);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${audioData?.fileName || "ARTIFACT"}_Commercial_Package.zip`;
-        a.click();
+        const a = document.createElement('a'); a.href = url; a.download = `${audioData?.fileName || "ARTIFACT"}_Commercial_Package.zip`; a.click();
         window.URL.revokeObjectURL(url);
         if (addToast) addToast("Complete Artifact Zip Exported.", "success");
       }
@@ -477,12 +332,48 @@ export default function Room06_Mastering() {
     }
   };
 
-  const handleStartNewProject = () => {
-    if(confirm("DANGER: This will purge the Matrix state. Proceed?")) {
-      clearMatrix();
-      setActiveRoom("01");
-    }
+  const handleStartNewProject = () => { if(confirm("DANGER: This will purge the Matrix state. Proceed?")) { clearMatrix(); setActiveRoom("01"); } };
+
+  const handlePurchaseToken = async () => {
+    if (!userSession?.id) return;
+    if(addToast) addToast("Opening Secure Gateway...", "info");
+    try {
+      const res = await fetch('/api/stripe/master-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: userSession.id }) });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+    } catch (err: any) { if(addToast) addToast("Checkout failed.", "error"); }
   };
+
+  // --- ALL USE EFFECTS ---
+  useEffect(() => {
+    const initializeMasteringNode = async () => {
+      if (!userSession) return;
+      if (userSession.tier === "The Mogul") { setHasToken(true); setIsInitializing(false); return; }
+      const { data } = await supabase.from('profiles').select('mastering_tokens, has_mastering_token').eq('id', userSession.id).single();
+      if (data?.mastering_tokens > 0 || data?.has_mastering_token) setHasToken(true);
+      setIsInitializing(false);
+    };
+    initializeMasteringNode();
+    return () => { stopPreview(); };
+  }, [userSession]);
+
+  // --- EARLY RETURNS (MUST BE AT THE END TO PREVENT TDZ CRASHES) ---
+  if (isInitializing) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center opacity-30 animate-pulse">
+        <Loader2 className="text-[#E60000] animate-spin mb-4" size={32} />
+        <p className="font-mono text-[9px] uppercase tracking-widest text-[#E60000]">Verifying Ledger Authorization...</p>
+      </div>
+    );
+  }
+
+  if (!audioData) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-[#E60000] opacity-50">
+        <p className="font-oswald text-2xl uppercase tracking-widest">No Instrumental Loaded</p>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col items-center justify-center max-w-4xl mx-auto animate-in fade-in duration-500">
