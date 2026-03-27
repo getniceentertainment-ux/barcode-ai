@@ -51,7 +51,8 @@ export default function MatrixController() {
   // --- GOOGLE CHROME AUTO-SCALER (FIX FOR PINCH ZOOM) ---
   useEffect(() => {
     const handleViewport = () => {
-      let meta = document.querySelector('meta[name="viewport"]');
+      // FIX: Cast to HTMLMetaElement so TypeScript knows .name is valid
+      let meta = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null;
       if (!meta) {
         meta = document.createElement('meta');
         meta.name = "viewport";
