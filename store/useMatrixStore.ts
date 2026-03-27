@@ -64,7 +64,7 @@ interface MatrixState {
   gwUseSlang: boolean;
   gwUseIntel: boolean;
   
-  // --- NEW: THEMATIC DIRECTIVES ---
+  // --- THEMATIC DIRECTIVES ---
   gwMotive: string;
   gwStruggle: string;
   gwHustle: string;
@@ -76,7 +76,7 @@ interface MatrixState {
   setGwUseSlang: (b: boolean) => void;
   setGwUseIntel: (b: boolean) => void;
   
-  // --- NEW: THEMATIC SETTERS ---
+  // --- THEMATIC SETTERS ---
   setGwMotive: (m: string) => void;
   setGwStruggle: (s: string) => void;
   setGwHustle: (h: string) => void;
@@ -92,7 +92,7 @@ interface MatrixState {
   updateStemVolume: (id: string, volume: number) => void;
   updateStemOffset: (id: string, offsetBars: number) => void;
 
-  // --- NEW: THE SAFE MIDDLEMAN ---
+  // --- THE SAFE MIDDLEMAN ---
   engineeredVocal: VocalStem | null;
   setEngineeredVocal: (stem: VocalStem | null) => void;
 
@@ -156,7 +156,7 @@ export const useMatrixStore = create<MatrixState>()(
       blueprint: [],
       generatedLyrics: null,
       vocalStems: [],
-      engineeredVocal: null, // <-- ADD THIS
+      engineeredVocal: null, // <-- THE MIDDLEMAN
       finalMaster: null,
       toasts: [],
 
@@ -192,7 +192,7 @@ export const useMatrixStore = create<MatrixState>()(
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
 
-      // --- NEW: THE SETTER ---
+      // --- THE SETTER ---
       setEngineeredVocal: (stem) => {
         set({ engineeredVocal: stem });
         saveAudioToDisk('matrix_engineered_vocal', stem ? [stem] : []); 
@@ -249,12 +249,12 @@ export const useMatrixStore = create<MatrixState>()(
       clearMatrix: () => set((state) => {
         saveAudioToDisk('matrix_audio_data', null);
         saveAudioToDisk('matrix_vocal_stems', []);
-	saveAudioToDisk('matrix_engineered_vocal', []); // <-- CLEAR IT
+        saveAudioToDisk('matrix_engineered_vocal', []); // <-- CLEAR IT
         saveAudioToDisk('matrix_final_master', null);
         
         return {
           audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
-	  engineeredVocal: null, // <-- RESET IT
+          engineeredVocal: null, // <-- RESET IT
           gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
           mdxJobId: null, mdxStatus: "idle", syncStatus: "idle",
           
@@ -403,7 +403,7 @@ export const useMatrixStore = create<MatrixState>()(
 
           const savedBeat = await loadAudioFromDisk('matrix_audio_data');
           const savedStems = await loadAudioFromDisk('matrix_vocal_stems');
-	  const savedEngineered = await loadAudioFromDisk('matrix_engineered_vocal'); // <-- LOAD IT
+          const savedEngineered = await loadAudioFromDisk('matrix_engineered_vocal'); // <-- LOAD IT
           const savedMaster = await loadAudioFromDisk('matrix_final_master'); 
 
           if (savedBeat && (savedBeat as any).blob) {
@@ -420,7 +420,7 @@ export const useMatrixStore = create<MatrixState>()(
             set({ vocalStems: revivedStems });
           }
 
-	  if (savedEngineered && Array.isArray(savedEngineered) && savedEngineered.length > 0) {
+          if (savedEngineered && Array.isArray(savedEngineered) && savedEngineered.length > 0) {
             const engStem = savedEngineered[0];
             set({ engineeredVocal: {
               ...engStem,
