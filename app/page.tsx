@@ -48,16 +48,16 @@ export default function MatrixController() {
   // --- MOBILE RESPONSIVE STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // --- STRICT MULTI-TENANT PURGE (PREVENTS DATA BLEED) ---
+  // --- ANTI-BLEED GUARD 1: MULTI-TENANT SESSION MONITOR ---
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session?.user?.id) {
         // If a new user logs in, and it does not match the active matrix memory, PURGE it instantly.
         if (userSession?.id && userSession.id !== session.user.id) {
-          console.warn("SECURITY PURGE: User context switch detected. Wiping local matrix cache.");
-          clearMatrix();
-          localStorage.removeItem('matrix-store');
-          window.location.reload(); // Force hard reset of the UI state
+          console.warn("SECURITY PURGE: User context switch detected. Wiping local matrix cache to prevent bleed.");
+          clearMatrix(); // Wipes IndexedDB
+          localStorage.removeItem('barcode-matrix-storage'); // Wipes Zustand
+          window.location.reload(); // Force hard reset of the DOM
         }
       }
     });
@@ -86,20 +86,18 @@ export default function MatrixController() {
     }));
   }, []);
 
-  // --- SURGICAL OVERRIDE: TOKEN AS A KEY ---
+  // --- CUSTOM LOGIC: TOKEN AS A KEY ---
   const isRoomLockedForTier = (roomId: string) => {
     if (userSession?.id && userSession.id === CREATOR_ID) return false;
 
     const tier = userSession?.tier || "The Free Loader";
     const isFreeLoader = tier.includes("Free Loader");
 
-    // 1. Bypass lock if they hold the specific Room Token
     if (isFreeLoader) {
       if (roomId === "05" && (userSession as any)?.has_engineering_token) return false;
       if (roomId === "06" && (userSession as any)?.has_mastering_token) return false;
     }
 
-    // 2. Standard Tier Fallbacks
     const freeAllowed = ["01", "02", "03", "04", "09", "10", "11"];
     const artistAllowed = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"];
 
@@ -116,12 +114,13 @@ export default function MatrixController() {
     setActiveRoom(roomId);
   };
 
+  // --- ANTI-BLEED GUARD 2: SCOPED REALTIME CHANNEL ---
   useEffect(() => {
     if (!userSession?.id) return;
 
-    // FIXED: Dynamic Channel Naming prevents Global Broadcast Bleed
+    // Secure Dynamic Channel Naming prevents Global Broadcast Bleed
     const channelName = `profile_sync_${userSession.id}`;
-    
+
     const channel = supabase
       .channel(channelName)
       .on('postgres_changes', { 
@@ -130,7 +129,6 @@ export default function MatrixController() {
         table: 'profiles',
         filter: `id=eq.${userSession.id}` 
       }, (payload) => {
-        // --- REALTIME SYNC: Update credits AND room tokens instantly ---
         const newCredits = payload.new.credits;
         const hasEngToken = payload.new.has_engineering_token;
         const hasMastToken = payload.new.has_mastering_token;
@@ -216,8 +214,13 @@ export default function MatrixController() {
     }
   };
 
+  // --- ANTI-BLEED GUARD 3: RIGID LOGOUT PURGE ---
   const handleDisconnect = async () => {
     await supabase.auth.signOut();
+    
+    // We MUST call clearMatrix() to wipe IndexedDB. If we leave audio blobs on the 
+    // device, User B will load User A's tracks on next login. 
+    clearMatrix(); 
     
     useMatrixStore.setState({ hasAccess: false, userSession: null });
     
@@ -238,12 +241,9 @@ export default function MatrixController() {
 
   const handleNewProject = async () => {
     if (userSession?.id) {
-      // 1. Nuke the Cloud Save so it doesn't try to pull you back here
       await supabase.from('matrix_sessions').delete().eq('user_id', userSession.id);
     }
-    // 2. Erase the local state and hard drive
     clearMatrix();
-    // 3. Drop back to Room 1
     setActiveRoom("01");
     if (addToast) addToast("Matrix Formatted. Ready for new artifact.", "info");
   };
@@ -318,7 +318,7 @@ export default function MatrixController() {
   return (
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-24 font-mono">
       
-      {/* --- MOBILE OVERLAY BACKDROP --- */}
+      {/* MOBILE OVERLAY BACKDROP */}
       {sidebarOpen && (
         <div 
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 md:hidden"
@@ -326,7 +326,7 @@ export default function MatrixController() {
         />
       )}
 
-      {/* --- RESPONSIVE SIDEBAR --- */}
+      {/* RESPONSIVE SIDEBAR */}
       <aside className={`
         fixed md:relative z-50 h-full w-72 bg-black border-r border-[#111] flex flex-col shrink-0 shadow-2xl transition-transform duration-300
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0 md:flex'}
@@ -349,6 +349,7 @@ export default function MatrixController() {
               </div>
             )}
           </div>
+          {/* Mobile Close Button */}
           <button onClick={() => setSidebarOpen(false)} className="md:hidden text-[#555] hover:text-white mt-1">
              <X size={20} />
           </button>
@@ -391,7 +392,7 @@ export default function MatrixController() {
       </aside>
 
       <main className="flex-1 relative flex flex-col bg-black overflow-hidden w-full">
-        {/* --- MOBILE RESPONSIVE HEADER --- */}
+        {/* MOBILE RESPONSIVE HEADER */}
         <div className="h-14 border-b border-[#111] bg-black/80 backdrop-blur-md flex items-center justify-between px-4 md:px-10 z-10 shrink-0">
            <div className="flex items-center gap-3">
              <button onClick={() => setSidebarOpen(true)} className="md:hidden text-[#E60000] hover:text-white transition-colors">
@@ -435,7 +436,7 @@ export default function MatrixController() {
 
       <GlobalSyncIndicator />
 
-      {/* --- RESPONSIVE FOOTER PLAYER --- */}
+      {/* RESPONSIVE FOOTER PLAYER */}
       <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-4 md:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
         <audio ref={audioRef} src={playbackMode === 'radio' && radioTrack ? radioTrack.url : audioData?.url || ""} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onEnded={() => setIsPlaying(false)} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} className="hidden" />
         
