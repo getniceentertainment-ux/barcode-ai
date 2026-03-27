@@ -21,7 +21,6 @@ export default function Room07_Distribution() {
   const [execRollout, setExecRollout] = useState<string>("");
   const [isGeneratingRollout, setIsGeneratingRollout] = useState(false);
 
-  // --- SURGICAL INSERTION 1: Catch returning Stripe redirects for Upsells ---
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -49,7 +48,6 @@ export default function Room07_Distribution() {
       }
     }
   }, [userSession, addToast]);
-  // ------------------------------------------------------------------------------------------
 
   const handleAnalyze = async () => {
     if (!trackTitle.trim()) {
@@ -77,32 +75,41 @@ export default function Room07_Distribution() {
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      // --- NEW: DIAGNOSTIC LOG ---
-      // Press F12 to open your browser console and see exactly what the AI said
-      console.log("RAW A&R PAYLOAD:", analyzeData);
+      console.log("A&R RAW PAYLOAD:", analyzeData);
 
-      // --- NEW: BULLETPROOF NUMBER EXTRACTION ---
-      // Check both common keys the LLM might hallucinate
-      let rawScore = analyzeData.hitScore || analyzeData.score || analyzeData.HitScore || 0;
-      let finalCalculatedScore = 0;
-
-      if (typeof rawScore === 'number') {
-        finalCalculatedScore = rawScore;
-      } else if (typeof rawScore === 'string') {
-        // Regex: Find the first cluster of numbers in the string
-        const match = rawScore.match(/\d+/);
-        finalCalculatedScore = match ? parseInt(match[0], 10) : 0;
+      // --- THE ULTIMATE EXTRACTION NET ---
+      // 1. Catch every possible naming variation (camelCase, snake_case, short-hand)
+      let rawScore = analyzeData.hit_score ?? analyzeData.hitScore ?? analyzeData.score ?? analyzeData.HitScore ?? 0;
+      
+      // 2. Catch if the LLM nested it inside another object (e.g. { hitScore: { score: 85 } })
+      if (typeof rawScore === 'object' && rawScore !== null) {
+        rawScore = rawScore.hit_score ?? rawScore.hitScore ?? rawScore.score ?? 0;
       }
 
-      // Cap it between 0 and 100 just in case it hallucinated "1000"
-      finalCalculatedScore = Math.min(100, Math.max(0, finalCalculatedScore));
+      // 3. Catch if the LLM returned conversational text (e.g. "The score is 85/100")
+      if (typeof rawScore === 'string') {
+        const match = rawScore.match(/\d+/);
+        rawScore = match ? parseInt(match[0], 10) : 0;
+      }
+
+      // 4. Final mathematical clamp to guarantee a clean number
+      const finalCalculatedScore = Math.min(100, Math.max(0, Number(rawScore) || 0));
+
+      // Extract the other variables with the same snake_case safety net
+      const finalCover = analyzeData.cover_url ?? analyzeData.coverUrl ?? "";
+      const finalSnippet = analyzeData.tiktok_snippet ?? analyzeData.tiktokSnippet ?? analyzeData.snippet ?? "";
 
       setHitScore(finalCalculatedScore);
-      setCoverUrl(analyzeData.coverUrl);
-      setTiktokSnippet(analyzeData.tiktokSnippet);
+      setCoverUrl(finalCover);
+      setTiktokSnippet(finalSnippet);
       
-      // Pass the fully sanitized data forward
-      handleFinalSubmit({ ...analyzeData, hitScore: finalCalculatedScore });
+      // Pass the fully sanitized data to the submit function
+      handleFinalSubmit({ 
+        coverUrl: finalCover, 
+        hitScore: finalCalculatedScore, 
+        tiktokSnippet: finalSnippet 
+      });
+
     } catch (error: any) {
       console.error("A&R Error:", error);
       if (addToast) addToast(error.message, "error");
@@ -147,7 +154,7 @@ export default function Room07_Distribution() {
         },
         body: JSON.stringify({
           title: trackTitle,
-          audioUrl: publicAudioUrl, // <--- FIXED: Now passing the permanent link
+          audioUrl: publicAudioUrl,
           coverUrl: aAndRData.coverUrl,
           hitScore: aAndRData.hitScore,
           tiktokSnippet: aAndRData.tiktokSnippet
@@ -156,6 +163,7 @@ export default function Room07_Distribution() {
 
       if (!res.ok) throw new Error("Failed to secure artifact in Ledger.");
 
+      // Fetch the generated submission ID so we can attach the Exec Rollout to it later
       const { data: latestSub } = await supabase
         .from('submissions')
         .select('id')
