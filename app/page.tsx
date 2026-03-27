@@ -6,7 +6,7 @@ import {
   UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, 
   Send, Wallet, Radio, Users, ShieldAlert, LogOut,
   Play, Pause, SkipBack, SkipForward, Volume2, Lock, User, Zap, Loader2,
-  ShieldCheck, Terminal, FileAudio, Trash2, Menu, X
+  ShieldCheck, Terminal, FileAudio, Trash2, Menu, X, RotateCcw
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
@@ -435,6 +435,17 @@ export default function MatrixController() {
       </main>
 
       <GlobalSyncIndicator />
+
+      {/* --- LANDSCAPE LOCK (MOBILE PORTRAIT OVERLAY) --- */}
+      {/* This ONLY shows on mobile phones held vertically. It hides on desktop, and hides when the phone is turned sideways. */}
+      <div className="fixed inset-0 z-[9999] bg-[#050505] flex-col items-center justify-center text-center px-8 hidden portrait:flex md:!hidden">
+        <RotateCcw size={48} className="text-[#E60000] mb-6 mx-auto animate-[spin_4s_linear_infinite]" />
+        <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-4">Rotate Device</h2>
+        <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest leading-relaxed">
+          Bar-Code.ai requires a widescreen DAW interface. <br /><br />
+          Please turn your device horizontally to enter the Matrix.
+        </p>
+      </div>
 
       {/* RESPONSIVE FOOTER PLAYER */}
       <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-4 md:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
