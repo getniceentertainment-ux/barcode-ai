@@ -47,9 +47,10 @@ export default function MatrixController() {
   
   // --- MOBILE RESPONSIVE STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [showLandscapeTip, setShowLandscapeTip] = useState(false); // NEW: Educational UX state
+  const [showLandscapeTip, setShowLandscapeTip] = useState(false); // Educational UX state
+  const formatTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref to track the 5-sec delay
 
-  // --- GOOGLE CHROME AUTO-SCALER (FIX FOR PINCH ZOOM) ---
+  // --- GOOGLE CHROME AUTO-SCALER (5-SECOND DELAY FIX) ---
   useEffect(() => {
     const handleViewport = () => {
       let meta = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null;
@@ -59,26 +60,31 @@ export default function MatrixController() {
         document.head.appendChild(meta);
       }
       
-      // Detect if it is a mobile phone held sideways (height < 500px is the phone threshold)
       const isLandscape = window.innerWidth > window.innerHeight;
       const isMobileHeight = window.innerHeight < 500;
       
       if (isLandscape && isMobileHeight) {
-        // Force a virtual 1000px canvas. Chrome/Safari will automatically zoom out to fit it.
-        meta.setAttribute('content', 'width=1000, initial-scale=0.1, maximum-scale=5.0, user-scalable=yes');
-        
-        // EDUCATIONAL UX: Show the tip only once per fresh session
+        // If they haven't seen the tip this session, trigger the 5-second wait
         if (!sessionStorage.getItem('landscape_tip_shown')) {
           setShowLandscapeTip(true);
-          sessionStorage.setItem('landscape_tip_shown', 'true');
-          // Self-destruct the tip after 6 seconds to give them time to read
-          setTimeout(() => {
+          
+          if (formatTimeoutRef.current) clearTimeout(formatTimeoutRef.current);
+          
+          // Wait exactly 5 seconds BEFORE scaling the viewport
+          formatTimeoutRef.current = setTimeout(() => {
+            meta!.setAttribute('content', 'width=1000, initial-scale=0.1, maximum-scale=5.0, user-scalable=yes');
             setShowLandscapeTip(false);
-          }, 6000);
+            sessionStorage.setItem('landscape_tip_shown', 'true');
+          }, 5000);
+          
+        } else {
+          // If they've already waited once this session, format instantly
+          meta.setAttribute('content', 'width=1000, initial-scale=0.1, maximum-scale=5.0, user-scalable=yes');
         }
-
       } else {
-        // Restore normal behavior for portrait mode or desktop monitors
+        // Portrait mode / Desktop - Reset to default scale instantly
+        if (formatTimeoutRef.current) clearTimeout(formatTimeoutRef.current);
+        setShowLandscapeTip(false);
         meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes');
       }
     };
@@ -86,19 +92,22 @@ export default function MatrixController() {
     handleViewport();
     // Slight delay on orientation change allows the device gyroscope to catch up
     window.addEventListener('orientationchange', () => setTimeout(handleViewport, 150));
-    return () => window.removeEventListener('orientationchange', handleViewport);
+    
+    return () => {
+      window.removeEventListener('orientationchange', handleViewport);
+      if (formatTimeoutRef.current) clearTimeout(formatTimeoutRef.current);
+    };
   }, []);
 
   // --- ANTI-BLEED GUARD 1: MULTI-TENANT SESSION MONITOR ---
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session?.user?.id) {
-        // If a new user logs in, and it does not match the active matrix memory, PURGE it instantly.
         if (userSession?.id && userSession.id !== session.user.id) {
           console.warn("SECURITY PURGE: User context switch detected. Wiping local matrix cache to prevent bleed.");
-          clearMatrix(); // Wipes IndexedDB
-          localStorage.removeItem('barcode-matrix-storage'); // Wipes Zustand
-          window.location.reload(); // Force hard reset of the DOM
+          clearMatrix(); 
+          localStorage.removeItem('barcode-matrix-storage'); 
+          window.location.reload(); 
         }
       }
     });
@@ -159,7 +168,6 @@ export default function MatrixController() {
   useEffect(() => {
     if (!userSession?.id) return;
 
-    // Secure Dynamic Channel Naming prevents Global Broadcast Bleed
     const channelName = `profile_sync_${userSession.id}`;
 
     const channel = supabase
@@ -255,12 +263,8 @@ export default function MatrixController() {
     }
   };
 
-  // --- ANTI-BLEED GUARD 3: RIGID LOGOUT PURGE ---
   const handleDisconnect = async () => {
     await supabase.auth.signOut();
-    
-    // We MUST call clearMatrix() to wipe IndexedDB. If we leave audio blobs on the 
-    // device, User B will load User A's tracks on next login. 
     clearMatrix(); 
     
     useMatrixStore.setState({ hasAccess: false, userSession: null });
@@ -359,19 +363,25 @@ export default function MatrixController() {
   return (
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-0 md:pb-24 font-mono">
       
-      {/* --- EDUCATIONAL UX NOTIFICATION --- */}
+      {/* --- EDUCATIONAL UX NOTIFICATION (PRE-FORMAT DELAY OVERLAY) --- */}
       {showLandscapeTip && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] bg-black/95 border border-[#E60000] p-4 flex items-center gap-4 shadow-[0_0_40px_rgba(230,0,0,0.4)] animate-in slide-in-from-top-10 fade-in duration-500 rounded-sm w-[90%] max-w-md">
-          <Info size={24} className="text-[#E60000] shrink-0" />
-          <div className="flex-1 text-left">
-            <h3 className="font-oswald text-sm uppercase tracking-widest font-bold text-white mb-1">DAW Auto-Formatted</h3>
-            <p className="font-mono text-[9px] text-gray-300 uppercase tracking-widest leading-relaxed">
-              Workspace scaled to fit device. Use two fingers to zoom in and out as needed.
-            </p>
+        <div className="fixed inset-0 z-[9999] bg-[#050505] flex flex-col items-center justify-center text-center px-8 animate-in fade-in duration-300">
+          <Loader2 size={48} className="text-[#E60000] mb-6 mx-auto animate-spin" />
+          <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-4">Optimizing Workspace</h2>
+          <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest leading-relaxed mb-8 max-w-sm mx-auto">
+            Calibrating DAW resolution for landscape mode. The interface will automatically format to fit your screen.
+          </p>
+          
+          <div className="flex flex-col items-center gap-3">
+             <div className="flex gap-2">
+               {[...Array(5)].map((_, i) => (
+                 <div key={i} className="w-2.5 h-2.5 bg-[#E60000] rounded-full animate-bounce shadow-[0_0_10px_rgba(230,0,0,0.5)]" style={{ animationDelay: `${i * 0.15}s` }} />
+               ))}
+             </div>
+             <p className="font-mono text-[9px] text-[#E60000] uppercase tracking-widest font-bold mt-2 animate-pulse">
+               Please wait 5 seconds...
+             </p>
           </div>
-          <button onClick={() => setShowLandscapeTip(false)} className="text-[#555] hover:text-white shrink-0 ml-2">
-            <X size={16} />
-          </button>
         </div>
       )}
 
