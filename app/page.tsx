@@ -316,7 +316,7 @@ export default function MatrixController() {
   };
 
   return (
-    <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-24 font-mono">
+    <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-0 md:pb-24 font-mono">
       
       {/* --- MOBILE OVERLAY BACKDROP --- */}
       {sidebarOpen && (
@@ -446,8 +446,8 @@ export default function MatrixController() {
         </p>
       </div>
 
-      {/* RESPONSIVE FOOTER PLAYER */}
-      <div className="fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 flex items-center px-4 md:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
+      {/* RESPONSIVE FOOTER PLAYER (Hidden on mobile to reclaim screen real estate) */}
+      <div className="hidden md:flex fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 items-center px-4 md:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
         <audio ref={audioRef} src={playbackMode === 'radio' && radioTrack ? radioTrack.url : audioData?.url || ""} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onEnded={() => setIsPlaying(false)} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} className="hidden" />
         
         <div className="w-auto md:w-1/3 flex items-center gap-2 md:gap-4">
