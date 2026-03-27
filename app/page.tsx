@@ -66,7 +66,7 @@ export default function MatrixController() {
 
   // Auto-close sidebar on mobile devices upon load
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
       setSidebarOpen(false);
     }
   }, []);
@@ -318,18 +318,18 @@ export default function MatrixController() {
   return (
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-24 font-mono">
       
-      {/* MOBILE OVERLAY BACKDROP */}
+      {/* --- MOBILE OVERLAY BACKDROP --- */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 md:hidden"
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* RESPONSIVE SIDEBAR */}
+      {/* --- RESPONSIVE SIDEBAR --- */}
       <aside className={`
-        fixed md:relative z-50 h-full w-72 bg-black border-r border-[#111] flex flex-col shrink-0 shadow-2xl transition-transform duration-300
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0 md:flex'}
+        fixed lg:relative z-50 h-full w-72 bg-black border-r border-[#111] flex flex-col shrink-0 shadow-2xl transition-transform duration-300
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0 lg:flex'}
       `}>
         <div className="p-8 border-b border-[#111] flex justify-between items-start">
           <div>
@@ -350,7 +350,7 @@ export default function MatrixController() {
             )}
           </div>
           {/* Mobile Close Button */}
-          <button onClick={() => setSidebarOpen(false)} className="md:hidden text-[#555] hover:text-white mt-1">
+          <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-[#555] hover:text-white mt-1">
              <X size={20} />
           </button>
         </div>
@@ -364,7 +364,7 @@ export default function MatrixController() {
                   key={room.id} 
                   onClick={() => {
                     handleRoomTransition(room.id);
-                    if (window.innerWidth < 768) setSidebarOpen(false);
+                    if (window.innerWidth < 1024) setSidebarOpen(false);
                   }}
                   className={`w-full flex items-center gap-3 px-5 py-4 text-left transition-all rounded-lg group relative ${activeRoom === room.id ? "bg-[#E60000] text-white shadow-[0_4px_15px_rgba(230,0,0,0.2)]" : "text-[#444] hover:bg-[#0a0a0a] hover:text-white"}`}
                 >
@@ -395,7 +395,7 @@ export default function MatrixController() {
         {/* MOBILE RESPONSIVE HEADER */}
         <div className="h-14 border-b border-[#111] bg-black/80 backdrop-blur-md flex items-center justify-between px-4 md:px-10 z-10 shrink-0">
            <div className="flex items-center gap-3">
-             <button onClick={() => setSidebarOpen(true)} className="md:hidden text-[#E60000] hover:text-white transition-colors">
+             <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-[#E60000] hover:text-white transition-colors">
                <Menu size={24} />
              </button>
              <span className="font-mono text-[9px] text-[#444] uppercase tracking-[0.4em] hidden sm:inline">
@@ -437,8 +437,7 @@ export default function MatrixController() {
       <GlobalSyncIndicator />
 
       {/* --- LANDSCAPE LOCK (MOBILE PORTRAIT OVERLAY) --- */}
-      {/* This ONLY shows on mobile phones held vertically. It hides on desktop, and hides when the phone is turned sideways. */}
-      <div className="fixed inset-0 z-[9999] bg-[#050505] flex-col items-center justify-center text-center px-8 hidden portrait:flex md:!hidden">
+      <div className="fixed inset-0 z-[9999] bg-[#050505] flex-col items-center justify-center text-center px-8 hidden portrait:flex lg:!hidden">
         <RotateCcw size={48} className="text-[#E60000] mb-6 mx-auto animate-[spin_4s_linear_infinite]" />
         <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-4">Rotate Device</h2>
         <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest leading-relaxed">
