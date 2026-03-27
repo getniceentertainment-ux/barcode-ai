@@ -6,7 +6,7 @@ import {
   UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, 
   Send, Wallet, Radio, Users, ShieldAlert, LogOut,
   Play, Pause, SkipBack, SkipForward, Volume2, Lock, User, Zap, Loader2,
-  ShieldCheck, Terminal, FileAudio, Trash2, Menu, X, RotateCcw
+  ShieldCheck, Terminal, FileAudio, Trash2, Menu, X, RotateCcw, Info
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
@@ -47,11 +47,11 @@ export default function MatrixController() {
   
   // --- MOBILE RESPONSIVE STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showLandscapeTip, setShowLandscapeTip] = useState(false); // NEW: Educational UX state
 
   // --- GOOGLE CHROME AUTO-SCALER (FIX FOR PINCH ZOOM) ---
   useEffect(() => {
     const handleViewport = () => {
-      // FIX: Cast to HTMLMetaElement so TypeScript knows .name is valid
       let meta = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null;
       if (!meta) {
         meta = document.createElement('meta');
@@ -65,8 +65,18 @@ export default function MatrixController() {
       
       if (isLandscape && isMobileHeight) {
         // Force a virtual 1000px canvas. Chrome/Safari will automatically zoom out to fit it.
-        // Keeping it at 1000px (under 1024px) ensures the Sidebar stays hidden in the hamburger menu.
         meta.setAttribute('content', 'width=1000, initial-scale=0.1, maximum-scale=5.0, user-scalable=yes');
+        
+        // EDUCATIONAL UX: Show the tip only once per fresh session
+        if (!sessionStorage.getItem('landscape_tip_shown')) {
+          setShowLandscapeTip(true);
+          sessionStorage.setItem('landscape_tip_shown', 'true');
+          // Self-destruct the tip after 6 seconds to give them time to read
+          setTimeout(() => {
+            setShowLandscapeTip(false);
+          }, 6000);
+        }
+
       } else {
         // Restore normal behavior for portrait mode or desktop monitors
         meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes');
@@ -349,6 +359,22 @@ export default function MatrixController() {
   return (
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-0 md:pb-24 font-mono">
       
+      {/* --- EDUCATIONAL UX NOTIFICATION --- */}
+      {showLandscapeTip && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] bg-black/95 border border-[#E60000] p-4 flex items-center gap-4 shadow-[0_0_40px_rgba(230,0,0,0.4)] animate-in slide-in-from-top-10 fade-in duration-500 rounded-sm w-[90%] max-w-md">
+          <Info size={24} className="text-[#E60000] shrink-0" />
+          <div className="flex-1 text-left">
+            <h3 className="font-oswald text-sm uppercase tracking-widest font-bold text-white mb-1">DAW Auto-Formatted</h3>
+            <p className="font-mono text-[9px] text-gray-300 uppercase tracking-widest leading-relaxed">
+              Workspace scaled to fit device. Use two fingers to zoom in and out as needed.
+            </p>
+          </div>
+          <button onClick={() => setShowLandscapeTip(false)} className="text-[#555] hover:text-white shrink-0 ml-2">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* --- MOBILE OVERLAY BACKDROP --- */}
       {sidebarOpen && (
         <div 
