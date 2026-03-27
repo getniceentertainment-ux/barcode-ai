@@ -6,7 +6,7 @@ import {
   UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, 
   Send, Wallet, Radio, Users, ShieldAlert, LogOut,
   Play, Pause, SkipBack, SkipForward, Volume2, Lock, User, Zap, Loader2,
-  ShieldCheck, Terminal, FileAudio, Trash2, Menu, X, RotateCcw, ZoomOut
+  ShieldCheck, Terminal, FileAudio, Trash2, Menu, X, RotateCcw
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
@@ -47,7 +47,36 @@ export default function MatrixController() {
   
   // --- MOBILE RESPONSIVE STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [showZoomPrompt, setShowZoomPrompt] = useState(true); // NEW: Calibration state
+
+  // --- GOOGLE CHROME AUTO-SCALER (FIX FOR PINCH ZOOM) ---
+  useEffect(() => {
+    const handleViewport = () => {
+      let meta = document.querySelector('meta[name="viewport"]');
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.name = "viewport";
+        document.head.appendChild(meta);
+      }
+      
+      // Detect if it is a mobile phone held sideways (height < 500px is the phone threshold)
+      const isLandscape = window.innerWidth > window.innerHeight;
+      const isMobileHeight = window.innerHeight < 500;
+      
+      if (isLandscape && isMobileHeight) {
+        // Force a virtual 1000px canvas. Chrome/Safari will automatically zoom out to fit it.
+        // Keeping it at 1000px (under 1024px) ensures the Sidebar stays hidden in the hamburger menu.
+        meta.setAttribute('content', 'width=1000, initial-scale=0.1, maximum-scale=5.0, user-scalable=yes');
+      } else {
+        // Restore normal behavior for portrait mode or desktop monitors
+        meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes');
+      }
+    };
+
+    handleViewport();
+    // Slight delay on orientation change allows the device gyroscope to catch up
+    window.addEventListener('orientationchange', () => setTimeout(handleViewport, 150));
+    return () => window.removeEventListener('orientationchange', handleViewport);
+  }, []);
 
   // --- ANTI-BLEED GUARD 1: MULTI-TENANT SESSION MONITOR ---
   useEffect(() => {
@@ -446,23 +475,6 @@ export default function MatrixController() {
           Please turn your device horizontally to enter the Matrix.
         </p>
       </div>
-
-      {/* --- ZOOM CALIBRATION (MOBILE LANDSCAPE OVERLAY) --- */}
-      {showZoomPrompt && (
-        <div className="fixed inset-0 z-[9998] bg-black/90 backdrop-blur-md flex-col items-center justify-center text-center px-8 hidden landscape:flex lg:!hidden">
-          <ZoomOut size={48} className="text-[#E60000] mb-6 mx-auto animate-pulse" />
-          <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white mb-4">Calibrate Viewport</h2>
-          <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest leading-relaxed mb-8 max-w-sm mx-auto">
-            To fit the entire DAW interface on your screen, please use two fingers to <strong className="text-white">pinch and zoom out</strong> completely.
-          </p>
-          <button 
-            onClick={() => setShowZoomPrompt(false)}
-            className="bg-[#E60000] text-white px-10 py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-colors shadow-[0_0_20px_rgba(230,0,0,0.3)]"
-          >
-            View Studio
-          </button>
-        </div>
-      )}
 
       {/* RESPONSIVE FOOTER PLAYER (Hidden on mobile to reclaim screen real estate) */}
       <div className="hidden md:flex fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 items-center px-4 md:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
