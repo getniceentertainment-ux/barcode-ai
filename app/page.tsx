@@ -45,8 +45,24 @@ export default function MatrixController() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   
-  // --- NEW: MOBILE RESPONSIVE STATE ---
+  // --- MOBILE RESPONSIVE STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // --- STRICT MULTI-TENANT PURGE (PREVENTS DATA BLEED) ---
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.user?.id) {
+        // If a new user logs in, and it does not match the active matrix memory, PURGE it instantly.
+        if (userSession?.id && userSession.id !== session.user.id) {
+          console.warn("SECURITY PURGE: User context switch detected. Wiping local matrix cache.");
+          clearMatrix();
+          localStorage.removeItem('matrix-store');
+          window.location.reload(); // Force hard reset of the UI state
+        }
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [userSession?.id, clearMatrix]);
 
   // Auto-close sidebar on mobile devices upon load
   useEffect(() => {
@@ -103,8 +119,11 @@ export default function MatrixController() {
   useEffect(() => {
     if (!userSession?.id) return;
 
+    // FIXED: Dynamic Channel Naming prevents Global Broadcast Bleed
+    const channelName = `profile_sync_${userSession.id}`;
+    
     const channel = supabase
-      .channel('profile_sync')
+      .channel(channelName)
       .on('postgres_changes', { 
         event: 'UPDATE', 
         schema: 'public', 
@@ -200,8 +219,6 @@ export default function MatrixController() {
   const handleDisconnect = async () => {
     await supabase.auth.signOut();
     
-    // SURGICAL FIX: We lock the UI but DO NOT call clearMatrix(). 
-    // This prevents the audio hard drive from being destroyed on logout.
     useMatrixStore.setState({ hasAccess: false, userSession: null });
     
     localStorage.clear();
@@ -249,8 +266,6 @@ export default function MatrixController() {
   ];
 
   const renderActiveRoom = () => {
-    // Rooms 01-05 are structurally locked once finalized
-    // Room 06 (Mastering) remains open so the user can download and then reset
     const lockedRooms = ["01", "02", "03", "04", "05"];
     
     if (isProjectFinalized && lockedRooms.includes(activeRoom) && userSession?.id !== CREATOR_ID) {
@@ -284,7 +299,6 @@ export default function MatrixController() {
       );
     }
 
-    // Switch statement handles actual room rendering
     switch (activeRoom) {
       case "01": return <Room01_Lab />;
       case "02": return <Room02_BrainTrain />;
@@ -304,7 +318,7 @@ export default function MatrixController() {
   return (
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-24 font-mono">
       
-      {/* --- NEW: MOBILE OVERLAY BACKDROP --- */}
+      {/* --- MOBILE OVERLAY BACKDROP --- */}
       {sidebarOpen && (
         <div 
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 md:hidden"
@@ -335,7 +349,6 @@ export default function MatrixController() {
               </div>
             )}
           </div>
-          {/* Mobile Close Button */}
           <button onClick={() => setSidebarOpen(false)} className="md:hidden text-[#555] hover:text-white mt-1">
              <X size={20} />
           </button>
@@ -392,7 +405,6 @@ export default function MatrixController() {
            <div className="flex items-center gap-4 md:gap-6 ml-auto">
              {userSession && (
                <div className="flex items-center gap-3 md:gap-4">
-                 {/* THE EMERGENCY ESCAPE HATCH */}
                  <button 
                    onClick={handleNewProject} 
                    className="hidden sm:flex items-center gap-2 text-[#555] hover:text-[#E60000] transition-colors font-mono text-[9px] uppercase tracking-widest px-3 py-1 border border-transparent hover:border-[#E60000]/30 rounded-full"
