@@ -291,6 +291,26 @@ export const useMatrixStore = create<MatrixState>()(
             set({
               userSession: {
                 ...state.userSession,
+                
+                // --- 1. Standard Credits (Usually Artist Tier) ---
+                credits: data.credits ?? state.userSession.credits, 
+                creditsRemaining: data.credits ?? (state.userSession as any).creditsRemaining,
+                
+                // --- 2. A-La-Carte Tokens (Usually Free Loader Tier) ---
+                tokens: data.tokens ?? (state.userSession as any).tokens,
+                free_credits: data.free_credits ?? (state.userSession as any).free_credits,
+                
+                // --- 3. Engineering Access (Map both cases) ---
+                has_engineering_token: data.has_engineering_token,
+                hasEngineeringToken: data.has_engineering_token, 
+                
+                // --- 4. Mastering Access (Map both cases) ---
+                mastering_tokens: data.mastering_tokens,
+                masteringTokens: data.mastering_tokens, 
+                has_mastering_token: data.has_mastering_token,
+                hasMasteringToken: data.has_mastering_token, 
+                
+                // --- 5. Bank / Marketing ---
                 marketingCredits: data.marketing_credits,
                 walletBalance: data.wallet_balance
               } as any
