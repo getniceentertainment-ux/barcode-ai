@@ -293,7 +293,7 @@ export const useMatrixStore = create<MatrixState>()(
                 ...state.userSession,
                 
                 // --- 1. Standard Credits (Usually Artist Tier) ---
-                credits: data.credits ?? state.userSession.credits, 
+                credits: data.credits ?? (state.userSession as any).credits, 
                 creditsRemaining: data.credits ?? (state.userSession as any).creditsRemaining,
                 
                 // --- 2. A-La-Carte Tokens (Usually Free Loader Tier) ---
