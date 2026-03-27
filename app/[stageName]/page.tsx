@@ -1,83 +1,55 @@
-import React from "react";
-import { notFound, redirect } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
-import { Mic2, Globe, ShieldCheck, Star } from "lucide-react";
+"use client";
 
-// --- RESERVED SYSTEM KEYWORDS ---
-const RESERVED_NAMES = [
-  "studio", 
-  "dev-portal", 
-  "admin-node", 
-  "api", 
-  "auth", 
-  "login", 
-  "signup",
-  "undefined",
-  "null",
-  "favicon.ico",
-  "robots.txt"
-];
+import React, { useState } from "react";
+import { Mic2, Globe, ShieldCheck, Star, Edit2, Save, Loader2, Disc3, Play } from "lucide-react";
+import { useMatrixStore } from "../../store/useMatrixStore";
+import { supabase } from "../../lib/supabase";
 
-// FIX: Swapped ANON_KEY for SERVICE_ROLE_KEY.
-// This allows the server to bypass RLS and fetch public profile data 
-// without needing the visitor to be logged in as that specific user.
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-interface ProfilePageProps {
-  params: Promise<{ stageName: string }>;
+interface ProfileClientProps {
+  initialProfile: any;
+  submissions: any[];
 }
 
-export default async function ArtistProfilePage({ params }: ProfilePageProps) {
-  const resolvedParams = await params;
-  const decodedName = decodeURIComponent(resolvedParams.stageName);
+export default function ProfileClient({ initialProfile, submissions }: ProfileClientProps) {
+  const { userSession } = useMatrixStore();
+  const [profile, setProfile] = useState(initialProfile);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editBio, setEditBio] = useState(profile.bio || "");
+  const [isSaving, setIsSaving] = useState(false);
 
-  // 1. HARD GUARD: If the alias is "undefined" (broken link), redirect to root
-  if (decodedName.toLowerCase() === "undefined") {
-    redirect("/");
-  }
+  // IDENTITY CHECK: Does the browser's active session match the profile being viewed?
+  const isOwner = userSession?.id === profile.id;
 
-  // 2. SYSTEM PROTECTION: If the alias is a reserved system path, 
-  // we trigger notFound() so this dynamic route stops capturing the request.
-  if (RESERVED_NAMES.includes(decodedName.toLowerCase())) {
-    notFound();
-  }
+  const handleSaveBio = async () => {
+    setIsSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("No active session");
 
-  // 3. DATABASE LOOKUP
-  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(decodedName);
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ bio: editBio })
+      });
 
-  let query = supabaseAdmin.from("profiles").select("*");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to save bio");
+      }
 
-  if (isUUID) {
-    query = query.eq("id", decodedName);
-  } else {
-    query = query.ilike("stage_name", decodedName).limit(1);
-  }
+      setProfile({ ...profile, bio: editBio });
+      setIsEditing(false);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to update profile intel.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
-  const { data: profiles, error } = await query;
-  const profile = profiles?.[0];
-
-  // 4. REGISTRY ERROR UI
-  if (!profile || error) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center p-6 text-center">
-        <div className="max-w-md border border-[#222] p-12 bg-[#050505] shadow-[0_0_50px_rgba(230,0,0,0.1)]">
-          <ShieldCheck size={48} className="mx-auto text-[#E60000] mb-6 opacity-50" />
-          <h1 className="font-oswald text-2xl text-white uppercase tracking-widest mb-4">Registry Error</h1>
-          <p className="font-mono text-[10px] text-[#555] uppercase leading-relaxed">
-            The requested artist alias <span className="text-[#E60000]">"{decodedName}"</span> does not exist in the Bar-Code registry.
-          </p>
-          <a href="/studio" className="mt-8 inline-block border border-[#333] px-8 py-3 text-[10px] text-white uppercase font-bold hover:bg-white hover:text-black transition-all">
-            Return to Matrix
-          </a>
-        </div>
-      </div>
-    );
-  }
-
-  // 5. VALID PROFILE RENDER
   return (
     <div className="min-h-screen bg-[#050505] text-white font-mono selection:bg-[#E60000]">
       <div className="h-[45vh] relative overflow-hidden border-b border-[#222]">
@@ -95,6 +67,11 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
                {profile.tier || "NODE"}
              </span>
              {profile.tier?.includes('Mogul') && <Star size={20} className="text-yellow-500 fill-yellow-500 drop-shadow-[0_0_10px_rgba(234,179,8,0.5)]" />}
+             {isOwner && (
+               <span className="bg-[#111] border border-[#333] text-[#888] text-[9px] px-3 py-1 font-bold uppercase tracking-widest">
+                 Your Profile
+               </span>
+             )}
           </div>
           <h1 className="font-oswald text-6xl md:text-9xl uppercase font-bold tracking-tighter text-white leading-none">
             {profile.stage_name}
@@ -103,13 +80,43 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
       </div>
 
       <div className="max-w-7xl mx-auto px-12 py-20 grid grid-cols-1 lg:grid-cols-3 gap-20">
+        
+        {/* LEFT COL: INTEL & BIO */}
         <div className="lg:col-span-1 space-y-16">
-          <div className="border-l-2 border-[#E60000] pl-8">
-            <h3 className="font-oswald text-sm uppercase text-[#E60000] tracking-[0.4em] mb-6 font-bold opacity-50">Node Intel</h3>
-            <p className="text-sm text-[#AAA] leading-relaxed uppercase tracking-widest italic">
-              "{profile.bio || "No biometric data transmitted. Operator is ghosting the matrix."}"
-            </p>
+          <div className="border-l-2 border-[#E60000] pl-8 relative group">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-oswald text-sm uppercase text-[#E60000] tracking-[0.4em] font-bold opacity-50">Node Intel</h3>
+              {isOwner && !isEditing && (
+                <button onClick={() => setIsEditing(true)} className="text-[10px] font-mono text-[#555] hover:text-white uppercase flex items-center gap-2 transition-opacity">
+                  <Edit2 size={10}/> Edit Bio
+                </button>
+              )}
+            </div>
+            
+            {isEditing ? (
+               <div className="space-y-3 animate-in fade-in">
+                 <textarea 
+                    value={editBio} 
+                    onChange={e => setEditBio(e.target.value)} 
+                    className="w-full bg-black border border-[#333] p-4 text-xs font-mono text-white outline-none focus:border-[#E60000] resize-none h-32 custom-scrollbar" 
+                    placeholder="Enter biometric data / artist bio..." 
+                  />
+                 <div className="flex gap-2">
+                   <button onClick={handleSaveBio} disabled={isSaving} className="bg-[#E60000] text-white px-4 py-3 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 hover:bg-red-700 transition-colors shadow-[0_0_15px_rgba(230,0,0,0.3)]">
+                     {isSaving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>} Save Intel
+                   </button>
+                   <button onClick={() => setIsEditing(false)} disabled={isSaving} className="bg-[#111] text-[#888] px-4 py-3 text-[10px] font-bold uppercase tracking-widest hover:text-white hover:bg-[#222] transition-colors border border-[#222]">
+                     Cancel
+                   </button>
+                 </div>
+               </div>
+            ) : (
+               <p className="text-sm text-[#AAA] leading-relaxed uppercase tracking-widest italic whitespace-pre-wrap">
+                 "{profile.bio || "No biometric data transmitted. Operator is ghosting the matrix."}"
+               </p>
+            )}
           </div>
+
           <div className="grid grid-cols-1 gap-6">
              <div className="bg-[#0a0a0a] border border-[#111] p-8 group hover:border-[#E60000]/30 transition-colors">
                 <p className="text-[9px] text-[#555] uppercase mb-2 font-bold tracking-widest">Mogul Score</p>
@@ -117,12 +124,42 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
              </div>
           </div>
         </div>
+
+        {/* RIGHT COL: VAULT SYNC */}
         <div className="lg:col-span-2">
            <h3 className="font-oswald text-sm uppercase text-[#E60000] tracking-[0.4em] mb-10 font-bold opacity-50">Ledger Submissions</h3>
-           <div className="border border-dashed border-[#222] py-32 text-center rounded-sm">
-              <Globe size={48} className="mx-auto mb-6 text-[#222]" />
-              <p className="text-[11px] uppercase tracking-[0.3em] text-[#444] font-bold">No Public Artifacts Synchronized</p>
-           </div>
+           
+           {submissions.length === 0 ? (
+             <div className="border border-dashed border-[#222] py-32 text-center rounded-sm">
+                <Globe size={48} className="mx-auto mb-6 text-[#222]" />
+                <p className="text-[11px] uppercase tracking-[0.3em] text-[#444] font-bold">No Public Artifacts Synchronized</p>
+             </div>
+           ) : (
+             <div className="grid grid-cols-1 gap-4">
+               {submissions.map((sub: any) => (
+                  <div key={sub.id} className="bg-[#0a0a0a] border border-[#222] p-6 flex justify-between items-center group hover:border-[#E60000]/50 transition-all">
+                     <div className="flex items-center gap-6">
+                       <div className="w-14 h-14 bg-black border border-[#333] flex items-center justify-center text-[#E60000] shrink-0">
+                         <Disc3 size={24} className="group-hover:animate-spin-slow transition-all" />
+                       </div>
+                       <div>
+                         <h4 className="font-oswald text-xl text-white uppercase tracking-widest mb-1">{sub.title || 'Untitled Artifact'}</h4>
+                         <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest">
+                           MINTED: {new Date(sub.created_at).toLocaleDateString()} // HIT SCORE: <span className={sub.hit_score >= 85 ? 'text-green-500 font-bold' : 'text-white'}>{sub.hit_score || 0}</span>
+                         </p>
+                       </div>
+                     </div>
+                     
+                     {/* If audio_url was saved during distribution, allow playback */}
+                     {sub.audio_url && (
+                       <a href={sub.audio_url} target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full border border-[#333] flex items-center justify-center text-[#888] hover:text-white hover:bg-[#E60000] hover:border-[#E60000] transition-all shadow-lg shrink-0">
+                         <Play size={16} className="ml-1" />
+                       </a>
+                     )}
+                  </div>
+               ))}
+             </div>
+           )}
         </div>
       </div>
     </div>
