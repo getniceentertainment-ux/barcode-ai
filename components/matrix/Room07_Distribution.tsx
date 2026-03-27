@@ -21,6 +21,7 @@ export default function Room07_Distribution() {
   const [execRollout, setExecRollout] = useState<string>("");
   const [isGeneratingRollout, setIsGeneratingRollout] = useState(false);
 
+  // --- SURGICAL INSERTION 1: Catch returning Stripe redirects for Upsells ---
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -48,6 +49,7 @@ export default function Room07_Distribution() {
       }
     }
   }, [userSession, addToast]);
+  // ------------------------------------------------------------------------------------------
 
   const handleAnalyze = async () => {
     if (!trackTitle.trim()) {
@@ -75,41 +77,11 @@ export default function Room07_Distribution() {
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      console.log("A&R RAW PAYLOAD:", analyzeData);
-
-      // --- THE ULTIMATE EXTRACTION NET ---
-      // 1. Catch every possible naming variation (camelCase, snake_case, short-hand)
-      let rawScore = analyzeData.hit_score ?? analyzeData.hitScore ?? analyzeData.score ?? analyzeData.HitScore ?? 0;
+      setHitScore(analyzeData.hitScore);
+      setCoverUrl(analyzeData.coverUrl);
+      setTiktokSnippet(analyzeData.tiktokSnippet);
       
-      // 2. Catch if the LLM nested it inside another object (e.g. { hitScore: { score: 85 } })
-      if (typeof rawScore === 'object' && rawScore !== null) {
-        rawScore = rawScore.hit_score ?? rawScore.hitScore ?? rawScore.score ?? 0;
-      }
-
-      // 3. Catch if the LLM returned conversational text (e.g. "The score is 85/100")
-      if (typeof rawScore === 'string') {
-        const match = rawScore.match(/\d+/);
-        rawScore = match ? parseInt(match[0], 10) : 0;
-      }
-
-      // 4. Final mathematical clamp to guarantee a clean number
-      const finalCalculatedScore = Math.min(100, Math.max(0, Number(rawScore) || 0));
-
-      // Extract the other variables with the same snake_case safety net
-      const finalCover = analyzeData.cover_url ?? analyzeData.coverUrl ?? "";
-      const finalSnippet = analyzeData.tiktok_snippet ?? analyzeData.tiktokSnippet ?? analyzeData.snippet ?? "";
-
-      setHitScore(finalCalculatedScore);
-      setCoverUrl(finalCover);
-      setTiktokSnippet(finalSnippet);
-      
-      // Pass the fully sanitized data to the submit function
-      handleFinalSubmit({ 
-        coverUrl: finalCover, 
-        hitScore: finalCalculatedScore, 
-        tiktokSnippet: finalSnippet 
-      });
-
+      handleFinalSubmit(analyzeData);
     } catch (error: any) {
       console.error("A&R Error:", error);
       if (addToast) addToast(error.message, "error");
@@ -120,30 +92,6 @@ export default function Room07_Distribution() {
   const handleFinalSubmit = async (aAndRData: any) => {
     setStatus("submitting");
     try {
-      // --- THE BLOB TRAP FIX ---
-      // 1. Extract the audio from local browser memory
-      let blobData = (finalMaster as any)?.blob;
-      if (!blobData && finalMaster?.url) {
-        const resp = await fetch(finalMaster.url);
-        blobData = await resp.blob();
-      }
-      if (!blobData) throw new Error("Audio payload missing from Matrix Store.");
-
-      // 2. Securely upload it to Supabase Storage
-      const masterId = `MASTER_${Date.now()}`;
-      const fileName = `${userSession?.id || 'anon'}/${masterId}.wav`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('raw-audio')
-        .upload(fileName, blobData, { contentType: 'audio/wav', upsert: true });
-        
-      if (uploadError) throw new Error("Failed to upload commercial master to vault.");
-
-      // 3. Generate the permanent Public URL
-      const { data: publicData } = supabase.storage.from('raw-audio').getPublicUrl(fileName);
-      const publicAudioUrl = publicData.publicUrl;
-
-      // 4. Send the REAL URL to the backend Ledger
       const { data: { session } } = await supabase.auth.getSession();
       
       const res = await fetch('/api/distribution/submit', {
@@ -154,7 +102,7 @@ export default function Room07_Distribution() {
         },
         body: JSON.stringify({
           title: trackTitle,
-          audioUrl: publicAudioUrl,
+          audioUrl: finalMaster?.url,
           coverUrl: aAndRData.coverUrl,
           hitScore: aAndRData.hitScore,
           tiktokSnippet: aAndRData.tiktokSnippet
@@ -411,7 +359,7 @@ export default function Room07_Distribution() {
                   Proceed to Bank <ArrowRight size={20} />
                 </button>
                 <Link 
-                  href={`/${encodeURIComponent(userSession?.stageName || "Artist")}`}
+                  href={`/${encodeURIComponent(userSession?.stageName || userSession?.id || "Artist")}`}
                   className="flex-1 flex items-center justify-center gap-3 border border-[#333] bg-black text-[#888] py-4 font-oswald text-sm font-bold uppercase tracking-widest hover:text-white hover:border-white transition-all"
                 >
                   View on My Profile <Globe size={16} />

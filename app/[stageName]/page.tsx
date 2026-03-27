@@ -44,11 +44,20 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
   }
 
   // 3. DATABASE LOOKUP
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("stage_name", decodedName)
-    .maybeSingle();
+  // FIX: .eq() is strictly case-sensitive, and .maybeSingle() crashes if there are duplicate stage names.
+  // We use a regex to check if it's a UUID, and .ilike() + .limit(1) for robust name lookups.
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(decodedName);
+
+  let query = supabase.from("profiles").select("*");
+
+  if (isUUID) {
+    query = query.eq("id", decodedName);
+  } else {
+    query = query.ilike("stage_name", decodedName).limit(1);
+  }
+
+  const { data: profiles, error } = await query;
+  const profile = profiles?.[0];
 
   // 4. REGISTRY ERROR UI
   if (!profile || error) {
@@ -60,7 +69,7 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
           <p className="font-mono text-[10px] text-[#555] uppercase leading-relaxed">
             The requested artist alias <span className="text-[#E60000]">"{decodedName}"</span> does not exist in the Bar-Code registry.
           </p>
-          <a href="/" className="mt-8 inline-block border border-[#333] px-8 py-3 text-[10px] text-white uppercase font-bold hover:bg-white hover:text-black transition-all">
+          <a href="/studio" className="mt-8 inline-block border border-[#333] px-8 py-3 text-[10px] text-white uppercase font-bold hover:bg-white hover:text-black transition-all">
             Return to Matrix
           </a>
         </div>
