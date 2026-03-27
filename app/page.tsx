@@ -178,7 +178,8 @@ export default function MatrixController() {
         table: 'profiles',
         filter: `id=eq.${userSession.id}` 
       }, (payload) => {
-        const newCredits = payload.new.credits;
+        // FIX: Intercept the raw database number and force "UNLIMITED" for Moguls
+        const newCredits = payload.new.tier === 'The Mogul' ? 'UNLIMITED' : payload.new.credits;
         const hasEngToken = payload.new.has_engineering_token;
         const hasMastToken = payload.new.has_mastering_token;
         
