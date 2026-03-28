@@ -7,7 +7,8 @@ import { supabase } from "../../lib/supabase";
 import Link from "next/link"; 
 
 export default function Room07_Distribution() {
-  const { setActiveRoom, userSession, generatedLyrics, addToast, audioData, finalMaster } = useMatrixStore();
+  // SURGICAL UPDATE: Added blueprint and flowDNA to the destructuring so we can send them to the backend Grader
+  const { setActiveRoom, userSession, generatedLyrics, addToast, audioData, finalMaster, blueprint, flowDNA } = useMatrixStore();
   
   const [trackId, setTrackId] = useState<string | null>(null);
   const [trackTitle, setTrackTitle] = useState("");
@@ -21,7 +22,6 @@ export default function Room07_Distribution() {
   const [execRollout, setExecRollout] = useState<string>("");
   const [isGeneratingRollout, setIsGeneratingRollout] = useState(false);
 
-  // --- SURGICAL INSERTION 1: Catch returning Stripe redirects for Upsells ---
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -49,7 +49,6 @@ export default function Room07_Distribution() {
       }
     }
   }, [userSession, addToast]);
-  // ------------------------------------------------------------------------------------------
 
   const handleAnalyze = async () => {
     if (!trackTitle.trim()) {
@@ -64,13 +63,16 @@ export default function Room07_Distribution() {
     setStatus("analyzing");
 
     try {
+      // SURGICAL UPDATE: Pushing the architectural track data to the rigorous math backend
       const analyzeRes = await fetch('/api/distribution/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           title: trackTitle, 
           lyrics: generatedLyrics || "No lyrics provided",
-          bpm: audioData?.bpm || 120
+          bpm: audioData?.bpm || 120,
+          blueprint: blueprint,
+          flowDNA: flowDNA
         })
       });
       
@@ -111,7 +113,6 @@ export default function Room07_Distribution() {
 
       if (!res.ok) throw new Error("Failed to secure artifact in Ledger.");
 
-      // Fetch the generated submission ID so we can attach the Exec Rollout to it later
       const { data: latestSub } = await supabase
         .from('submissions')
         .select('id')
@@ -131,7 +132,6 @@ export default function Room07_Distribution() {
     }
   };
 
-  // --- UPSELL ROUTING ---
   const handlePurchaseCoverArt = async () => {
     setIsGeneratingCover(true);
     try {
@@ -247,9 +247,9 @@ export default function Room07_Distribution() {
           <div className="space-y-6 py-10 relative z-10">
             <p className="font-oswald text-2xl text-[#E60000] uppercase tracking-widest font-bold">A&R Neural Scan In Progress...</p>
             <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest space-y-2">
-              <p>Extracting sonic features...</p>
-              <p>Evaluating cadence rhythm...</p>
-              <p>Generating Cover Art via DALL-E 3...</p>
+              <p>Extracting sonic features & BPM pockets...</p>
+              <p>Analyzing structural hook geometry (CTR)...</p>
+              <p>Evaluating cadence rhythm & pattern interrupts (AVP)...</p>
               <p>Isolating TikTok Viral Snippet...</p>
             </div>
           </div>
