@@ -220,12 +220,14 @@ export default function EntryGateway() {
             <span className="font-mono text-[9px] uppercase tracking-widest text-[#888]">Secure Ingestion Node Ready</span>
           </div>
 
-          <h1 className="font-oswald text-6xl md:text-8xl font-bold mb-6 tracking-tight uppercase text-white drop-shadow-neon-red">
-            Crack The Code. <br/> <span className="text-[#E60000]">Own The Flow.</span>
+	  {/* --- THE NEW SETUP BAR (REPLACES H1) --- */}
+          <h1 className="font-oswald text-5xl md:text-7xl font-bold mb-6 tracking-tight uppercase text-white drop-shadow-neon-red leading-tight">
+            Took the hustle off the pavement, <br/> 
+            <span className="text-[#E60000]">put the servers on.</span>
           </h1>
 
-	  {/* --- NEW: THE THESIS STATEMENT --- */}
-          <h2 className="text-white italic font-serif text-xl md:text-2xl mb-8 tracking-wide opacity-90 drop-shadow-md">
+          {/* --- THE PUNCHLINE (JSON LINE) --- */}
+          <h2 className="text-white italic font-serif text-xl md:text-2xl mb-10 tracking-wide opacity-90 drop-shadow-md">
             "Cracked the code to this game, turned it into JSON."
           </h2>
           
