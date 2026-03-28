@@ -220,7 +220,7 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
             )}
           </div>
 
-        {/* RIGHT COL: VAULT SYNC */}
+	   {/* RIGHT COL: VAULT SYNC */}
         <div className="lg:col-span-2">
            <h3 className="font-oswald text-2xl uppercase text-white tracking-[0.2em] mb-8 font-bold flex items-center gap-3">
              <Globe className="text-[#E60000]" size={24} /> Public Ledger Submissions
