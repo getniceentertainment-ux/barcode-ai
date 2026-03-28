@@ -8,7 +8,7 @@ import {
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { AccessTier, UserSession } from "../../lib/types";
 import { supabase } from "../../lib/supabase";
-import Link from "next/link"; // Required for the new Footer Links
+import Link from "next/link"; 
 
 export default function EntryGateway() {
   const { grantAccess, addToast } = useMatrixStore();
@@ -21,11 +21,9 @@ export default function EntryGateway() {
   const [isScanning, setIsScanning] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   
-  // ADDED "landing" to the auth steps to serve the flashy page first
   const [authStep, setAuthStep] = useState<"landing" | "auth" | "verify_email" | "select_tier">("landing");
   const [userProfile, setUserProfile] = useState<any>(null);
   
-  // For Landing Page Navbar Scroll Effect
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -54,14 +52,11 @@ export default function EntryGateway() {
     if (profile) {
       setUserProfile({ ...user, ...profile });
 
-      // --- SELF-HEALING TIER CHECK ---
-      // Fixes issues where manual DB edits or webhook glitches left 'credits' as null
       if (profile.tier) {
         let safeCredits = profile.credits;
         
         if (safeCredits === null) {
           safeCredits = profile.tier === "The Mogul" ? 999999 : (profile.tier === "The Artist" ? 100 : 5);
-          // Silently repair the database in the background
           supabase.from('profiles').update({ credits: safeCredits }).eq('id', profile.id).then();
         }
 
@@ -73,10 +68,8 @@ export default function EntryGateway() {
           creditsRemaining: profile.tier === "The Mogul" ? "UNLIMITED" : safeCredits
         };
 
-        // 1. Grant base authorization
         grantAccess(session);
 
-        // 2. HALT AND PULL FROM CLOUD BEFORE CONTINUING
         try {
           const { data: savedData } = await supabase
             .from('matrix_sessions')
@@ -85,10 +78,7 @@ export default function EntryGateway() {
             .maybeSingle();
           
           if (savedData?.session_state) {
-            // 3. Inject the saved rooms, lyrics, and settings
             useMatrixStore.setState({ ...savedData.session_state });
-            
-            // 4. Reach into the hard drive to reconnect the audio files
             await useMatrixStore.getState().hydrateDiskAudio();
           }
         } catch (err) {
@@ -210,8 +200,13 @@ export default function EntryGateway() {
               <Zap className="text-[#E60000] animate-pulse-fast" size={20} />
               <span className="font-oswald text-2xl uppercase tracking-[0.2em] font-bold text-[#E60000]">BAR-CODE.AI</span>
             </div>
-            <button onClick={() => setAuthStep("auth")} className="gn-btn-outline text-[10px] py-2 px-6">
+            
+            {/* FLYOUT: Navbar Button */}
+            <button onClick={() => setAuthStep("auth")} className="gn-btn-outline text-[10px] py-2 px-6 relative group">
               Access System
+              <span className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-md border border-[#333] text-[#aaa] text-[8px] px-3 py-1.5 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50 shadow-[0_0_15px_rgba(230,0,0,0.2)]">
+                Authenticate Node Interface
+              </span>
             </button>
           </div>
         </nav>
@@ -233,9 +228,13 @@ export default function EntryGateway() {
             The First Identity-Aware AI Studio Built For Hip-Hop. Drop A Beat, Let Our Neural Engine Map Your perfect flow, Record Your Raw Takes, And Instantly Master Them To Industry Standards. We Bridge The Gap From A Concept In Your Head To A Commercial, Global Release. Your Sound, Amplified By The Machine.
           </p>
           
-          <button onClick={() => setAuthStep("auth")} className="gn-btn-outline bg-[#948e8e] text-sm px-10 py-5 group shadow-neon-red uppercase tracking-widest">
+          {/* FLYOUT: Hero Button */}
+          <button onClick={() => setAuthStep("auth")} className="gn-btn-outline bg-[#948e8e] text-sm px-10 py-5 group shadow-neon-red uppercase tracking-widest relative">
             Initialize BarCode 
             <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform inline-block ml-2" />
+            <span className="absolute -top-12 left-1/2 -translate-x-1/2 bg-black/95 backdrop-blur-md border border-[#E60000]/50 text-white text-[9px] px-4 py-2 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50 shadow-[0_0_20px_rgba(230,0,0,0.3)]">
+              Establish Neural Link To Studio
+            </span>
           </button>
         </header>
 
@@ -273,7 +272,7 @@ export default function EntryGateway() {
           </div>
         </section>
 
-        {/* Footer WITH THE NEW TERMS LINKS */}
+        {/* Footer */}
         <footer className="border-t border-[#333] py-12 bg-[#0a0a0a] text-center relative z-10">
           <div className="max-w-7xl mx-auto px-6">
             <div className="flex justify-center mb-6">
@@ -286,13 +285,21 @@ export default function EntryGateway() {
               ALL RIGHTS RESERVED BY: TALON ANDREW LLOYD
             </p>
             
-            {/* NEW TERMS AND SUPPORT LINKS */}
             <div className="flex justify-center gap-6">
-              <Link href="/terms" className="font-mono text-[10px] text-[#888] hover:text-[#E60000] uppercase tracking-widest transition-colors">
+              {/* FLYOUT: Terms Link */}
+              <Link href="/terms" className="font-mono text-[10px] text-[#888] hover:text-[#E60000] uppercase tracking-widest transition-colors relative group">
                 Terms & Conditions
+                <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-md border border-[#333] text-[#aaa] text-[8px] px-3 py-1.5 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50">
+                  Review Matrix Parameters
+                </span>
               </Link>
-              <a href="mailto:support@bar-code.ai" className="font-mono text-[10px] text-[#888] hover:text-[#E60000] uppercase tracking-widest transition-colors">
+              
+              {/* FLYOUT: Support Link */}
+              <a href="mailto:support@bar-code.ai" className="font-mono text-[10px] text-[#888] hover:text-[#E60000] uppercase tracking-widest transition-colors relative group">
                 Support
+                <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-md border border-[#333] text-[#aaa] text-[8px] px-3 py-1.5 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50">
+                  Ping Admin Operators
+                </span>
               </a>
             </div>
           </div>
@@ -307,12 +314,15 @@ export default function EntryGateway() {
   return (
     <div className="min-h-screen bg-[#000] text-white flex flex-col items-center justify-center p-6 font-mono relative">
       
-      {/* Back to landing page button */}
+      {/* FLYOUT: Abort Login Button */}
       <button 
         onClick={() => setAuthStep("landing")} 
-        className="absolute top-8 left-8 text-[#555] hover:text-white flex items-center gap-2 text-xs uppercase tracking-widest transition-colors"
+        className="absolute top-8 left-8 text-[#555] hover:text-white flex items-center gap-2 text-xs uppercase tracking-widest transition-colors relative group"
       >
         ← Abort Login
+        <span className="absolute -bottom-10 left-0 bg-black/90 backdrop-blur-md border border-[#333] text-[#aaa] text-[8px] px-3 py-1.5 uppercase tracking-widest whitespace-nowrap opacity-0 -translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50">
+          Terminate Secure Handshake
+        </span>
       </button>
 
       <div className="text-center mb-12 animate-in fade-in duration-700 mt-12">
@@ -325,8 +335,21 @@ export default function EntryGateway() {
       {authStep === "auth" && (
         <div className="w-full max-w-md bg-[#050505] border border-[#222] p-8 shadow-2xl">
           <div className="flex gap-4 mb-8 border-b border-[#222] pb-4">
-             <button onClick={() => setAuthMode("login")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold ${authMode === 'login' ? 'text-[#E60000]' : 'text-[#a8aba6]'}`}>Login</button>
-             <button onClick={() => setAuthMode("signup")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold ${authMode === 'signup' ? 'text-[#E60000]' : 'text-[#a8aba6]'}`}>Register</button>
+             {/* FLYOUT: Login Tab */}
+             <button onClick={() => setAuthMode("login")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold relative group ${authMode === 'login' ? 'text-[#E60000]' : 'text-[#a8aba6]'}`}>
+               Login
+               <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-md border border-[#333] text-[#aaa] text-[8px] px-3 py-1.5 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50">
+                 Authenticate Known Node
+               </span>
+             </button>
+             
+             {/* FLYOUT: Register Tab */}
+             <button onClick={() => setAuthMode("signup")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold relative group ${authMode === 'signup' ? 'text-[#E60000]' : 'text-[#a8aba6]'}`}>
+               Register
+               <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-md border border-[#333] text-[#aaa] text-[8px] px-3 py-1.5 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50">
+                 Mint New Node Identity
+               </span>
+             </button>
           </div>
 
           <form onSubmit={handleEmailAuth} className="space-y-4">
@@ -343,8 +366,12 @@ export default function EntryGateway() {
               </span>
             </div>
 
-            <button type="submit" disabled={loading} className="w-full bg-[#948e8e] text-white py-4 text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2">
+            {/* FLYOUT: Submit Button */}
+            <button type="submit" disabled={loading} className="w-full bg-[#948e8e] text-white py-4 text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2 relative group">
               {loading ? "Processing..." : authMode === "login" ? "Enter Studio" : "Register"}
+              <span className="absolute -top-12 left-1/2 -translate-x-1/2 bg-black/95 backdrop-blur-md border border-[#E60000]/50 text-white text-[9px] px-4 py-2 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50 shadow-[0_0_15px_rgba(230,0,0,0.3)]">
+                Execute Identity Verification
+              </span>
             </button>
           </form>
         </div>
@@ -359,8 +386,13 @@ export default function EntryGateway() {
               <ul className="text-[10px] text-[#555] uppercase space-y-3 flex-1 mb-8">
                 {tier.features.map(f => <li key={f}>• {f}</li>)}
               </ul>
-              <button onClick={() => handleTierSelection(tier.name)} className="w-full py-3 bg-[#E60000] text-white text-[10px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors">
+              
+              {/* FLYOUT: Tier Selection Button */}
+              <button onClick={() => handleTierSelection(tier.name)} className="w-full py-3 bg-[#E60000] text-white text-[10px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors relative group">
                 Select {tier.name}
+                <span className="absolute -top-12 left-1/2 -translate-x-1/2 bg-black/95 backdrop-blur-md border border-[#E60000]/50 text-white text-[9px] px-4 py-2 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50 shadow-[0_0_15px_rgba(230,0,0,0.3)]">
+                  Lock In Tier Privileges
+                </span>
               </button>
             </div>
           ))}
