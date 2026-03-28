@@ -124,9 +124,15 @@ export default function Room08_Bank() {
 
     setIsWithdrawing(true);
     try {
+      // SURGICAL FIX: Fetch the user's secure session token
+      const { data: { session } } = await supabase.auth.getSession();
+
       const res = await fetch('/api/stripe/withdraw', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}` // SURGICAL FIX: Pass the token to bypass the 401 Unauthorized block
+        },
         body: JSON.stringify({ userId: userSession?.id, amount: balance })
       });
       const data = await res.json();
