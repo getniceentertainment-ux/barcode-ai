@@ -219,10 +219,10 @@ export default function Room11_Contracts() {
         {/* RIGHT: DAILY ACTION PORTAL */}
         <div className="flex-1 flex flex-col bg-black">
           {todayTask ? (
-            <div className="p-8 md:p-12 flex-1 overflow-y-auto custom-scrollbar flex flex-col animate-in slide-in-from-right-8">
-              
-              <div className="mb-10">
-                <span className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold mb-2 block border-l-2 border-[#E60000] pl-3">
+            <>
+              <div className="p-8 md:p-12 flex-1 overflow-y-auto custom-scrollbar flex flex-col animate-in slide-in-from-right-8">
+                
+                <div className="mb-10">
                   Current Stage: {phaseTitle}
                 </span>
                 <h3 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-4">
@@ -260,21 +260,22 @@ export default function Room11_Contracts() {
                 </div>
               </div>
 
-              {/* DEVELOPMENT ONLY: Force Advance Day (Simulates a Cron Job) */}
-              <div className="mt-auto pt-6 border-t border-[#222] flex justify-between items-center">
-                <p className="text-[9px] font-mono text-[#555] uppercase">
-                  In production, this board advances automatically at 00:00 EST.
-                </p>
-                <button 
-                  onClick={handleAdvanceDay}
-                  disabled={currentDay >= 30}
-                  className="bg-white text-black px-6 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center gap-2 disabled:opacity-30"
-                >
-                  Simulate Next Day <ChevronRight size={16} />
-                </button>
-              </div>
-
             </div>
+
+            {/* DEVELOPMENT ONLY: Force Advance Day (Simulates a Cron Job) - MOVED TO STICKY FOOTER */}
+            <div className="bg-[#0a0a0a] p-4 md:p-6 border-t border-[#222] flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 z-10">
+              <p className="text-[9px] font-mono text-[#555] uppercase text-center sm:text-left">
+                In production, this board advances automatically at 00:00 EST.
+              </p>
+              <button 
+                onClick={handleAdvanceDay}
+                disabled={currentDay >= 30}
+                className="bg-white text-black px-6 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center justify-center gap-2 disabled:opacity-30 w-full sm:w-auto shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
+              >
+                Simulate Next Day <ChevronRight size={16} />
+              </button>
+            </div>
+            </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center opacity-50">
               <CheckCircle2 size={64} className="text-green-500 mb-6" />
