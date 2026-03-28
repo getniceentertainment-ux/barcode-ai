@@ -1,11 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, Terminal, Loader2, Star, BadgeCheck, TrendingUp, Heart, Info } from "lucide-react";
+import { 
+  Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, 
+  DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, 
+  Terminal, Loader2, Star, BadgeCheck, TrendingUp, Heart, Info, X 
+} from "lucide-react"; // ADDED 'X' HERE
 import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
-import ChatRules from "./ChatRules"; // NEW IMPORT
+import ChatRules from "./ChatRules";
 
 interface RosterNode {
   id: string;
@@ -35,7 +39,7 @@ export default function Room10_Social() {
   const [chatInput, setChatInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [showRules, setShowRules] = useState(true); // Control visibility of rules
+  const [showRules, setShowRules] = useState(true); 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const isFreeLoader = userSession?.tier === "Free Loader";
@@ -206,9 +210,9 @@ export default function Room10_Social() {
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-[#020202]">
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center h-64 opacity-30"><Disc3 size={32} className="animate-spin text-[#E60000] mb-4" /></div>
+            <div className="flex flex-col items-center justify-center h-full opacity-30"><Disc3 size={32} className="animate-spin text-[#E60000] mb-4" /></div>
           ) : filteredRoster.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 opacity-20 text-center"><ShieldCheck size={48} className="mb-4 text-[#444]" /><p className="font-mono text-xs uppercase tracking-widest">No Qualified Nodes Found.</p></div>
+            <div className="flex flex-col items-center justify-center h-full opacity-20 text-center"><ShieldCheck size={48} className="mb-4 text-[#444]" /><p className="font-mono text-xs uppercase tracking-widest">No Qualified Nodes Found.</p></div>
           ) : filteredRoster.map((node, index) => (
             <div 
               key={node.id} 
@@ -300,7 +304,6 @@ export default function Room10_Social() {
 
         {activeTab === "chat" && (
           <div className="flex-1 flex flex-col animate-in slide-in-from-left-8 h-full bg-[#020202]">
-            {/* SURGICAL ADDITION: Pinned Rules Panel */}
             <div className="p-4 border-b border-[#222] bg-black">
               {showRules ? (
                 <div className="relative">
