@@ -5,7 +5,6 @@ import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Cal
 import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
-import CreditHustle from "./CreditHustle";
 
 interface RosterNode {
   id: string;
@@ -28,17 +27,18 @@ export default function Room10_Social() {
   const [interactionType, setInteractionType] = useState<"feature" | "booking">("feature");
   const [escrowStatus, setEscrowStatus] = useState<"idle" | "processing" | "locked">("idle");
 
-  // --- REALTIME CHAT STATE ---
   const [messages, setMessages] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // NEW: Secure boolean for Free Loaders
+  const isFreeLoader = userSession?.tier === "Free Loader";
+
   useEffect(() => {
     fetchLeaderboard();
     
-    // Catch returning Stripe success
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('escrow_success') === 'true') {
@@ -106,7 +106,6 @@ export default function Room10_Social() {
     return { base: Math.floor(base), fee: Math.floor(fee), total: Math.floor(base + fee) };
   };
 
-  // --- THE REAL ESCROW TRIGGER ---
   const handleInitiateEscrow = async () => {
     if (!selectedNode || !userSession?.id) return;
     
@@ -129,7 +128,6 @@ export default function Room10_Social() {
       const data = await res.json();
       
       if (data.url) {
-        // This is where the magic happens - redirecting to real Stripe Checkout
         window.location.href = data.url;
       } else {
         throw new Error(data.error || "Escrow Link Generation Failed");
@@ -143,7 +141,7 @@ export default function Room10_Social() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || !userSession?.id) return;
+    if (!chatInput.trim() || !userSession?.id || isFreeLoader) return;
     setIsSending(true);
     try {
       await supabase.from('global_messages').insert([{
@@ -265,7 +263,7 @@ export default function Room10_Social() {
           </div>
         )}
 
-        {/* CHAT TAB (Existing) */}
+        {/* CHAT TAB WITH FREE LOADER LOCK */}
         {activeTab === "chat" && (
           <div className="flex-1 flex flex-col animate-in slide-in-from-left-8 h-full bg-[#020202]">
             <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
@@ -273,7 +271,23 @@ export default function Room10_Social() {
               <div ref={chatEndRef} />
             </div>
             <div className="p-4 bg-black border-t border-[#222] shrink-0">
-              <form onSubmit={handleSendMessage} className="relative flex gap-2"><input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Broadcast to syndicate..." disabled={!isConnected} className="flex-1 bg-[#111] border border-[#333] px-4 py-4 text-xs text-white outline-none focus:border-[#E60000] font-mono transition-colors disabled:opacity-50" /><button type="submit" disabled={!chatInput.trim() || isSending || !isConnected} className="bg-[#E60000] text-white px-6 transition-colors flex items-center justify-center">{isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}</button></form>
+              <form onSubmit={handleSendMessage} className="relative flex gap-2">
+                <input 
+                  type="text" 
+                  value={chatInput} 
+                  onChange={(e) => setChatInput(e.target.value)} 
+                  placeholder={isFreeLoader ? "Chat locked. Upgrade to an Artist Node." : "Broadcast to syndicate..."} 
+                  disabled={!isConnected || isFreeLoader} 
+                  className="flex-1 bg-[#111] border border-[#333] px-4 py-4 text-xs text-white outline-none focus:border-[#E60000] font-mono transition-colors disabled:opacity-50" 
+                />
+                <button 
+                  type="submit" 
+                  disabled={!chatInput.trim() || isSending || !isConnected || isFreeLoader} 
+                  className="bg-[#E60000] text-white px-6 transition-colors flex items-center justify-center disabled:opacity-50 disabled:bg-[#333]"
+                >
+                  {isSending ? <Loader2 size={18} className="animate-spin" /> : (isFreeLoader ? <Lock size={18} /> : <Send size={18} />)}
+                </button>
+              </form>
             </div>
           </div>
         )}
