@@ -1,8 +1,8 @@
 import React from "react";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
-import { ShieldCheck } from "lucide-react";
-import ProfileClient from "./ProfileClient"; // Import the interactive UI
+import { ShieldCheck, Lock } from "lucide-react";
+import ProfileClient from "./ProfileClient"; 
 
 // --- RESERVED SYSTEM KEYWORDS ---
 const RESERVED_NAMES = [
@@ -59,13 +59,32 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
     );
   }
 
-  // 4. SYNC VAULT (Fetch all public tracks/artifacts submitted by this user)
+  // 4. FREE TIER RESTRICTION (GetNice Records Rule)
+  if (profile.tier === "Free Loader") {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center p-6 text-center">
+        <div className="max-w-md border border-[#E60000]/30 p-12 bg-[#110000] shadow-[0_0_50px_rgba(230,0,0,0.2)] rounded-sm">
+          <Lock size={48} className="mx-auto text-[#E60000] mb-6" />
+          <h1 className="font-oswald text-2xl text-white uppercase tracking-widest mb-4">Node Restricted</h1>
+          <p className="font-mono text-[10px] text-[#888] uppercase leading-relaxed">
+            The requested alias <span className="text-white font-bold">"{profile.stage_name}"</span> belongs to a Free Loader node. <br/><br/>
+            Free tier nodes are strictly invisible to the GetNice Records public registry.
+          </p>
+          <a href="/studio" className="mt-8 inline-block bg-[#E60000] px-8 py-3 text-[10px] text-white uppercase font-bold tracking-widest hover:bg-red-700 transition-all">
+            Return to Matrix
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // 5. SYNC VAULT (Fetch all public tracks/artifacts submitted by this valid user)
   const { data: submissions } = await supabaseAdmin
     .from("submissions")
     .select("*")
     .eq("user_id", profile.id)
     .order("created_at", { ascending: false });
 
-  // 5. RENDER INTERACTIVE CLIENT UI
+  // 6. RENDER INTERACTIVE CLIENT UI
   return <ProfileClient initialProfile={profile} submissions={submissions || []} />;
 }

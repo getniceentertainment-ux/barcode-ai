@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  .logo-container {
+    display: inline-block;
+    font-family: "Arial Black", Gadget, sans-serif; /* Rough approximation of the bold, blocky style */
+    text-transform: uppercase;
+    line-height: 0.9;
+    padding: 20px;
+    /* This makes the background transparent */
+    background: transparent; 
+  }
+
+  .getnice {
+    color: #e32b1e; /* The vibrant red from the logo */
+    font-size: 60px;
+    letter-spacing: -2px;
+    font-weight: 900;
+    position: relative;
+    /* Grunge effect approximation using a mask */
+    -webkit-mask-image: linear-gradient(45deg, rgba(0,0,0,1) 70%, rgba(0,0,0,0.5) 80%, rgba(0,0,0,1) 90%);
+  }
+
+  .records {
+    color: #4a4a4a; /* The dark grey/charcoal from the logo */
+    font-size: 35px;
+    text-transform: lowercase;
+    display: block;
+    margin-left: 80px; /* Offset to the right as seen in the source */
+    margin-top: -5px;
+    font-weight: bold;
+    -webkit-mask-image: radial-gradient(circle, rgba(0,0,0,1) 0%, rgba(0,0,0,0.7) 100%);
+  }
+</style>
+</head>
+<body>
+
+<div class="logo-container">
+  <div class="getnice">GETNICE</div>
+  <div class="records">records</div>
+</div>
+
+</body>
+</html>

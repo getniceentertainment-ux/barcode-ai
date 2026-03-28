@@ -53,13 +53,23 @@ export default function EntryGateway() {
     if (profile) {
       setUserProfile({ ...user, ...profile });
 
-      if (profile.tier && profile.credits !== null) {
+      // --- SELF-HEALING TIER CHECK ---
+      // Fixes issues where manual DB edits or webhook glitches left 'credits' as null
+      if (profile.tier) {
+        let safeCredits = profile.credits;
+        
+        if (safeCredits === null) {
+          safeCredits = profile.tier === "The Mogul" ? 999999 : (profile.tier === "The Artist" ? 100 : 5);
+          // Silently repair the database in the background
+          supabase.from('profiles').update({ credits: safeCredits }).eq('id', profile.id).then();
+        }
+
         const session: UserSession = {
           id: profile.id,
           stageName: profile.stage_name || "Artist",
           tier: profile.tier as AccessTier,
           walletBalance: profile.wallet_balance || 0,
-          creditsRemaining: profile.tier === "The Mogul" ? "UNLIMITED" : profile.credits
+          creditsRemaining: profile.tier === "The Mogul" ? "UNLIMITED" : safeCredits
         };
 
         // 1. Grant base authorization
@@ -179,7 +189,7 @@ export default function EntryGateway() {
     { id: "11", name: "Active Contracts", desc: "Active Contract Matrix. Monitor live escrow statuses and manage your B2B pipeline.", icon: <FileAudio size={24} /> },
   ];
 
-// ==========================================
+  // ==========================================
   // VIEW 1: THE FLASHY LANDING PAGE
   // ==========================================
   if (authStep === "landing") {
@@ -227,6 +237,7 @@ export default function EntryGateway() {
             <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform inline-block ml-2" />
           </button>
         </header>
+
         {/* Systems Architecture Grid */}
         <section className="max-w-7xl mx-auto px-6 py-24 relative z-10">
           <div className="flex flex-col md:flex-row justify-between items-end border-b border-[#333] pb-4 mb-12">

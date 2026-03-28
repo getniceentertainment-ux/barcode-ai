@@ -17,11 +17,9 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
   const [editBio, setEditBio] = useState(profile.bio || "");
   const [isSaving, setIsSaving] = useState(false);
   
-  // NEW: Avatar Upload State
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url);
 
-  // IDENTITY CHECK
   const isOwner = userSession?.id === profile.id;
 
   const handleSaveBio = async () => {
@@ -51,7 +49,6 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
     }
   };
 
-  // NEW: Avatar Upload Logic
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       if (!event.target.files || event.target.files.length === 0) return;
@@ -62,32 +59,20 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
       const fileName = `${userSession?.id}-${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `${fileName}`;
 
-      // 1. Upload to Supabase 'avatars' bucket
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file);
-
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file);
       if (uploadError) throw uploadError;
 
-      // 2. Get Public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
 
-      // 3. Save URL to Database via secure API
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/api/profile/update', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ avatar_url: publicUrl })
       });
 
       if (!res.ok) throw new Error("Database update failed");
 
-      // 4. Update UI instantly
       setAvatarUrl(publicUrl);
     } catch (error: any) {
       console.error("Upload error:", error.message);
@@ -97,39 +82,42 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
     }
   };
 
-  // Fallback ambient image if they don't have an avatar yet
-  const ambientBackground = avatarUrl || "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=2070&auto=format&fit=crop";
-
   return (
     <div className="min-h-screen bg-[#050505] text-white font-mono selection:bg-[#E60000] pb-24">
       
-      {/* --- AMBIENT BANNER --- */}
-      {/* FIX: Removed overflow-hidden from the parent so elements can naturally overlap the edge */}
-      <div className="h-[40vh] md:h-[50vh] relative border-b border-[#E60000]/20">
+      {/* --- SLIM BRanded BANNER --- */}
+      <div className="h-[25vh] md:h-[30vh] relative border-b border-[#E60000]/20 bg-[#020202]">
         
-        {/* FIX: Wrapped backgrounds in their own clipped container so blur doesn't spill */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-          {/* Blurred ambient background image */}
+        {/* Backgrounds Container */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0 flex items-center justify-center">
+          {/* Main GetNice Records GIF centered */}
           <div 
-            className="absolute inset-0 bg-cover bg-center opacity-30 grayscale blur-2xl scale-110"
-            style={{ backgroundImage: `url(${ambientBackground})` }}
+            className="w-[80%] h-[80%] opacity-20 mix-blend-screen"
+            style={{ backgroundImage: `url('/GNRL.gif')`, backgroundPosition: 'center', backgroundSize: 'contain', backgroundRepeat: 'no-repeat' }}
           />
           {/* Digital Grid Texture */}
           <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
           {/* Fade to black gradient */}
-          <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/80 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-black/50" />
         </div>
 
+        {/* Tucked Bar-Code Logo */}
+        <img 
+          src="/Logo_Bar-Code.jpg" 
+          alt="Bar-Code AI" 
+          className="absolute top-4 right-4 md:top-6 md:right-8 w-24 md:w-32 opacity-40 mix-blend-screen z-10 pointer-events-none" 
+        />
+
         {/* AVATAR & NAME OVERLAY (Allowed to break outside the banner) */}
-        <div className="absolute bottom-0 left-0 w-full px-6 md:px-12 z-20 translate-y-1/3 flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 text-center md:text-left">
+        <div className="absolute bottom-0 left-0 w-full px-6 md:px-12 z-20 translate-y-[40%] flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 text-center md:text-left">
           
           {/* Circular Avatar Module */}
-          <div className="relative w-32 h-32 md:w-48 md:h-48 rounded-full border-[6px] border-[#050505] bg-[#111] shadow-[0_0_40px_rgba(230,0,0,0.4)] shrink-0 group overflow-hidden">
+          <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-full border-[4px] border-[#050505] bg-[#111] shadow-[0_0_40px_rgba(230,0,0,0.4)] shrink-0 group overflow-hidden">
              {avatarUrl ? (
                <img src={avatarUrl} alt={profile.stage_name} className="w-full h-full object-cover" />
              ) : (
                <div className="w-full h-full flex items-center justify-center text-[#333]">
-                 <User size={64} />
+                 <User size={48} />
                </div>
              )}
 
@@ -137,9 +125,9 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
              {isOwner && (
                <label className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer backdrop-blur-sm">
                  {isUploadingAvatar ? (
-                   <Loader2 className="animate-spin text-[#E60000] mb-2" size={28} />
+                   <Loader2 className="animate-spin text-[#E60000] mb-2" size={24} />
                  ) : (
-                   <Camera className="text-white mb-2" size={28} />
+                   <Camera className="text-white mb-2" size={24} />
                  )}
                  <span className="font-mono text-[9px] text-white uppercase tracking-widest font-bold">
                    {isUploadingAvatar ? "Syncing..." : "Update Node"}
@@ -150,14 +138,14 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
           </div>
 
           {/* Name & Badges */}
-          <div className="pb-2 md:pb-12">
-            <div className="flex flex-wrap justify-center md:justify-start items-center gap-3 mb-4">
-               <span className="bg-[#E60000] text-white text-[10px] px-3 py-1.5 font-bold uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(230,0,0,0.5)]">
+          <div className="pb-2 md:pb-6">
+            <div className="flex flex-wrap justify-center md:justify-start items-center gap-3 mb-2 md:mb-4">
+               <span className="bg-[#E60000] text-white text-[9px] px-3 py-1 font-bold uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(230,0,0,0.5)]">
                  {profile.tier || "NODE"}
                </span>
                {profile.tier?.includes('Mogul') && (
-                 <div className="flex items-center gap-1 text-yellow-500 bg-yellow-500/10 border border-yellow-500/30 px-3 py-1 text-[10px] uppercase font-bold tracking-widest shadow-[0_0_15px_rgba(234,179,8,0.2)]">
-                   <Star size={12} className="fill-yellow-500 animate-pulse" /> Verified
+                 <div className="flex items-center gap-1 text-yellow-500 bg-yellow-500/10 border border-yellow-500/30 px-3 py-1 text-[9px] uppercase font-bold tracking-widest shadow-[0_0_15px_rgba(234,179,8,0.2)]">
+                   <Star size={10} className="fill-yellow-500 animate-pulse" /> Verified
                  </div>
                )}
                {isOwner && (
@@ -166,7 +154,7 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
                  </span>
                )}
             </div>
-            <h1 className="font-oswald text-5xl md:text-7xl lg:text-8xl uppercase font-bold tracking-tighter text-white leading-none drop-shadow-2xl">
+            <h1 className="font-oswald text-4xl md:text-6xl lg:text-7xl uppercase font-bold tracking-tighter text-white leading-none drop-shadow-2xl">
               {profile.stage_name}
             </h1>
           </div>
@@ -174,20 +162,18 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
       </div>
 
       {/* --- CONTENT GRID --- */}
-      {/* FIX: Increased padding top (pt-40) to give the hanging elements room to breathe */}
-      <div className="max-w-7xl mx-auto px-6 md:px-12 pt-40 md:pt-40 pb-20 grid grid-cols-1 lg:grid-cols-3 gap-12 md:gap-20">
+      <div className="max-w-7xl mx-auto px-6 md:px-12 pt-28 md:pt-32 pb-20 grid grid-cols-1 lg:grid-cols-3 gap-12 md:gap-20">
         
         {/* LEFT COL: INTEL & STATS */}
         <div className="lg:col-span-1 space-y-12">
           
-          {/* Flashy Mogul Score */}
           <div className="relative p-[1px] bg-gradient-to-b from-[#E60000] to-[#E60000]/10 rounded-sm shadow-[0_0_30px_rgba(230,0,0,0.15)] group">
             <div className="bg-[#0a0a0a] p-8 h-full">
                <div className="flex justify-between items-start mb-4">
                  <p className="text-[10px] text-[#888] uppercase font-bold tracking-[0.3em]">Network Resonance</p>
                  <Activity size={16} className="text-[#E60000] animate-pulse" />
                </div>
-               <p className="text-6xl font-oswald font-bold text-white tracking-tighter group-hover:text-[#E60000] transition-colors duration-500">
+               <p className="text-5xl font-oswald font-bold text-white tracking-tighter group-hover:text-[#E60000] transition-colors duration-500">
                  {profile.mogul_score || 0}
                </p>
                <p className="text-[9px] font-mono text-[#555] uppercase tracking-widest mt-4 border-t border-[#222] pt-4">
@@ -196,7 +182,6 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
             </div>
           </div>
 
-          {/* Biometric Lore (Bio) */}
           <div className="bg-[#0a0a0a]/50 border border-[#222] p-8 backdrop-blur-md relative">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#E60000]/50 to-transparent" />
             
@@ -252,8 +237,6 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
              <div className="grid grid-cols-1 gap-4">
                {submissions.map((sub: any) => (
                   <div key={sub.id} className="bg-[#0a0a0a] border border-[#222] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:border-[#E60000]/60 hover:bg-[#110000] transition-all relative overflow-hidden">
-                     
-                     {/* Glow effect on hover */}
                      <div className="absolute inset-0 bg-gradient-to-r from-[#E60000]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
                      <div className="flex items-center gap-6 relative z-10">
@@ -273,7 +256,6 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
                        </div>
                      </div>
                      
-                     {/* Play Button */}
                      {sub.audio_url && (
                        <a href={sub.audio_url} target="_blank" rel="noopener noreferrer" className="relative z-10 w-12 h-12 rounded-full border border-[#444] bg-black flex items-center justify-center text-[#AAA] hover:text-white hover:bg-[#E60000] hover:border-[#E60000] transition-all shadow-lg shrink-0 self-start sm:self-auto group-hover:scale-110">
                          <Play size={18} className="ml-1" />
