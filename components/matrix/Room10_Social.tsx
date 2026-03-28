@@ -20,7 +20,7 @@ interface RosterNode {
 export default function Room10_Social() {
   const { userSession, addToast } = useMatrixStore();
   
-  const [activeTab, setActiveTab] = useState<"Promoter" | "chat">("Promotor");
+  const [activeTab, setActiveTab] = useState<"brokerage" | "chat">("brokerage");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortMode, setSortMode] = useState<"score" | "fans">("score");
   const [roster, setRoster] = useState<RosterNode[]>([]);
@@ -212,7 +212,7 @@ export default function Room10_Social() {
           ) : filteredRoster.map((node, index) => (
             <div 
               key={node.id} 
-              onClick={() => { setSelectedNode(node); setEscrowStatus("idle"); setActiveTab("Bookings"); }}
+              onClick={() => { setSelectedNode(node); setEscrowStatus("idle"); setActiveTab("brokerage"); }}
               className={`bg-black border p-4 cursor-pointer transition-all group hover:border-[#E60000]/50 ${selectedNode?.id === node.id ? 'border-[#E60000] bg-[#0a0a0a]' : 'border-[#111]'}`}
             >
               <div className="flex justify-between items-start mb-2">
@@ -251,7 +251,7 @@ export default function Room10_Social() {
       <div className="flex-1 bg-[#0a0a0a] flex flex-col h-full overflow-hidden relative">
         <div className="flex border-b border-[#222] bg-black shrink-0">
           <button onClick={() => setActiveTab("brokerage")} className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'brokerage' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}><Handshake size={16} /> Brokerage</button>
-          <button onClick={() => setActiveTab("chat")} className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'chat' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}><MessageSquare size={16} /> Comms</button>
+          <button onClick={() => setActiveTab("chat")} className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'chat' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}><MessageSquare size={16} /> Chat</button>
         </div>
 
         {activeTab === "brokerage" && (
