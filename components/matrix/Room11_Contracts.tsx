@@ -223,58 +223,59 @@ export default function Room11_Contracts() {
               <div className="p-8 md:p-12 flex-1 overflow-y-auto custom-scrollbar flex flex-col animate-in slide-in-from-right-8">
                 
                 <div className="mb-10">
-                  Current Stage: {phaseTitle}
-                </span>
-                <h3 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-4">
-                  Day {currentDay} Directive
-                </h3>
-                <p className="font-mono text-sm text-[#888] leading-relaxed uppercase">
-                  {todayTask.objective}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <div className="bg-[#050505] border border-[#222] p-6 relative group hover:border-[#E60000]/50 transition-colors">
-                  <Activity size={16} className="absolute top-6 right-6 text-[#E60000]" />
-                  <p className="text-[9px] font-mono text-[#555] uppercase tracking-widest mb-3 font-bold">Action Item</p>
-                  <p className="font-oswald text-lg text-white tracking-widest leading-relaxed">
-                    {todayTask.action_item}
+                  <span className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold mb-2 block border-l-2 border-[#E60000] pl-3">
+                    Current Stage: {phaseTitle}
+                  </span>
+                  <h3 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-4">
+                    Day {currentDay} Directive
+                  </h3>
+                  <p className="font-mono text-sm text-[#888] leading-relaxed uppercase">
+                    {todayTask.objective}
                   </p>
                 </div>
-                <div className="bg-[#050505] border border-[#222] p-6 relative group hover:border-green-500/50 transition-colors">
-                  <Zap size={16} className="absolute top-6 right-6 text-green-500" />
-                  <p className="text-[9px] font-mono text-[#555] uppercase tracking-widest mb-3 font-bold">Automated Ad Spend Deploy</p>
-                  <p className="font-oswald text-4xl font-bold text-green-500 tracking-tighter">
-                    ${todayTask.auto_ad_spend?.toFixed(2) || "0.00"}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                  <div className="bg-[#050505] border border-[#222] p-6 relative group hover:border-[#E60000]/50 transition-colors">
+                    <Activity size={16} className="absolute top-6 right-6 text-[#E60000]" />
+                    <p className="text-[9px] font-mono text-[#555] uppercase tracking-widest mb-3 font-bold">Action Item</p>
+                    <p className="font-oswald text-lg text-white tracking-widest leading-relaxed">
+                      {todayTask.action_item}
+                    </p>
+                  </div>
+                  <div className="bg-[#050505] border border-[#222] p-6 relative group hover:border-green-500/50 transition-colors">
+                    <Zap size={16} className="absolute top-6 right-6 text-green-500" />
+                    <p className="text-[9px] font-mono text-[#555] uppercase tracking-widest mb-3 font-bold">Automated Ad Spend Deploy</p>
+                    <p className="font-oswald text-4xl font-bold text-green-500 tracking-tighter">
+                      ${todayTask.auto_ad_spend?.toFixed(2) || "0.00"}
+                    </p>
+                    <p className="text-[9px] font-mono text-[#555] uppercase mt-2">Deducted from $1,500 Advance</p>
+                  </div>
+                </div>
+
+                <div className="bg-[#110000] border border-[#330000] p-6 flex-1 flex flex-col mb-8 relative shadow-[inset_0_0_30px_rgba(230,0,0,0.05)]">
+                  <p className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-4 font-bold flex items-center gap-2">
+                    <FileText size={14} /> Generated Deliverable / Copy
                   </p>
-                  <p className="text-[9px] font-mono text-[#555] uppercase mt-2">Deducted from $1,500 Advance</p>
+                  <div className="bg-black border border-[#222] p-6 flex-1 font-mono text-xs text-gray-300 leading-loose whitespace-pre-wrap">
+                    {todayTask.generated_copy}
+                  </div>
                 </div>
+
               </div>
 
-              <div className="bg-[#110000] border border-[#330000] p-6 flex-1 flex flex-col mb-8 relative shadow-[inset_0_0_30px_rgba(230,0,0,0.05)]">
-                <p className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest mb-4 font-bold flex items-center gap-2">
-                  <FileText size={14} /> Generated Deliverable / Copy
+              {/* DEVELOPMENT ONLY: Force Advance Day (Simulates a Cron Job) - MOVED TO STICKY FOOTER */}
+              <div className="bg-[#0a0a0a] p-4 md:p-6 border-t border-[#222] flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 z-10">
+                <p className="text-[9px] font-mono text-[#555] uppercase text-center sm:text-left">
+                  In production, this board advances automatically at 00:00 EST.
                 </p>
-                <div className="bg-black border border-[#222] p-6 flex-1 font-mono text-xs text-gray-300 leading-loose whitespace-pre-wrap">
-                  {todayTask.generated_copy}
-                </div>
+                <button 
+                  onClick={handleAdvanceDay}
+                  disabled={currentDay >= 30}
+                  className="bg-white text-black px-6 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center justify-center gap-2 disabled:opacity-30 w-full sm:w-auto shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
+                >
+                  Simulate Next Day <ChevronRight size={16} />
+                </button>
               </div>
-
-            </div>
-
-            {/* DEVELOPMENT ONLY: Force Advance Day (Simulates a Cron Job) - MOVED TO STICKY FOOTER */}
-            <div className="bg-[#0a0a0a] p-4 md:p-6 border-t border-[#222] flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 z-10">
-              <p className="text-[9px] font-mono text-[#555] uppercase text-center sm:text-left">
-                In production, this board advances automatically at 00:00 EST.
-              </p>
-              <button 
-                onClick={handleAdvanceDay}
-                disabled={currentDay >= 30}
-                className="bg-white text-black px-6 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center justify-center gap-2 disabled:opacity-30 w-full sm:w-auto shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
-              >
-                Simulate Next Day <ChevronRight size={16} />
-              </button>
-            </div>
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center opacity-50">
