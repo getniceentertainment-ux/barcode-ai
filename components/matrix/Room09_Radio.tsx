@@ -13,7 +13,7 @@ interface ApprovedTrack {
   hit_score: number;
   user_id: string;
   created_at: string;
-  stage_name?: string; // <-- ADDED
+  stage_name?: string; 
 }
 
 // SEED TRACKS: Fills the radio if the database is empty
@@ -44,12 +44,16 @@ export default function Room09_Radio() {
   }, [userSession]);
 
   const fetchGlobalRadio = async () => {
+    setIsLoading(true);
     try {
+      // FIX: Replaced .eq('status', 'approved') with the actual hit_score threshold
       const { data: tracksData, error } = await supabase
         .from('submissions')
         .select('*')
-        .eq('status', 'approved')
-        .order('hit_score', { ascending: false });
+        .gte('hit_score', 85)
+        .not('audio_url', 'is', null)
+        .order('hit_score', { ascending: false })
+        .limit(50);
 
       if (error) throw error;
       
@@ -107,9 +111,10 @@ export default function Room09_Radio() {
     });
     setPlaybackMode('radio');
     
+    // FIX: Corrected dispatch event names to perfectly match the global footer player
     setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('matrix-global-seek', { detail: 0 }));
-      window.dispatchEvent(new Event('matrix-global-play'));
+      window.dispatchEvent(new CustomEvent('matrix-global-sys-seek', { detail: 0 }));
+      window.dispatchEvent(new Event('matrix-global-sys-play'));
     }, 100);
   };
 
@@ -138,17 +143,21 @@ export default function Room09_Radio() {
         description: `Algorithmic Boost: ${selectedTrack?.title}`
       });
 
+      // Flawless math: Add the exact budget ratio directly to the database hit score
       await supabase
         .from('submissions')
         .update({ hit_score: (selectedTrack?.hit_score || 0) + Math.floor(campaignBudget / 100) })
         .eq('id', selectedTrackId);
 
+      // Instantly update UI State
       useMatrixStore.setState({ 
         userSession: { ...userSession, marketingCredits: newBalance } as any
       });
 
       if (addToast) addToast("Campaign Live. Algorithm prioritized.", "success");
       setCampaignBudget(0);
+      
+      // Re-fetch the radio to show the newly boosted track higher on the list
       fetchGlobalRadio(); 
       
     } catch (err: any) {

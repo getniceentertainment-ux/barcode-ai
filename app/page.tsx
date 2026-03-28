@@ -220,22 +220,91 @@ export default function MatrixController() {
     window.dispatchEvent(new CustomEvent('matrix-global-sys-seek', { detail: newTime }));
   };
 
-  const toggleRadioMode = () => {
+  // --- NEW: AUTO-DJ ENDLESS RADIO LOGIC ---
+  const handleTrackEnd = async () => {
+    setIsPlaying(false);
+    if (playbackMode === 'radio') {
+      try {
+        const { data: subs } = await supabase
+          .from('submissions')
+          .select('*')
+          .gte('hit_score', 85)
+          .not('audio_url', 'is', null)
+          .limit(50);
+          
+        if (subs && subs.length > 0) {
+          // Prevent playing the exact same track twice in a row if possible
+          const available = subs.filter(s => s.audio_url !== radioTrack?.url);
+          const nextTracks = available.length > 0 ? available : subs;
+          const nextTrack = nextTracks[Math.floor(Math.random() * nextTracks.length)];
+          
+          const { data: profile } = await supabase.from('profiles').select('stage_name').eq('id', nextTrack.user_id).single();
+          
+          setRadioTrack({ 
+            url: nextTrack.audio_url, 
+            title: nextTrack.title || "UNTITLED ARTIFACT", 
+            artist: profile?.stage_name || "UNKNOWN NODE", 
+            score: nextTrack.hit_score 
+          });
+          
+          // Slight delay to allow Zustand state to hydrate before forcing play
+          setTimeout(() => {
+            if (audioRef.current) {
+              audioRef.current.play().catch(() => {});
+              setIsPlaying(true);
+            }
+          }, 500);
+        }
+      } catch(e) {
+        console.error("Auto-play failed", e);
+      }
+    }
+  };
+
+  const toggleRadioMode = async () => {
     setIsPlaying(false);
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
     
     if (playbackMode === 'radio') {
       setPlaybackMode('session');
     } else {
-      if (!radioTrack) {
-        setRadioTrack({ 
-          url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", 
-          title: "GETNICE FM LIVE", 
-          artist: "SYNDICATE", 
-          score: 99 
-        });
+      // --- NEW: DYNAMIC FIRST-TRACK FETCHER ---
+      if (!radioTrack || radioTrack.title === "GETNICE FM LIVE") {
+        try {
+          const { data: subs } = await supabase
+            .from('submissions')
+            .select('*')
+            .gte('hit_score', 85)
+            .not('audio_url', 'is', null)
+            .limit(20);
+            
+          if (subs && subs.length > 0) {
+            const randomTrack = subs[Math.floor(Math.random() * subs.length)];
+            const { data: profile } = await supabase.from('profiles').select('stage_name').eq('id', randomTrack.user_id).single();
+              
+            setRadioTrack({ 
+              url: randomTrack.audio_url, 
+              title: randomTrack.title || "UNTITLED ARTIFACT", 
+              artist: profile?.stage_name || "UNKNOWN NODE", 
+              score: randomTrack.hit_score 
+            });
+          } else {
+            if (addToast) addToast("No artifacts meet the 85+ score threshold yet.", "info");
+            return;
+          }
+        } catch (err) {
+          console.error("Radio sync failed", err);
+          return;
+        }
       }
       setPlaybackMode('radio');
+      
+      setTimeout(() => {
+        if (audioRef.current) {
+          audioRef.current.play().catch(() => {});
+          setIsPlaying(true);
+        }
+      }, 500);
     }
   };
 
@@ -517,7 +586,8 @@ export default function MatrixController() {
 
       {/* RESPONSIVE FOOTER PLAYER (Hidden on mobile to reclaim screen real estate) */}
       <div className="hidden md:flex fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 items-center px-4 md:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
-        <audio ref={audioRef} src={playbackMode === 'radio' && radioTrack ? radioTrack.url : audioData?.url || ""} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onEnded={() => setIsPlaying(false)} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} className="hidden" />
+        {/* FIX: Injected handleTrackEnd into the onEnded event listener */}
+        <audio ref={audioRef} src={playbackMode === 'radio' && radioTrack ? radioTrack.url : audioData?.url || ""} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onEnded={handleTrackEnd} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} className="hidden" />
         
         <div className="w-auto md:w-1/3 flex items-center gap-2 md:gap-4">
           <button onClick={toggleRadioMode} className={`w-10 h-10 md:w-12 md:h-12 flex shrink-0 items-center justify-center border transition-all ${playbackMode === 'radio' ? 'bg-[#E60000] border-[#E60000] shadow-[0_0_15px_rgba(230,0,0,0.4)]' : 'bg-black border-[#333] hover:bg-white hover:text-black hover:border-white'}`}>
