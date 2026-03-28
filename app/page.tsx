@@ -15,6 +15,7 @@ import { supabase } from "../lib/supabase";
 import EntryGateway from "../components/matrix/EntryGateway";
 import GlobalSyncIndicator from "../components/matrix/GlobalSyncIndicator";
 import HelpOverlay from "../components/matrix/HelpOverlay";
+import RoomDirectives from "../components/matrix/RoomDirectives"; // FIXED IMPORT PATH
 
 // The 11 Matrix Rooms
 import Room01_Lab from "../components/matrix/Room01_Lab";
@@ -537,13 +538,6 @@ export default function MatrixController() {
                Matrix // {rooms.find(r => r.id === activeRoom)?.name.toUpperCase()}
              </span>
            </div>
-
-	   {/* --- NEW: GLOBAL CENTER HEADER SLOGAN --- */}
-           <div className="hidden lg:flex absolute left-1/2 -translate-x-1/2 items-center pointer-events-none">
-             <span className="text-white italic text-sm font-light tracking-[0.1em] drop-shadow-md opacity-90">
-               "Cracked the code to this game, turned it into JSON."
-             </span>
-           </div>
            
            <div className="flex items-center gap-4 md:gap-6 ml-auto">
              {userSession && (
@@ -572,6 +566,13 @@ export default function MatrixController() {
         
         <div className="flex-1 overflow-y-auto p-4 md:p-10 relative">
           <div className="absolute inset-0 pointer-events-none opacity-5" style={{ backgroundImage: 'linear-gradient(#222 1px, transparent 1px), linear-gradient(90deg, #222 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+          
+          {/* --- SURGICAL ADDITION: UNIVERSAL ROOM DIRECTIVES --- */}
+          {/* This ensures the instructions stay pinned to the top of every room automatically */}
+          <div className="relative z-10 max-w-5xl mx-auto w-full">
+            <RoomDirectives roomId={activeRoom} />
+          </div>
+
           {renderActiveRoom()}
         </div>
 

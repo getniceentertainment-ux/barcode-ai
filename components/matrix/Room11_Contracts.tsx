@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
-import RoomDirectives from "./RoomDirectives";
 
 export default function Room11_Exec() {
   const { userSession, addToast, setActiveRoom } = useMatrixStore();
@@ -317,9 +316,7 @@ export default function Room11_Exec() {
               </div>
               <div className="overflow-hidden">
                 <p className="text-[8px] font-mono text-[#555] uppercase font-bold mb-1">Smart Bio-Link (Drop Page)</p>
-                <p className="text-xs font-mono text-white truncate max-w-[150px] md:max-w-none">{dropUrl}</p>                 
-          <div className="h-full flex flex-col items-center">
-       <RoomDirectives roomId="01" />
+                <p className="text-xs font-mono text-white truncate max-w-[150px] md:max-w-none">{dropUrl}</p>
               </div>
             </div>
             <div className="flex gap-2 w-full md:w-auto">
