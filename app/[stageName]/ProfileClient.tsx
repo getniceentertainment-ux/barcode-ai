@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Mic2, Globe, ShieldCheck, Star, Edit2, Save, Loader2, Disc3, Play, Camera, User, Activity } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
+import Link from "next/link";
 
 interface ProfileClientProps {
   initialProfile: any;
@@ -90,14 +91,11 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
         
         {/* Backgrounds Container */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none z-0 flex items-center justify-center">
-          {/* Main GetNice Records GIF centered */}
           <div 
             className="w-[80%] h-[80%] opacity-20 mix-blend-screen"
             style={{ backgroundImage: `url('/GNRL.gif')`, backgroundPosition: 'center', backgroundSize: 'contain', backgroundRepeat: 'no-repeat' }}
           />
-          {/* Digital Grid Texture */}
           <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-          {/* Fade to black gradient */}
           <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-black/50" />
         </div>
 
@@ -108,10 +106,9 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
           className="absolute top-4 right-4 md:top-6 md:right-8 w-24 md:w-32 opacity-40 mix-blend-screen z-10 pointer-events-none" 
         />
 
-        {/* AVATAR & NAME OVERLAY (Allowed to break outside the banner) */}
+        {/* AVATAR & NAME OVERLAY */}
         <div className="absolute bottom-0 left-0 w-full px-6 md:px-12 z-20 translate-y-[40%] flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 text-center md:text-left">
           
-          {/* Circular Avatar Module */}
           <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-full border-[4px] border-[#050505] bg-[#111] shadow-[0_0_40px_rgba(230,0,0,0.4)] shrink-0 group overflow-hidden">
              {avatarUrl ? (
                <img src={avatarUrl} alt={profile.stage_name} className="w-full h-full object-cover" />
@@ -121,7 +118,6 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
                </div>
              )}
 
-             {/* Hover Upload State (Owner Only) */}
              {isOwner && (
                <label className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer backdrop-blur-sm">
                  {isUploadingAvatar ? (
@@ -137,13 +133,20 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
              )}
           </div>
 
-          {/* Name & Badges */}
           <div className="pb-2 md:pb-6">
             <div className="flex flex-wrap justify-center md:justify-start items-center gap-3 mb-2 md:mb-4">
-               <span className="bg-[#E60000] text-white text-[9px] px-3 py-1 font-bold uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(230,0,0,0.5)]">
-                 {profile.tier || "NODE"}
-               </span>
-               {profile.tier?.includes('Mogul') && (
+               {/* PRESTIGE: GetNice Partner Badge */}
+               {profile.getnice_signed ? (
+                 <div className="bg-[#E60000] text-white text-[9px] px-3 py-1 font-bold uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(230,0,0,0.5)] flex items-center gap-2">
+                   <ShieldCheck size={12} /> GETNICE UPSTREAM PARTNER
+                 </div>
+               ) : (
+                 <span className="bg-[#111] border border-[#333] text-white text-[9px] px-3 py-1 font-bold uppercase tracking-[0.2em]">
+                   {profile.tier || "NODE"}
+                 </span>
+               )}
+
+               {profile.tier?.includes('Mogul') && !profile.getnice_signed && (
                  <div className="flex items-center gap-1 text-yellow-500 bg-yellow-500/10 border border-yellow-500/30 px-3 py-1 text-[9px] uppercase font-bold tracking-widest shadow-[0_0_15px_rgba(234,179,8,0.2)]">
                    <Star size={10} className="fill-yellow-500 animate-pulse" /> Verified
                  </div>
@@ -168,15 +171,25 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
         <div className="lg:col-span-1 space-y-12">
           
           <div className="relative p-[1px] bg-gradient-to-b from-[#E60000] to-[#E60000]/10 rounded-sm shadow-[0_0_30px_rgba(230,0,0,0.15)] group">
-            <div className="bg-[#0a0a0a] p-8 h-full">
-               <div className="flex justify-between items-start mb-4">
-                 <p className="text-[10px] text-[#888] uppercase font-bold tracking-[0.3em]">Network Resonance</p>
-                 <Activity size={16} className="text-[#E60000] animate-pulse" />
+            <div className="bg-[#0a0a0a] p-6 h-full">
+               
+               {/* 3-COLUMN PRESTIGE STATS */}
+               <div className="w-full grid grid-cols-3 gap-2">
+                 <div>
+                   <p className="text-[8px] text-[#555] uppercase tracking-widest mb-1 font-bold">A&R Score</p>
+                   <p className="font-oswald text-2xl text-white">{profile.mogul_score || 0}</p>
+                 </div>
+                 <div className="border-l border-r border-[#222] px-2 text-center">
+                   <p className="text-[8px] text-[#E60000] uppercase tracking-widest mb-1 font-bold">Cult Fans</p>
+                   <p className="font-oswald text-2xl text-[#E60000] tracking-tighter">{profile.total_fans || 0}</p>
+                 </div>
+                 <div className="text-right">
+                   <p className="text-[8px] text-[#555] uppercase tracking-widest mb-1 font-bold">Artifacts</p>
+                   <p className="font-oswald text-2xl text-white">{submissions.length}</p>
+                 </div>
                </div>
-               <p className="text-5xl font-oswald font-bold text-white tracking-tighter group-hover:text-[#E60000] transition-colors duration-500">
-                 {profile.mogul_score || 0}
-               </p>
-               <p className="text-[9px] font-mono text-[#555] uppercase tracking-widest mt-4 border-t border-[#222] pt-4">
+
+               <p className="text-[9px] font-mono text-[#555] uppercase tracking-widest mt-6 border-t border-[#222] pt-4">
                  Influence metric determined by ecosystem interaction and vault syndication.
                </p>
             </div>

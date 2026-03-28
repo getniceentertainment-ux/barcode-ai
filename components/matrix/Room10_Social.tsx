@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, Terminal, Loader2, Star, BadgeCheck } from "lucide-react";
+import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, Terminal, Loader2, Star, BadgeCheck, TrendingUp, Heart } from "lucide-react";
 import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
@@ -13,6 +13,8 @@ interface RosterNode {
   mogul_score: number;
   total_referrals: number;
   tier: string;
+  total_fans: number;
+  getnice_signed: boolean;
 }
 
 export default function Room10_Social() {
@@ -20,6 +22,7 @@ export default function Room10_Social() {
   
   const [activeTab, setActiveTab] = useState<"brokerage" | "chat">("brokerage");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortMode, setSortMode] = useState<"score" | "fans">("score");
   const [roster, setRoster] = useState<RosterNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState<RosterNode | null>(null);
@@ -33,7 +36,6 @@ export default function Room10_Social() {
   const [isConnected, setIsConnected] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // NEW: Secure boolean for Free Loaders
   const isFreeLoader = userSession?.tier === "Free Loader";
 
   useEffect(() => {
@@ -83,10 +85,9 @@ export default function Room10_Social() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, stage_name, avatar_url, mogul_score, total_referrals, tier')
+        .select('id, stage_name, avatar_url, mogul_score, total_referrals, tier, total_fans, getnice_signed')
         .neq('tier', 'Free Loader') 
-        .order('mogul_score', { ascending: false, nullsFirst: false })
-        .limit(50);
+        .limit(100);
 
       if (error) throw error;
       setRoster(data || []);
@@ -160,10 +161,17 @@ export default function Room10_Social() {
   };
 
   const pricing = getDynamicPricing(selectedNode, interactionType);
-  const filteredRoster = roster.filter(node => (node.stage_name || node.id).toLowerCase().includes(searchQuery.toLowerCase()));
+  
+  // Sort Logic for Dual Tier Leaderboard
+  const sortedRoster = [...roster].sort((a, b) => {
+    if (sortMode === "fans") return (b.total_fans || 0) - (a.total_fans || 0);
+    return (b.mogul_score || 0) - (a.mogul_score || 0);
+  });
+
+  const filteredRoster = sortedRoster.filter(node => (node.stage_name || node.id).toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
-    <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 overflow-hidden">
+    <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 overflow-hidden border border-[#222]">
       
       {/* LEADERBOARD COL */}
       <div className="w-full md:w-1/2 lg:w-5/12 border-r border-[#222] flex flex-col relative h-full shrink-0">
@@ -171,13 +179,28 @@ export default function Room10_Social() {
           <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-[#E60000] flex items-center gap-3 mb-4">
             <Users size={28} /> Network Syndicate
           </h2>
-          <div className="relative">
+          <div className="relative mb-4">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
             <input 
               type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search active nodes..." 
               className="w-full bg-[#111] border border-[#333] pl-12 pr-4 py-3 text-xs text-white outline-none focus:border-[#E60000] font-mono"
             />
+          </div>
+          
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setSortMode("score")} 
+              className={`flex-1 py-2 text-[9px] font-mono uppercase tracking-widest font-bold border transition-colors flex items-center justify-center gap-2 ${sortMode === "score" ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#333] text-[#888] hover:text-white'}`}
+            >
+              <TrendingUp size={12} /> A&R Resonance
+            </button>
+            <button 
+              onClick={() => setSortMode("fans")} 
+              className={`flex-1 py-2 text-[9px] font-mono uppercase tracking-widest font-bold border transition-colors flex items-center justify-center gap-2 ${sortMode === "fans" ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#333] text-[#888] hover:text-white'}`}
+            >
+              <Heart size={12} /> Commercial Cult
+            </button>
           </div>
         </div>
 
@@ -201,12 +224,23 @@ export default function Room10_Social() {
                   <div>
                     <h3 className="font-oswald text-lg uppercase tracking-widest text-white flex items-center gap-2">
                       {node.stage_name || `NODE_${node.id.substring(0, 4)}`}
-                      {node.tier?.includes("Mogul") && <Star size={12} className="text-yellow-500 fill-yellow-500" />}
                     </h3>
-                    <span className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded-sm border font-bold ${node.tier?.includes('Mogul') ? 'border-yellow-600/50 bg-yellow-600/10 text-yellow-500' : 'border-blue-600/50 bg-blue-600/10 text-blue-400'}`}>{node.tier?.toUpperCase()}</span>
+                    <div className="flex items-center gap-2 mt-1">
+                      {node.getnice_signed ? (
+                        <span className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded-sm border border-red-600/50 bg-red-600/10 text-[#E60000] font-bold flex items-center gap-1"><ShieldCheck size={8}/> GetNice Records</span>
+                      ) : (
+                        <span className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded-sm border font-bold ${node.tier?.includes('Mogul') ? 'border-yellow-600/50 bg-yellow-600/10 text-yellow-500' : 'border-blue-600/50 bg-blue-600/10 text-blue-400'}`}>{node.tier?.toUpperCase()}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="text-right"><span className="text-[8px] font-mono text-[#E60000] uppercase block mb-1">Score</span><div className="text-xl font-oswald font-bold text-white">{node.mogul_score}</div></div>
+                <div className="text-right">
+                  {sortMode === "score" ? (
+                    <><span className="text-[8px] font-mono text-[#E60000] uppercase block mb-1">Score</span><div className="text-xl font-oswald font-bold text-white">{node.mogul_score || 0}</div></>
+                  ) : (
+                    <><span className="text-[8px] font-mono text-[#E60000] uppercase block mb-1">Fans</span><div className="text-xl font-oswald font-bold text-white">{node.total_fans || 0}</div></>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -228,7 +262,9 @@ export default function Room10_Social() {
               <div className="p-8 flex flex-col h-full animate-in slide-in-from-right-8">
                 <div className="mb-8 flex justify-between items-start border-b border-[#222] pb-6">
                   <div>
-                    <div className="inline-flex items-center gap-2 bg-[#110000] text-[#E60000] border border-[#330000] px-3 py-1 text-[9px] uppercase font-bold tracking-widest mb-4"><ShieldCheck size={12} /> {selectedNode.tier === 'The Mogul' ? 'MOGUL ARCHITECT' : 'SYNDICATE ARTIST'}</div>
+                    <div className="inline-flex items-center gap-2 bg-[#110000] text-[#E60000] border border-[#330000] px-3 py-1 text-[9px] uppercase font-bold tracking-widest mb-4">
+                      <ShieldCheck size={12} /> {selectedNode.getnice_signed ? 'GETNICE RECORDS ROSTER' : (selectedNode.tier === 'The Mogul' ? 'MOGUL ARCHITECT' : 'SYNDICATE ARTIST')}
+                    </div>
                     <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white">{selectedNode.stage_name || `NODE_${selectedNode.id.substring(0, 8)}`}</h2>
                   </div>
                   <Link href={`/${encodeURIComponent(selectedNode.stage_name || selectedNode.id)}`} target="_blank" className="bg-[#111] border border-[#333] text-white px-6 py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-colors flex items-center gap-2">View Profile <ExternalLink size={14} /></Link>
