@@ -32,7 +32,7 @@ export async function POST(req: Request) {
               content: lyrics
             }
           ],
-          model: "llama3-8b-8192",
+          model: "llama-3.3-70b-versatile",
           temperature: 0.1, // Keep it strictly analytical
         });
 
