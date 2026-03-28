@@ -1,270 +1,189 @@
 "use client";
 
 import React, { useState } from "react";
-import { Mic2, Globe, ShieldCheck, Star, Edit2, Save, Loader2, Disc3, Play, Camera, User, Activity } from "lucide-react";
-import { useMatrixStore } from "../../store/useMatrixStore";
+import { User, Edit3, Save, X, Activity, Disc3, ShieldCheck, Globe, BarChart2, Loader2 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { useMatrixStore } from "../../store/useMatrixStore";
+import Link from "next/link";
 
-interface ProfileClientProps {
-  initialProfile: any;
-  submissions: any[];
-}
-
-export default function ProfileClient({ initialProfile, submissions }: ProfileClientProps) {
+export default function ProfileClient({ initialProfile, submissions }: { initialProfile: any, submissions: any[] }) {
   const { userSession } = useMatrixStore();
-  const [profile, setProfile] = useState(initialProfile);
+  const isOwner = userSession?.id === initialProfile.id;
+
   const [isEditing, setIsEditing] = useState(false);
-  const [editBio, setEditBio] = useState(profile.bio || "");
+  const [bio, setBio] = useState(initialProfile.bio || "");
+  const [avatarUrl, setAvatarUrl] = useState(initialProfile.avatar_url || "");
   const [isSaving, setIsSaving] = useState(false);
-  
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url);
+  const [profile, setProfile] = useState(initialProfile);
 
-  const isOwner = userSession?.id === profile.id;
-
-  const handleSaveBio = async () => {
+  const handleSave = async () => {
     setIsSaving(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("No active session");
-
       const res = await fetch('/api/profile/update', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({ bio: editBio })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ bio, avatar_url: avatarUrl })
       });
-
-      if (!res.ok) throw new Error("Failed to save bio");
-
-      setProfile({ ...profile, bio: editBio });
+      
+      if (!res.ok) throw new Error("Update failed");
+      
+      setProfile({ ...profile, bio, avatar_url: avatarUrl });
       setIsEditing(false);
-    } catch (e) {
-      console.error(e);
-      alert("Failed to update profile intel.");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save profile.");
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      if (!event.target.files || event.target.files.length === 0) return;
-      setIsUploadingAvatar(true);
-      
-      const file = event.target.files[0];
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${userSession?.id}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `${fileName}`;
-
-      const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file);
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
-
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/api/profile/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ avatar_url: publicUrl })
-      });
-
-      if (!res.ok) throw new Error("Database update failed");
-
-      setAvatarUrl(publicUrl);
-    } catch (error: any) {
-      console.error("Upload error:", error.message);
-      alert("Avatar upload failed. Ensure the 'avatars' bucket exists and is public in Supabase.");
-    } finally {
-      setIsUploadingAvatar(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-mono selection:bg-[#E60000] pb-24">
+    <div className="min-h-screen bg-[#050505] text-white font-mono selection:bg-[#E60000]">
       
-      {/* --- SLIM BRanded BANNER --- */}
-      <div className="h-[25vh] md:h-[30vh] relative border-b border-[#E60000]/20 bg-[#020202]">
-        
-        {/* Backgrounds Container */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0 flex items-center justify-center">
-          {/* Main GetNice Records GIF centered */}
-          <div 
-            className="w-[80%] h-[80%] opacity-20 mix-blend-screen"
-            style={{ backgroundImage: `url('/GNRL.gif')`, backgroundPosition: 'center', backgroundSize: 'contain', backgroundRepeat: 'no-repeat' }}
-          />
-          {/* Digital Grid Texture */}
-          <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-          {/* Fade to black gradient */}
-          <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-black/50" />
-        </div>
-
-        {/* Tucked Bar-Code Logo */}
-        <img 
-          src="/Logo_Bar-Code.jpg" 
-          alt="Bar-Code AI" 
-          className="absolute top-4 right-4 md:top-6 md:right-8 w-24 md:w-32 opacity-40 mix-blend-screen z-10 pointer-events-none" 
-        />
-
-        {/* AVATAR & NAME OVERLAY (Allowed to break outside the banner) */}
-        <div className="absolute bottom-0 left-0 w-full px-6 md:px-12 z-20 translate-y-[40%] flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 text-center md:text-left">
-          
-          {/* Circular Avatar Module */}
-          <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-full border-[4px] border-[#050505] bg-[#111] shadow-[0_0_40px_rgba(230,0,0,0.4)] shrink-0 group overflow-hidden">
-             {avatarUrl ? (
-               <img src={avatarUrl} alt={profile.stage_name} className="w-full h-full object-cover" />
-             ) : (
-               <div className="w-full h-full flex items-center justify-center text-[#333]">
-                 <User size={48} />
-               </div>
-             )}
-
-             {/* Hover Upload State (Owner Only) */}
-             {isOwner && (
-               <label className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer backdrop-blur-sm">
-                 {isUploadingAvatar ? (
-                   <Loader2 className="animate-spin text-[#E60000] mb-2" size={24} />
-                 ) : (
-                   <Camera className="text-white mb-2" size={24} />
-                 )}
-                 <span className="font-mono text-[9px] text-white uppercase tracking-widest font-bold">
-                   {isUploadingAvatar ? "Syncing..." : "Update Node"}
-                 </span>
-                 <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} disabled={isUploadingAvatar} />
-               </label>
-             )}
-          </div>
-
-          {/* Name & Badges */}
-          <div className="pb-2 md:pb-6">
-            <div className="flex flex-wrap justify-center md:justify-start items-center gap-3 mb-2 md:mb-4">
-               <span className="bg-[#E60000] text-white text-[9px] px-3 py-1 font-bold uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(230,0,0,0.5)]">
-                 {profile.tier || "NODE"}
-               </span>
-               {profile.tier?.includes('Mogul') && (
-                 <div className="flex items-center gap-1 text-yellow-500 bg-yellow-500/10 border border-yellow-500/30 px-3 py-1 text-[9px] uppercase font-bold tracking-widest shadow-[0_0_15px_rgba(234,179,8,0.2)]">
-                   <Star size={10} className="fill-yellow-500 animate-pulse" /> Verified
-                 </div>
-               )}
-               {isOwner && (
-                 <span className="bg-transparent border border-[#333] text-[#888] text-[9px] px-3 py-1 font-bold uppercase tracking-widest">
-                   Operator View
-                 </span>
-               )}
-            </div>
-            <h1 className="font-oswald text-4xl md:text-6xl lg:text-7xl uppercase font-bold tracking-tighter text-white leading-none drop-shadow-2xl">
-              {profile.stage_name}
-            </h1>
+      {/* HEADER */}
+      <div className="border-b border-[#222] bg-black sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+          <Link href="/studio" className="text-[#888] hover:text-white uppercase tracking-widest text-xs font-bold transition-colors">
+            ← Return to Matrix
+          </Link>
+          <div className="flex items-center gap-2">
+            <Globe className="text-[#E60000]" size={18} />
+            <span className="font-oswald text-xl uppercase tracking-[0.2em] font-bold">Public Node</span>
           </div>
         </div>
       </div>
 
-      {/* --- CONTENT GRID --- */}
-      <div className="max-w-7xl mx-auto px-6 md:px-12 pt-28 md:pt-32 pb-20 grid grid-cols-1 lg:grid-cols-3 gap-12 md:gap-20">
+      <div className="max-w-7xl mx-auto px-6 py-12 flex flex-col lg:flex-row gap-8">
         
-        {/* LEFT COL: INTEL & STATS */}
-        <div className="lg:col-span-1 space-y-12">
-          
-          <div className="relative p-[1px] bg-gradient-to-b from-[#E60000] to-[#E60000]/10 rounded-sm shadow-[0_0_30px_rgba(230,0,0,0.15)] group">
-            <div className="bg-[#0a0a0a] p-8 h-full">
-               <div className="flex justify-between items-start mb-4">
-                 <p className="text-[10px] text-[#888] uppercase font-bold tracking-[0.3em]">Network Resonance</p>
-                 <Activity size={16} className="text-[#E60000] animate-pulse" />
-               </div>
-               <p className="text-5xl font-oswald font-bold text-white tracking-tighter group-hover:text-[#E60000] transition-colors duration-500">
-                 {profile.mogul_score || 0}
-               </p>
-               <p className="text-[9px] font-mono text-[#555] uppercase tracking-widest mt-4 border-t border-[#222] pt-4">
-                 Influence metric determined by ecosystem interaction and vault syndication.
-               </p>
-            </div>
-          </div>
-
-          <div className="bg-[#0a0a0a]/50 border border-[#222] p-8 backdrop-blur-md relative">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#E60000]/50 to-transparent" />
+        {/* LEFT COL: IDENTITY */}
+        <div className="w-full lg:w-1/3 space-y-6">
+          <div className="bg-black border border-[#222] p-8 relative overflow-hidden group hover:border-[#E60000]/30 transition-colors">
+            <div className="absolute top-0 right-0 p-4 opacity-10"><ShieldCheck size={64} className="text-[#E60000]" /></div>
             
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-oswald text-sm uppercase text-white tracking-[0.4em] font-bold flex items-center gap-2">
-                 <span className="w-2 h-2 bg-[#E60000] animate-pulse" /> Node Intel
-              </h3>
-              {isOwner && !isEditing && (
-                <button onClick={() => setIsEditing(true)} className="text-[9px] bg-black border border-[#333] px-3 py-1 font-mono text-[#888] hover:text-white hover:border-white uppercase flex items-center gap-2 transition-all">
-                  <Edit2 size={10}/> Override
-                </button>
+            <div className="relative z-10 flex flex-col items-center text-center">
+              <div className="w-32 h-32 bg-[#111] border-2 border-[#333] mb-6 overflow-hidden relative group-hover:border-[#E60000] transition-colors shadow-lg">
+                {profile.avatar_url ? (
+                  <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <User size={48} className="text-[#555] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                )}
+              </div>
+              
+              <h1 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-2">
+                {profile.stage_name}
+              </h1>
+              <span className={`text-[10px] uppercase font-bold tracking-widest px-3 py-1 border mb-6 ${profile.tier?.includes('Mogul') ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/30' : 'text-blue-500 bg-blue-500/10 border-blue-500/30'}`}>
+                {profile.tier}
+              </span>
+
+              <div className="w-full grid grid-cols-2 gap-4 border-t border-[#222] pt-6 mb-6">
+                <div>
+                  <p className="text-[9px] text-[#555] uppercase tracking-widest mb-1">A&R Score</p>
+                  <p className="font-oswald text-2xl text-white">{profile.mogul_score || 0}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] text-[#555] uppercase tracking-widest mb-1">Artifacts</p>
+                  <p className="font-oswald text-2xl text-white">{submissions.length}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="relative z-10 border-t border-[#222] pt-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-oswald text-sm uppercase text-[#888] tracking-widest">Biometric Data</h3>
+                {isOwner && !isEditing && (
+                  <button onClick={() => setIsEditing(true)} className="text-[#555] hover:text-[#E60000] transition-colors">
+                    <Edit3 size={14} />
+                  </button>
+                )}
+              </div>
+              
+              {isEditing ? (
+                <div className="space-y-4 animate-in fade-in">
+                  <div>
+                    <label className="text-[9px] text-[#E60000] uppercase tracking-widest block mb-1 font-bold">Avatar Image URL</label>
+                    <input 
+                      type="text" 
+                      value={avatarUrl} 
+                      onChange={e => setAvatarUrl(e.target.value)} 
+                      className="w-full bg-[#111] border border-[#333] p-3 text-xs text-white outline-none focus:border-[#E60000] transition-colors" 
+                      placeholder="https://..." 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-[#E60000] uppercase tracking-widest block mb-1 font-bold">Node Biography</label>
+                    <textarea 
+                      value={bio} 
+                      onChange={e => setBio(e.target.value)} 
+                      className="w-full bg-[#111] border border-[#333] p-3 text-xs text-white outline-none focus:border-[#E60000] h-24 resize-none transition-colors" 
+                      placeholder="Enter node history..."
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={handleSave} disabled={isSaving} className="flex-1 bg-[#E60000] text-white py-3 text-[10px] uppercase font-bold tracking-widest flex justify-center items-center gap-2 hover:bg-red-700 transition-colors">
+                      {isSaving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>} Save
+                    </button>
+                    <button onClick={() => setIsEditing(false)} disabled={isSaving} className="flex-1 bg-[#111] border border-[#333] text-[#888] py-3 text-[10px] uppercase font-bold tracking-widest hover:text-white flex justify-center items-center gap-2 transition-colors">
+                      <X size={14}/> Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-[#AAA] leading-relaxed uppercase tracking-widest whitespace-pre-wrap font-medium">
+                  {profile.bio ? `[ ${profile.bio} ]` : "[ NO BIOMETRIC DATA TRANSMITTED. OPERATOR IS GHOSTING THE MATRIX. ]"}
+                </p>
               )}
             </div>
-            
-            {isEditing ? (
-               <div className="space-y-3 animate-in fade-in">
-                 <textarea 
-                    value={editBio} 
-                    onChange={e => setEditBio(e.target.value)} 
-                    className="w-full bg-black border border-[#333] p-4 text-xs font-mono text-[#E60000] outline-none focus:border-[#E60000] resize-none h-32 custom-scrollbar shadow-[inset_0_0_20px_rgba(0,0,0,0.8)]" 
-                    placeholder="Enter biometric data / artist lore..." 
-                  />
-                 <div className="flex gap-2">
-                   <button onClick={handleSaveBio} disabled={isSaving} className="flex-1 bg-[#E60000] text-white px-4 py-3 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-red-700 transition-colors shadow-[0_0_15px_rgba(230,0,0,0.3)]">
-                     {isSaving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>} Commit
-                   </button>
-                   <button onClick={() => setIsEditing(false)} disabled={isSaving} className="bg-transparent text-[#555] px-4 py-3 text-[10px] font-bold uppercase tracking-widest hover:text-white hover:bg-[#111] transition-colors border border-[#222]">
-                     Abort
-                   </button>
-                 </div>
-               </div>
-            ) : (
-               <p className="text-xs text-[#AAA] leading-relaxed uppercase tracking-widest whitespace-pre-wrap font-medium">
-                 {profile.bio ? `[ ${profile.bio} ]` : "[ NO BIOMETRIC DATA TRANSMITTED. OPERATOR IS GHOSTING THE MATRIX. ]"}
-               </p>
-            )}
+          </div>
+        </div>
+
+        {/* RIGHT COL: ARTIFACTS */}
+        <div className="flex-1 space-y-6">
+          <div className="flex items-center gap-3 mb-8 border-b border-[#222] pb-4">
+            <Disc3 className="text-[#E60000]" size={24} />
+            <h2 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white">Verified Artifacts</h2>
           </div>
 
-	   {/* RIGHT COL: VAULT SYNC */}
-        <div className="lg:col-span-2">
-           <h3 className="font-oswald text-2xl uppercase text-white tracking-[0.2em] mb-8 font-bold flex items-center gap-3">
-             <Globe className="text-[#E60000]" size={24} /> Public Ledger Submissions
-           </h3>
-           
-           {submissions.length === 0 ? (
-             <div className="border border-dashed border-[#333] bg-[#0a0a0a] py-32 text-center rounded-sm">
-                <ShieldCheck size={48} className="mx-auto mb-6 text-[#333]" />
-                <p className="text-xs uppercase tracking-[0.3em] text-[#555] font-bold">Vault is Empty</p>
-                <p className="text-[9px] uppercase tracking-widest text-[#444] mt-2">No public artifacts have been syndicated by this node.</p>
-             </div>
-           ) : (
-             <div className="grid grid-cols-1 gap-4">
-               {submissions.map((sub: any) => (
-                  <div key={sub.id} className="bg-[#0a0a0a] border border-[#222] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:border-[#E60000]/60 hover:bg-[#110000] transition-all relative overflow-hidden">
-                     <div className="absolute inset-0 bg-gradient-to-r from-[#E60000]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-
-                     <div className="flex items-center gap-6 relative z-10">
-                       <div className="w-16 h-16 bg-black border border-[#333] flex items-center justify-center text-[#E60000] shrink-0 group-hover:border-[#E60000]/50 transition-colors">
-                         <Disc3 size={28} className="group-hover:animate-spin-slow transition-all" />
-                       </div>
-                       <div>
-                         <h4 className="font-oswald text-xl text-white uppercase tracking-widest mb-1 group-hover:text-[#E60000] transition-colors">{sub.title || 'Untitled Artifact'}</h4>
-                         <div className="flex flex-wrap items-center gap-3">
-                           <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest bg-black px-2 py-1 border border-[#222]">
-                             MINTED: {new Date(sub.created_at).toLocaleDateString()}
-                           </p>
-                           <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest bg-black px-2 py-1 border border-[#222]">
-                             HIT SCORE: <span className={sub.hit_score >= 85 ? 'text-green-500 font-bold' : 'text-white'}>{sub.hit_score || 0}</span>
-                           </p>
-                         </div>
-                       </div>
-                     </div>
-                     
-                     {sub.audio_url && (
-                       <a href={sub.audio_url} target="_blank" rel="noopener noreferrer" className="relative z-10 w-12 h-12 rounded-full border border-[#444] bg-black flex items-center justify-center text-[#AAA] hover:text-white hover:bg-[#E60000] hover:border-[#E60000] transition-all shadow-lg shrink-0 self-start sm:self-auto group-hover:scale-110">
-                         <Play size={18} className="ml-1" />
-                       </a>
-                     )}
+          {submissions.length === 0 ? (
+            <div className="bg-black border border-dashed border-[#333] p-12 text-center opacity-50">
+              <Activity size={48} className="mx-auto text-[#444] mb-4" />
+              <p className="font-mono text-xs uppercase tracking-widest text-[#888]">No public artifacts detected on this node.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {submissions.map((sub) => (
+                <div key={sub.id} className="bg-black border border-[#222] p-5 group hover:border-[#E60000]/50 transition-colors shadow-lg">
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-[#111] border border-[#333] shrink-0 shadow-md">
+                        {sub.cover_url ? (
+                          <img src={sub.cover_url} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[#555]"><Disc3 size={16}/></div>
+                        )}
+                      </div>
+                      <div className="overflow-hidden">
+                        <h3 className="font-oswald text-lg text-white uppercase tracking-widest truncate group-hover:text-[#E60000] transition-colors">{sub.title}</h3>
+                        <p className="text-[9px] font-mono text-[#555] uppercase mt-1">{new Date(sub.created_at).toLocaleDateString()}</p>
+                      </div>
+                    </div>
                   </div>
-               ))}
-             </div>
-           )}
+                  
+                  <div className="flex items-center justify-between border-t border-[#111] pt-4 mt-2">
+                    <div className="flex items-center gap-2 text-[9px] font-mono uppercase tracking-widest text-[#888]">
+                      <BarChart2 size={12} className="text-[#E60000]" /> Score: <span className="text-white font-bold">{sub.hit_score}</span>
+                    </div>
+                    {sub.audio_url && (
+                      <audio controls src={sub.audio_url} className="h-6 w-32 outline-none grayscale invert opacity-70 hover:opacity-100 transition-opacity" controlsList="nodownload noplaybackrate" />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
       </div>
     </div>
   );

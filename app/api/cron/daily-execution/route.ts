@@ -90,13 +90,8 @@ export async function POST(req: Request) {
         if (execType === "social_post" && process.env.CREATOMATE_API_KEY && process.env.AYRSHARE_API_KEY) {
            console.log(`[CRON] Initiating Video Render via Creatomate for ${campaign.title}...`);
            
-           // Fetch user's connected social profile key
-           const { data: profile } = await supabaseAdmin.from('profiles').select('ayrshare_profile_key').eq('id', campaign.user_id).single();
-           
-           if (!profile?.ayrshare_profile_key) {
-             throw new Error(`User ${campaign.user_id} has not connected their social accounts (Missing Ayrshare Profile Key).`);
-           }
-
+           // SURGICAL FIX: Removed the ayrshare_profile_key check. 
+           // We are now deploying directly to the GetNice Records primary social accounts.
            if (!campaign.audio_url || !campaign.cover_url) {
              throw new Error("Missing audio or cover asset for video generation.");
            }
@@ -143,17 +138,20 @@ export async function POST(req: Request) {
            if (renderStatus === 'failed' || !finalVideoUrl) throw new Error("Creatomate Video Render Failed.");
            console.log(`[CRON] Video Rendered Successfully: ${finalVideoUrl}`);
 
+           // SURGICAL FIX: Append the artist's stage name so they get credit on the Label's timeline
+           const labelCaption = `${taskData.generated_copy}\n\nArtist: ${campaign.stage_name || 'GetNice Node'}\nLabel: GetNice Records`;
+
            // STEP 2: POST TO TIKTOK/INSTAGRAM (Ayrshare)
            console.log(`[CRON] Pushing generated MP4 to Ayrshare Social APIs...`);
            const postRes = await fetch('https://app.ayrshare.com/api/post', {
              method: 'POST',
              headers: {
                'Authorization': `Bearer ${process.env.AYRSHARE_API_KEY}`,
-               'Profile-Key': profile.ayrshare_profile_key,
+               // Removed the 'Profile-Key' header. This forces Ayrshare to use your Premium Label Account.
                'Content-Type': 'application/json'
              },
              body: JSON.stringify({
-               post: taskData.generated_copy, // The exact caption & hashtags written by LLaMA 3.3
+               post: labelCaption, 
                platforms: ["tiktok", "instagram"],
                mediaUrls: [finalVideoUrl]
              })
