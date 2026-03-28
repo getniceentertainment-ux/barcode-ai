@@ -8,6 +8,7 @@ import {
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { AccessTier, UserSession } from "../../lib/types";
 import { supabase } from "../../lib/supabase";
+import Link from "next/link"; // Required for the new Footer Links
 
 export default function EntryGateway() {
   const { grantAccess, addToast } = useMatrixStore();
@@ -229,7 +230,7 @@ export default function EntryGateway() {
           </h1>
           
           <p className="max-w-3xl mx-auto text-center text-balance font-sans text-lg text-[#888] mb-10 leading-relaxed">
-            The First Identity-Aware AI Studio Built For Hip-Hop. Drop A Beat, Let Our Neural Engine Map Your Perfect Flow, Record Your Raw Takes, And Instantly Master Them To Industry Standards. We Bridge The Gap From A Concept In Your Head To A Commercial, Global Release. Your Sound, Amplified By The Machine.
+            The First Identity-Aware AI Studio Built For Hip-Hop. Drop A Beat, Let Our Neural Engine Map Your perfect flow, Record Your Raw Takes, And Instantly Master Them To Industry Standards. We Bridge The Gap From A Concept In Your Head To A Commercial, Global Release. Your Sound, Amplified By The Machine.
           </p>
           
           <button onClick={() => setAuthStep("auth")} className="gn-btn-outline bg-[#948e8e] text-sm px-10 py-5 group shadow-neon-red uppercase tracking-widest">
@@ -272,18 +273,28 @@ export default function EntryGateway() {
           </div>
         </section>
 
-        {/* Footer */}
+        {/* Footer WITH THE NEW TERMS LINKS */}
         <footer className="border-t border-[#333] py-12 bg-[#0a0a0a] text-center relative z-10">
           <div className="max-w-7xl mx-auto px-6">
             <div className="flex justify-center mb-6">
               <Zap className="text-[#333]" size={24} />
             </div>
             <p className="font-mono text-[10px] text-[#555] uppercase tracking-[0.2em] mb-2">
-              PROPERTY OF GETNICE™ ENTERTAINMENT &amp; RECORDS ©2026
+              PROPERTY OF GETNICE™ ENTERTAINMENT & RECORDS ©2026
             </p>
-            <p className="font-mono text-[10px] text-[#555] uppercase tracking-[0.2em]">
+            <p className="font-mono text-[10px] text-[#555] uppercase tracking-[0.2em] mb-6">
               ALL RIGHTS RESERVED BY: TALON ANDREW LLOYD
             </p>
+            
+            {/* NEW TERMS AND SUPPORT LINKS */}
+            <div className="flex justify-center gap-6">
+              <Link href="/terms" className="font-mono text-[10px] text-[#888] hover:text-[#E60000] uppercase tracking-widest transition-colors">
+                Terms & Conditions
+              </Link>
+              <a href="mailto:support@bar-code.ai" className="font-mono text-[10px] text-[#888] hover:text-[#E60000] uppercase tracking-widest transition-colors">
+                Support
+              </a>
+            </div>
           </div>
         </footer>
       </div>

@@ -6,7 +6,7 @@ import {
   UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, 
   Send, Wallet, Radio, Users, ShieldAlert, LogOut,
   Play, Pause, SkipBack, SkipForward, Volume2, Lock, User, Zap, Loader2,
-  ShieldCheck, Terminal, FileAudio, Trash2, Menu, X, RotateCcw, Info
+  ShieldCheck, Terminal, FileAudio, Trash2, Menu, X, RotateCcw, Info, HelpCircle
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
@@ -14,6 +14,7 @@ import { supabase } from "../lib/supabase";
 // The Gateway & Global UI
 import EntryGateway from "../components/matrix/EntryGateway";
 import GlobalSyncIndicator from "../components/matrix/GlobalSyncIndicator";
+import HelpOverlay from "../components/matrix/HelpOverlay";
 
 // The 11 Matrix Rooms
 import Room01_Lab from "../components/matrix/Room01_Lab";
@@ -45,10 +46,11 @@ export default function MatrixController() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   
-  // --- MOBILE RESPONSIVE STATE ---
+  // --- UI STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [showLandscapeTip, setShowLandscapeTip] = useState(false); // Educational UX state
-  const formatTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref to track the 5-sec delay
+  const [showLandscapeTip, setShowLandscapeTip] = useState(false);
+  const [showHelp, setShowHelp] = useState(false); // NEW: Help Overlay State
+  const formatTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- GOOGLE CHROME AUTO-SCALER (5-SECOND DELAY FIX) ---
   useEffect(() => {
@@ -64,13 +66,11 @@ export default function MatrixController() {
       const isMobileHeight = window.innerHeight < 500;
       
       if (isLandscape && isMobileHeight) {
-        // If they haven't seen the tip this session, trigger the 5-second wait
         if (!sessionStorage.getItem('landscape_tip_shown')) {
           setShowLandscapeTip(true);
           
           if (formatTimeoutRef.current) clearTimeout(formatTimeoutRef.current);
           
-          // Wait exactly 5 seconds BEFORE scaling the viewport
           formatTimeoutRef.current = setTimeout(() => {
             meta!.setAttribute('content', 'width=1000, initial-scale=0.1, maximum-scale=5.0, user-scalable=yes');
             setShowLandscapeTip(false);
@@ -78,11 +78,9 @@ export default function MatrixController() {
           }, 5000);
           
         } else {
-          // If they've already waited once this session, format instantly
           meta.setAttribute('content', 'width=1000, initial-scale=0.1, maximum-scale=5.0, user-scalable=yes');
         }
       } else {
-        // Portrait mode / Desktop - Reset to default scale instantly
         if (formatTimeoutRef.current) clearTimeout(formatTimeoutRef.current);
         setShowLandscapeTip(false);
         meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes');
@@ -90,7 +88,6 @@ export default function MatrixController() {
     };
 
     handleViewport();
-    // Slight delay on orientation change allows the device gyroscope to catch up
     window.addEventListener('orientationchange', () => setTimeout(handleViewport, 150));
     
     return () => {
@@ -114,7 +111,6 @@ export default function MatrixController() {
     return () => subscription.unsubscribe();
   }, [userSession?.id, clearMatrix]);
 
-  // Auto-close sidebar on mobile devices upon load
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024) {
       setSidebarOpen(false);
@@ -136,7 +132,6 @@ export default function MatrixController() {
     }));
   }, []);
 
-  // --- CUSTOM LOGIC: TOKEN AS A KEY ---
   const isRoomLockedForTier = (roomId: string) => {
     if (userSession?.id && userSession.id === CREATOR_ID) return false;
 
@@ -164,7 +159,6 @@ export default function MatrixController() {
     setActiveRoom(roomId);
   };
 
-  // --- ANTI-BLEED GUARD 2: SCOPED REALTIME CHANNEL ---
   useEffect(() => {
     if (!userSession?.id) return;
 
@@ -178,7 +172,6 @@ export default function MatrixController() {
         table: 'profiles',
         filter: `id=eq.${userSession.id}` 
       }, (payload) => {
-        // FIX: Intercept the raw database number and force "UNLIMITED" for Moguls
         const newCredits = payload.new.tier === 'The Mogul' ? 'UNLIMITED' : payload.new.credits;
         const hasEngToken = payload.new.has_engineering_token;
         const hasMastToken = payload.new.has_mastering_token;
@@ -455,6 +448,11 @@ export default function MatrixController() {
                 <Terminal size={16} /> Admin Node
               </Link>
             )}
+
+            {/* NEW: COMM-LINK / HELP BUTTON */}
+            <button onClick={() => setShowHelp(true)} className="w-full flex items-center gap-3 px-5 py-4 text-left text-[#555] hover:text-white hover:bg-[#0a0a0a] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold border-t border-[#111] mt-4">
+              <HelpCircle size={16} /> Comm-Link / Help
+            </button>
           </div>
         </nav>
       </aside>
@@ -500,6 +498,9 @@ export default function MatrixController() {
           <div className="absolute inset-0 pointer-events-none opacity-5" style={{ backgroundImage: 'linear-gradient(#222 1px, transparent 1px), linear-gradient(90deg, #222 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
           {renderActiveRoom()}
         </div>
+
+        {/* NEW: HELP OVERLAY */}
+        {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
       </main>
 
       <GlobalSyncIndicator />
