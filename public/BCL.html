@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bar-Code.ai | Official Logos</title>
+    
+    <!-- Import the exact fonts used in the Matrix -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #050505;
+            --matrix-red: #E60000;
+            --text-main: #FFFFFF;
+            --text-dim: #888888;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Space Mono', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 4rem 2rem;
+            margin: 0;
+            background-image: 
+                linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        .section-title {
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.3em;
+            font-size: 0.75rem;
+            margin-bottom: 2rem;
+            margin-top: 4rem;
+            border-bottom: 1px solid #222;
+            padding-bottom: 0.5rem;
+            width: 100%;
+            max-w: 800px;
+            text-align: center;
+        }
+
+        /* =========================================
+           VARIATION 1: PURE CSS TYPOGRAPHIC LOGO
+           ========================================= */
+        .logo-css-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.5rem;
+            text-decoration: none;
+        }
+
+        .bc-badge {
+            width: 80px;
+            height: 80px;
+            border: 4px solid var(--matrix-red);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 30px rgba(230, 0, 0, 0.3), inset 0 0 15px rgba(230, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .bc-badge-text {
+            font-family: 'Oswald', sans-serif;
+            font-size: 42px;
+            font-weight: 700;
+            color: var(--matrix-red);
+            line-height: 1;
+            margin-top: -4px; /* Optical alignment for Oswald font */
+        }
+
+        .logo-css-text {
+            font-family: 'Oswald', sans-serif;
+            font-size: 48px;
+            font-weight: 700;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+        }
+
+        .logo-css-accent {
+            color: var(--matrix-red);
+            text-shadow: 0 0 15px rgba(230, 0, 0, 0.5);
+        }
+
+        .logo-css-wrapper:hover .bc-badge {
+            box-shadow: 0 0 50px rgba(230, 0, 0, 0.6), inset 0 0 25px rgba(230, 0, 0, 0.3);
+            transform: scale(1.05);
+        }
+
+        /* HORIZONTAL LAYOUT */
+        .logo-css-horizontal {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .logo-css-horizontal .bc-badge {
+            width: 60px;
+            height: 60px;
+            border-width: 3px;
+        }
+        
+        .logo-css-horizontal .bc-badge-text {
+            font-size: 32px;
+        }
+
+        /* =========================================
+           VARIATION 2: IMAGE BASED LOGO
+           ========================================= */
+        .logo-img-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-img {
+            max-width: 250px;
+            height: auto;
+            /* If the JPG has a white background, this blend mode makes it transparent against black */
+            mix-blend-mode: screen; 
+            opacity: 0.9;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="section-title">01 // Primary Stacked Logo (Pure CSS)</div>
+    
+    <!-- Stacked CSS Logo Snippet -->
+    <a href="https://bar-code.ai" class="logo-css-wrapper">
+        <div class="bc-badge">
+            <span class="bc-badge-text">BC</span>
+        </div>
+        <div class="logo-css-text">
+            BAR-CODE<span class="logo-css-accent">.AI</span>
+        </div>
+    </a>
+
+    <div class="section-title">02 // Horizontal Navbar Logo (Pure CSS)</div>
+    
+    <!-- Horizontal CSS Logo Snippet -->
+    <div class="logo-css-horizontal">
+        <div class="bc-badge">
+            <span class="bc-badge-text">BC</span>
+        </div>
+        <div class="logo-css-text" style="font-size: 36px;">
+            BAR-CODE<span class="logo-css-accent">.AI</span>
+        </div>
+    </div>
+
+    <div class="section-title">03 // Asset Embed (Using Uploaded JPG)</div>
+
+    <!-- Image Embed Snippet -->
+    <div class="logo-img-wrapper">
+        <!-- Make sure Logo_Bar-Code.jpg is in the same folder as this HTML file, or update the src path -->
+        <img src="Logo_Bar-Code.jpg" alt="Bar-Code.ai Official Logo" class="logo-img" />
+        <span style="font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.2em;">GetNice Records // System Asset</span>
+    </div>
+
+</body>
+</html>
