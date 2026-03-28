@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
-import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
+import Stripe from 'stripe';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16',
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2023-10-16' });
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,58 +11,65 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
   try {
-    const { userId, amount } = await req.json();
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { data: profile, error: profileErr } = await supabaseAdmin
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+    if (!user) return NextResponse.json({ error: "Invalid identity token" }, { status: 401 });
+
+    // 1. Fetch user profile to check for existing Stripe Account and Wallet Balance
+    const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('wallet_balance, stripe_account_id')
-      .eq('id', userId)
+      .select('stripe_account_id, wallet_balance, email')
+      .eq('id', user.id)
       .single();
 
-    if (profileErr || !profile) return NextResponse.json({ error: "Profile not found." }, { status: 404 });
-    if (!profile.stripe_account_id) return NextResponse.json({ error: "No bank account linked." }, { status: 400 });
+    if (!profile) throw new Error("Node profile not found.");
 
-    // 1. SURGICAL FIX: Ensure we are using absolute numbers and rounding to avoid float errors
-    const requestAmount = Math.abs(parseFloat(amount));
-    
-    if (requestAmount <= 0 || requestAmount > profile.wallet_balance) {
-      return NextResponse.json({ error: "Invalid withdrawal amount." }, { status: 400 });
-    }
+    let stripeAccountId = profile.stripe_account_id;
 
-    // 2. STRIPE TRANSFER EXECUTION
-    // Wrap in a sub-try/catch to capture specific Stripe rejection reasons
-    try {
-      const transfer = await stripe.transfers.create({
-        amount: Math.round(requestAmount * 100), // Convert to Cents
-        currency: 'usd',
-        destination: profile.stripe_account_id,
-        description: `GetNice Payout: ${userId}`,
+    // 2. If they don't have a Stripe Connect account, create one
+    if (!stripeAccountId) {
+      const account = await stripe.accounts.create({
+        type: 'express',
+        email: profile.email || user.email,
+        capabilities: {
+          transfers: { requested: true },
+        },
+        business_type: 'individual',
       });
 
-      // 3. DATABASE SYNC (Only happens if Stripe succeeds)
-      const newBalance = profile.wallet_balance - requestAmount;
-      
+      stripeAccountId = account.id;
+
+      // Save the Stripe ID to their Supabase profile
       await supabaseAdmin
         .from('profiles')
-        .update({ wallet_balance: newBalance })
-        .eq('id', userId);
+        .update({ stripe_account_id: stripeAccountId })
+        .eq('id', user.id);
+    }
 
-      await supabaseAdmin.from('transactions').insert({
-        user_id: userId,
-        amount: -requestAmount,
-        type: 'WITHDRAWAL',
-        description: `Withdrawal to Bank (Stripe ID: ${transfer.id})`
-      });
-
-      return NextResponse.json({ success: true, newBalance });
-
-    } catch (stripeError: any) {
-      console.error("STRIPE REJECTION:", stripeError.message);
-      return NextResponse.json({ error: `Stripe Rejected: ${stripeError.message}` }, { status: 400 });
+    // 3. Generate a highly secure, one-time-use link to their Stripe Dashboard
+    const origin = req.headers.get('origin') || 'https://www.bar-code.ai';
+    
+    // If we just created the account, they need the onboarding link. 
+    // If it exists, we generate a login link to their dashboard.
+    try {
+        const loginLink = await stripe.accounts.createLoginLink(stripeAccountId);
+        return NextResponse.json({ url: loginLink.url });
+    } catch (e: any) {
+        // If createLoginLink fails, it usually means they haven't finished onboarding yet.
+        const accountLink = await stripe.accountLinks.create({
+            account: stripeAccountId,
+            refresh_url: `${origin}/studio`,
+            return_url: `${origin}/studio`,
+            type: 'account_onboarding',
+        });
+        return NextResponse.json({ url: accountLink.url });
     }
 
   } catch (error: any) {
-    console.error("WITHDRAWAL ROUTE CRASH:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    console.error("Stripe Withdraw Error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
