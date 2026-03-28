@@ -20,7 +20,7 @@ interface RosterNode {
 export default function Room10_Social() {
   const { userSession, addToast } = useMatrixStore();
   
-  const [activeTab, setActiveTab] = useState<"brokerage" | "chat">("brokerage");
+  const [activeTab, setActiveTab] = useState<"Promoter" | "chat">("Promotor");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortMode, setSortMode] = useState<"score" | "fans">("score");
   const [roster, setRoster] = useState<RosterNode[]>([]);
@@ -177,7 +177,7 @@ export default function Room10_Social() {
       <div className="w-full md:w-1/2 lg:w-5/12 border-r border-[#222] flex flex-col relative h-full shrink-0">
         <div className="p-6 border-b border-[#222] bg-black z-10">
           <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-[#E60000] flex items-center gap-3 mb-4">
-            <Users size={28} /> Network Syndicate
+            <Users size={28} /> The Underground
           </h2>
           <div className="relative mb-4">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
@@ -193,13 +193,13 @@ export default function Room10_Social() {
               onClick={() => setSortMode("score")} 
               className={`flex-1 py-2 text-[9px] font-mono uppercase tracking-widest font-bold border transition-colors flex items-center justify-center gap-2 ${sortMode === "score" ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#333] text-[#888] hover:text-white'}`}
             >
-              <TrendingUp size={12} /> A&R Resonance
+              <TrendingUp size={12} /> Local Rapport
             </button>
             <button 
               onClick={() => setSortMode("fans")} 
               className={`flex-1 py-2 text-[9px] font-mono uppercase tracking-widest font-bold border transition-colors flex items-center justify-center gap-2 ${sortMode === "fans" ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#333] text-[#888] hover:text-white'}`}
             >
-              <Heart size={12} /> Commercial Cult
+              <Heart size={12} /> Global Rapport
             </button>
           </div>
         </div>
@@ -212,7 +212,7 @@ export default function Room10_Social() {
           ) : filteredRoster.map((node, index) => (
             <div 
               key={node.id} 
-              onClick={() => { setSelectedNode(node); setEscrowStatus("idle"); setActiveTab("brokerage"); }}
+              onClick={() => { setSelectedNode(node); setEscrowStatus("idle"); setActiveTab("Bookings"); }}
               className={`bg-black border p-4 cursor-pointer transition-all group hover:border-[#E60000]/50 ${selectedNode?.id === node.id ? 'border-[#E60000] bg-[#0a0a0a]' : 'border-[#111]'}`}
             >
               <div className="flex justify-between items-start mb-2">
