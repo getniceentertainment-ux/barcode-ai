@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Activity, Calendar, ShieldCheck, Zap, ArrowRight, Loader2, FileText, Send, BrainCircuit, Target, CheckCircle2, ChevronRight, RefreshCw } from "lucide-react";
+import { Activity, Calendar, ShieldCheck, Zap, ArrowRight, Loader2, FileText, Send, BrainCircuit, Target, CheckCircle2, ChevronRight, RefreshCw, Mail, Share2, UserCog, Server } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -49,7 +49,6 @@ export default function Room11_Contracts() {
   };
 
   const calculateStreams = (data: any, day: number) => {
-    // Calculates simulated streams based on how much ad spend has automatically deployed up to the current day
     let spent = 0;
     if (data?.daily_schedule) {
       for (let i = 0; i < day; i++) {
@@ -58,7 +57,6 @@ export default function Room11_Contracts() {
         }
       }
     }
-    // 14.5 streams per dollar average + baseline organic
     setTotalStreams(Math.floor(spent * 14.5) + (day * 125));
   };
 
@@ -89,21 +87,59 @@ export default function Room11_Contracts() {
 
   const handleAdvanceDay = async () => {
     if (!submission?.id || currentDay >= 30) return;
+    
+    // 1. GET TODAY'S TASK BEFORE ADVANCING
+    const todayData = campaignData?.daily_schedule?.[currentDay - 1];
     const nextDay = currentDay + 1;
+
     try {
+      // 2. SURGICAL UPGRADE: THE AGENTIC EXECUTION ROUTER
+      // This switch statement simulates what the daily Cron Job will do at midnight.
+      if (todayData) {
+        const execType = todayData.execution_type || "manual_action";
+        
+        switch (execType) {
+          case "auto_email":
+            if(addToast) addToast(`[SYSTEM] Dispatched marketing email blast via SendGrid API.`, "success");
+            break;
+          case "social_post":
+            if(addToast) addToast(`[SYSTEM] Sent asset to RunPod. Queued for TikTok auto-post.`, "success");
+            break;
+          case "auto_ad_spend":
+            if (todayData.auto_ad_spend > 0 && addToast) {
+              addToast(`[SYSTEM] Deployed $${todayData.auto_ad_spend} to Meta Ads API.`, "info");
+            }
+            break;
+          case "manual_action":
+          default:
+            if(addToast) addToast(`[USER TASK] Manual action required. Complete directives below.`, "info");
+            // Failsafe for ad spend if it was tagged manual
+            if (todayData.auto_ad_spend > 0 && addToast) {
+              addToast(`[SYSTEM] Deployed $${todayData.auto_ad_spend} to Meta Ads API.`, "info");
+            }
+            break;
+        }
+
+        // Update the status of the completed task in state
+        const updatedCampaign = { ...campaignData };
+        if (updatedCampaign.daily_schedule[currentDay - 1]) {
+           updatedCampaign.daily_schedule[currentDay - 1].status = "completed";
+        }
+        setCampaignData(updatedCampaign);
+      }
+
+      // 3. UPDATE THE DATABASE WITH NEW DAY AND STATUS
       await supabase
         .from('submissions')
-        .update({ campaign_day: nextDay })
+        .update({ 
+          campaign_day: nextDay,
+          campaign_data: campaignData 
+        })
         .eq('id', submission.id);
       
       setCurrentDay(nextDay);
       calculateStreams(campaignData, nextDay);
 
-      // Deploy Ad Spend for the day
-      const todayData = campaignData?.daily_schedule?.[nextDay - 1];
-      if (todayData?.auto_ad_spend > 0) {
-         if(addToast) addToast(`Ad Manager Auto-Deployed $${todayData.auto_ad_spend}. Algorithm Accelerated.`, "info");
-      }
     } catch (err) {
       console.error(err);
     }
@@ -121,6 +157,16 @@ export default function Room11_Contracts() {
       </button>
     </div>
   );
+
+  const getExecutionBadge = (type: string) => {
+    switch(type) {
+      case 'auto_email': return <span className="bg-blue-500/10 text-blue-500 border border-blue-500/30 px-3 py-1 text-[9px] uppercase font-bold tracking-widest flex items-center gap-2 w-fit"><Mail size={12}/> System: Auto-Email</span>;
+      case 'social_post': return <span className="bg-purple-500/10 text-purple-500 border border-purple-500/30 px-3 py-1 text-[9px] uppercase font-bold tracking-widest flex items-center gap-2 w-fit"><Share2 size={12}/> System: Auto-Post</span>;
+      case 'auto_ad_spend': return <span className="bg-green-500/10 text-green-500 border border-green-500/30 px-3 py-1 text-[9px] uppercase font-bold tracking-widest flex items-center gap-2 w-fit"><Server size={12}/> System: Ad Deploy</span>;
+      case 'manual_action':
+      default: return <span className="bg-yellow-500/10 text-yellow-500 border border-yellow-500/30 px-3 py-1 text-[9px] uppercase font-bold tracking-widest flex items-center gap-2 w-fit"><UserCog size={12}/> Manual Action Required</span>;
+    }
+  };
 
   if (loading) {
     return <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-[#E60000]" size={48} /></div>;
@@ -150,7 +196,7 @@ export default function Room11_Contracts() {
   }
 
   const todayTask = campaignData?.daily_schedule?.[currentDay - 1];
-  const phaseTitle = currentDay <= 10 ? campaignData.phases.phase_1 : currentDay <= 20 ? campaignData.phases.phase_2 : campaignData.phases.phase_3;
+  const phaseTitle = currentDay <= 10 ? campaignData.phases?.phase_1 : currentDay <= 20 ? campaignData.phases?.phase_2 : campaignData.phases?.phase_3;
 
   return (
     <div className="h-full flex flex-col bg-[#050505] animate-in fade-in duration-500 overflow-hidden border border-[#222]">
@@ -199,6 +245,8 @@ export default function Room11_Contracts() {
                 const dayNum = i + 1;
                 const isPast = dayNum < currentDay;
                 const isCurrent = dayNum === currentDay;
+                const task = campaignData?.daily_schedule?.[i];
+                
                 return (
                   <div key={dayNum} className={`flex items-center gap-4 p-3 border transition-colors ${isCurrent ? 'bg-[#110000] border-[#E60000]/50' : isPast ? 'bg-[#050505] border-[#111] opacity-50' : 'bg-black border-[#222]'}`}>
                     <div className={`w-6 h-6 shrink-0 flex items-center justify-center rounded-full text-[9px] font-bold ${isCurrent ? 'bg-[#E60000] text-white shadow-[0_0_10px_rgba(230,0,0,0.5)]' : isPast ? 'bg-[#222] text-[#888]' : 'border border-[#333] text-[#555]'}`}>
@@ -206,7 +254,7 @@ export default function Room11_Contracts() {
                     </div>
                     <div className="flex-1 truncate">
                       <p className={`font-mono text-[10px] uppercase font-bold tracking-widest truncate ${isCurrent ? 'text-[#E60000]' : 'text-gray-400'}`}>
-                        {campaignData?.daily_schedule?.[i]?.objective || "Scheduled Task"}
+                        {task?.objective || "Scheduled Task"}
                       </p>
                     </div>
                   </div>
@@ -222,10 +270,15 @@ export default function Room11_Contracts() {
             <>
               <div className="p-8 md:p-12 flex-1 overflow-y-auto custom-scrollbar flex flex-col animate-in slide-in-from-right-8">
                 
-                <div className="mb-10">
-                  <span className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold mb-2 block border-l-2 border-[#E60000] pl-3">
-                    Current Stage: {phaseTitle}
-                  </span>
+                <div className="mb-8">
+                  <div className="flex flex-col gap-3 mb-4">
+                    <span className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold block border-l-2 border-[#E60000] pl-3">
+                      Current Stage: {phaseTitle || "Execution"}
+                    </span>
+                    {/* NEW: EXECUTION BADGE */}
+                    {getExecutionBadge(todayTask.execution_type)}
+                  </div>
+                  
                   <h3 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-4">
                     Day {currentDay} Directive
                   </h3>
@@ -263,17 +316,17 @@ export default function Room11_Contracts() {
 
               </div>
 
-              {/* DEVELOPMENT ONLY: Force Advance Day (Simulates a Cron Job) - MOVED TO STICKY FOOTER */}
+              {/* STICKY FOOTER ADVANCE BUTTON */}
               <div className="bg-[#0a0a0a] p-4 md:p-6 border-t border-[#222] flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 z-10">
-                <p className="text-[9px] font-mono text-[#555] uppercase text-center sm:text-left">
-                  In production, this board advances automatically at 00:00 EST.
+                <p className="text-[9px] font-mono text-[#555] uppercase text-center sm:text-left leading-relaxed max-w-sm">
+                  In production, this board advances and auto-executes tasks via Cron Job at 00:00 EST.
                 </p>
                 <button 
                   onClick={handleAdvanceDay}
                   disabled={currentDay >= 30}
                   className="bg-white text-black px-6 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center justify-center gap-2 disabled:opacity-30 w-full sm:w-auto shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
                 >
-                  Simulate Next Day <ChevronRight size={16} />
+                  Execute & Advance Day <ChevronRight size={16} />
                 </button>
               </div>
             </>

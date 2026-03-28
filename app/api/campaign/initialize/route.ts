@@ -40,6 +40,8 @@ export async function POST(req: Request) {
         throw new Error("Missing GROQ_API_KEY in Vercel Environment Variables.");
     }
 
+    // --- AGENTIC LABEL UPGRADE ---
+    // Added execution_type and status so the backend knows HOW to execute the task automatically
     const systemPrompt = `You are 'The Exec', the AI Operations Director for GetNice Records.
 Your objective is to ingest a song and automatically generate a strict 30-day Go-To-Market (GTM) rollout based on the "GetNice 30-Day Maximum Success" framework.
 
@@ -62,7 +64,9 @@ You MUST output ONLY a raw, valid JSON object. No markdown formatting, no conver
       "objective": "Short description of today's goal",
       "action_item": "Specific task (e.g., Post snippet A, Configure Hypeddit)",
       "generated_copy": "Exact text for the TikTok caption, Email, or SMS to be used today",
-      "auto_ad_spend": 0
+      "auto_ad_spend": 0,
+      "execution_type": "auto_email" | "auto_ad_spend" | "social_post" | "manual_action",
+      "status": "pending"
     }
   ]
 }`;
