@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Activity, Calendar, ShieldCheck, Zap, ArrowRight, Loader2, FileText, Send, BrainCircuit, Target, CheckCircle2, ChevronRight, RefreshCw, Mail, Share2, UserCog, Server } from "lucide-react";
+import { Activity, Calendar, ShieldCheck, Zap, ArrowRight, Loader2, FileText, Send, BrainCircuit, Target, CheckCircle2, ChevronRight, RefreshCw, Mail, Share2, UserCog, Server, Terminal } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
@@ -15,6 +15,10 @@ export default function Room11_Contracts() {
   const [currentDay, setCurrentDay] = useState<number>(0);
   const [totalStreams, setTotalStreams] = useState<number>(0);
 
+  // --- NEW: TERMINAL EXECUTION STATE ---
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [execLogs, setExecLogs] = useState<string[]>([]);
+
   useEffect(() => {
     fetchActiveCampaign();
   }, [userSession]);
@@ -23,7 +27,6 @@ export default function Room11_Contracts() {
     if (!userSession?.id) return;
     setLoading(true);
     try {
-      // Find the user's signed artifact
       const { data: subData } = await supabase
         .from('submissions')
         .select('*')
@@ -85,63 +88,128 @@ export default function Room11_Contracts() {
     }
   };
 
+  const handleRegenerate = async () => {
+    if (!submission?.id) return;
+    if (!confirm("This will wipe your current timeline and regenerate a fresh framework. Proceed?")) return;
+    
+    setInitializing(true);
+    try {
+      await supabase.from('submissions').update({ campaign_data: {}, campaign_day: 0 }).eq('id', submission.id);
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/campaign/initialize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ trackId: submission.id })
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Initialization failed");
+
+      setCampaignData(json.data);
+      setCurrentDay(1);
+      calculateStreams(json.data, 1);
+      if(addToast) addToast("Campaign Regenerated with newest Neural framework.", "success");
+    } catch(err: any) {
+      if(addToast) addToast(err.message, "error");
+    } finally {
+      setInitializing(false);
+    }
+  };
+
+  // --- SURGICAL FIX: THE TERMINAL EXECUTION ROUTER ---
   const handleAdvanceDay = async () => {
     if (!submission?.id || currentDay >= 30) return;
     
-    // 1. GET TODAY'S TASK BEFORE ADVANCING
     const todayData = campaignData?.daily_schedule?.[currentDay - 1];
     const nextDay = currentDay + 1;
 
-    try {
-      // 2. SURGICAL UPGRADE: THE AGENTIC EXECUTION ROUTER
-      // This switch statement simulates what the daily Cron Job will do at midnight.
-      if (todayData) {
-        const execType = todayData.execution_type || "manual_action";
-        
-        switch (execType) {
-          case "auto_email":
-            if(addToast) addToast(`[SYSTEM] Dispatched marketing email blast via SendGrid API.`, "success");
-            break;
-          case "social_post":
-            if(addToast) addToast(`[SYSTEM] Sent asset to RunPod. Queued for TikTok auto-post.`, "success");
-            break;
-          case "auto_ad_spend":
-            if (todayData.auto_ad_spend > 0 && addToast) {
-              addToast(`[SYSTEM] Deployed $${todayData.auto_ad_spend} to Meta Ads API.`, "info");
-            }
-            break;
-          case "manual_action":
-          default:
-            if(addToast) addToast(`[USER TASK] Manual action required. Complete directives below.`, "info");
-            // Failsafe for ad spend if it was tagged manual
-            if (todayData.auto_ad_spend > 0 && addToast) {
-              addToast(`[SYSTEM] Deployed $${todayData.auto_ad_spend} to Meta Ads API.`, "info");
-            }
-            break;
-        }
+    if (!todayData) return;
 
-        // Update the status of the completed task in state
-        const updatedCampaign = { ...campaignData };
+    // 1. Lock UI and open Terminal
+    setIsExecuting(true);
+    setExecLogs(["[SYSTEM] Initiating Agentic Execution Sequence..."]);
+    
+    const addLog = (msg: string) => setExecLogs(prev => [...prev, msg]);
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+    try {
+      const execType = todayData.execution_type || "manual_action";
+      
+      await sleep(800);
+      addLog(`[NODE] Reading Day ${currentDay} Directives...`);
+      await sleep(1000);
+
+      // 2. Simulate the API Integrations based on AI Tag
+      if (execType === "auto_email") {
+        addLog("[API] Establishing secure connection to SendGrid...");
+        await sleep(1200);
+        addLog("[SYSTEM] Compiling subscriber addresses from Bio-link...");
+        await sleep(1000);
+        addLog("[API] Dispatched HTML payload to mailing list.");
+      } else if (execType === "social_post") {
+        addLog("[API] Waking RunPod FFmpeg GPU Cluster...");
+        await sleep(1500);
+        addLog("[SYSTEM] Rendering MP4 with Audio-Reactive Visualizer...");
+        await sleep(2000);
+        addLog("[API] Pushing asset via TikTok/Reels OAuth endpoints...");
+        await sleep(1000);
+        addLog("[SYSTEM] Media successfully broadcasted.");
+      } else if (execType === "auto_ad_spend") {
+        addLog("[API] Authenticating with Meta Marketing Graph API...");
+        await sleep(1200);
+        addLog(`[SYSTEM] Allocating $${(todayData.auto_ad_spend || 0).toFixed(2)} from Vault...`);
+        await sleep(1000);
+        addLog("[API] Ad campaign pushed and active.");
+      } else {
+        addLog("[SYSTEM] Manual Action Flag Detected.");
+        await sleep(1000);
+        addLog("[USER] Verifying external task completion...");
+        await sleep(1200);
+        if (todayData.auto_ad_spend > 0) {
+          addLog(`[API] Processing bundled Ad Spend: $${todayData.auto_ad_spend.toFixed(2)}...`);
+          await sleep(1000);
+        }
+        addLog("[SYSTEM] Manual directive cleared.");
+      }
+
+      await sleep(1000);
+      addLog("[SYSTEM] Synchronizing ledger...");
+      await sleep(800);
+
+      // 3. Update the database
+      const updatedCampaign = JSON.parse(JSON.stringify(campaignData));
+      if (updatedCampaign?.daily_schedule && Array.isArray(updatedCampaign.daily_schedule)) {
         if (updatedCampaign.daily_schedule[currentDay - 1]) {
            updatedCampaign.daily_schedule[currentDay - 1].status = "completed";
         }
-        setCampaignData(updatedCampaign);
       }
 
-      // 3. UPDATE THE DATABASE WITH NEW DAY AND STATUS
-      await supabase
+      const { error: updateErr } = await supabase
         .from('submissions')
         .update({ 
           campaign_day: nextDay,
-          campaign_data: campaignData 
+          campaign_data: updatedCampaign 
         })
         .eq('id', submission.id);
-      
-      setCurrentDay(nextDay);
-      calculateStreams(campaignData, nextDay);
 
-    } catch (err) {
-      console.error(err);
+      if (updateErr) throw new Error(updateErr.message);
+
+      addLog("[SYSTEM] Operations Concluded. Advancing Timeline.");
+      await sleep(1500); // Pause so user can read the final log
+      
+      setCampaignData(updatedCampaign);
+      setCurrentDay(nextDay);
+      calculateStreams(updatedCampaign, nextDay);
+
+    } catch (err: any) {
+      console.error("Advance Day Error:", err);
+      addLog(`[FATAL] Execution Failed: ${err.message}`);
+      if (addToast) addToast(`System Failed to Advance: ${err.message}`, "error");
+      await sleep(3000);
+    } finally {
+      setIsExecuting(false);
+      setExecLogs([]);
     }
   };
 
@@ -199,21 +267,54 @@ export default function Room11_Contracts() {
   const phaseTitle = currentDay <= 10 ? campaignData.phases?.phase_1 : currentDay <= 20 ? campaignData.phases?.phase_2 : campaignData.phases?.phase_3;
 
   return (
-    <div className="h-full flex flex-col bg-[#050505] animate-in fade-in duration-500 overflow-hidden border border-[#222]">
+    <div className="h-full flex flex-col bg-[#050505] animate-in fade-in duration-500 overflow-hidden border border-[#222] relative">
       
+      {/* NEW: TERMINAL EXECUTION OVERLAY */}
+      {isExecuting && (
+        <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 animate-in fade-in">
+          <div className="max-w-2xl w-full bg-[#050505] border border-[#333] p-8 shadow-[0_0_50px_rgba(230,0,0,0.15)] font-mono rounded-sm">
+             <div className="flex items-center gap-3 mb-6 border-b border-[#222] pb-4">
+               <Terminal size={20} className="text-[#E60000]" />
+               <h3 className="text-white uppercase tracking-widest text-sm font-bold">Agentic Execution Terminal</h3>
+               <Loader2 size={14} className="text-[#E60000] animate-spin ml-auto" />
+             </div>
+             <div className="space-y-4 min-h-[200px] flex flex-col justify-end">
+               {execLogs.map((log, i) => (
+                 <p key={i} className="text-xs text-green-500 tracking-widest animate-in slide-in-from-bottom-2 fade-in">
+                   <span className="text-[#555] mr-2">{'>'}</span> {log}
+                 </p>
+               ))}
+               <p className="text-xs text-green-500 tracking-widest animate-pulse mt-2">
+                 <span className="text-[#555] mr-2">{'>'}</span> _
+               </p>
+             </div>
+          </div>
+        </div>
+      )}
+
       {/* HEADER: COMMAND CENTER */}
       <div className="p-8 border-b border-[#222] bg-black flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative">
         <div className="absolute top-0 right-0 p-4 opacity-5"><BrainCircuit size={100} className="text-[#E60000]" /></div>
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-2">
+        <div className="relative z-10 flex flex-col items-start gap-4">
+          <div className="flex items-center gap-3">
             <span className="bg-[#110000] border border-[#E60000]/50 text-[#E60000] px-3 py-1 text-[9px] uppercase font-bold tracking-widest flex items-center gap-2">
               <div className="w-1.5 h-1.5 bg-[#E60000] rounded-full animate-pulse"></div> Label Automation Active
             </span>
           </div>
-          <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white flex items-center gap-3">
-             <Target className="text-[#E60000]" size={28} /> The Exec // Campaign Hub
-          </h2>
-          <p className="font-mono text-[10px] text-[#555] uppercase tracking-[0.3em] mt-2">
+          <div className="flex items-center gap-4">
+            <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white flex items-center gap-3">
+               <Target className="text-[#E60000]" size={28} /> The Exec // Campaign Hub
+            </h2>
+            <button 
+              onClick={handleRegenerate} 
+              disabled={initializing || isExecuting}
+              className="text-[9px] bg-[#111] border border-[#333] text-[#888] px-3 py-1.5 hover:text-white hover:border-[#555] transition-all uppercase tracking-widest flex items-center gap-2"
+            >
+              {initializing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              Force Regenerate
+            </button>
+          </div>
+          <p className="font-mono text-[10px] text-[#555] uppercase tracking-[0.3em]">
             Artifact: {submission.title}
           </p>
         </div>
@@ -275,7 +376,6 @@ export default function Room11_Contracts() {
                     <span className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold block border-l-2 border-[#E60000] pl-3">
                       Current Stage: {phaseTitle || "Execution"}
                     </span>
-                    {/* NEW: EXECUTION BADGE */}
                     {getExecutionBadge(todayTask.execution_type)}
                   </div>
                   
@@ -323,7 +423,7 @@ export default function Room11_Contracts() {
                 </p>
                 <button 
                   onClick={handleAdvanceDay}
-                  disabled={currentDay >= 30}
+                  disabled={currentDay >= 30 || isExecuting}
                   className="bg-white text-black px-6 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center justify-center gap-2 disabled:opacity-30 w-full sm:w-auto shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
                 >
                   Execute & Advance Day <ChevronRight size={16} />
