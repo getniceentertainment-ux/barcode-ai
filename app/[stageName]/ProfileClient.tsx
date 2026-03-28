@@ -104,18 +104,23 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
     <div className="min-h-screen bg-[#050505] text-white font-mono selection:bg-[#E60000] pb-24">
       
       {/* --- AMBIENT BANNER --- */}
-      <div className="h-[40vh] md:h-[50vh] relative overflow-hidden border-b border-[#E60000]/20">
-        {/* Blurred ambient background image */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center opacity-30 grayscale blur-2xl scale-110"
-          style={{ backgroundImage: `url(${ambientBackground})` }}
-        />
-        {/* Digital Grid Texture */}
-        <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-        {/* Fade to black gradient */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/80 to-transparent z-10" />
+      {/* FIX: Removed overflow-hidden from the parent so elements can naturally overlap the edge */}
+      <div className="h-[40vh] md:h-[50vh] relative border-b border-[#E60000]/20">
+        
+        {/* FIX: Wrapped backgrounds in their own clipped container so blur doesn't spill */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+          {/* Blurred ambient background image */}
+          <div 
+            className="absolute inset-0 bg-cover bg-center opacity-30 grayscale blur-2xl scale-110"
+            style={{ backgroundImage: `url(${ambientBackground})` }}
+          />
+          {/* Digital Grid Texture */}
+          <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+          {/* Fade to black gradient */}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/80 to-transparent" />
+        </div>
 
-        {/* AVATAR & NAME OVERLAY */}
+        {/* AVATAR & NAME OVERLAY (Allowed to break outside the banner) */}
         <div className="absolute bottom-0 left-0 w-full px-6 md:px-12 z-20 translate-y-1/3 flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 text-center md:text-left">
           
           {/* Circular Avatar Module */}
@@ -169,8 +174,8 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
       </div>
 
       {/* --- CONTENT GRID --- */}
-      {/* Pushing the top padding down slightly to account for the overlapping avatar */}
-      <div className="max-w-7xl mx-auto px-6 md:px-12 pt-32 md:pt-28 pb-20 grid grid-cols-1 lg:grid-cols-3 gap-12 md:gap-20">
+      {/* FIX: Increased padding top (pt-40) to give the hanging elements room to breathe */}
+      <div className="max-w-7xl mx-auto px-6 md:px-12 pt-40 md:pt-40 pb-20 grid grid-cols-1 lg:grid-cols-3 gap-12 md:gap-20">
         
         {/* LEFT COL: INTEL & STATS */}
         <div className="lg:col-span-1 space-y-12">
