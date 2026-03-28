@@ -224,7 +224,7 @@ export default function EntryGateway() {
             Crack The Code. <br/> <span className="text-[#E60000]">Own The Flow.</span>
           </h1>
           
-          <p className="max-w-3xl mx-auto text-center text-balance font-sans text-lg text-[#fcfcfc] mb-10 leading-relaxed">
+          <p className="max-w-3xl mx-auto text-center text-balance font-sans text-lg text-[#d4c5c5] mb-10 leading-relaxed">
             The First Identity-Aware AI Studio Built For Hip-Hop. Drop A Beat, Let Our Neural Engine Map Your perfect flow, Record Your Raw Takes, And Instantly Master Them To Industry Standards. We Bridge The Gap From A Concept In Your Head To A Commercial, Global Release. Your Sound, Amplified By The Machine.
           </p>
           
