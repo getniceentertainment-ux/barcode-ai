@@ -17,18 +17,21 @@ export async function POST(req: Request) {
 
     const { trackId } = await req.json();
 
+    // 1. Fetch the Target Artifact
     const { data: track, error: trackErr } = await supabaseAdmin
       .from('submissions')
       .select('*')
       .eq('id', trackId)
       .single();
       
-    if (trackErr || !track) throw new Error("Artifact not found.");
+    if (trackErr || !track) throw new Error("Artifact not found in ledger.");
     
-    // Check if campaign already exists to prevent double-billing the LLM
+    // Prevent double billing if campaign already exists
     if (track.campaign_data && Object.keys(track.campaign_data).length > 0) {
         return NextResponse.json({ success: true, data: track.campaign_data });
     }
+
+    if (!process.env.GROQ_API_KEY) throw new Error("Missing GROQ_API_KEY environment variable.");
 
     const systemPrompt = `You are 'The Exec', the AI Operations Director for GetNice Records.
 Your objective is to ingest a song and automatically generate a strict 30-day Go-To-Market (GTM) rollout based on the "GetNice 30-Day Maximum Success" framework.
@@ -39,7 +42,7 @@ THE FRAMEWORK:
 - Days 21-30: Consolidation & Commercial Extraction (DM strategy, UGC harvesting, Merch/VIP up-sells).
 
 OUTPUT FORMAT:
-You MUST output ONLY a raw, valid JSON object. No markdown formatting, no conversational text.
+You MUST output ONLY a raw, valid JSON object. No markdown formatting, no conversational text, no \`\`\`json wrappers. Just the raw JSON block starting with { and ending with }.
 {
   "phases": {
     "phase_1": "Setup & Validation",
@@ -54,16 +57,15 @@ You MUST output ONLY a raw, valid JSON object. No markdown formatting, no conver
       "generated_copy": "Exact text for the TikTok caption, Email, or SMS to be used today",
       "auto_ad_spend": 0
     }
-    // ... Generate exactly 30 objects for days 1 through 30.
-    // NOTE: Distribute exactly 1500 across the "auto_ad_spend" fields primarily between Days 11 and 25.
   ]
 }`;
 
     const userMessage = `Track Title: ${track.title}
 Hit Score: ${track.hit_score}/100
 Snippet Focus: ${track.tiktok_snippet || "Main Hook"}
-Generate the 30-day JSON execution array.`;
+Generate the exactly 30-day JSON execution array. Ensure auto_ad_spend totals exactly 1500 distributed primarily between days 11 and 25.`;
 
+    // 2. Query the Groq Neural Network
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -76,24 +78,42 @@ Generate the 30-day JSON execution array.`;
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage }
         ],
-        temperature: 0.2, // Low temp for strict JSON adherence
+        temperature: 0.2, 
         response_format: { type: "json_object" }
       })
     });
 
     const groqData = await groqRes.json();
-    if (!groqRes.ok) throw new Error(groqData.error?.message || "LLM JSON Generation Failed");
+    if (!groqRes.ok) throw new Error(groqData.error?.message || "LLM Generation Failed");
 
-    const campaignJson = JSON.parse(groqData.choices[0].message.content);
+    // 3. Bulletproof JSON Stripping
+    let rawContent = groqData.choices[0].message.content;
+    
+    // Mathematically extract ONLY the JSON, ignoring any hallucinated markdown or conversational text
+    const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      rawContent = jsonMatch[0];
+    }
 
-    // Save the living campaign to the database, starting at Day 1
-    await supabaseAdmin
+    let campaignJson;
+    try {
+      campaignJson = JSON.parse(rawContent);
+    } catch (e) {
+      console.error("JSON Parse Failure. Raw Output:", rawContent);
+      throw new Error("AI returned malformed data. Please try again.");
+    }
+
+    // 4. Save to Database with Explicit Error Catching
+    const { error: updateErr } = await supabaseAdmin
       .from('submissions')
       .update({ 
         campaign_data: campaignJson,
         campaign_day: 1 
       })
       .eq('id', trackId);
+
+    // If the columns are missing, this explicitly throws the exact error to the frontend toast
+    if (updateErr) throw new Error(`Database Update Failed: ${updateErr.message}`);
 
     return NextResponse.json({ success: true, data: campaignJson });
   } catch (error: any) {
