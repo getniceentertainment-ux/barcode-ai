@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, Terminal, Loader2, Star, BadgeCheck, TrendingUp, Heart } from "lucide-react";
+import { Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, Terminal, Loader2, Star, BadgeCheck, TrendingUp, Heart, Info } from "lucide-react";
 import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
+import ChatRules from "./ChatRules"; // NEW IMPORT
 
 interface RosterNode {
   id: string;
@@ -34,6 +35,7 @@ export default function Room10_Social() {
   const [chatInput, setChatInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [showRules, setShowRules] = useState(true); // Control visibility of rules
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const isFreeLoader = userSession?.tier === "Free Loader";
@@ -162,7 +164,6 @@ export default function Room10_Social() {
 
   const pricing = getDynamicPricing(selectedNode, interactionType);
   
-  // Sort Logic for Dual Tier Leaderboard
   const sortedRoster = [...roster].sort((a, b) => {
     if (sortMode === "fans") return (b.total_fans || 0) - (a.total_fans || 0);
     return (b.mogul_score || 0) - (a.mogul_score || 0);
@@ -173,11 +174,10 @@ export default function Room10_Social() {
   return (
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 overflow-hidden border border-[#222]">
       
-      {/* LEADERBOARD COL */}
       <div className="w-full md:w-1/2 lg:w-5/12 border-r border-[#222] flex flex-col relative h-full shrink-0">
         <div className="p-6 border-b border-[#222] bg-black z-10">
           <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-[#E60000] flex items-center gap-3 mb-4">
-            <Users size={28} /> The Underground
+            <Users size={28} /> Network Syndicate
           </h2>
           <div className="relative mb-4">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" />
@@ -193,13 +193,13 @@ export default function Room10_Social() {
               onClick={() => setSortMode("score")} 
               className={`flex-1 py-2 text-[9px] font-mono uppercase tracking-widest font-bold border transition-colors flex items-center justify-center gap-2 ${sortMode === "score" ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#333] text-[#888] hover:text-white'}`}
             >
-              <TrendingUp size={12} /> Local Rapport
+              <TrendingUp size={12} /> A&R Resonance
             </button>
             <button 
               onClick={() => setSortMode("fans")} 
               className={`flex-1 py-2 text-[9px] font-mono uppercase tracking-widest font-bold border transition-colors flex items-center justify-center gap-2 ${sortMode === "fans" ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#333] text-[#888] hover:text-white'}`}
             >
-              <Heart size={12} /> Global Rapport
+              <Heart size={12} /> Commercial Cult
             </button>
           </div>
         </div>
@@ -247,11 +247,10 @@ export default function Room10_Social() {
         </div>
       </div>
 
-      {/* DYNAMIC DASHBOARD */}
       <div className="flex-1 bg-[#0a0a0a] flex flex-col h-full overflow-hidden relative">
         <div className="flex border-b border-[#222] bg-black shrink-0">
           <button onClick={() => setActiveTab("brokerage")} className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'brokerage' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}><Handshake size={16} /> Brokerage</button>
-          <button onClick={() => setActiveTab("chat")} className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'chat' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}><MessageSquare size={16} /> Chat</button>
+          <button onClick={() => setActiveTab("chat")} className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'chat' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}><MessageSquare size={16} /> Comms</button>
         </div>
 
         {activeTab === "brokerage" && (
@@ -299,9 +298,31 @@ export default function Room10_Social() {
           </div>
         )}
 
-        {/* CHAT TAB WITH FREE LOADER LOCK */}
         {activeTab === "chat" && (
           <div className="flex-1 flex flex-col animate-in slide-in-from-left-8 h-full bg-[#020202]">
+            {/* SURGICAL ADDITION: Pinned Rules Panel */}
+            <div className="p-4 border-b border-[#222] bg-black">
+              {showRules ? (
+                <div className="relative">
+                  <ChatRules />
+                  <button 
+                    onClick={() => setShowRules(false)}
+                    className="absolute top-2 right-2 text-[#444] hover:text-white transition-colors"
+                    title="Hide Rules"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ) : (
+                <button 
+                  onClick={() => setShowRules(true)}
+                  className="w-full py-2 bg-[#0a0000] border border-[#E60000]/20 flex items-center justify-center gap-2 text-[9px] font-mono text-[#888] hover:text-[#E60000] transition-colors uppercase tracking-widest"
+                >
+                  <Info size={12} /> View System Directives
+                </button>
+              )}
+            </div>
+
             <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
               {messages.map((msg, i) => { const isMe = msg.user_id === userSession?.id; return (<div key={msg.id || i} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}><div className="flex items-baseline gap-2 mb-1"><span className="font-mono text-[9px] text-[#555] uppercase">{formatTime(msg.created_at)}</span><span className={`font-oswald text-xs uppercase font-bold tracking-widest ${isMe ? 'text-[#E60000]' : 'text-white'}`}>{msg.stage_name}</span></div><div className={`max-w-[80%] p-4 text-sm font-mono ${isMe ? 'bg-[#E60000]/10 border border-[#E60000]/30 text-white rounded-tl-lg rounded-bl-lg rounded-br-lg' : 'bg-black border border-[#333] text-gray-300 rounded-tr-lg rounded-bl-lg rounded-br-lg'}`}>{msg.content}</div></div>); })}
               <div ref={chatEndRef} />
