@@ -21,9 +21,10 @@ export async function POST(req: Request) {
     console.log("[CRON NODE] Waking up. Initiating Daily Label Execution Protocol...");
 
     // 2. FETCH ALL ACTIVE CAMPAIGNS
+    // SURGICAL FIX: Added stage_name to the select query to satisfy TypeScript
     const { data: activeCampaigns, error: fetchErr } = await supabaseAdmin
       .from('submissions')
-      .select('id, user_id, title, hit_score, campaign_data, campaign_day, audio_url, cover_url')
+      .select('id, user_id, title, hit_score, campaign_data, campaign_day, audio_url, cover_url, stage_name')
       .eq('upstream_deal_signed', true)
       .gt('campaign_day', 0)
       .lt('campaign_day', 30);
