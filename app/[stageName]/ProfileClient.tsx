@@ -219,6 +219,45 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
                </p>
             )}
           </div>
+
+          {/* NEW: SOCIAL INTEGRATION PANEL (OWNER ONLY) */}
+          {isOwner && (
+            <div className="bg-[#0a0a0a]/50 border border-[#222] p-8 backdrop-blur-md relative overflow-hidden group hover:border-[#E60000]/30 transition-all">
+              <div className="absolute top-0 left-0 w-1 h-full bg-[#E60000]/50 group-hover:bg-[#E60000] transition-colors" />
+              
+              <h3 className="font-oswald text-sm uppercase text-white tracking-[0.4em] font-bold mb-4 flex items-center gap-2">
+                <Globe size={16} className="text-[#E60000]" /> API Integrations
+              </h3>
+              <p className="font-mono text-[9px] text-[#888] uppercase tracking-widest leading-relaxed mb-6">
+                Authorize the GetNice Exec AI to auto-post viral snippets to your social channels during active Upstream campaigns.
+              </p>
+              
+              <button 
+                onClick={async () => {
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const res = await fetch('/api/social/link', {
+                      method: 'POST',
+                      headers: { 'Authorization': `Bearer ${session?.access_token}` }
+                    });
+                    const data = await res.json();
+                    if (data.url) {
+                      // Open the Ayrshare OAuth portal in a popup window
+                      window.open(data.url, 'SocialAuth', 'width=600,height=700');
+                    } else {
+                      throw new Error(data.error);
+                    }
+                  } catch (err: any) {
+                    alert("Failed to initialize social handshake: " + err.message);
+                  }
+                }}
+                className="w-full bg-[#111] border border-[#333] text-white px-4 py-3 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-white hover:text-black transition-colors"
+              >
+                Connect TikTok / Instagram
+              </button>
+            </div>
+          )}
+
         </div>
 
         {/* RIGHT COL: VAULT SYNC */}
