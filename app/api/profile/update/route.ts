@@ -15,10 +15,12 @@ export async function POST(req: Request) {
     const { data: { user } } = await supabaseAdmin.auth.getUser(token);
     if (!user) return NextResponse.json({ error: "Invalid identity token" }, { status: 401 });
 
-    const { bio } = await req.json();
+    // NEW: Now accepting avatar_url alongside bio
+    const { bio, avatar_url } = await req.json();
 
     const updates: any = {};
     if (bio !== undefined) updates.bio = bio;
+    if (avatar_url !== undefined) updates.avatar_url = avatar_url;
 
     if (Object.keys(updates).length === 0) {
        return NextResponse.json({ error: "No update fields provided." }, { status: 400 });
