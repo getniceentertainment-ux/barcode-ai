@@ -211,7 +211,7 @@ export default function EntryGateway() {
           </div>
         </nav>
 
-        {/* Hero Section */}
+{/* Hero Section */}
         <header className="relative pt-40 pb-24 px-6 flex flex-col items-center text-center z-10 border-b border-[#333]">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#E60000]/5 via-[#121212] to-[#121212] -z-10"></div>
           
@@ -220,16 +220,9 @@ export default function EntryGateway() {
             <span className="font-mono text-[9px] uppercase tracking-widest text-[#888]">Secure Ingestion Node Ready</span>
           </div>
 
-	  {/* --- THE NEW SETUP BAR (REPLACES H1) --- */}
-          <h1 className="font-oswald text-5xl md:text-7xl font-bold mb-6 tracking-tight uppercase text-white drop-shadow-neon-red leading-tight">
-            Took the hustle off the pavement, <br/> 
-            <span className="text-[#E60000]">put the servers on.</span>
+          <h1 className="font-oswald text-6xl md:text-8xl font-bold mb-6 tracking-tight uppercase text-white drop-shadow-neon-red">
+            Crack The Code. <br/> <span className="text-[#E60000]">Own The Flow.</span>
           </h1>
-
-          {/* --- THE PUNCHLINE (JSON LINE) --- */}
-          <h2 className="text-white italic font-serif text-xl md:text-2xl mb-10 tracking-wide opacity-90 drop-shadow-md">
-            "Cracked the code to this game, turned it into JSON."
-          </h2>
           
           <p className="max-w-3xl mx-auto text-center text-balance font-sans text-lg text-[#888] mb-10 leading-relaxed">
             The First Identity-Aware AI Studio Built For Hip-Hop. Drop A Beat, Let Our Neural Engine Map Your perfect flow, Record Your Raw Takes, And Instantly Master Them To Industry Standards. We Bridge The Gap From A Concept In Your Head To A Commercial, Global Release. Your Sound, Amplified By The Machine.
@@ -244,7 +237,6 @@ export default function EntryGateway() {
             </span>
           </button>
         </header>
-
         {/* Systems Architecture Grid */}
         <section className="max-w-7xl mx-auto px-6 py-24 relative z-10">
           <div className="flex flex-col md:flex-row justify-between items-end border-b border-[#333] pb-4 mb-12">
