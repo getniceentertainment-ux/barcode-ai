@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ShieldAlert, Zap, Info } from "lucide-react";
+import { ShieldAlert, Zap } from "lucide-react";
 
 const DIRECTIVES = [
   { id: 1, title: "THE 90+ STANDARD", desc: "Achieve a 90+ Hit Score in Room 07 to unlock the $1,500 Upstream Advance." },
