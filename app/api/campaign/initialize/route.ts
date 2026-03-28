@@ -80,7 +80,7 @@ Generate the exactly 30-day JSON execution array. Ensure auto_ad_spend totals ex
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama3-70b-8192',
+        model: 'llama-3.3-70b-versatile',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage }
