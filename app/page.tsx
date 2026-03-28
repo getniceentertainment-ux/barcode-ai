@@ -537,6 +537,13 @@ export default function MatrixController() {
                Matrix // {rooms.find(r => r.id === activeRoom)?.name.toUpperCase()}
              </span>
            </div>
+
+	   {/* --- NEW: GLOBAL CENTER HEADER SLOGAN --- */}
+           <div className="hidden lg:flex absolute left-1/2 -translate-x-1/2 items-center pointer-events-none">
+             <span className="text-white italic text-sm font-light tracking-[0.1em] drop-shadow-md opacity-90">
+               "Cracked the code to this game, turned it into JSON."
+             </span>
+           </div>
            
            <div className="flex items-center gap-4 md:gap-6 ml-auto">
              {userSession && (

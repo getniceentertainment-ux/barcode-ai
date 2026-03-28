@@ -223,6 +223,11 @@ export default function EntryGateway() {
           <h1 className="font-oswald text-6xl md:text-8xl font-bold mb-6 tracking-tight uppercase text-white drop-shadow-neon-red">
             Crack The Code. <br/> <span className="text-[#E60000]">Own The Flow.</span>
           </h1>
+
+	  {/* --- NEW: THE THESIS STATEMENT --- */}
+          <h2 className="text-white italic font-serif text-xl md:text-2xl mb-8 tracking-wide opacity-90 drop-shadow-md">
+            "Cracked the code to this game, turned it into JSON."
+          </h2>
           
           <p className="max-w-3xl mx-auto text-center text-balance font-sans text-lg text-[#888] mb-10 leading-relaxed">
             The First Identity-Aware AI Studio Built For Hip-Hop. Drop A Beat, Let Our Neural Engine Map Your perfect flow, Record Your Raw Takes, And Instantly Master Them To Industry Standards. We Bridge The Gap From A Concept In Your Head To A Commercial, Global Release. Your Sound, Amplified By The Machine.
