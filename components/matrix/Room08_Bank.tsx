@@ -35,12 +35,14 @@ export default function Room08_Bank() {
     }
   }, [addToast]);
 
+  // SURGICAL FIX: Changed dependency to [userSession?.id] to prevent the infinite loop!
   useEffect(() => {
-    fetchFinancialData();
-  }, [userSession]);
+    if (userSession?.id) {
+      fetchFinancialData();
+    }
+  }, [userSession?.id]);
 
   const fetchFinancialData = async () => {
-    if (!userSession?.id) return;
     setLoading(true);
     
     try {
@@ -48,7 +50,7 @@ export default function Room08_Bank() {
       const { data: profileData } = await supabase
         .from('profiles')
         .select('stripe_account_id, wallet_balance')
-        .eq('id', userSession.id)
+        .eq('id', userSession?.id)
         .single();
 
       if (profileData?.stripe_account_id) {
@@ -64,7 +66,7 @@ export default function Room08_Bank() {
       const { data: subData } = await supabase
         .from('submissions')
         .select('*')
-        .eq('user_id', userSession.id)
+        .eq('user_id', userSession?.id)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -77,7 +79,7 @@ export default function Room08_Bank() {
       const { data: txData } = await supabase
         .from('transactions')
         .select('*')
-        .eq('user_id', userSession.id)
+        .eq('user_id', userSession?.id)
         .order('created_at', { ascending: false })
         .limit(50);
 
