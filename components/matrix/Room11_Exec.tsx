@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Activity, Calendar, ShieldCheck, Zap, ArrowRight, Loader2, FileText, Send, BrainCircuit, Target, CheckCircle2, ChevronRight, RefreshCw, Mail, Share2, UserCog, Server, Terminal, Lock } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
@@ -19,7 +20,7 @@ export default function Room11_Exec() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [execLogs, setExecLogs] = useState<string[]>([]);
 
-  // 1. STRIPE INTERCEPTOR & LEDGER POLLER (Checks for Deal OR Bypass)
+  // 1. SURGICAL FIX: SYNCHRONOUS VERIFICATION (Eliminates Webhook Race Condition)
   useEffect(() => {
     if (!userSession?.id) return;
 
@@ -27,36 +28,32 @@ export default function Room11_Exec() {
       const params = new URLSearchParams(window.location.search);
       const rolloutPurchased = params.get('rollout_purchased');
       const trackId = params.get('track_id') || params.get('trackId');
+      const sessionId = params.get('session_id'); // Captured from the new Stripe Cashier
 
-      if (rolloutPurchased === 'true' && trackId) {
+      if (rolloutPurchased === 'true' && trackId && sessionId) {
         setIsPollingLedger(true);
         
-        const poll = setInterval(async () => {
-          const { data } = await supabase
-            .from('submissions')
-            .select('upstream_deal_signed, exec_bypass, rollout_purchased')
-            .eq('id', trackId)
-            .single();
-            
-          // Success Condition: Signed Deal OR Paid Bypass
-          if (data?.upstream_deal_signed || data?.exec_bypass || data?.rollout_purchased) {
-            clearInterval(poll);
+        // Instantly verify with Stripe via our secure backend. No waiting for webhooks.
+        fetch('/api/stripe/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, trackId })
+        })
+        .then(res => res.json())
+        .then(data => {
             setIsPollingLedger(false);
             window.history.replaceState({}, document.title, window.location.pathname);
-            if (addToast) addToast("Financial Ledger Synced. Node Authorized.", "success");
+            if (data.success && addToast) addToast("Financial Cryptography Verified. Vault Authorized.", "success");
             fetchActiveCampaign();
-          }
-        }, 2000);
-
-        // 15-second failsafe
-        setTimeout(() => {
-          clearInterval(poll);
-          setIsPollingLedger(false);
-          window.history.replaceState({}, document.title, window.location.pathname);
-          fetchActiveCampaign();
-        }, 15000);
+        })
+        .catch(err => {
+            console.error("Verification failed:", err);
+            setIsPollingLedger(false);
+            window.history.replaceState({}, document.title, window.location.pathname);
+            fetchActiveCampaign();
+        });
         
-        return () => clearInterval(poll);
+        return;
       }
     }
     
@@ -102,7 +99,7 @@ export default function Room11_Exec() {
     setTotalStreams(Math.floor(spent * 14.5) + (day * 125));
   };
 
-  // 2. THE MANUAL COMMENCEMENT BUTTON (Vercel Timeout Trap Restored)
+  // 2. THE MANUAL COMMENCEMENT BUTTON
   const handleInitializeCampaign = async () => {
     if (!submission?.id) return;
     setInitializing(true);
@@ -114,7 +111,6 @@ export default function Room11_Exec() {
         body: JSON.stringify({ trackId: submission.id })
       });
 
-      // Trap Vercel HTML timeout pages securely
       const rawText = await res.text();
       let json;
       try {
@@ -169,7 +165,7 @@ export default function Room11_Exec() {
     }
   };
 
-  // 3. THE AGENTIC EXECUTION TERMINAL (Restored Robust Error Handling)
+  // 3. THE AGENTIC EXECUTION TERMINAL
   const handleAdvanceDay = async () => {
     if (!submission?.id || currentDay >= 30) return;
     
@@ -215,7 +211,6 @@ export default function Room11_Exec() {
       addLog("[SYSTEM] Synchronizing ledger...");
       await sleep(800);
 
-      // Local DB Update ensures seamless state advance
       const updatedCampaign = JSON.parse(JSON.stringify(campaignData));
       if (updatedCampaign?.daily_schedule && Array.isArray(updatedCampaign.daily_schedule)) {
         if (updatedCampaign.daily_schedule[currentDay - 1]) {
@@ -237,7 +232,6 @@ export default function Room11_Exec() {
       setCurrentDay(nextDay);
       calculateStreams(updatedCampaign, nextDay);
       
-      // Deduct local store credits if ad spend was used
       if (todayData.auto_ad_spend > 0) {
          useMatrixStore.setState((state) => ({ 
            userSession: state.userSession ? { 
@@ -300,7 +294,7 @@ export default function Room11_Exec() {
      return renderNoDeal();
   }
 
-  // 5. THE BIG RED BUTTON (Initialization Screen Restored)
+  // 5. THE BIG RED BUTTON (Initialization Screen)
   if (!campaignData) {
     return (
       <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-[#0a0a0a] border border-[#E60000]/30 relative overflow-hidden">

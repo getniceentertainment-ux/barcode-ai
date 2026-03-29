@@ -13,12 +13,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized: Missing Node ID" }, { status: 401 });
     }
 
-    // --- ALGORITHMIC BYPASS PRICING MATH ---
     const score = typeof hitScore === 'number' ? hitScore : 0;
     const targetScore = 95; 
     const pointsShort = Math.max(0, targetScore - score);
 
-    // Base price $14.99 + $1.00 per point they are short of 95
     const basePriceCents = 1499; 
     const penaltyCents = pointsShort * 100; 
     const finalPriceCents = basePriceCents + penaltyCents;
@@ -41,7 +39,8 @@ export async function POST(req: Request) {
         quantity: 1,
       }],
       mode: 'payment',
-      success_url: `${siteUrl}/?rollout_purchased=true&track_id=${trackId}`,
+      // SURGICAL FIX: We inject Stripe's native {CHECKOUT_SESSION_ID} so Room 11 can verify it instantly
+      success_url: `${siteUrl}/?rollout_purchased=true&track_id=${trackId}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${siteUrl}/`,
       metadata: { userId, type: 'exec_rollout', track_id: trackId }
     });
