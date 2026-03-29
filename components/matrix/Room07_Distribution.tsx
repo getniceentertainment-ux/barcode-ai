@@ -7,7 +7,6 @@ import { supabase } from "../../lib/supabase";
 import Link from "next/link"; 
 
 export default function Room07_Distribution() {
-  // SURGICAL UPDATE: Added anrData and updateAnrData to securely persist the A&R scan globally
   const { 
     setActiveRoom, userSession, generatedLyrics, addToast, audioData, 
     finalMaster, blueprint, flowDNA, anrData, updateAnrData 
@@ -15,10 +14,11 @@ export default function Room07_Distribution() {
   
   const [trackId, setTrackId] = useState<string | null>(null);
   
-  // Upsell States
+  // Upsell & UI States
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   const [execRollout, setExecRollout] = useState<string>("");
   const [isGeneratingRollout, setIsGeneratingRollout] = useState(false);
+  const [loadingStep, setLoadingStep] = useState<string>(""); // NEW: Tracks the exact pipeline step
 
   // --- RECOVERY LOGIC: FETCH TRACK ID & ROLLOUT ON MOUNT IF ALREADY SUCCESSFUL ---
   useEffect(() => {
@@ -68,7 +68,8 @@ export default function Room07_Distribution() {
     }
   }, [userSession, addToast, updateAnrData]);
 
-  const handleAnalyze = async () => {
+  // --- SURGICAL FIX: THE SEQUENTIAL PIPELINE ---
+  const handleDistributionSequence = async () => {
     if (!anrData.trackTitle.trim()) {
       if (addToast) addToast("A track title is required for distribution.", "error");
       return;
@@ -78,47 +79,14 @@ export default function Room07_Distribution() {
       return;
     }
 
-    updateAnrData({ status: "analyzing" });
-
     try {
-      // --- SURGICAL FIX: Grab the secure session token ---
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Security Exception: Missing Session Token.");
 
-      const analyzeRes = await fetch('/api/distribution/analyze', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}` // <-- INJECTED TOKEN HERE
-        },
-        body: JSON.stringify({ 
-          title: anrData.trackTitle, 
-          lyrics: generatedLyrics || "No lyrics provided",
-          bpm: audioData?.bpm || 120,
-          blueprint: blueprint,
-          flowDNA: flowDNA
-        })
-      });
+      // STEP 1: SECURE AUDIO TO THE VAULT FIRST
+      updateAnrData({ status: "submitting" });
+      setLoadingStep("Uploading master audio to encrypted vault...");
       
-      const analyzeData = await analyzeRes.json();
-      if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
-
-      updateAnrData({
-        hitScore: analyzeData.hitScore,
-        coverUrl: analyzeData.coverUrl,
-        tiktokSnippet: analyzeData.tiktokSnippet
-      });
-      
-      handleFinalSubmit(analyzeData);
-    } catch (error: any) {
-      console.error("A&R Error:", error);
-      if (addToast) addToast(error.message, "error");
-      updateAnrData({ status: "idle" });
-    }
-  };
-
-  const handleFinalSubmit = async (aAndRData: any) => {
-    updateAnrData({ status: "submitting" });
-    try {
       let persistentAudioUrl = finalMaster?.url;
 
       if (persistentAudioUrl?.startsWith('blob:')) {
@@ -144,25 +112,50 @@ export default function Room07_Distribution() {
         persistentAudioUrl = publicData.publicUrl;
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
+      // STEP 2: RUN THE A&R NEURAL SCAN
+      updateAnrData({ status: "analyzing" });
+      setLoadingStep("Scanning structural metrics...");
       
-      const res = await fetch('/api/distribution/submit', {
+      const analyzeRes = await fetch('/api/distribution/analyze', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
+          'Authorization': `Bearer ${session.access_token}` 
+        },
+        body: JSON.stringify({ 
+          title: anrData.trackTitle, 
+          lyrics: generatedLyrics || "No lyrics provided",
+          bpm: audioData?.bpm || 120,
+          blueprint: blueprint,
+          flowDNA: flowDNA
+        })
+      });
+      
+      const analyzeData = await analyzeRes.json();
+      if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
+
+      // STEP 3: WRITE TO THE LEDGER
+      updateAnrData({ status: "submitting" });
+      setLoadingStep("Writing metadata to Supabase Ledger...");
+
+      const submitRes = await fetch('/api/distribution/submit', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           title: anrData.trackTitle,
           audioUrl: persistentAudioUrl, 
-          coverUrl: aAndRData.coverUrl,
-          hitScore: aAndRData.hitScore,
-          tiktokSnippet: aAndRData.tiktokSnippet
+          coverUrl: analyzeData.coverUrl,
+          hitScore: analyzeData.hitScore,
+          tiktokSnippet: analyzeData.tiktokSnippet
         })
       });
 
-      if (!res.ok) throw new Error("Failed to secure artifact in Ledger.");
+      if (!submitRes.ok) throw new Error("Failed to secure artifact in Ledger.");
 
+      // STEP 4: FETCH NEW TRACK ID
       const { data: latestSub } = await supabase
         .from('submissions')
         .select('id')
@@ -173,11 +166,18 @@ export default function Room07_Distribution() {
         
       if (latestSub) setTrackId(latestSub.id);
 
-      updateAnrData({ status: "success" });
+      // STEP 5: FINALIZE UI
+      updateAnrData({
+        hitScore: analyzeData.hitScore,
+        coverUrl: analyzeData.coverUrl,
+        tiktokSnippet: analyzeData.tiktokSnippet,
+        status: "success"
+      });
       if (addToast) addToast("Artifact secured. Global Nodes synchronized.", "success");
-    } catch (err: any) {
-      console.error("Submission Error:", err);
-      if (addToast) addToast(err.message, "error");
+
+    } catch (error: any) {
+      console.error("Distribution Error:", error);
+      if (addToast) addToast(error.message, "error");
       updateAnrData({ status: "idle" });
     }
   };
@@ -277,7 +277,7 @@ export default function Room07_Distribution() {
             </div>
             
             <button 
-              onClick={handleAnalyze} 
+              onClick={handleDistributionSequence} 
               disabled={!anrData.trackTitle.trim() || !finalMaster}
               className="w-full bg-[#E60000] disabled:opacity-30 disabled:cursor-not-allowed text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]"
             >
@@ -309,7 +309,7 @@ export default function Room07_Distribution() {
           <div className="space-y-6 py-10 relative z-10">
             <p className="font-oswald text-2xl text-white uppercase tracking-widest font-bold">Securing Artifact...</p>
             <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest">
-              Writing metadata to Supabase Ledger...
+              {loadingStep || "Writing data to secure storage nodes..."}
             </div>
           </div>
         )}
