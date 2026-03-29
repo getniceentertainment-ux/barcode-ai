@@ -21,7 +21,6 @@ export default function Room11_Exec() {
   const [copied, setCopied] = useState(false);
   const [currentDay, setCurrentDay] = useState(1);
 
-  // --- TERMINAL EXECUTION STATE ---
   const [isExecuting, setIsExecuting] = useState(false);
   const [execLogs, setExecLogs] = useState<string[]>([]);
 
@@ -33,7 +32,6 @@ export default function Room11_Exec() {
     if (!userSession?.id) return;
     setLoading(true);
     try {
-      // 1. Fetch the active signed campaign
       const { data: subData } = await supabase
         .from('submissions')
         .select('*')
@@ -51,7 +49,6 @@ export default function Room11_Exec() {
         }
       }
 
-      // 2. Fetch Fan CRM count
       const { count } = await supabase
         .from('fans')
         .select('*', { count: 'exact', head: true })
@@ -89,7 +86,15 @@ export default function Room11_Exec() {
         body: JSON.stringify({ trackId: campaign.id })
       });
 
-      const json = await res.json();
+      // BULLETPROOF PARSING: Catch HTML 500 pages from Vercel safely
+      const rawText = await res.text();
+      let json;
+      try {
+        json = JSON.parse(rawText);
+      } catch (parseErr) {
+        throw new Error("Server Exception: API returned an HTML error. Verify Vercel deployment.");
+      }
+
       if (!res.ok) throw new Error(json.error || "Initialization failed");
 
       setCampaign({ ...campaign, campaign_data: json.data, campaign_day: 1 });
@@ -152,7 +157,15 @@ export default function Room11_Exec() {
         })
       });
 
-      const execData = await execRes.json();
+      // BULLETPROOF PARSING: Prevents the `<DOCTYPE html>` crash
+      const rawText = await execRes.text();
+      let execData;
+      try {
+        execData = JSON.parse(rawText);
+      } catch (parseErr) {
+        throw new Error("Server Exception: Endpoint returned an HTML error. Verify Vercel deployment.");
+      }
+
       if (!execRes.ok) throw new Error(execData.error || "Backend Execution Failed.");
 
       if (execData.logs && Array.isArray(execData.logs)) {
@@ -184,7 +197,6 @@ export default function Room11_Exec() {
       setCurrentDay(nextDay);
       calculateStreams(updatedCampaignData, nextDay);
 
-      // Deduct local credits if applicable
       if (todayData.auto_ad_spend > 0) {
         useMatrixStore.setState((state) => ({ 
           userSession: state.userSession ? { 
@@ -271,7 +283,6 @@ export default function Room11_Exec() {
   return (
     <div className="h-full flex flex-col bg-[#050505] animate-in fade-in duration-500 overflow-hidden border border-[#222] relative">
       
-      {/* TERMINAL OVERLAY */}
       {isExecuting && (
         <div className="absolute inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 animate-in fade-in">
           <div className="max-w-2xl w-full bg-[#050505] border border-[#333] p-8 shadow-[0_0_50px_rgba(230,0,0,0.15)] font-mono rounded-sm">
@@ -294,7 +305,6 @@ export default function Room11_Exec() {
         </div>
       )}
 
-      {/* HEADER: CRM + STATS */}
       <div className="p-8 border-b border-[#111] bg-black grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-2">
           <div className="flex items-center gap-3 mb-2">
@@ -355,7 +365,6 @@ export default function Room11_Exec() {
 
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         
-        {/* LEFT: TIMELINE SIDEBAR */}
         <div className="w-full lg:w-1/3 border-r border-[#222] bg-[#020202] flex flex-col overflow-y-auto custom-scrollbar">
           <div className="p-6 border-b border-[#111] sticky top-0 bg-black z-10">
             <h3 className="font-oswald text-sm uppercase tracking-widest text-[#888] flex items-center gap-2">
@@ -386,7 +395,6 @@ export default function Room11_Exec() {
           </div>
         </div>
 
-        {/* RIGHT: DAILY ACTION PORTAL */}
         <div className="flex-1 flex flex-col bg-black">
           {todayTask ? (
             <>
@@ -437,7 +445,6 @@ export default function Room11_Exec() {
 
               </div>
 
-              {/* STICKY FOOTER ADVANCE BUTTON */}
               <div className="bg-[#0a0a0a] p-4 md:p-6 border-t border-[#222] flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 z-10">
                 <p className="text-[9px] font-mono text-[#555] uppercase text-center sm:text-left leading-relaxed max-w-sm">
                   This terminal executes real API calls to SendGrid, RunPod, and Meta. Progress is irreversible.
