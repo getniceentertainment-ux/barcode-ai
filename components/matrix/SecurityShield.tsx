@@ -4,21 +4,23 @@ import { useEffect } from "react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 
 export default function SecurityShield() {
-  const { addToast } = useMatrixStore();
-
+  
   useEffect(() => {
     // 1. Block Right-Click (Context Menu)
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
-      if (addToast) addToast("SECURITY PROTOCOL: Unauthorized context inspection blocked.", "error");
+      // SURGICAL FIX: Fetch the freshest toast function directly from the store state
+      useMatrixStore.getState().addToast("SECURITY PROTOCOL: Unauthorized context inspection blocked.", "error");
     };
 
     // 2. Block Common DevTool Keyboard Shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
+      const addToast = useMatrixStore.getState().addToast;
+
       // F12 Key
       if (e.key === "F12") {
         e.preventDefault();
-        if (addToast) addToast("SECURITY PROTOCOL: Developer node access denied.", "error");
+        addToast("SECURITY PROTOCOL: Developer node access denied.", "error");
       }
 
       // Ctrl+Shift+I / Cmd+Opt+I (Open DevTools)
@@ -32,7 +34,7 @@ export default function SecurityShield() {
         (e.metaKey && (e.key === "U" || e.key === "u"))
       ) {
         e.preventDefault();
-        if (addToast) addToast("SECURITY PROTOCOL: Source matrix extraction blocked.", "error");
+        addToast("SECURITY PROTOCOL: Source matrix extraction blocked.", "error");
       }
     };
 
@@ -45,7 +47,7 @@ export default function SecurityShield() {
       document.removeEventListener("contextmenu", handleContextMenu);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [addToast]);
+  }, []); // Empty dependency array ensures this effect only mounts ONCE
 
   // This component doesn't render any visible HTML, it just acts as an invisible guard.
   return null;
