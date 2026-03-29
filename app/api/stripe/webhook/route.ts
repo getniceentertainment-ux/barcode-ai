@@ -16,37 +16,41 @@ export async function POST(req: Request) {
       const meta = session.metadata;
 
       if (meta?.type === 'exec_rollout') {
-        // 1. Fetch the artifact to safely check its current score
+        
+        // 1. Fetch current data to apply the math
         const { data: sub } = await supabaseAdmin
           .from('submissions')
           .select('hit_score, base_hit_score')
           .eq('id', meta.track_id)
           .single();
         
-        let updatePayload: any = { rollout_purchased: true };
+        let updatePayload: any = { 
+          exec_bypass: true, // THE TRUMP CARD!
+          campaign_day: 1,   // Populated FIRST as requested
+          exec_rollout: "AWAITING_NEURAL_SYNTHESIS" // Modified as requested
+        };
         
-        // 2. THE EGO BOOST (PAYOLA MECHANIC)
-        // If they scored under 95, save their real score and boost them to 95!
+        // 2. THE MATH: Base Score + Penalty Difference = 95
         if (sub && sub.hit_score < 95) {
-          updatePayload.base_hit_score = sub.base_hit_score || sub.hit_score;
-          updatePayload.hit_score = 95;
+          updatePayload.base_hit_score = sub.base_hit_score || sub.hit_score; // Save the real score
+          updatePayload.hit_score = 95; // Force the public ego boost to 95
         }
 
-        // 3. Apply the update to the Database
+        // 3. Update the Ledger
         await supabaseAdmin.from('submissions').update(updatePayload).eq('id', meta.track_id);
         
-        // 4. Log the transaction
+        // 4. Log the transaction for Room 08
         await supabaseAdmin.from('transactions').insert({
-          user_id: meta.userId,
+          user_id: meta.userId || session.client_reference_id,
           amount: -(session.amount_total! / 100),
           type: 'UPSELL_PURCHASE',
-          description: `Independent Rollout: ${meta.track_id}`
+          description: `Independent Rollout Bypass: ${meta.track_id}`
         });
       }
       
-      // Standard token/tier handling...
+      // Standard tokens...
       if (meta?.type === 'mastering_token') {
-        await supabaseAdmin.from('profiles').update({ has_mastering_token: true }).eq('id', meta.userId);
+        await supabaseAdmin.from('profiles').update({ has_mastering_token: true }).eq('id', meta.userId || session.client_reference_id);
       }
     }
     return NextResponse.json({ received: true });
