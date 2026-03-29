@@ -81,9 +81,15 @@ export default function Room07_Distribution() {
     updateAnrData({ status: "analyzing" });
 
     try {
+      // --- SURGICAL FIX: Grab the secure session token ---
+      const { data: { session } } = await supabase.auth.getSession();
+
       const analyzeRes = await fetch('/api/distribution/analyze', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}` // <-- INJECTED TOKEN HERE
+        },
         body: JSON.stringify({ 
           title: anrData.trackTitle, 
           lyrics: generatedLyrics || "No lyrics provided",
