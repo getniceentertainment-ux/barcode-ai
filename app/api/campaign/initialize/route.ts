@@ -31,10 +31,14 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, data: track.campaign_data });
     }
 
+    // --- SURGICAL FIX: IDENTIFY DEAL STATUS FOR GUERRILLA PIVOT ---
+    const hasLabelDeal = track.upstream_deal_signed === true;
+    const totalBudget = hasLabelDeal ? 1500 : 0;
+
     // ============================================================================
     // THE SELF-HEALING FALLBACK TEMPLATE
     // ============================================================================
-    const generateFallback = (trackTitle: string) => {
+    const generateFallback = (trackTitle: string, isSigned: boolean) => {
       const schedule = [];
       for (let i = 1; i <= 30; i++) {
         let spend = 0;
@@ -50,20 +54,20 @@ export async function POST(req: Request) {
         } else if (i === 11) {
           objective = "Release Day Amplification";
           action = "Blast email CRM and initiate TikTok/Reels algorithmic push.";
-          spend = 200; // Initial burst
-          execType = "auto_ad_spend";
+          spend = isSigned ? 200 : 0; // SURGICAL FIX: 0 spend for independents
+          execType = isSigned ? "auto_ad_spend" : "social_post";
           copy = `OUT NOW. The wait is over. Stream ${trackTitle} via link in bio. #newmusic`;
         } else if (i >= 12 && i <= 24) {
           objective = "Algorithmic Strike";
           action = "Programmatic vertical video distribution to TikTok, IG Reels, and Shorts.";
-          spend = 92; // 13 days of sustained $92 spend
-          execType = "auto_ad_spend";
+          spend = isSigned ? 92 : 0; // SURGICAL FIX: 0 spend for independents
+          execType = isSigned ? "auto_ad_spend" : "social_post";
           copy = `Wait for the drop... 🤯 Track: ${trackTitle} #independentartist`;
         } else if (i === 25) {
           objective = "Final Network Push";
-          action = "Exhaust remaining campaign budget on viral retargeting.";
-          spend = 104; // The exact remainder to hit $1,500 perfectly
-          execType = "auto_ad_spend";
+          action = isSigned ? "Exhaust remaining campaign budget on viral retargeting." : "Massive Discord/Reddit raid and DM outreach.";
+          spend = isSigned ? 104 : 0; 
+          execType = isSigned ? "auto_ad_spend" : "manual_action";
           copy = `Trending globally. Join the movement. 🌍 Link in bio.`;
         } else {
           objective = "Commercial Extraction";
@@ -95,9 +99,14 @@ export async function POST(req: Request) {
             throw new Error("API Key Missing");
         }
 
-        // --- SURGICAL FIX: RE-SCOPED AI PROMPT FOR TIKTOK/REELS ---
+        // --- SURGICAL FIX: DYNAMIC GUERRILLA SYSTEM PROMPT ---
         const systemPrompt = `You are 'The Exec', the AI Operations Director for GetNice Records.
 Your objective is to ingest a song and automatically generate a strict 30-day Go-To-Market (GTM) rollout based on the "GetNice 30-Day Maximum Success" framework.
+
+THE STRATEGY CONTEXT:
+${hasLabelDeal 
+  ? "This artist is SIGNED to GetNice Records. They have a $1,500 digital marketing budget. You must deploy aggressive auto_ad_spend to capture fans." 
+  : "This is an INDEPENDENT artist with a ZERO DOLLAR ($0) ad budget. You must rely entirely on ruthless, organic, guerrilla marketing (TikTok/Reels posting, Discord raids, DMs, email CRM)."}
 
 THE FRAMEWORK:
 - Days 1-10: Setup & Validation (Infrastructure, Bio-links, 1.5s visual hooks, Email opt-ins).
@@ -128,7 +137,13 @@ You MUST output ONLY a raw, valid JSON object. No markdown formatting, no conver
         const userMessage = `Track Title: ${track.title}
 Hit Score: ${track.hit_score}/100
 Snippet Focus: ${track.tiktok_snippet || "Main Hook"}
-Generate the exactly 30-day JSON execution array. Ensure auto_ad_spend totals exactly 1500 distributed primarily between days 11 and 25.`;
+Deal Status: ${hasLabelDeal ? "GetNice Records Upstream Partner" : "Independent Artist"}
+Budget: $${totalBudget}
+
+Generate the exactly 30-day JSON execution array. 
+${hasLabelDeal 
+  ? "Ensure auto_ad_spend totals exactly 1500 distributed primarily between days 11 and 25. Use execution_type: auto_ad_spend heavily." 
+  : "CRITICAL DIRECTIVE: auto_ad_spend MUST be exactly 0 for all 30 days. Use 'social_post', 'auto_email', and 'manual_action' execution types exclusively."}`;
 
         const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -155,7 +170,6 @@ Generate the exactly 30-day JSON execution array. Ensure auto_ad_spend totals ex
         
         if (!rawContent) throw new Error("Empty response from AI");
         
-        // Forcibly strip any hallucinated markdown wrappers the AI might have added
         rawContent = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
         const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
         if (jsonMatch) rawContent = jsonMatch[0];
@@ -168,8 +182,8 @@ Generate the exactly 30-day JSON execution array. Ensure auto_ad_spend totals ex
 
     } catch (aiErr) {
         console.error("[CAMPAIGN INIT] AI Generation Failed, deploying Self-Healing Fallback:", aiErr);
-        // The ultimate safety net: Guaranteed structured payload
-        campaignJson = generateFallback(track.title || "UNTITLED ARTIFACT");
+        // SURGICAL FIX: Pass the deal status to the fallback generator
+        campaignJson = generateFallback(track.title || "UNTITLED ARTIFACT", hasLabelDeal);
     }
 
     // Save to Database
