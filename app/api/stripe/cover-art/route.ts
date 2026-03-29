@@ -38,7 +38,7 @@ export async function POST(req: Request) {
         purchase_type: 'cover_art'
       },
       // Return the user to the Matrix upon success
-      success_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'https://www.bar-code.ai'}?cover_purchased=true`,
+      success_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'https://www.bar-code.ai'}/?cover_art_purchased=true&track_id=${trackId}`,
       cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'https://www.bar-code.ai'}`,
     });
 
