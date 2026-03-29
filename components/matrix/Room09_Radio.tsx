@@ -256,12 +256,13 @@ export default function Room09_Radio() {
       </div>
 
       {/* RIGHT PANEL: AD MANAGER CAMPAIGN BUILDER */}
+      {/* RIGHT PANEL: ALGORITHMIC STRIKE MANAGER */}
       <div className="w-full lg:w-[400px] flex flex-col bg-black border border-[#222]">
         <div className="p-6 border-b border-[#222] bg-[#110000]">
            <h3 className="font-oswald text-2xl uppercase tracking-widest text-[#E60000] font-bold flex items-center gap-3">
-             <Megaphone size={24} /> Ad Manager
+             <Megaphone size={24} /> Strike Manager
            </h3>
-           <p className="font-mono text-[9px] text-gray-400 uppercase tracking-widest mt-2">Deploy Upstream Deal Credits</p>
+           <p className="font-mono text-[9px] text-gray-400 uppercase tracking-widest mt-2">Deploy Programmatic TikTok/Reels Campaigns</p>
         </div>
 
         <div className="p-6 flex-1 flex flex-col custom-scrollbar overflow-y-auto">
@@ -276,7 +277,7 @@ export default function Room09_Radio() {
              <div className="flex-1 flex flex-col items-center justify-center text-center opacity-50 border border-dashed border-[#333] p-8">
                <Target size={40} className="mb-4 text-[#555]" />
                <p className="font-oswald text-lg text-white uppercase tracking-widest">No Active Budgets</p>
-               <p className="font-mono text-[9px] text-[#888] uppercase mt-2 leading-relaxed">You must secure an Upstream Deal in Room 08 to unlock non-fiat marketing credits.</p>
+               <p className="font-mono text-[9px] text-[#888] uppercase mt-2 leading-relaxed">You must secure an Upstream Deal in Room 08 to unlock programmatic network distribution.</p>
              </div>
            ) : (
              <div className="flex flex-col gap-6 animate-in slide-in-from-bottom-4">
@@ -296,7 +297,7 @@ export default function Room09_Radio() {
 
                <div>
                  <div className="flex justify-between items-center mb-2">
-                   <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold">2. Allocate Budget</label>
+                   <label className="text-[10px] font-mono text-[#E60000] uppercase tracking-widest font-bold">2. Allocate Network Bandwidth</label>
                    <span className="font-oswald text-lg text-white">${campaignBudget.toFixed(2)}</span>
                  </div>
                  <input 
@@ -315,13 +316,12 @@ export default function Room09_Radio() {
                </div>
 
                <div className="bg-[#111] p-4 border-l-2 border-[#E60000] mt-2">
-                 <p className="text-[9px] font-mono text-[#888] uppercase tracking-widest mb-1">Estimated Return On Ad Spend (ROAS)</p>
+                 <p className="text-[9px] font-mono text-[#888] uppercase tracking-widest mb-1">Estimated Organic Resonance</p>
                  <div className="flex items-center gap-2 mt-3">
                    <Zap size={14} className="text-[#555]"/>
                    <span className="font-oswald text-xl text-[#888]">{(campaignBudget * 14.5).toLocaleString()}</span>
-                   <span className="font-mono text-[10px] text-[#555] uppercase mt-1">Targeted Impressions</span>
+                   <span className="font-mono text-[10px] text-[#555] uppercase mt-1">Short-Form Views</span>
                  </div>
-                 {/* SURGICAL FIX: The Cult Fan UI addition */}
                  <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[#222]">
                    <Users size={14} className="text-[#E60000]"/>
                    <span className="font-oswald text-xl text-white">{Math.floor(campaignBudget * 0.3)}</span>
@@ -334,7 +334,7 @@ export default function Room09_Radio() {
                  disabled={isDeploying || campaignBudget <= 0 || !selectedTrackId}
                  className="mt-4 w-full bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(230,0,0,0.2)]"
                >
-                 {isDeploying ? <Loader2 size={20} className="animate-spin" /> : <><ArrowUpRight size={20} /> Deploy Campaign</>}
+                 {isDeploying ? <Loader2 size={20} className="animate-spin" /> : <><ArrowUpRight size={20} /> Deploy TikTok/Reels Strike</>}
                </button>
              </div>
            )}

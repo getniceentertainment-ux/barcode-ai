@@ -33,7 +33,6 @@ export async function POST(req: Request) {
 
     // ============================================================================
     // THE SELF-HEALING FALLBACK TEMPLATE
-    // If the LLM times out, hallucinates, or the API key is missing, use this perfect blueprint.
     // ============================================================================
     const generateFallback = (trackTitle: string) => {
       const schedule = [];
@@ -50,22 +49,22 @@ export async function POST(req: Request) {
           copy = `Pre-release indexing for ${trackTitle}. Sound goes live soon.`;
         } else if (i === 11) {
           objective = "Release Day Amplification";
-          action = "Blast email CRM and ignite Meta Ads.";
+          action = "Blast email CRM and initiate TikTok/Reels algorithmic push.";
           spend = 200; // Initial burst
           execType = "auto_ad_spend";
-          copy = `OUT NOW. The wait is over. Stream ${trackTitle} everywhere.`;
+          copy = `OUT NOW. The wait is over. Stream ${trackTitle} via link in bio. #newmusic`;
         } else if (i >= 12 && i <= 24) {
           objective = "Algorithmic Strike";
-          action = "Deploy automated programmatic ad spend to acquire Cult Fans.";
+          action = "Programmatic vertical video distribution to TikTok, IG Reels, and Shorts.";
           spend = 92; // 13 days of sustained $92 spend
           execType = "auto_ad_spend";
-          copy = `Targeted Ad Deploy // Sector ${i}`;
+          copy = `Wait for the drop... 🤯 Track: ${trackTitle} #independentartist`;
         } else if (i === 25) {
-          objective = "Final Ad Push";
-          action = "Exhaust remaining campaign budget on retargeting.";
+          objective = "Final Network Push";
+          action = "Exhaust remaining campaign budget on viral retargeting.";
           spend = 104; // The exact remainder to hit $1,500 perfectly
           execType = "auto_ad_spend";
-          copy = `Targeted Ad Deploy // Sector 25 Final`;
+          copy = `Trending globally. Join the movement. 🌍 Link in bio.`;
         } else {
           objective = "Commercial Extraction";
           action = "Harvest UGC and execute direct DM strategy.";
@@ -90,25 +89,23 @@ export async function POST(req: Request) {
 
     let campaignJson = null;
 
-    // ============================================================================
-    // GROQ LLM EXECUTION BLOCK (With Safe Catch)
-    // ============================================================================
     try {
         if (!process.env.GROQ_API_KEY) {
             console.warn("[WARNING] GROQ_API_KEY missing. Bypassing to Fallback Matrix.");
             throw new Error("API Key Missing");
         }
 
+        // --- SURGICAL FIX: RE-SCOPED AI PROMPT FOR TIKTOK/REELS ---
         const systemPrompt = `You are 'The Exec', the AI Operations Director for GetNice Records.
 Your objective is to ingest a song and automatically generate a strict 30-day Go-To-Market (GTM) rollout based on the "GetNice 30-Day Maximum Success" framework.
 
 THE FRAMEWORK:
 - Days 1-10: Setup & Validation (Infrastructure, Bio-links, 1.5s visual hooks, Email opt-ins).
-- Days 11-20: Strike & Amplification (Release day, 3 clips/day, Meta Ads via Hypeddit).
+- Days 11-20: Strike & Amplification (Release day, 3 vertical clips/day posted to TikTok/IG Reels/YT Shorts via API).
 - Days 21-30: Consolidation & Commercial Extraction (DM strategy, UGC harvesting, Merch/VIP up-sells).
 
 OUTPUT FORMAT:
-You MUST output ONLY a raw, valid JSON object. No markdown formatting, no conversational text, no \`\`\`json wrappers. Just the raw JSON block starting with { and ending with }.
+You MUST output ONLY a raw, valid JSON object. No markdown formatting, no conversational text.
 {
   "phases": {
     "phase_1": "Setup & Validation",
@@ -119,8 +116,8 @@ You MUST output ONLY a raw, valid JSON object. No markdown formatting, no conver
     {
       "day": 1,
       "objective": "Short description of today's goal",
-      "action_item": "Specific task (e.g., Post snippet A, Configure Hypeddit)",
-      "generated_copy": "Exact text for the TikTok caption, Email, or SMS to be used today",
+      "action_item": "Specific task (e.g., Post snippet to TikTok, Email blast)",
+      "generated_copy": "Exact text for the viral TikTok caption, Email, or SMS to be used today",
       "auto_ad_spend": 0,
       "execution_type": "auto_email" | "auto_ad_spend" | "social_post" | "manual_action",
       "status": "pending"

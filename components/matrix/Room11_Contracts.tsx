@@ -413,9 +413,11 @@ export default function Room11_Contracts() {
                       {todayTask.action_item}
                     </p>
                   </div>
+                  
+                  {/* SURGICAL FIX: Re-Scoped Ad Spend Panel */}
                   <div className="bg-[#050505] border border-[#222] p-6 relative group hover:border-green-500/50 transition-colors">
                     <Zap size={16} className="absolute top-6 right-6 text-green-500" />
-                    <p className="text-[9px] font-mono text-[#555] uppercase tracking-widest mb-3 font-bold">Automated Ad Spend Deploy</p>
+                    <p className="text-[9px] font-mono text-[#555] uppercase tracking-widest mb-3 font-bold">Algorithmic Network Push</p>
                     <p className="font-oswald text-4xl font-bold text-green-500 tracking-tighter">
                       ${todayTask.auto_ad_spend?.toFixed(2) || "0.00"}
                     </p>
