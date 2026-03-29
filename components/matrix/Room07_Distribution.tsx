@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams } from 'next/navigation';
 import Link from "next/link";
@@ -16,19 +17,23 @@ export default function Room07_Distribution() {
   } = useMatrixStore();
   
   const searchParams = useSearchParams();
-  const interceptorFired = useRef(false); // SURGICAL FIX: Prevents reactive double-firing
+  const interceptorFired = useRef(false); 
 
   // --- STATE ---
   const [trackId, setTrackId] = useState<string | null>(null);
   const [submission, setSubmission] = useState<any>(null);
   
-  // Upsell & UI States
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   const [execRollout, setExecRollout] = useState<string>("");
   const [isGeneratingRollout, setIsGeneratingRollout] = useState(false);
   const [loadingStep, setLoadingStep] = useState<string>(""); 
 
   const isFreestyle = !generatedLyrics || generatedLyrics.trim() === "";
+
+  // --- DYNAMIC PRICING CALCULATION ---
+  const targetScore = 90;
+  const pointsShort = Math.max(0, targetScore - (anrData.hitScore || 0));
+  const dynamicRolloutPrice = (14.99 + (pointsShort * 1.00)).toFixed(2);
 
   // --- RECOVERY LOGIC: FETCH TRACK ID & ROLLOUT ON MOUNT IF ALREADY SUCCESSFUL ---
   useEffect(() => {
@@ -56,7 +61,6 @@ export default function Room07_Distribution() {
   useEffect(() => {
     if (typeof window === 'undefined' || interceptorFired.current) return;
 
-    // Use Vanilla JS to bypass Next.js reactive loop wipeouts
     const params = new URLSearchParams(window.location.search);
     const rolloutPurchased = params.get('rollout_purchased');
     const coverArtPurchased = params.get('cover_art_purchased');
@@ -67,11 +71,55 @@ export default function Room07_Distribution() {
     if (rolloutPurchased === 'true') {
       interceptorFired.current = true;
       
-      // SURGICAL FIX: Handoff directly to Room 11 without clearing the URL
-      // Room 11 will intercept the URL, poll the ledger, and display a proper loading screen
-      if (addToast) addToast("Financial Handshake Initiated. Transferring to Ledger...", "info");
-      setActiveRoom("11"); 
-      return;
+      setLoadingStep("Awaiting Financial Handshake from Stripe...");
+      updateAnrData({ status: "submitting" });
+      
+      const pollLedger = setInterval(async () => {
+        const { data } = await supabase
+          .from('submissions')
+          .select('upstream_deal_signed')
+          .eq('id', searchTrackId)
+          .single();
+
+        if (data?.upstream_deal_signed) {
+          clearInterval(pollLedger);
+          if (addToast) addToast("Deal Secured. Initializing Exec AI (This takes ~10s)...", "success");
+          setLoadingStep("The Exec is generating your 30-Day Strategy...");
+          
+          try {
+            await useMatrixStore.getState().syncLedger();
+
+            const { data: { session } } = await supabase.auth.getSession();
+            await fetch('/api/campaign/initialize', {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json', 
+                'Authorization': `Bearer ${session?.access_token}`,
+                'Cache-Control': 'no-cache'
+              },
+              body: JSON.stringify({ trackId: searchTrackId })
+            });
+          } catch (e) {
+            console.error("Auto-campaign init failed", e);
+          }
+
+          if (addToast) addToast("Campaign Deployed. Transferring to Command Center...", "success");
+          
+          // SURGICAL FIX: Fire the delayed Room 08 reminder just before teleporting
+          setTimeout(() => {
+            if (addToast) addToast("SYSTEM NOTE: Visit R08 (The Bank) to review your Upstream Terms & Conditions.", "info");
+          }, 3000);
+
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setActiveRoom("11"); 
+        }
+      }, 2000);
+
+      setTimeout(() => {
+        clearInterval(pollLedger);
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setActiveRoom("11"); 
+      }, 25000);
     }
 
     if (coverArtPurchased === 'true') {
@@ -83,7 +131,7 @@ export default function Room07_Distribution() {
       
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, []); // Empty dependency array ensures it fires only once
+  }, []);
 
   // --- THE HYBRID INTELLIGENCE PIPELINE ---
   const handleDistributionSequence = async () => {
@@ -100,7 +148,6 @@ export default function Room07_Distribution() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Security Exception: Missing Session Token.");
 
-      // STEP 1: SECURE AUDIO TO THE VAULT FIRST
       updateAnrData({ status: "submitting" });
       setLoadingStep("Uploading master audio to encrypted vault...");
       
@@ -127,7 +174,6 @@ export default function Room07_Distribution() {
         persistentAudioUrl = publicData.publicUrl;
       }
 
-      // STEP 1.5: FORENSIC TRANSCRIPTION (If Freestyle Detected)
       let lyricsForScan = generatedLyrics || "No lyrics provided";
 
       if (isFreestyle && targetBlob) {
@@ -149,15 +195,12 @@ export default function Room07_Distribution() {
                  lyricsForScan = whisperData.transcription;
                  useMatrixStore.getState().setGeneratedLyrics(whisperData.transcription);
               }
-            } else {
-              console.warn("Whisper transcription rejected. Proceeding as instrumental.");
             }
          } catch (e) {
             console.warn("Forensic transcription bypassed.", e);
          }
       }
 
-      // STEP 2: RUN THE A&R NEURAL SCAN
       updateAnrData({ status: "analyzing" });
       setLoadingStep("Scanning structural metrics...");
       
@@ -179,7 +222,6 @@ export default function Room07_Distribution() {
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      // STEP 3: WRITE TO THE LEDGER
       updateAnrData({ status: "submitting" });
       setLoadingStep("Writing metadata to Supabase Ledger...");
 
@@ -200,7 +242,6 @@ export default function Room07_Distribution() {
 
       if (!submitRes.ok) throw new Error("Failed to secure artifact in Ledger.");
 
-      // STEP 4: FETCH NEW TRACK ID & SUBMISSION DATA
       const { data: latestSub } = await supabase
         .from('submissions')
         .select('*')
@@ -214,7 +255,6 @@ export default function Room07_Distribution() {
           setSubmission(latestSub);
       }
 
-      // STEP 5: FINALIZE UI
       updateAnrData({
         hitScore: analyzeData.hitScore,
         coverUrl: analyzeData.coverUrl,
@@ -255,10 +295,16 @@ export default function Room07_Distribution() {
     }
     setIsGeneratingRollout(true);
     try {
+      // SURGICAL FIX: We now send the hitScore to the Cashier to dynamically calculate the price
       const res = await fetch('/api/stripe/rollout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: userSession?.id, trackTitle: anrData.trackTitle, trackId })
+        body: JSON.stringify({ 
+          userId: userSession?.id, 
+          trackTitle: anrData.trackTitle, 
+          trackId,
+          hitScore: anrData.hitScore 
+        })
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url; 
@@ -269,34 +315,11 @@ export default function Room07_Distribution() {
     }
   };
 
-  const triggerRolloutGeneration = async (tId: string) => {
-    setIsGeneratingRollout(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/api/distribution/rollout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ trackId: tId })
-      });
-      const data = await res.json();
-      if (data.rollout) {
-        setExecRollout(data.rollout);
-        if(addToast) addToast("The Exec has deployed your 30-Day Strategy.", "success");
-      }
-    } catch (err) {
-      console.error("Rollout Error:", err);
-    } finally {
-      setIsGeneratingRollout(false);
-    }
-  };
-
-  // SURGICAL FIX: The FLUX.1 Generation Engine Caller (Anti-304 & Hydration Guard)
   const triggerCoverArtGeneration = async (tId: string) => {
     setIsGeneratingCover(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
-      // Safely resolve the track title even if the UI memory wiped during Stripe redirect
       let safeTitle = anrData.trackTitle || submission?.title;
       if (!safeTitle) {
         const { data: subData } = await supabase.from('submissions').select('title').eq('id', tId).single();
@@ -317,7 +340,6 @@ export default function Room07_Distribution() {
       
       const data = await res.json();
       if (data.coverUrl) {
-        // Append unique timestamp to bust browser image cache completely
         const cacheBustedUrl = `${data.coverUrl}?t=${Date.now()}`;
         
         setSubmission((prev: any) => ({ ...prev, cover_url: cacheBustedUrl }));
@@ -486,7 +508,7 @@ export default function Room07_Distribution() {
                   )}
                </div>
 
-               {/* The Exec Rollout */}
+               {/* The Exec Rollout (DYNAMIC SLIDING SCALE PAYOLA) */}
                <div className="bg-black border border-[#222] p-6 text-left relative overflow-hidden flex flex-col">
                   <span className="text-[10px] font-mono text-purple-500 uppercase tracking-[0.3em] font-bold mb-4 block">
                     The Exec // 30-Day Rollout
@@ -497,20 +519,34 @@ export default function Room07_Distribution() {
                       {execRollout}
                     </div>
                   ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center border border-dashed border-purple-500/20 m-2 bg-purple-900/5 relative py-6">
-                      <Lock size={20} className="mb-3 text-purple-500/50" />
-                      <p className="font-oswald text-sm text-purple-400 uppercase tracking-widest mb-1">Timeline Locked</p>
-                      <p className="text-[8px] font-mono uppercase tracking-widest text-[#888] mb-5 max-w-[200px]">
-                        Awaiting algorithmic strategy deployment.
-                      </p>
-                      <button 
-                        onClick={handlePurchaseRollout}
-                        disabled={isGeneratingRollout}
-                        className="bg-purple-900/20 border border-purple-500/30 text-purple-400 px-6 py-2 text-[9px] font-bold uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-colors disabled:opacity-50 shadow-lg flex items-center gap-2"
-                      >
-                        {isGeneratingRollout ? <Loader2 size={12} className="animate-spin" /> : <BarChart size={12} />}
-                        Unlock Strategy ($14.99)
-                      </button>
+                    <div className="flex-1 flex flex-col justify-center border border-dashed border-purple-500/20 m-2 bg-purple-900/5 relative p-4">
+                      
+                      {/* SLIDING SCALE PENALTY UI */}
+                      {pointsShort > 0 && (
+                        <div className="bg-yellow-500/10 border border-yellow-500/30 p-3 mb-4 rounded-sm">
+                           <p className="text-[9px] font-mono text-yellow-500 uppercase tracking-widest font-bold flex items-center">
+                             <Zap size={10} className="mr-1.5" /> Algorithmic Bypass Active
+                           </p>
+                           <p className="text-[8px] font-mono text-[#888] mt-1.5 uppercase leading-relaxed">
+                             Score is <span className="text-white font-bold">{pointsShort} pts</span> shy of Upstream Priority. A network override fee of $1.00/pt is applied to the base rate.
+                           </p>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col items-center text-center mt-2">
+                        <Lock size={16} className="mb-2 text-purple-500/50" />
+                        <p className="text-[8px] font-mono uppercase tracking-widest text-[#888] mb-4">
+                          Awaiting algorithmic strategy deployment.
+                        </p>
+                        <button 
+                          onClick={handlePurchaseRollout}
+                          disabled={isGeneratingRollout}
+                          className="bg-purple-900/20 border border-purple-500/30 text-purple-400 px-6 py-3 text-[9px] font-bold uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-colors disabled:opacity-50 shadow-lg flex items-center gap-2 w-full justify-center"
+                        >
+                          {isGeneratingRollout ? <Loader2 size={12} className="animate-spin" /> : <BarChart size={12} />}
+                          Unlock Strategy (${dynamicRolloutPrice})
+                        </button>
+                      </div>
                     </div>
                   )}
                </div>

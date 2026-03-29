@@ -7,8 +7,22 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 export async function POST(req: Request) {
   try {
-    const { trackId, trackTitle, userId } = await req.json();
-    if (!userId || !trackId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // SURGICAL FIX: Added hitScore to the payload extraction
+    const { trackId, trackTitle, userId, hitScore } = await req.json();
+
+    if (!userId || !trackId) {
+        return NextResponse.json({ error: "Unauthorized: Missing User ID or Track ID" }, { status: 401 });
+    }
+
+    // --- ALGORITHMIC BYPASS PRICING MATH ---
+    const score = typeof hitScore === 'number' ? hitScore : 0;
+    const targetScore = 90;
+    const pointsShort = Math.max(0, targetScore - score);
+
+    // Base price $14.99 + $1.00 per point they are short
+    const basePriceCents = 1499; 
+    const penaltyCents = pointsShort * 100; 
+    const finalPriceCents = basePriceCents + penaltyCents;
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://www.bar-code.ai";
 
@@ -19,23 +33,26 @@ export async function POST(req: Request) {
           price_data: {
             currency: 'usd',
             product_data: {
-              name: 'The Exec: 30-Day Rollout Strategy',
-              description: `Algorithmic Marketing Campaign Specifically For "${trackTitle}"`,
+              name: 'The Exec: 30-Day Go-To-Market Rollout',
+              // Dynamic description showing the exact penalty applied
+              description: pointsShort > 0 
+                ? `Algorithmic Strategy for "${trackTitle || 'Artifact'}". Bypass Penalty Applied: -${pointsShort} pts.` 
+                : `Algorithmic Strategy & Ad Campaign for "${trackTitle || 'Artifact'}".`,
             },
-            unit_amount: 1499, // $14.99 USD
+            unit_amount: finalPriceCents,
           },
           quantity: 1,
         },
       ],
       mode: 'payment',
-      // Passes the track ID back so Room 08 knows which track to generate the rollout for
-      success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/?rollout_purchased=true&track_id=${trackId}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/`,
+      success_url: `${siteUrl}/?rollout_purchased=true&track_id=${trackId}`,
+      cancel_url: `${siteUrl}/`,
       metadata: { userId, type: 'exec_rollout', track_id: trackId }
     });
 
     return NextResponse.json({ url: session.url });
   } catch (error: any) {
+    console.error("Exec Rollout Checkout Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
