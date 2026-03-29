@@ -15,41 +15,67 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Payment not finalized." }, { status: 400 });
     }
 
-    // 2. Safely fetch current data
+    const userId = session.metadata?.userId || session.client_reference_id;
+    if (!userId) throw new Error("Missing user ID in session metadata");
+
+    // 2. Fetch current submission data
     const { data: sub } = await supabaseAdmin
       .from('submissions')
-      .select('hit_score, base_hit_score, exec_bypass')
+      .select('hit_score, exec_bypass')
       .eq('id', trackId)
       .single();
 
-    // 3. Race Condition Guard: If webhook somehow beat us here, do nothing
+    // Race Condition Guard
     if (sub?.exec_bypass) {
        return NextResponse.json({ success: true, message: "Already verified." });
     }
 
-    // 4. THE PAYOLA MATH (Instant Execution)
-    let updatePayload: any = { 
-      exec_bypass: true, 
-      campaign_day: 1,   
-      exec_rollout: "AWAITING_NEURAL_SYNTHESIS" 
-    };
-    
-    if (sub && sub.hit_score < 95) {
-      updatePayload.base_hit_score = sub.base_hit_score || sub.hit_score;
-      updatePayload.hit_score = 95;
-    }
+    // 3. THE PRO-RATED ALGORITHMIC MATCH MATH
+    const score = sub?.hit_score || 0;
+    const proRatedAdvance = Math.floor(1500 * (score / 100));
 
-    await supabaseAdmin.from('submissions').update(updatePayload).eq('id', trackId);
-    
-    // 5. Log the transaction
-    await supabaseAdmin.from('transactions').insert({
-      user_id: session.metadata?.userId || session.client_reference_id,
-      amount: -(session.amount_total! / 100),
-      type: 'UPSELL_PURCHASE',
-      description: `Independent Rollout Bypass: ${trackId}`
-    });
+    // 4. Fetch user's current marketing credits
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('marketing_credits')
+      .eq('id', userId)
+      .single();
+      
+    const currentCredits = profile?.marketing_credits || 0;
 
-    return NextResponse.json({ success: true });
+    // 5. Deposit the Pro-Rated Advance into their profile
+    await supabaseAdmin
+      .from('profiles')
+      .update({ marketing_credits: currentCredits + proRatedAdvance })
+      .eq('id', userId);
+
+    // 6. Unlock the submission (Trump Card)
+    await supabaseAdmin
+      .from('submissions')
+      .update({ 
+        exec_bypass: true, 
+        rollout_purchased: true,
+        campaign_day: 1 
+      })
+      .eq('id', trackId);
+    
+    // 7. Log the transactions for Room 08 Ledger
+    await supabaseAdmin.from('transactions').insert([
+      {
+        user_id: userId,
+        amount: -(session.amount_total! / 100),
+        type: 'UPSELL_PURCHASE',
+        description: `Algorithmic SaaS Purchase: ${trackId}`
+      },
+      {
+        user_id: userId,
+        amount: proRatedAdvance,
+        type: 'ADVANCE_DEPOSIT',
+        description: `Pro-Rated Algorithmic Match (${score}% of $1,500)`
+      }
+    ]);
+
+    return NextResponse.json({ success: true, advance: proRatedAdvance });
   } catch (error: any) {
     console.error("Session Verification Error:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
