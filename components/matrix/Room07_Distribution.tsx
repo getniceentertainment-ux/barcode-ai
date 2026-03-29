@@ -6,13 +6,17 @@ import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image a
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import Link from "next/link"; 
+import { useSearchParams } from 'next/navigation';
+
 
 export default function Room07_Distribution() {
   const { 
     setActiveRoom, userSession, generatedLyrics, addToast, audioData, 
     finalMaster, blueprint, flowDNA, anrData, updateAnrData 
   } = useMatrixStore();
-  
+    const searchParams = useSearchParams();
+    export
+
   const [trackId, setTrackId] = useState<string | null>(null);
   
   // Upsell & UI States
@@ -43,6 +47,47 @@ export default function Room07_Distribution() {
       fetchLatest();
     }
   }, [anrData.status, userSession?.id]);
+  
+  useEffect(() => {
+    // 1. Check if we just returned from a successful Stripe checkout
+    const rolloutPurchased = searchParams.get('rollout_purchased');
+    const coverArtPurchased = searchParams.get('cover_art_purchased');
+    const trackId = searchParams.get('track_id');              
+    
+    if (rolloutPurchased === 'true' && trackId) {
+      // THE FIX: Teleport the user straight to Room 11 (The Exec)
+      if (addToast) addToast("Upstream Deal Secured. Transferring to The Exec...", "success");
+      
+      // Give the database 1.5 seconds to catch up from the Webhook ping, then route
+      setTimeout(() => {
+        setActiveRoom("11"); 
+      }, 1500);
+      
+      // Clean up the URL so it doesn't keep triggering
+      window.history.replaceState(null, '', '/');
+    }
+
+    if (coverArtPurchased === 'true' && trackId) {
+      // THE FIX: Force a fresh database pull to display the new Cover Art
+      if (addToast) addToast("Cover Art Generated Successfully.", "success");
+      
+      const fetchFreshArtwork = async () => {
+        const { data } = await supabase
+          .from('submissions')
+          .select('*')
+          .eq('id', trackId)
+          .single();
+          
+        if (data) {
+          setSubmission(data); // This forces the UI to re-render with the new image
+        }
+      };
+      
+      // Give the Webhook a moment to save the AI image, then fetch it
+      setTimeout(fetchFreshArtwork, 2000);
+      window.history.replaceState(null, '', '/');
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
