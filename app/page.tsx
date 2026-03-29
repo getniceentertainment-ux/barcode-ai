@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
+import SecurityShield from "../components/matrix/SecurityShield";
 
 // The Gateway & Global UI
 import EntryGateway from "../components/matrix/EntryGateway";
@@ -426,7 +427,8 @@ export default function MatrixController() {
 
   return (
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-0 md:pb-24 font-mono">
-      
+      {/* INVISIBLE SYSTEM GUARDS */}
+      <SecurityShield />      
       {/* --- EDUCATIONAL UX NOTIFICATION (PRE-FORMAT DELAY OVERLAY) --- */}
       {showLandscapeTip && (
         <div className="fixed inset-0 z-[9999] bg-[#050505] flex flex-col items-center justify-center text-center px-8 animate-in fade-in duration-300">
