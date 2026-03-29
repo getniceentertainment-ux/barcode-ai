@@ -7,7 +7,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 export async function POST(req: Request) {
   try {
-    // SURGICAL FIX: Added hitScore to the payload extraction
+    // SURGICAL FIX: Extracting hitScore from the frontend
     const { trackId, trackTitle, userId, hitScore } = await req.json();
 
     if (!userId || !trackId) {
@@ -16,7 +16,7 @@ export async function POST(req: Request) {
 
     // --- ALGORITHMIC BYPASS PRICING MATH ---
     const score = typeof hitScore === 'number' ? hitScore : 0;
-    const targetScore = 90;
+    const targetScore = 95; // User designated 95+ as the Upstream Target
     const pointsShort = Math.max(0, targetScore - score);
 
     // Base price $14.99 + $1.00 per point they are short
@@ -36,8 +36,8 @@ export async function POST(req: Request) {
               name: 'The Exec: 30-Day Go-To-Market Rollout',
               // Dynamic description showing the exact penalty applied
               description: pointsShort > 0 
-                ? `Algorithmic Strategy for "${trackTitle || 'Artifact'}". Bypass Penalty Applied: -${pointsShort} pts.` 
-                : `Algorithmic Strategy & Ad Campaign for "${trackTitle || 'Artifact'}".`,
+                ? `Independent Strategy for "${trackTitle || 'Artifact'}". Bypass Penalty Applied: -${pointsShort} pts.` 
+                : `Independent Strategy & Ad Campaign for "${trackTitle || 'Artifact'}".`,
             },
             unit_amount: finalPriceCents,
           },
