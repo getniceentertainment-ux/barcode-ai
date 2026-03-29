@@ -336,10 +336,14 @@ export default function Room08_Bank() {
                     Your latest artifact failed to meet the rigorous A&R standards for an Upstream Deal. The algorithm requires optimal BPM, pattern interrupts, and highly complex syllable density. 
                   </p>
                   <button 
-                    onClick={() => setActiveRoom("07")}
+                    onClick={() => {
+                      // SURGICAL FIX: Reset the A&R scanner state before sending them back!
+                      useMatrixStore.getState().updateAnrData({ status: "idle" });
+                      setActiveRoom("07");
+                    }}
                     className="bg-[#111] border border-[#333] text-white px-8 py-4 font-oswald text-sm font-bold uppercase tracking-widest hover:border-white transition-all w-full flex items-center justify-center gap-2"
                   >
-                    Return to Distribution <ArrowRight size={16} />
+                    Return to Distribution & Re-Scan <ArrowRight size={16} />
                   </button>
                </div>
              ) : isSigned ? (

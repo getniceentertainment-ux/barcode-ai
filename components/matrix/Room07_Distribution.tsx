@@ -409,6 +409,22 @@ export default function Room07_Distribution() {
                   View on My Profile <Globe size={16} />
                 </Link>
              </div>
+
+             {/* SURGICAL FIX: The Re-Scan Escape Hatch */}
+             <div className="mt-8 text-center">
+               <button 
+                 onClick={() => {
+                   if (window.confirm("This will discard the current A&R score and generate a new artifact submission. Proceed?")) {
+                     updateAnrData({ status: "idle", hitScore: 0, tiktokSnippet: "", coverUrl: "" });
+                     setTrackId(null);
+                     setExecRollout("");
+                   }
+                 }}
+                 className="text-[10px] font-mono text-[#555] hover:text-[#E60000] uppercase tracking-widest transition-colors"
+               >
+                 [ Force Neural Re-Scan ]
+               </button>
+             </div>
           </div>
         )}
       </div>
