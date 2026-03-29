@@ -259,6 +259,71 @@ export default function Room07_Distribution() {
           setSubmission(latestSub);
       }
 
+      // STEP 5: FINALIZE UI
+      updateAnrData({
+        hitScore: analyzeData.hitScore,
+        coverUrl: analyzeData.coverUrl,
+        tiktokSnippet: analyzeData.tiktokSnippet,
+        status: "success"
+      });
+      if (addToast) addToast("Artifact secured. Global Nodes synchronized.", "success");
+
+    } catch (error: any) {
+      console.error("Distribution Error:", error);
+      if (addToast) addToast(error.message, "error");
+      updateAnrData({ status: "idle" });
+    }
+  };
+
+  const handlePurchaseCoverArt = async () => {
+    setIsGeneratingCover(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/stripe/cover-art', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ userId: userSession?.id, trackTitle: anrData.trackTitle, trackId: trackId })
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url; 
+      else throw new Error(data.error || "Failed to initialize Stripe.");
+    } catch (err: any) {
+      if (addToast) addToast("Checkout failed: " + err.message, "error");
+      setIsGeneratingCover(false);
+    }
+  };
+
+  const handlePurchaseRollout = async () => {
+    if (!trackId) {
+      if (addToast) addToast("Submission ID missing. Resubmit track.", "error");
+      return;
+    }
+    setIsGeneratingRollout(true);
+    try {
+      const res = await fetch('/api/stripe/rollout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userSession?.id, trackTitle: anrData.trackTitle, trackId })
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url; 
+      else throw new Error(data.error || "Failed to initialize Stripe.");
+    } catch (err: any) {
+      if (addToast) addToast("Checkout failed: " + err.message, "error");
+      setIsGeneratingRollout(false);
+    }
+  };
+
+  const triggerRolloutGeneration = async (tId: string) => {
+    setIsGeneratingRollout(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/distribution/rollout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ trackId: tId })
+      });
+      const data = await res.json();
       if (data.rollout) {
         setExecRollout(data.rollout);
         if(addToast) addToast("The Exec has deployed your 30-Day Strategy.", "success");
