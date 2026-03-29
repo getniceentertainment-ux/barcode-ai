@@ -7,19 +7,18 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 export async function POST(req: Request) {
   try {
-    // SURGICAL FIX: Extracting hitScore from the frontend
     const { trackId, trackTitle, userId, hitScore } = await req.json();
 
     if (!userId || !trackId) {
-        return NextResponse.json({ error: "Unauthorized: Missing User ID or Track ID" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized: Missing Node ID" }, { status: 401 });
     }
 
     // --- ALGORITHMIC BYPASS PRICING MATH ---
     const score = typeof hitScore === 'number' ? hitScore : 0;
-    const targetScore = 95; // User designated 95+ as the Upstream Target
+    const targetScore = 95; 
     const pointsShort = Math.max(0, targetScore - score);
 
-    // Base price $14.99 + $1.00 per point they are short
+    // Base price $14.99 + $1.00 per point they are short of 95
     const basePriceCents = 1499; 
     const penaltyCents = pointsShort * 100; 
     const finalPriceCents = basePriceCents + penaltyCents;
@@ -28,22 +27,19 @@ export async function POST(req: Request) {
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: 'The Exec: 30-Day Go-To-Market Rollout',
-              // Dynamic description showing the exact penalty applied
-              description: pointsShort > 0 
-                ? `Independent Strategy for "${trackTitle || 'Artifact'}". Bypass Penalty Applied: -${pointsShort} pts.` 
-                : `Independent Strategy & Ad Campaign for "${trackTitle || 'Artifact'}".`,
-            },
-            unit_amount: finalPriceCents,
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: 'The Exec: 30-Day Go-To-Market Rollout',
+            description: pointsShort > 0 
+              ? `Algorithmic Strategy for "${trackTitle}". Bypass Fee: +$${pointsShort}.00 (-${pointsShort} pts shy of target).` 
+              : `Premium Strategy & Ad Campaign for "${trackTitle}".`,
           },
-          quantity: 1,
+          unit_amount: finalPriceCents,
         },
-      ],
+        quantity: 1,
+      }],
       mode: 'payment',
       success_url: `${siteUrl}/?rollout_purchased=true&track_id=${trackId}`,
       cancel_url: `${siteUrl}/`,
@@ -52,7 +48,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ url: session.url });
   } catch (error: any) {
-    console.error("Exec Rollout Checkout Error:", error);
+    console.error("Rollout Checkout Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
