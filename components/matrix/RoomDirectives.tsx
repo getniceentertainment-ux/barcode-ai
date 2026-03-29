@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ShieldAlert, Zap, Terminal, Activity, Target, Cpu, TrendingUp, HelpCircle, X } from "lucide-react";
 
 interface Directive {
@@ -120,22 +120,42 @@ const ROOM_MAP: Record<string, RoomData> = {
 
 export default function RoomDirectives({ roomId }: { roomId: string }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isFlashing, setIsFlashing] = useState(true);
   const data = ROOM_MAP[roomId];
   
+  // Triggers the 15-second light pulse every time the user enters a new room
+  useEffect(() => {
+    setIsFlashing(true);
+    const timer = setTimeout(() => setIsFlashing(false), 15000);
+    return () => clearTimeout(timer);
+  }, [roomId]);
+
   if (!data) return null;
 
   return (
     <>
-      {/* FLOATING QUESTION MARK BUTTON */}
+      {/* FLOATING HOLOGRAPHIC BUTTON */}
       <button 
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-32 right-6 md:right-10 z-[40] bg-black border-2 border-[#E60000] text-[#E60000] p-4 rounded-full shadow-[0_0_20px_rgba(230,0,0,0.4)] hover:bg-[#E60000] hover:text-white transition-all hover:scale-110 group"
+        className={`fixed bottom-28 right-6 md:right-10 z-[40] w-20 h-20 flex items-center justify-center rounded-full transition-all hover:scale-110 focus:outline-none group ${isFlashing ? 'animate-pulse' : 'opacity-90 hover:opacity-100'}`}
         title="View Room Directives"
       >
-        <HelpCircle size={28} />
-        <span className="absolute -top-12 left-1/2 -translate-x-1/2 bg-black border border-[#333] text-white text-[10px] px-3 py-1.5 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg">
-          Room Directives
-        </span>
+        {/* 90% Transparent Background */}
+        <div className="absolute inset-0 bg-black/10 backdrop-blur-sm rounded-full"></div>
+
+        {/* Rotating Circular Text (Acts as the border) */}
+        <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full animate-[spin_12s_linear_infinite] drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]">
+          <path id="textCircle" d="M 50, 50 m -35, 0 a 35,35 0 1, 1 70, 0 a 35,35 0 1, 1 -70, 0" fill="none" />
+          <text className="font-mono text-[9.5px] font-bold uppercase tracking-widest fill-yellow-500">
+            {/* textLength perfectly justifies the text around the 35px radius circle */}
+            <textPath href="#textCircle" startOffset="0%" textLength="220" lengthAdjust="spacingAndGlyphs">
+              • DAW HELPER • SYSTEM GUIDE
+            </textPath>
+          </text>
+        </svg>
+
+        {/* Centered Yellow Icon */}
+        <HelpCircle size={26} className="text-yellow-500 relative z-10 drop-shadow-[0_0_10px_rgba(234,179,8,0.6)] group-hover:text-yellow-400 transition-colors" />
       </button>
 
       {/* POPUP MODAL OVERLAY */}
@@ -160,7 +180,7 @@ export default function RoomDirectives({ roomId }: { roomId: string }) {
                 <p className="text-xs text-[#E60000] font-bold uppercase tracking-widest animate-pulse mb-1">
                   System Directives // Node R{roomId}
                 </p>
-                <h3 className="text-white text-3xl md:text-4xl font-bold uppercase tracking-widest underline underline-offset-8 decoration-[#E60000]">
+                <h3 className="text-white text-3xl md:text-5xl font-bold uppercase tracking-widest underline underline-offset-8 decoration-[#E60000]">
                   {data.title}
                 </h3>
               </div>
@@ -170,12 +190,12 @@ export default function RoomDirectives({ roomId }: { roomId: string }) {
             <div className="overflow-y-auto custom-scrollbar flex-1 pr-2 space-y-6">
               {data.directives.map((d) => (
                 <div key={d.id} className="flex items-start gap-4 p-6 bg-[#0a0a0a] border border-[#222] hover:border-[#E60000]/50 transition-colors group">
-                  <span className="text-[#E60000] font-bold text-2xl mt-0.5">{d.id}.</span>
+                  <span className="text-[#E60000] font-bold text-3xl mt-0.5">{d.id}.</span>
                   <div>
-                    <p className="text-white text-lg md:text-xl font-bold uppercase tracking-widest mb-3 underline underline-offset-4 decoration-[#444] group-hover:decoration-[#E60000] transition-colors">
+                    <p className="text-white text-xl md:text-2xl font-bold uppercase tracking-widest mb-3 underline underline-offset-4 decoration-[#444] group-hover:decoration-[#E60000] transition-colors">
                       {d.title}
                     </p>
-                    <p className="text-white text-sm md:text-base leading-relaxed tracking-wide font-mono">
+                    <p className="text-white text-base md:text-lg leading-relaxed tracking-wide font-mono">
                       {d.desc}
                     </p>
                   </div>
@@ -183,7 +203,7 @@ export default function RoomDirectives({ roomId }: { roomId: string }) {
               ))}
 
               <div className="mt-8 p-6 border border-[#330000] bg-[#110000]">
-                <p className="text-sm md:text-base text-white leading-relaxed font-mono">
+                <p className="text-base md:text-lg text-white leading-relaxed font-mono">
                   <span className="text-[#E60000] font-bold uppercase tracking-widest block mb-2 underline underline-offset-4 decoration-[#E60000]">OPERATOR NOTE:</span> 
                   {data.encouragement}
                 </p>
