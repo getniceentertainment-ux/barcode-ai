@@ -46,7 +46,6 @@ export default function Room09_Radio() {
   const fetchGlobalRadio = async () => {
     setIsLoading(true);
     try {
-      // FIX: Replaced .eq('status', 'approved') with the actual hit_score threshold
       const { data: tracksData, error } = await supabase
         .from('submissions')
         .select('*')
@@ -58,7 +57,6 @@ export default function Room09_Radio() {
       if (error) throw error;
       
       if (tracksData && tracksData.length > 0) {
-        // --- SURGICAL FIX: Fetch Stage Names Safely ---
         const userIds = [...new Set(tracksData.map(t => t.user_id))];
         const { data: profilesData } = await supabase
           .from('profiles')
@@ -111,7 +109,6 @@ export default function Room09_Radio() {
     });
     setPlaybackMode('radio');
     
-    // FIX: Corrected dispatch event names to perfectly match the global footer player
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent('matrix-global-sys-seek', { detail: 0 }));
       window.dispatchEvent(new Event('matrix-global-sys-play'));
@@ -127,10 +124,27 @@ export default function Room09_Radio() {
 
     setIsDeploying(true);
     try {
+      // --- SURGICAL FIX: FAN ACQUISITION MATH ---
+      // We calculate realistic Fan conversion. At a $3.33 CAC, $10 = 3 Fans.
+      const fansGained = Math.floor(campaignBudget * 0.3);
       const newBalance = availableCredits - campaignBudget;
+
+      // 1. Fetch current fan count to avoid overriding existing fans
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('total_fans')
+        .eq('id', userSession.id)
+        .single();
+        
+      const currentFans = profileData?.total_fans || 0;
+
+      // 2. Update Profile: Deduct Ad Spend AND Add Cult Fans
       const { error: profileErr } = await supabase
         .from('profiles')
-        .update({ marketing_credits: newBalance })
+        .update({ 
+          marketing_credits: newBalance,
+          total_fans: currentFans + fansGained 
+        })
         .eq('id', userSession.id);
 
       if (profileErr) throw profileErr;
@@ -140,25 +154,17 @@ export default function Room09_Radio() {
         user_id: userSession.id,
         amount: -campaignBudget,
         type: 'AD_CAMPAIGN_SPEND',
-        description: `Algorithmic Boost: ${selectedTrack?.title}`
+        description: `Meta Ads Deploy: Captured ${fansGained} Fans`
       });
 
-      // Flawless math: Add the exact budget ratio directly to the database hit score
-      await supabase
-        .from('submissions')
-        .update({ hit_score: (selectedTrack?.hit_score || 0) + Math.floor(campaignBudget / 100) })
-        .eq('id', selectedTrackId);
+      // (We completely removed the hit_score payola boost from the Submissions table)
 
-      // Instantly update UI State
       useMatrixStore.setState({ 
         userSession: { ...userSession, marketingCredits: newBalance } as any
       });
 
-      if (addToast) addToast("Campaign Live. Algorithm prioritized.", "success");
+      if (addToast) addToast(`Meta Ads Deployed. +${fansGained} Cult Fans Captured.`, "success");
       setCampaignBudget(0);
-      
-      // Re-fetch the radio to show the newly boosted track higher on the list
-      fetchGlobalRadio(); 
       
     } catch (err: any) {
       if (addToast) addToast(err.message, "error");
@@ -228,16 +234,10 @@ export default function Room09_Radio() {
                         {track.title}
                       </h3>
                       <div className="flex items-center gap-3 mt-1 font-mono text-[9px] text-[#666] uppercase tracking-widest">
-                        
-                        {/* SURGICAL FIX: The Social Link routing to the artist's page */}
-                        <Link 
-                          href={`/${encodeURIComponent(track.stage_name || "Artist")}`} 
-                          className="hover:text-white hover:underline transition-colors z-10 relative cursor-pointer"
-                        >
+                        <Link href={`/${encodeURIComponent(track.stage_name || "Artist")}`} className="hover:text-white hover:underline transition-colors z-10 relative cursor-pointer">
                           {track.stage_name || track.user_id.substring(0, 8)}
                         </Link>
-
-                        {isHeavyRotation && <span className="text-[#E60000] flex items-center gap-1"><Flame size={10}/> Boosted</span>}
+                        {isHeavyRotation && <span className="text-[#E60000] flex items-center gap-1"><Flame size={10}/> Priority</span>}
                       </div>
                     </div>
 
@@ -315,11 +315,17 @@ export default function Room09_Radio() {
                </div>
 
                <div className="bg-[#111] p-4 border-l-2 border-[#E60000] mt-2">
-                 <p className="text-[9px] font-mono text-[#888] uppercase tracking-widest mb-1">Estimated Algorithmic Reach</p>
-                 <div className="flex items-center gap-2">
-                   <Zap size={14} className="text-yellow-500"/>
-                   <span className="font-oswald text-xl text-white">{(campaignBudget * 14.5).toLocaleString()}</span>
-                   <span className="font-mono text-[10px] text-[#555] uppercase mt-1">Guaranteed Streams</span>
+                 <p className="text-[9px] font-mono text-[#888] uppercase tracking-widest mb-1">Estimated Return On Ad Spend (ROAS)</p>
+                 <div className="flex items-center gap-2 mt-3">
+                   <Zap size={14} className="text-[#555]"/>
+                   <span className="font-oswald text-xl text-[#888]">{(campaignBudget * 14.5).toLocaleString()}</span>
+                   <span className="font-mono text-[10px] text-[#555] uppercase mt-1">Targeted Impressions</span>
+                 </div>
+                 {/* SURGICAL FIX: The Cult Fan UI addition */}
+                 <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[#222]">
+                   <Users size={14} className="text-[#E60000]"/>
+                   <span className="font-oswald text-xl text-white">{Math.floor(campaignBudget * 0.3)}</span>
+                   <span className="font-mono text-[10px] text-[#E60000] uppercase mt-1 font-bold">Cult Fans Acquired</span>
                  </div>
                </div>
 

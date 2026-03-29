@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// SURGICAL CONFIG: Vercel Pro/Enterprise allows longer cron executions. 
-// We set this to the maximum (300 seconds / 5 mins) to ensure it can process the whole roster.
 export const maxDuration = 300; 
 
 const supabaseAdmin = createClient(
@@ -12,7 +10,6 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
   try {
-    // 1. CRITICAL SECURITY GUARD
     const authHeader = req.headers.get('authorization');
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       return NextResponse.json({ error: "Unauthorized Cron Trigger" }, { status: 401 });
@@ -20,8 +17,6 @@ export async function POST(req: Request) {
 
     console.log("[CRON NODE] Waking up. Initiating Daily Label Execution Protocol...");
 
-    // 2. FETCH ALL ACTIVE CAMPAIGNS
-    // SURGICAL FIX: Added stage_name to the select query to satisfy TypeScript
     const { data: activeCampaigns, error: fetchErr } = await supabaseAdmin
       .from('submissions')
       .select('id, user_id, title, hit_score, campaign_data, campaign_day, audio_url, cover_url, stage_name')
@@ -51,21 +46,33 @@ export async function POST(req: Request) {
       console.log(`Processing Node ${campaign.user_id} - Day ${currentDay} (${execType})`);
 
       try {
-        // --- A. AUTOMATED AD SPEND ---
+        // --- A. AUTOMATED AD SPEND (FAN CRM ACQUISITION) ---
         if (execType === "auto_ad_spend" || taskData.auto_ad_spend > 0) {
           const spendAmount = taskData.auto_ad_spend || 0;
           if (spendAmount > 0) {
             const { data: profile } = await supabaseAdmin
               .from('profiles')
-              .select('marketing_credits')
+              .select('marketing_credits, total_fans')
               .eq('id', campaign.user_id)
               .single();
 
             const currentCredits = profile?.marketing_credits || 0;
+            const currentFans = profile?.total_fans || 0;
+
             if (currentCredits >= spendAmount) {
-              await supabaseAdmin.from('profiles').update({ marketing_credits: currentCredits - spendAmount }).eq('id', campaign.user_id);
-              await supabaseAdmin.from('transactions').insert({ user_id: campaign.user_id, amount: -spendAmount, type: 'AD_CAMPAIGN_SPEND', description: `Automated Ad Deploy: Day ${currentDay} Boost` });
-              await supabaseAdmin.from('submissions').update({ hit_score: (campaign.hit_score || 0) + Math.floor(spendAmount / 100) }).eq('id', campaign.id);
+              const fansGained = Math.floor(spendAmount * 0.3);
+
+              await supabaseAdmin.from('profiles').update({ 
+                marketing_credits: currentCredits - spendAmount,
+                total_fans: currentFans + fansGained 
+              }).eq('id', campaign.user_id);
+
+              await supabaseAdmin.from('transactions').insert({ 
+                user_id: campaign.user_id, 
+                amount: -spendAmount, 
+                type: 'AD_CAMPAIGN_SPEND', 
+                description: `Cron Auto-Deploy: Captured ${fansGained} Fans` 
+              });
             }
           }
         }
@@ -91,13 +98,10 @@ export async function POST(req: Request) {
         if (execType === "social_post" && process.env.CREATOMATE_API_KEY && process.env.AYRSHARE_API_KEY) {
            console.log(`[CRON] Initiating Video Render via Creatomate for ${campaign.title}...`);
            
-           // SURGICAL FIX: Removed the ayrshare_profile_key check. 
-           // We are now deploying directly to the GetNice Records primary social accounts.
            if (!campaign.audio_url || !campaign.cover_url) {
              throw new Error("Missing audio or cover asset for video generation.");
            }
 
-           // STEP 1: RENDER THE VIDEO (Creatomate)
            const renderRes = await fetch('https://api.creatomate.com/v1/renders', {
              method: 'POST',
              headers: {
@@ -106,10 +110,7 @@ export async function POST(req: Request) {
              },
              body: JSON.stringify({
                source: {
-                 output_format: "mp4",
-                 width: 1080,
-                 height: 1920,
-                 duration: 15, // Creates a 15-second viral snippet
+                 output_format: "mp4", width: 1080, height: 1920, duration: 15,
                  elements: [
                    { type: "image", source: campaign.cover_url, scale_mode: "cover" },
                    { type: "audio", source: campaign.audio_url, duration: 15 }
@@ -124,10 +125,9 @@ export async function POST(req: Request) {
            let renderStatus = renderData[0].status;
            let finalVideoUrl = renderData[0].url;
 
-           // Poll Creatomate until the MP4 is fully rendered (usually takes ~8 seconds)
            console.log(`[CRON] Rendering MP4 (ID: ${renderId}). Awaiting completion...`);
            while (renderStatus !== 'succeeded' && renderStatus !== 'failed') {
-             await new Promise(r => setTimeout(r, 4000)); // Wait 4 seconds between checks
+             await new Promise(r => setTimeout(r, 4000));
              const checkRes = await fetch(`https://api.creatomate.com/v1/renders/${renderId}`, {
                headers: { 'Authorization': `Bearer ${process.env.CREATOMATE_API_KEY}` }
              });
@@ -137,18 +137,14 @@ export async function POST(req: Request) {
            }
 
            if (renderStatus === 'failed' || !finalVideoUrl) throw new Error("Creatomate Video Render Failed.");
-           console.log(`[CRON] Video Rendered Successfully: ${finalVideoUrl}`);
-
-           // SURGICAL FIX: Append the artist's stage name so they get credit on the Label's timeline
+           
            const labelCaption = `${taskData.generated_copy}\n\nArtist: ${campaign.stage_name || 'GetNice Node'}\nLabel: GetNice Records`;
 
-           // STEP 2: POST TO TIKTOK/INSTAGRAM (Ayrshare)
            console.log(`[CRON] Pushing generated MP4 to Ayrshare Social APIs...`);
            const postRes = await fetch('https://app.ayrshare.com/api/post', {
              method: 'POST',
              headers: {
                'Authorization': `Bearer ${process.env.AYRSHARE_API_KEY}`,
-               // Removed the 'Profile-Key' header. This forces Ayrshare to use your Premium Label Account.
                'Content-Type': 'application/json'
              },
              body: JSON.stringify({
@@ -163,7 +159,6 @@ export async function POST(req: Request) {
              throw new Error(`Ayrshare Post Failed: ${errData.message || "Unknown API Error"}`);
            }
 
-           console.log(`[CRON] SUCCESS: Automated Social Payload Delivered for ${campaign.title}.`);
            executionLogs.push(`Social video successfully rendered and posted for track ${campaign.id}`);
         }
 
