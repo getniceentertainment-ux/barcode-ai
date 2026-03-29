@@ -96,12 +96,16 @@ export async function GET(req: Request) {
         }
 
         // --- C. REAL API: CREATOMATE & AYRSHARE (VIDEO RENDER & SOCIAL POST) ---
-        if (execType === "social_post" && process.env.CREATOMATE_API_KEY && process.env.AYRSHARE_API_KEY) {
+        if ((execType === "social_post" || execType === "auto_ad_spend") && process.env.CREATOMATE_API_KEY && process.env.AYRSHARE_API_KEY) {
            console.log(`[CRON] Initiating Video Render via Creatomate for ${campaign.title}...`);
            
-           if (!campaign.audio_url || !campaign.cover_url) {
-             throw new Error("Missing audio or cover asset for video generation.");
+           // SURGICAL FIX: Allow rendering even if the user didn't buy cover art
+           if (!campaign.audio_url) {
+             throw new Error("Missing master audio asset for video generation.");
            }
+
+           // Fallback to your Bar-Code logo if no cover art exists
+           const visualAsset = campaign.cover_url || "https://www.bar-code.ai/Logo_Bar-Code.jpg";
 
            const renderRes = await fetch('https://api.creatomate.com/v1/renders', {
              method: 'POST',
@@ -113,7 +117,7 @@ export async function GET(req: Request) {
                source: {
                  output_format: "mp4", width: 1080, height: 1920, duration: 15,
                  elements: [
-                   { type: "image", source: campaign.cover_url, scale_mode: "cover" },
+                   { type: "image", source: visualAsset, scale_mode: "cover" },
                    { type: "audio", source: campaign.audio_url, duration: 15 }
                  ]
                }
