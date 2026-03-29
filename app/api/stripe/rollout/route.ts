@@ -20,7 +20,7 @@ export async function POST(req: Request) {
             currency: 'usd',
             product_data: {
               name: 'The Exec: 30-Day Rollout Strategy',
-              description: `Custom algorithmic marketing calendar for "${trackTitle}"`,
+              description: `Algorithmic Marketing Campaign Specifically For "${trackTitle}"`,
             },
             unit_amount: 1499, // $14.99 USD
           },

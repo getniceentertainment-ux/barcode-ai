@@ -4,10 +4,12 @@ import { createClient } from "@supabase/supabase-js";
 import { ShieldCheck, Lock } from "lucide-react";
 import ProfileClient from "./ProfileClient"; 
 
-// --- RESERVED SYSTEM KEYWORDS ---
+// --- SURGICAL FIX: EXPANDED RESERVED SYSTEM KEYWORDS ---
+// Added drop, storage, _next, and public to prevent Next.js from mistaking system folders for Artist Profiles!
 const RESERVED_NAMES = [
   "studio", "dev-portal", "admin-node", "api", "auth", 
-  "login", "signup", "undefined", "null", "favicon.ico", "robots.txt"
+  "login", "signup", "undefined", "null", "favicon.ico", "robots.txt",
+  "drop", "storage", "_next", "public", "assets", "images", "terms"
 ];
 
 // Admin Client securely fetches public info regardless of RLS blocks
@@ -59,7 +61,7 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
     );
   }
 
-  // 4. FREE TIER RESTRICTION (GetNice Records Rule)
+  // 4. FREE TIER RESTRICTION
   if (profile.tier === "Free Loader") {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-6 text-center">
@@ -78,7 +80,7 @@ export default async function ArtistProfilePage({ params }: ProfilePageProps) {
     );
   }
 
-  // 5. SYNC VAULT (Fetch all public tracks/artifacts submitted by this valid user)
+  // 5. SYNC VAULT
   const { data: submissions } = await supabaseAdmin
     .from("submissions")
     .select("*")

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Mic2, Globe, ShieldCheck, Star, Edit2, Save, Loader2, Disc3, Play, Camera, User, Activity } from "lucide-react";
+import { Mic2, Globe, ShieldCheck, Star, Edit2, Save, Loader2, Disc3, Camera, User, Activity } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import Link from "next/link";
@@ -252,12 +252,14 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
                   <div key={sub.id} className="bg-[#0a0a0a] border border-[#222] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:border-[#E60000]/60 hover:bg-[#110000] transition-all relative overflow-hidden">
                      <div className="absolute inset-0 bg-gradient-to-r from-[#E60000]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
-                     <div className="flex items-center gap-6 relative z-10">
+                     <div className="flex items-center gap-6 relative z-10 w-full sm:w-auto">
                        <div className="w-16 h-16 bg-black border border-[#333] flex items-center justify-center text-[#E60000] shrink-0 group-hover:border-[#E60000]/50 transition-colors">
                          <Disc3 size={28} className="group-hover:animate-spin-slow transition-all" />
                        </div>
-                       <div>
-                         <h4 className="font-oswald text-xl text-white uppercase tracking-widest mb-1 group-hover:text-[#E60000] transition-colors">{sub.title || 'Untitled Artifact'}</h4>
+                       <div className="flex-1 truncate">
+                         <h4 className="font-oswald text-xl text-white uppercase tracking-widest mb-1 group-hover:text-[#E60000] transition-colors truncate">
+                           {sub.title || 'Untitled Artifact'}
+                         </h4>
                          <div className="flex flex-wrap items-center gap-3">
                            <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest bg-black px-2 py-1 border border-[#222]">
                              MINTED: {new Date(sub.created_at).toLocaleDateString()}
@@ -269,10 +271,16 @@ export default function ProfileClient({ initialProfile, submissions }: ProfileCl
                        </div>
                      </div>
                      
+                     {/* SURGICAL FIX: Inline Audio Player completely prevents the 404/Registry URL Glitch */}
                      {sub.audio_url && (
-                       <a href={sub.audio_url} target="_blank" rel="noopener noreferrer" className="relative z-10 w-12 h-12 rounded-full border border-[#444] bg-black flex items-center justify-center text-[#AAA] hover:text-white hover:bg-[#E60000] hover:border-[#E60000] transition-all shadow-lg shrink-0 self-start sm:self-auto group-hover:scale-110">
-                         <Play size={18} className="ml-1" />
-                       </a>
+                       <div className="relative z-10 shrink-0 self-start sm:self-auto flex items-center mt-2 sm:mt-0">
+                         <audio 
+                           controls 
+                           src={sub.audio_url} 
+                           className="h-10 w-full sm:w-56 outline-none grayscale invert opacity-90 border border-[#333] rounded-full" 
+                           controlsList="nodownload noplaybackrate" 
+                         />
+                       </div>
                      )}
                   </div>
                ))}

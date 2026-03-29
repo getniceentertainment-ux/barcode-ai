@@ -1,10 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Disc3, Mail, Lock, ArrowRight, Loader2, Play, CheckCircle2 } from "lucide-react";
+import React, { useState, useEffect, use } from "react";
+import { Disc3, Mail, Lock, Loader2, CheckCircle2 } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 
-export default function DropPage({ params }: { params: { trackId: string } }) {
+export default function DropPage({ params }: { params: Promise<{ trackId: string }> | { trackId: string } }) {
+  // Unwrap params using React.use() to satisfy Next.js 15+ requirements
+  const resolvedParams = params instanceof Promise ? use(params) : params;
+  const trackId = resolvedParams.trackId;
+
   const [track, setTrack] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
@@ -15,14 +19,11 @@ export default function DropPage({ params }: { params: { trackId: string } }) {
   useEffect(() => {
     const fetchDrop = async () => {
       try {
-        // Fetch the track AND the artist's stage name in one query
-        const { data, error } = await supabase
-          .from('submissions')
-          .select('id, title, cover_url, audio_url, user_id, profiles(stage_name)')
-          .eq('id', params.trackId)
-          .single();
-
-        if (error || !data) throw new Error("Artifact not found.");
+        // SURGICAL FIX: Fetch securely from our new API to bypass RLS blocks
+        const res = await fetch(`/api/drop?trackId=${trackId}`);
+        const data = await res.json();
+        
+        if (!res.ok) throw new Error(data.error || "Artifact not found.");
         setTrack(data);
       } catch (err) {
         setError("This drop link is invalid or has expired.");
@@ -31,7 +32,7 @@ export default function DropPage({ params }: { params: { trackId: string } }) {
       }
     };
     fetchDrop();
-  }, [params.trackId]);
+  }, [trackId]);
 
   const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,7 +49,6 @@ export default function DropPage({ params }: { params: { trackId: string } }) {
           email: email.toLowerCase()
         });
 
-      // Ignore duplicate email errors (code 23505), just show success anyway so the fan is happy
       if (insertErr && insertErr.code !== '23505') throw insertErr;
       
       setSuccess(true);
@@ -62,7 +62,7 @@ export default function DropPage({ params }: { params: { trackId: string } }) {
   if (loading) return <div className="min-h-screen bg-[#050505] flex items-center justify-center"><Loader2 className="animate-spin text-[#E60000]" size={48} /></div>;
   if (error && !track) return <div className="min-h-screen bg-[#050505] flex items-center justify-center text-[#888] font-mono uppercase tracking-widest">{error}</div>;
 
-  const artistName = track.profiles?.stage_name || "Unknown Artist";
+  const artistName = track.stage_name || "Unknown Artist";
 
   return (
     <div className="min-h-screen bg-[#050505] text-white font-mono selection:bg-[#E60000] flex flex-col items-center justify-center p-6 relative overflow-hidden">
