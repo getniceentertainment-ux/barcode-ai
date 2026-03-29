@@ -75,8 +75,8 @@ export async function POST(req: Request) {
         // Generate an onboarding link instead.
         const accountLink = await stripe.accountLinks.create({
             account: stripeAccountId,
-            refresh_url: `${origin}/studio`,
-            return_url: `${origin}/studio`,
+            refresh_url: `${origin}`,
+            return_url: `${origin}`,
             type: 'account_onboarding',
         });
         return NextResponse.json({ url: accountLink.url });

@@ -29,8 +29,8 @@ export async function POST(req: Request) {
       ],
       mode: 'payment',
       // Passes the track ID back so Room 08 knows which track to generate the rollout for
-      success_url: `${siteUrl}/studio?rollout_purchased=true&track_id=${trackId}`,
-      cancel_url: `${siteUrl}/`,
+      success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/?rollout_purchased=true&track_id=${trackId}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/`,
       metadata: { userId, type: 'exec_rollout', track_id: trackId }
     });
 
