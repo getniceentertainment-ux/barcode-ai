@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon, Globe, Zap, FileText } from "lucide-react";
+import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon, Globe, Zap, FileText, RefreshCw } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import Link from "next/link"; 
@@ -18,7 +18,9 @@ export default function Room07_Distribution() {
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   const [execRollout, setExecRollout] = useState<string>("");
   const [isGeneratingRollout, setIsGeneratingRollout] = useState(false);
-  const [loadingStep, setLoadingStep] = useState<string>(""); // NEW: Tracks the exact pipeline step
+  const [loadingStep, setLoadingStep] = useState<string>(""); 
+
+  const isFreestyle = !generatedLyrics || generatedLyrics.trim() === "";
 
   // --- RECOVERY LOGIC: FETCH TRACK ID & ROLLOUT ON MOUNT IF ALREADY SUCCESSFUL ---
   useEffect(() => {
@@ -68,7 +70,7 @@ export default function Room07_Distribution() {
     }
   }, [userSession, addToast, updateAnrData]);
 
-  // --- SURGICAL FIX: THE SEQUENTIAL PIPELINE ---
+  // --- SURGICAL FIX: THE HYBRID INTELLIGENCE PIPELINE ---
   const handleDistributionSequence = async () => {
     if (!anrData.trackTitle.trim()) {
       if (addToast) addToast("A track title is required for distribution.", "error");
@@ -88,28 +90,58 @@ export default function Room07_Distribution() {
       setLoadingStep("Uploading master audio to encrypted vault...");
       
       let persistentAudioUrl = finalMaster?.url;
+      let targetBlob: Blob | null = (finalMaster as any).blob || null;
 
       if (persistentAudioUrl?.startsWith('blob:')) {
-        let blobData = (finalMaster as any).blob;
-        
-        if (!blobData) {
+        if (!targetBlob) {
           const r = await fetch(persistentAudioUrl);
-          blobData = await r.blob();
+          targetBlob = await r.blob();
         }
-
-        if (!blobData) throw new Error("Audio payload missing from local memory.");
+        if (!targetBlob) throw new Error("Audio payload missing from local memory.");
 
         const safeStageName = (userSession?.stageName || 'UnknownNode').replace(/[^a-zA-Z0-9_-]/g, '_');
         const fileName = `${safeStageName}_${userSession?.id}/COMMERCIAL_MASTER_${Date.now()}.wav`;
         
         const { error: uploadErr } = await supabase.storage
           .from('mastered-audio') 
-          .upload(fileName, blobData, { contentType: 'audio/wav', upsert: true });
+          .upload(fileName, targetBlob, { contentType: 'audio/wav', upsert: true });
 
         if (uploadErr) throw uploadErr;
 
         const { data: publicData } = supabase.storage.from('mastered-audio').getPublicUrl(fileName);
         persistentAudioUrl = publicData.publicUrl;
+      }
+
+      // STEP 1.5: FORENSIC TRANSCRIPTION (If Freestyle Detected)
+      let lyricsForScan = generatedLyrics || "No lyrics provided";
+
+      if (isFreestyle && targetBlob) {
+         setLoadingStep("Extracting freestyle vocals via Whisper DSP...");
+         try {
+            const formData = new FormData();
+            formData.append('audio', targetBlob, 'master.wav');
+            formData.append('bpm', audioData?.bpm?.toString() || '120');
+
+            // Routing to our existing cadence endpoint to leverage Whisper Large V3
+            const whisperRes = await fetch('/api/dsp/cadence', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${session.access_token}` },
+              body: formData
+            });
+
+            if (whisperRes.ok) {
+              const whisperData = await whisperRes.json();
+              if (whisperData.transcription && whisperData.transcription.trim().length > 0) {
+                 lyricsForScan = whisperData.transcription;
+                 // Save the extracted lyrics to global state so the user can see them!
+                 useMatrixStore.getState().setGeneratedLyrics(whisperData.transcription);
+              }
+            } else {
+              console.warn("Whisper transcription rejected. Proceeding as instrumental.");
+            }
+         } catch (e) {
+            console.warn("Forensic transcription bypassed.", e);
+         }
       }
 
       // STEP 2: RUN THE A&R NEURAL SCAN
@@ -124,7 +156,7 @@ export default function Room07_Distribution() {
         },
         body: JSON.stringify({ 
           title: anrData.trackTitle, 
-          lyrics: generatedLyrics || "No lyrics provided",
+          lyrics: lyricsForScan, // <-- INJECTS THE WRITTEN OR TRANSCRIBED LYRICS
           bpm: audioData?.bpm || 120,
           blueprint: blueprint,
           flowDNA: flowDNA
@@ -279,9 +311,9 @@ export default function Room07_Distribution() {
             <button 
               onClick={handleDistributionSequence} 
               disabled={!anrData.trackTitle.trim() || !finalMaster}
-              className="w-full bg-[#E60000] disabled:opacity-30 disabled:cursor-not-allowed text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]"
+              className="w-full bg-[#E60000] disabled:opacity-30 disabled:cursor-not-allowed text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)] flex justify-center items-center gap-3"
             >
-              {!finalMaster ? "Master Required" : "Submit for A&R Review"}
+              {!finalMaster ? "Master Required" : isFreestyle ? <><Zap size={18}/> Extract Vocals & Submit (1 CRD)</> : "Submit for A&R Review"}
             </button>
             
             <div className="flex items-start gap-3 mt-6 p-4 bg-[#110000] border border-[#330000]">
@@ -308,7 +340,7 @@ export default function Room07_Distribution() {
         {anrData.status === "submitting" && (
           <div className="space-y-6 py-10 relative z-10">
             <p className="font-oswald text-2xl text-white uppercase tracking-widest font-bold">Securing Artifact...</p>
-            <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest">
+            <div className="font-mono text-[10px] text-[#E60000] font-bold uppercase tracking-widest">
               {loadingStep || "Writing data to secure storage nodes..."}
             </div>
           </div>
@@ -316,19 +348,25 @@ export default function Room07_Distribution() {
 
         {anrData.status === "success" && (
           <div className="py-6 animate-in zoom-in relative z-10">
-             <h3 className="font-oswald text-3xl uppercase tracking-widest mb-8 text-white">Project Finalized</h3>
+             <div className="flex items-center justify-between mb-8 border-b border-[#222] pb-6">
+               <div>
+                 <h3 className="font-oswald text-3xl uppercase tracking-widest text-white glow-red">Project Finalized</h3>
+                 <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest mt-2">Node Synchronization Complete</p>
+               </div>
+               <CheckCircle2 size={40} className="text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full bg-black" />
+             </div>
              
              {/* ROW 1: Art & Score */}
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-6">
                <div className="flex flex-col md:flex-row gap-6">
                   <div className="w-full md:w-48 flex flex-col gap-2 shrink-0">
-                    <div className="w-full h-48 bg-[#111] border border-[#333] relative overflow-hidden shadow-xl">
+                    <div className="w-full h-48 bg-[#050505] border border-[#222] relative overflow-hidden shadow-xl group">
                       {anrData.coverUrl ? (
                         <img src={anrData.coverUrl} alt="Cover" className="w-full h-full object-cover" />
                       ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-[#333]">
-                          <ImageIcon size={32} className="mb-2" />
-                          <span className="font-mono text-[8px] uppercase tracking-widest text-center px-2">No Cover Art</span>
+                        <div className="absolute inset-0 m-2 border border-dashed border-[#333] flex flex-col items-center justify-center bg-black/50 transition-colors group-hover:border-[#555]">
+                          <ImageIcon size={24} className="mb-2 text-[#444]" />
+                          <span className="font-mono text-[8px] uppercase tracking-widest text-center px-2 text-[#666]">Visuals Unassigned</span>
                         </div>
                       )}
                     </div>
@@ -337,23 +375,24 @@ export default function Room07_Distribution() {
                       <button 
                         onClick={handlePurchaseCoverArt}
                         disabled={isGeneratingCover}
-                        className="w-full flex items-center justify-center gap-2 bg-black border border-[#333] text-yellow-500 py-2 text-[9px] font-bold uppercase tracking-widest hover:border-yellow-500 transition-colors disabled:opacity-50"
+                        className="w-full flex items-center justify-center gap-2 bg-yellow-500/5 border border-yellow-500/20 text-yellow-500 py-3 text-[9px] font-bold uppercase tracking-widest hover:bg-yellow-500 hover:text-black transition-all disabled:opacity-50"
                       >
                         {isGeneratingCover ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-                        AI Cover Art ($2.99)
+                        Unlock AI Art ($2.99)
                       </button>
                     )}
                   </div>
-                  <div className="flex-1 bg-black border border-[#222] p-6 flex flex-col items-center justify-center">
-                    <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 flex items-center gap-2">
+                  <div className="flex-1 bg-[#0a0a0a] border border-[#222] p-6 flex flex-col items-center justify-center relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4 opacity-5"><BarChart size={80} className="text-[#E60000]" /></div>
+                    <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 flex items-center gap-2 relative z-10">
                       <BarChart size={14} className="text-[#E60000]" /> A&R Score
                     </span>
-                    <div className={`text-6xl font-oswald font-bold tracking-tighter
+                    <div className={`text-7xl font-oswald font-bold tracking-tighter relative z-10 drop-shadow-lg
                       ${anrData.hitScore >= 85 ? 'text-green-500' : anrData.hitScore >= 70 ? 'text-yellow-500' : 'text-[#E60000]'}`}>
                       {anrData.hitScore}
                     </div>
-                    <p className="text-[9px] font-mono uppercase mt-2 text-[#555]">
-                       {anrData.hitScore >= 85 ? 'Platinum Potential' : anrData.hitScore >= 70 ? 'Gold Standard' : 'Underground Mix'}
+                    <p className="text-[9px] font-mono uppercase mt-2 text-[#555] relative z-10 font-bold tracking-widest border-t border-[#222] pt-2 w-1/2 text-center">
+                       {anrData.hitScore >= 85 ? 'Algorithmic Priority' : anrData.hitScore >= 70 ? 'Gold Standard' : 'Underground Mix'}
                     </p>
                   </div>
                </div>
@@ -361,39 +400,56 @@ export default function Room07_Distribution() {
 
              {/* ROW 2: Viral Intelligence & The Exec Rollout */}
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
-               <div className="bg-[#110000] border border-[#330000] p-6 text-left relative overflow-hidden flex flex-col">
+               
+               {/* TikTok Slicer */}
+               <div className="bg-[#0a0000] border border-[#330000] p-6 text-left relative overflow-hidden flex flex-col">
                   <div className="absolute top-0 right-0 p-2 opacity-10"><Zap size={64} className="text-[#E60000]" /></div>
                   <span className="text-[10px] font-mono text-[#E60000] uppercase tracking-[0.3em] font-bold mb-4 block">
-                    Viral Intelligence // TikTok Slicer
+                    Viral Intelligence // Slicer
                   </span>
-                  <div className="font-mono text-xs text-gray-300 leading-relaxed italic whitespace-pre-wrap border-l-2 border-[#E60000] pl-4 flex-1">
-                    {anrData.tiktokSnippet || "Instrumental artifact. No lyrical snippet isolated."}
-                  </div>
-                  <p className="mt-4 text-[8px] text-[#555] uppercase tracking-widest font-mono">
-                    This selection is algorithmically optimized for 15-second audience retention.
-                  </p>
+                  
+                  {anrData.tiktokSnippet?.includes("Instrumental") ? (
+                    <div className="flex-1 flex items-center justify-center border border-dashed border-[#E60000]/20 m-2 bg-black/50">
+                      <p className="font-mono text-[9px] text-[#888] uppercase tracking-widest text-center px-4 py-8">
+                        [ Instrumental Format ]<br/><br/>No lyrical extraction possible.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="font-mono text-xs text-gray-300 leading-relaxed italic whitespace-pre-wrap border-l-2 border-[#E60000] pl-4 flex-1">
+                        "{anrData.tiktokSnippet}"
+                      </div>
+                      <p className="mt-4 text-[8px] text-[#555] uppercase tracking-widest font-mono border-t border-[#330000] pt-3">
+                        Extracted via NLP for maximum 15-second audience retention.
+                      </p>
+                    </>
+                  )}
                </div>
 
+               {/* The Exec Rollout */}
                <div className="bg-black border border-[#222] p-6 text-left relative overflow-hidden flex flex-col">
                   <span className="text-[10px] font-mono text-purple-500 uppercase tracking-[0.3em] font-bold mb-4 block">
-                    The Exec // 30-Day Marketing Rollout
+                    The Exec // 30-Day Rollout
                   </span>
                   
                   {execRollout ? (
-                    <div className="font-mono text-[10px] text-gray-300 leading-relaxed overflow-y-auto h-32 custom-scrollbar pr-2 whitespace-pre-wrap border-l-2 border-purple-500 pl-4 flex-1">
+                    <div className="font-mono text-[10px] text-gray-300 leading-relaxed overflow-y-auto h-32 custom-scrollbar pr-2 whitespace-pre-wrap border-l-2 border-purple-500 pl-4 flex-1 bg-[#110011]/30 p-2">
                       {execRollout}
                     </div>
                   ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center opacity-70">
-                      <FileText size={32} className="mb-2 text-[#555]" />
-                      <p className="text-[8px] font-mono uppercase tracking-widest text-[#888] mb-4">No algorithmic strategy attached.</p>
+                    <div className="flex-1 flex flex-col items-center justify-center text-center border border-dashed border-purple-500/20 m-2 bg-purple-900/5 relative py-6">
+                      <Lock size={20} className="mb-3 text-purple-500/50" />
+                      <p className="font-oswald text-sm text-purple-400 uppercase tracking-widest mb-1">Timeline Locked</p>
+                      <p className="text-[8px] font-mono uppercase tracking-widest text-[#888] mb-5 max-w-[200px]">
+                        Awaiting algorithmic strategy deployment.
+                      </p>
                       <button 
                         onClick={handlePurchaseRollout}
                         disabled={isGeneratingRollout}
-                        className="flex items-center justify-center gap-2 bg-[#111] border border-[#333] text-purple-500 px-6 py-3 text-[9px] font-bold uppercase tracking-widest hover:border-purple-500 transition-colors disabled:opacity-50 shadow-lg"
+                        className="bg-purple-900/20 border border-purple-500/30 text-purple-400 px-6 py-2 text-[9px] font-bold uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-colors disabled:opacity-50 shadow-lg flex items-center gap-2"
                       >
                         {isGeneratingRollout ? <Loader2 size={12} className="animate-spin" /> : <BarChart size={12} />}
-                        Unlock Rollout ($14.99)
+                        Unlock Strategy ($14.99)
                       </button>
                     </div>
                   )}
@@ -416,7 +472,7 @@ export default function Room07_Distribution() {
                 </Link>
              </div>
 
-             {/* SURGICAL FIX: The Re-Scan Escape Hatch */}
+             {/* The Re-Scan Escape Hatch */}
              <div className="mt-8 text-center">
                <button 
                  onClick={() => {
@@ -426,9 +482,9 @@ export default function Room07_Distribution() {
                      setExecRollout("");
                    }
                  }}
-                 className="text-[10px] font-mono text-[#555] hover:text-[#E60000] uppercase tracking-widest transition-colors"
+                 className="text-[10px] font-mono text-[#555] hover:text-[#E60000] uppercase tracking-widest transition-colors flex items-center justify-center gap-2 mx-auto"
                >
-                 [ Force Neural Re-Scan ]
+                 <RefreshCw size={10} /> [ Force Neural Re-Scan ]
                </button>
              </div>
           </div>
