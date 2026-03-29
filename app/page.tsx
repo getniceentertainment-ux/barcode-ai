@@ -28,7 +28,7 @@ import Room07_Distribution from "../components/matrix/Room07_Distribution";
 import Room08_Bank from "../components/matrix/Room08_Bank";
 import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
-import Room11_Contracts from "../components/matrix/Room11_Contracts";
+import Room11_Exec from "../components/matrix/Room11_Exec";
 
 import SecurityShield from "../components/matrix/SecurityShield";
 
@@ -421,7 +421,7 @@ export default function MatrixController() {
       case "08": return <Room08_Bank />;
       case "09": return <Room09_Radio />;
       case "10": return <Room10_Social />;
-      case "11": return <Room11_Contracts />;
+      case "11": return <Room11_Exec />;
       default: return <div />;
     }
   };
