@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 import { useMatrixStore } from "../store/useMatrixStore";
 import { supabase } from "../lib/supabase";
-import SecurityShield from "../components/matrix/SecurityShield";
 
 // The Gateway & Global UI
 import EntryGateway from "../components/matrix/EntryGateway";
@@ -30,6 +29,9 @@ import Room08_Bank from "../components/matrix/Room08_Bank";
 import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
 import Room11_Contracts from "../components/matrix/Room11_Contracts";
+
+import SecurityShield from "../components/matrix/SecurityShield";
+
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID; 
 
