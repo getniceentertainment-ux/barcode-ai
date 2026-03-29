@@ -73,6 +73,10 @@ export default function Room07_Distribution() {
     if (coverArtPurchased === 'true' && searchTrackId) {
       if (addToast) addToast("Payment Secured. Initializing FLUX.1 Engine...", "success");
       
+      // SURGICAL FIX: Force the UI into the success view immediately 
+      // so the image box is visible while generating, bypassing DB delays
+      updateAnrData({ status: "success" });
+      
       // SURGICAL FIX: We actively command the API to generate the image right now!
       triggerCoverArtGeneration(searchTrackId);
       
@@ -288,21 +292,39 @@ export default function Room07_Distribution() {
     }
   };
 
-  // SURGICAL FIX: The FLUX.1 Generation Engine Caller
+  // SURGICAL FIX: The FLUX.1 Generation Engine Caller (Anti-304 Protocol)
   const triggerCoverArtGeneration = async (tId: string) => {
     setIsGeneratingCover(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      
+      // Safely resolve the track title even if the page reloaded during Stripe redirect
+      let safeTitle = anrData.trackTitle || submission?.title;
+      if (!safeTitle) {
+        const { data: subData } = await supabase.from('submissions').select('title').eq('id', tId).single();
+        safeTitle = subData?.title || "Untitled Artifact";
+      }
+
       const res = await fetch('/api/distribution/cover-art/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ trackId: tId, trackTitle: anrData.trackTitle })
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${session?.access_token}`,
+          // Brutal anti-caching headers to kill the 304 error
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        },
+        body: JSON.stringify({ trackId: tId, trackTitle: safeTitle })
       });
       
       const data = await res.json();
       if (data.coverUrl) {
-        setSubmission((prev: any) => ({ ...prev, cover_url: data.coverUrl }));
-        updateAnrData({ coverUrl: data.coverUrl });
+        // Append unique timestamp to bust browser image cache
+        const cacheBustedUrl = `${data.coverUrl}?t=${Date.now()}`;
+        
+        setSubmission((prev: any) => ({ ...prev, cover_url: cacheBustedUrl }));
+        updateAnrData({ coverUrl: cacheBustedUrl });
         if(addToast) addToast("AI Visuals rendered and attached.", "success");
       } else {
         throw new Error(data.error || "Generation failed.");
