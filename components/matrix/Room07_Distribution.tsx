@@ -7,20 +7,39 @@ import { supabase } from "../../lib/supabase";
 import Link from "next/link"; 
 
 export default function Room07_Distribution() {
-  // SURGICAL UPDATE: Added blueprint and flowDNA to the destructuring so we can send them to the backend Grader
-  const { setActiveRoom, userSession, generatedLyrics, addToast, audioData, finalMaster, blueprint, flowDNA } = useMatrixStore();
+  // SURGICAL UPDATE: Added anrData and updateAnrData to securely persist the A&R scan globally
+  const { 
+    setActiveRoom, userSession, generatedLyrics, addToast, audioData, 
+    finalMaster, blueprint, flowDNA, anrData, updateAnrData 
+  } = useMatrixStore();
   
   const [trackId, setTrackId] = useState<string | null>(null);
-  const [trackTitle, setTrackTitle] = useState("");
-  const [status, setStatus] = useState<"idle" | "analyzing" | "submitting" | "success">("idle");
-  const [hitScore, setHitScore] = useState<number>(0);
-  const [coverUrl, setCoverUrl] = useState<string>("");
-  const [tiktokSnippet, setTiktokSnippet] = useState<string>("");
   
   // Upsell States
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   const [execRollout, setExecRollout] = useState<string>("");
   const [isGeneratingRollout, setIsGeneratingRollout] = useState(false);
+
+  // --- RECOVERY LOGIC: FETCH TRACK ID & ROLLOUT ON MOUNT IF ALREADY SUCCESSFUL ---
+  useEffect(() => {
+    if (anrData.status === 'success' && userSession?.id) {
+      const fetchLatest = async () => {
+        const { data } = await supabase
+          .from('submissions')
+          .select('id, exec_rollout')
+          .eq('user_id', userSession.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (data) {
+          setTrackId(data.id);
+          if (data.exec_rollout) setExecRollout(data.exec_rollout);
+        }
+      };
+      fetchLatest();
+    }
+  }, [anrData.status, userSession?.id]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -31,8 +50,7 @@ export default function Room07_Distribution() {
         const generatedCoverUrl = params.get('cover_url');
         window.history.replaceState({}, document.title, window.location.pathname);
         if (generatedCoverUrl) {
-          setCoverUrl(generatedCoverUrl);
-          setStatus("success");
+          updateAnrData({ coverUrl: generatedCoverUrl, status: "success" });
           if(addToast) addToast("DALL-E 3 Cover Art Generated & Attached.", "success");
         }
       }
@@ -43,15 +61,15 @@ export default function Room07_Distribution() {
         window.history.replaceState({}, document.title, window.location.pathname);
         if (returnedTrackId) {
           setTrackId(returnedTrackId);
-          setStatus("success");
+          updateAnrData({ status: "success" });
           triggerRolloutGeneration(returnedTrackId);
         }
       }
     }
-  }, [userSession, addToast]);
+  }, [userSession, addToast, updateAnrData]);
 
   const handleAnalyze = async () => {
-    if (!trackTitle.trim()) {
+    if (!anrData.trackTitle.trim()) {
       if (addToast) addToast("A track title is required for distribution.", "error");
       return;
     }
@@ -60,15 +78,14 @@ export default function Room07_Distribution() {
       return;
     }
 
-    setStatus("analyzing");
+    updateAnrData({ status: "analyzing" });
 
     try {
-      // SURGICAL UPDATE: Pushing the architectural track data to the rigorous math backend
       const analyzeRes = await fetch('/api/distribution/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          title: trackTitle, 
+          title: anrData.trackTitle, 
           lyrics: generatedLyrics || "No lyrics provided",
           bpm: audioData?.bpm || 120,
           blueprint: blueprint,
@@ -79,21 +96,48 @@ export default function Room07_Distribution() {
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.error || "A&R Scan Failed");
 
-      setHitScore(analyzeData.hitScore);
-      setCoverUrl(analyzeData.coverUrl);
-      setTiktokSnippet(analyzeData.tiktokSnippet);
+      updateAnrData({
+        hitScore: analyzeData.hitScore,
+        coverUrl: analyzeData.coverUrl,
+        tiktokSnippet: analyzeData.tiktokSnippet
+      });
       
       handleFinalSubmit(analyzeData);
     } catch (error: any) {
       console.error("A&R Error:", error);
       if (addToast) addToast(error.message, "error");
-      setStatus("idle");
+      updateAnrData({ status: "idle" });
     }
   };
 
   const handleFinalSubmit = async (aAndRData: any) => {
-    setStatus("submitting");
+    updateAnrData({ status: "submitting" });
     try {
+      let persistentAudioUrl = finalMaster?.url;
+
+      if (persistentAudioUrl?.startsWith('blob:')) {
+        let blobData = (finalMaster as any).blob;
+        
+        if (!blobData) {
+          const r = await fetch(persistentAudioUrl);
+          blobData = await r.blob();
+        }
+
+        if (!blobData) throw new Error("Audio payload missing from local memory.");
+
+        const safeStageName = (userSession?.stageName || 'UnknownNode').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const fileName = `${safeStageName}_${userSession?.id}/COMMERCIAL_MASTER_${Date.now()}.wav`;
+        
+        const { error: uploadErr } = await supabase.storage
+          .from('mastered-audio') 
+          .upload(fileName, blobData, { contentType: 'audio/wav', upsert: true });
+
+        if (uploadErr) throw uploadErr;
+
+        const { data: publicData } = supabase.storage.from('mastered-audio').getPublicUrl(fileName);
+        persistentAudioUrl = publicData.publicUrl;
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       
       const res = await fetch('/api/distribution/submit', {
@@ -103,8 +147,8 @@ export default function Room07_Distribution() {
           'Authorization': `Bearer ${session?.access_token}`
         },
         body: JSON.stringify({
-          title: trackTitle,
-          audioUrl: finalMaster?.url,
+          title: anrData.trackTitle,
+          audioUrl: persistentAudioUrl, 
           coverUrl: aAndRData.coverUrl,
           hitScore: aAndRData.hitScore,
           tiktokSnippet: aAndRData.tiktokSnippet
@@ -123,12 +167,12 @@ export default function Room07_Distribution() {
         
       if (latestSub) setTrackId(latestSub.id);
 
-      setStatus("success");
+      updateAnrData({ status: "success" });
       if (addToast) addToast("Artifact secured. Global Nodes synchronized.", "success");
     } catch (err: any) {
       console.error("Submission Error:", err);
       if (addToast) addToast(err.message, "error");
-      setStatus("idle");
+      updateAnrData({ status: "idle" });
     }
   };
 
@@ -139,7 +183,7 @@ export default function Room07_Distribution() {
       const res = await fetch('/api/stripe/cover-art', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ userId: userSession?.id, trackTitle })
+        body: JSON.stringify({ userId: userSession?.id, trackTitle: anrData.trackTitle })
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url; 
@@ -160,7 +204,7 @@ export default function Room07_Distribution() {
       const res = await fetch('/api/stripe/rollout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: userSession?.id, trackTitle, trackId })
+        body: JSON.stringify({ userId: userSession?.id, trackTitle: anrData.trackTitle, trackId })
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url; 
@@ -195,23 +239,23 @@ export default function Room07_Distribution() {
   return (
     <div className="h-full flex flex-col justify-center max-w-5xl mx-auto animate-in fade-in duration-500">
       <div className={`bg-[#050505] border p-12 rounded-lg text-center relative overflow-hidden transition-all duration-500
-        ${status === 'success' ? 'border-[#E60000] shadow-[0_0_30px_rgba(230,0,0,0.15)]' : 'border-[#222]'}`}>
+        ${anrData.status === 'success' ? 'border-[#E60000] shadow-[0_0_30px_rgba(230,0,0,0.15)]' : 'border-[#222]'}`}>
         
-        {(status === "analyzing" || status === "submitting") && (
+        {(anrData.status === "analyzing" || anrData.status === "submitting") && (
           <div className="absolute inset-0 bg-[#E60000]/5 animate-pulse pointer-events-none" />
         )}
 
         <div className="relative z-10 mb-8">
-          {status === "idle" && <Send size={64} className="mx-auto text-[#444]" />}
-          {(status === "analyzing" || status === "submitting") && <Loader2 size={64} className="mx-auto text-[#E60000] animate-spin" />}
-          {status === "success" && <CheckCircle2 size={64} className="mx-auto text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" />}
+          {anrData.status === "idle" && <Send size={64} className="mx-auto text-[#444]" />}
+          {(anrData.status === "analyzing" || anrData.status === "submitting") && <Loader2 size={64} className="mx-auto text-[#E60000] animate-spin" />}
+          {anrData.status === "success" && <CheckCircle2 size={64} className="mx-auto text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full" />}
         </div>
         
         <h2 className="font-oswald text-4xl uppercase tracking-widest mb-10 font-bold text-white relative z-10">
           R07: Distribution Node
         </h2>
         
-        {status === "idle" && (
+        {anrData.status === "idle" && (
           <div className="max-w-md mx-auto space-y-6 relative z-10">
             <div className="text-left">
               <label className="text-[10px] text-[#888] font-mono uppercase tracking-widest font-bold mb-2 block">
@@ -219,8 +263,8 @@ export default function Room07_Distribution() {
               </label>
               <input 
                 type="text" 
-                value={trackTitle}
-                onChange={(e) => setTrackTitle(e.target.value)}
+                value={anrData.trackTitle}
+                onChange={(e) => updateAnrData({ trackTitle: e.target.value })}
                 className="w-full bg-black border border-[#222] p-4 font-mono text-xs uppercase text-white outline-none focus:border-[#E60000] transition-colors" 
                 placeholder="E.g., MATRIX INFILTRATION..." 
               />
@@ -228,7 +272,7 @@ export default function Room07_Distribution() {
             
             <button 
               onClick={handleAnalyze} 
-              disabled={!trackTitle.trim() || !finalMaster}
+              disabled={!anrData.trackTitle.trim() || !finalMaster}
               className="w-full bg-[#E60000] disabled:opacity-30 disabled:cursor-not-allowed text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(230,0,0,0.2)]"
             >
               {!finalMaster ? "Master Required" : "Submit for A&R Review"}
@@ -243,7 +287,7 @@ export default function Room07_Distribution() {
           </div>
         )}
 
-        {status === "analyzing" && (
+        {anrData.status === "analyzing" && (
           <div className="space-y-6 py-10 relative z-10">
             <p className="font-oswald text-2xl text-[#E60000] uppercase tracking-widest font-bold">A&R Neural Scan In Progress...</p>
             <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest space-y-2">
@@ -255,7 +299,7 @@ export default function Room07_Distribution() {
           </div>
         )}
 
-        {status === "submitting" && (
+        {anrData.status === "submitting" && (
           <div className="space-y-6 py-10 relative z-10">
             <p className="font-oswald text-2xl text-white uppercase tracking-widest font-bold">Securing Artifact...</p>
             <div className="font-mono text-[10px] text-[#888] uppercase tracking-widest">
@@ -264,7 +308,7 @@ export default function Room07_Distribution() {
           </div>
         )}
 
-        {status === "success" && (
+        {anrData.status === "success" && (
           <div className="py-6 animate-in zoom-in relative z-10">
              <h3 className="font-oswald text-3xl uppercase tracking-widest mb-8 text-white">Project Finalized</h3>
              
@@ -273,8 +317,8 @@ export default function Room07_Distribution() {
                <div className="flex flex-col md:flex-row gap-6">
                   <div className="w-full md:w-48 flex flex-col gap-2 shrink-0">
                     <div className="w-full h-48 bg-[#111] border border-[#333] relative overflow-hidden shadow-xl">
-                      {coverUrl ? (
-                        <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
+                      {anrData.coverUrl ? (
+                        <img src={anrData.coverUrl} alt="Cover" className="w-full h-full object-cover" />
                       ) : (
                         <div className="flex flex-col items-center justify-center h-full text-[#333]">
                           <ImageIcon size={32} className="mb-2" />
@@ -283,7 +327,7 @@ export default function Room07_Distribution() {
                       )}
                     </div>
                     
-                    {!coverUrl && (
+                    {!anrData.coverUrl && (
                       <button 
                         onClick={handlePurchaseCoverArt}
                         disabled={isGeneratingCover}
@@ -299,11 +343,11 @@ export default function Room07_Distribution() {
                       <BarChart size={14} className="text-[#E60000]" /> A&R Score
                     </span>
                     <div className={`text-6xl font-oswald font-bold tracking-tighter
-                      ${hitScore >= 85 ? 'text-green-500' : hitScore >= 70 ? 'text-yellow-500' : 'text-[#E60000]'}`}>
-                      {hitScore}
+                      ${anrData.hitScore >= 85 ? 'text-green-500' : anrData.hitScore >= 70 ? 'text-yellow-500' : 'text-[#E60000]'}`}>
+                      {anrData.hitScore}
                     </div>
                     <p className="text-[9px] font-mono uppercase mt-2 text-[#555]">
-                       {hitScore >= 85 ? 'Platinum Potential' : hitScore >= 70 ? 'Gold Standard' : 'Underground Mix'}
+                       {anrData.hitScore >= 85 ? 'Platinum Potential' : anrData.hitScore >= 70 ? 'Gold Standard' : 'Underground Mix'}
                     </p>
                   </div>
                </div>
@@ -317,7 +361,7 @@ export default function Room07_Distribution() {
                     Viral Intelligence // TikTok Slicer
                   </span>
                   <div className="font-mono text-xs text-gray-300 leading-relaxed italic whitespace-pre-wrap border-l-2 border-[#E60000] pl-4 flex-1">
-                    {tiktokSnippet || "Instrumental artifact. No lyrical snippet isolated."}
+                    {anrData.tiktokSnippet || "Instrumental artifact. No lyrical snippet isolated."}
                   </div>
                   <p className="mt-4 text-[8px] text-[#555] uppercase tracking-widest font-mono">
                     This selection is algorithmically optimized for 15-second audience retention.

@@ -46,7 +46,7 @@ const ROOM_MAP: Record<string, RoomData> = {
     encouragement: "The TALON engine does not write polite poetry. It writes aggressive, authentic commercial warfare."
   },
   "04": {
-    title: "Zero-Latency Tracking",
+    title: "Hardware Tracking",
     icon: <Activity size={28} className="text-[#E60000]" />,
     directives: [
       { id: 1, title: "ZERO-LATENCY RECORDING", desc: "Bypasses standard web latency using WebAssembly and AudioWorklets. We apply a 150ms mathematical offset to guarantee vocal punch-ins are perfectly quantized to the beat." },
@@ -55,7 +55,7 @@ const ROOM_MAP: Record<string, RoomData> = {
     encouragement: "A hardware-accelerated, browser-based DAW. Lay down the source data and let the Matrix fix the latency."
   },
   "05": {
-    title: "Proprietary Mix Rack",
+    title: "Vocal Engineering",
     icon: <ShieldAlert size={28} className="text-[#E60000]" />,
     directives: [
       { id: 1, title: "PROPRIETARY BLUEPRINTS", desc: "Apply CEO-crafted EQ curves mathematically customized for your exact sub-genre (Foundation, Gangsta, Modern, Fusion) utilizing the Web Audio API." },
@@ -64,7 +64,7 @@ const ROOM_MAP: Record<string, RoomData> = {
     encouragement: "The magic of the GetNice sound. Glue your raw performance to the beat in real-time, directly in the browser."
   },
   "06": {
-    title: "Commercial Render Engine",
+    title: "Commercial Mastering",
     icon: <Zap size={28} className="text-[#E60000]" />,
     directives: [
       { id: 1, title: "ANALOG LUFS METERING", desc: "Visual targeting to hit the perfect -14 LUFS (Spotify standard) or -6 LUFS (Brickwall club standard) using an integrated dynamics compressor to protect against digital bleed." },
@@ -73,16 +73,16 @@ const ROOM_MAP: Record<string, RoomData> = {
     encouragement: "This is the final firewall. We sum the beat and engineered vocals, limit the peaks, and securely write all metadata."
   },
   "07": {
-    title: "Algorithmic A&R Node",
+    title: "A&R Neural Scan",
     icon: <TrendingUp size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "THE 3 CODES", desc: "Your score is based on CTR (The Hook), AVP (Audio Pacing), and APV (Addiction)." },
-      { id: 2, title: "VIRAL SLICING", desc: "The isolated snippet is your primary weapon. Use it for social infiltration." }
+      { id: 1, title: "HIT SCORE CALCULATION", desc: "Scans the track's sonic profile to generate an algorithmic score out of 100 based on the 3 Codes: The Hook (CTR), Audio Pacing (AVP), and The Addiction (APV)." },
+      { id: 2, title: "VIRAL SLICING", desc: "The isolated snippet is your primary weapon. Automatically isolated 15-second snippet for TikTok/Reels marketing, with optional DALL-E 3 Cover Art generation." }
     ],
     encouragement: "The algorithm is ruthless. If you score under 90, go back to the blueprint."
   },
   "08": {
-    title: "The Royalty Ledger",
+    title: "The Smart Ledger",
     icon: <ShieldAlert size={28} className="text-[#E60000]" />,
     directives: [
       { id: 1, title: "ALGORITHMIC LABEL ADVANCES", desc: "Artifacts achieving a Hit Score > 90 trigger an automated $1,500 marketing advance Upstream Contract (zero-recoupment) to deploy via programmatic ad-spend." },
@@ -91,7 +91,7 @@ const ROOM_MAP: Record<string, RoomData> = {
     encouragement: "Your financial headquarters. Own your data, secure your master splits, and capitalize on algorithmic deals."
   },
   "09": {
-    title: "Live Global Syndication",
+    title: "Nation FM Broadcast",
     icon: <Activity size={28} className="text-[#E60000]" />,
     directives: [
       { id: 1, title: "ALGORITHMIC CHARTING", desc: "GetNice Nation FM is a 24/7 broadcast. Tracks are strictly ordered by their A&R Hit Score, with Top 3 badges awarded to the highest-performing records on the platform." },
@@ -100,7 +100,7 @@ const ROOM_MAP: Record<string, RoomData> = {
     encouragement: "Dominate the frequencies. Approved tracks are pushed here for the entire community to hear."
   },
   "10": {
-    title: "Open Verse Economy",
+    title: "Syndicate Brokerage",
     icon: <Zap size={28} className="text-[#E60000]" />,
     directives: [
       { id: 1, title: "MOGUL LEADERBOARD", desc: "The B2B Artist Network. Tracks top-tier users globally based on platform activity, hit scores, and successful waitlist referrals." },
@@ -109,7 +109,7 @@ const ROOM_MAP: Record<string, RoomData> = {
     encouragement: "Expand the network. Secure programmatic fiat escrows guarantee safe data exchange and eliminate fraudulent features."
   },
   "11": {
-    title: "The Exec: Campaign Hub",
+    title: "Agentic Execution",
     icon: <Terminal size={28} className="text-[#E60000]" />,
     directives: [
       { id: 1, title: "30-DAY MAXIMUM SUCCESS", desc: "The Exec AI ingests your Artifact and maps out a strict 3-Phase rollout: Infrastructure Validation, Content Saturation (Strike), and Commercial Extraction." },
@@ -134,19 +134,15 @@ export default function RoomDirectives({ roomId }: { roomId: string }) {
 
   if (!data || !mounted) return null;
 
-  // React Portal injects BOTH the button AND the modal directly into the <body>
   return createPortal(
     <>
-      {/* FLOATING HOLOGRAPHIC BUTTON */}
       <button 
         onClick={() => setIsOpen(true)}
         className={`fixed bottom-28 right-6 md:right-10 z-[999998] w-20 h-20 flex items-center justify-center rounded-full transition-all hover:scale-110 focus:outline-none group ${isFlashing ? 'animate-pulse' : 'opacity-90 hover:opacity-100'}`}
         title="View Room Directives"
       >
-        {/* 90% Transparent Background */}
         <div className="absolute inset-0 bg-black/10 backdrop-blur-sm rounded-full border border-yellow-500/20"></div>
 
-        {/* Rotating Circular Text */}
         <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full animate-[spin_12s_linear_infinite] drop-shadow-[0_0_15px_rgba(234,179,8,0.9)]">
           <path id="textCircle" d="M 50, 50 m -35, 0 a 35,35 0 1, 1 70, 0 a 35,35 0 1, 1 -70, 0" fill="none" />
           <text className="font-mono text-[10px] font-bold uppercase tracking-widest fill-yellow-400">
@@ -156,16 +152,13 @@ export default function RoomDirectives({ roomId }: { roomId: string }) {
           </text>
         </svg>
 
-        {/* Centered Yellow Icon */}
         <HelpCircle size={28} className="text-yellow-400 relative z-10 drop-shadow-[0_0_15px_rgba(234,179,8,1)] group-hover:text-yellow-300 transition-colors" />
       </button>
 
-      {/* POPUP MODAL OVERLAY */}
       {isOpen && (
         <div className="fixed inset-0 z-[999999] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200">
           <div className="bg-[#050505] border-2 border-[#E60000] w-full max-w-4xl p-8 md:p-12 shadow-[0_0_80px_rgba(230,0,0,0.5)] relative animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col rounded-sm">
             
-            {/* CLOSE BUTTON */}
             <button 
               onClick={() => setIsOpen(false)}
               className="absolute top-6 right-6 text-[#888] hover:text-white transition-colors p-2 bg-[#111] border border-[#333] rounded-full hover:bg-[#E60000] hover:border-[#E60000] shadow-md"
@@ -173,7 +166,6 @@ export default function RoomDirectives({ roomId }: { roomId: string }) {
               <X size={24} />
             </button>
 
-            {/* MODAL HEADER */}
             <div className="flex items-center gap-5 mb-10 border-b border-[#E60000]/40 pb-8 shrink-0 pr-12">
               <div className="p-4 bg-[#110000] border-2 border-[#E60000]/40 text-[#E60000] rounded-sm shadow-[0_0_20px_rgba(230,0,0,0.2)]">
                 {data.icon}
@@ -188,7 +180,6 @@ export default function RoomDirectives({ roomId }: { roomId: string }) {
               </div>
             </div>
             
-            {/* SCROLLABLE CONTENT */}
             <div className="overflow-y-auto custom-scrollbar flex-1 pr-4 space-y-6">
               {data.directives.map((d) => (
                 <div key={d.id} className="flex items-start gap-5 p-8 bg-[#0a0a0a] border border-[#222] hover:border-[#E60000]/70 transition-colors group shadow-lg">
