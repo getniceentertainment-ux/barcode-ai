@@ -1,22 +1,26 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-// SURGICAL FIX: Added 'Lock' to the import list
-import { Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, Image as ImageIcon, Globe, Zap, FileText, RefreshCw, Lock } from "lucide-react";
+import { useSearchParams } from 'next/navigation';
+import Link from "next/link";
+import { 
+  Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, 
+  Image as ImageIcon, Globe, Zap, FileText, RefreshCw, Lock, ShieldCheck, Activity, Music 
+} from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
-import Link from "next/link"; 
-import { useSearchParams } from 'next/navigation';
-
 
 export default function Room07_Distribution() {
   const { 
     setActiveRoom, userSession, generatedLyrics, addToast, audioData, 
     finalMaster, blueprint, flowDNA, anrData, updateAnrData 
   } = useMatrixStore();
-    const searchParams = useSearchParams();
+  
+  const searchParams = useSearchParams();
 
+  // --- STATE ---
   const [trackId, setTrackId] = useState<string | null>(null);
+  const [submission, setSubmission] = useState<any>(null);
   
   // Upsell & UI States
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
@@ -32,13 +36,14 @@ export default function Room07_Distribution() {
       const fetchLatest = async () => {
         const { data } = await supabase
           .from('submissions')
-          .select('id, exec_rollout')
+          .select('*')
           .eq('user_id', userSession.id)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
         if (data) {
+          setSubmission(data);
           setTrackId(data.id);
           if (data.exec_rollout) setExecRollout(data.exec_rollout);
         }
@@ -47,17 +52,16 @@ export default function Room07_Distribution() {
     }
   }, [anrData.status, userSession?.id]);
   
+  // --- STRIPE RETURN HANDLER (THE INTERCEPTOR) ---
   useEffect(() => {
-    // 1. Check if we just returned from a successful Stripe checkout
     const rolloutPurchased = searchParams.get('rollout_purchased');
     const coverArtPurchased = searchParams.get('cover_art_purchased');
-    const trackId = searchParams.get('track_id');              
+    const searchTrackId = searchParams.get('track_id');              
     
-    if (rolloutPurchased === 'true' && trackId) {
-      // THE FIX: Teleport the user straight to Room 11 (The Exec)
+    if (rolloutPurchased === 'true' && searchTrackId) {
       if (addToast) addToast("Upstream Deal Secured. Transferring to The Exec...", "success");
       
-      // Give the database 1.5 seconds to catch up from the Webhook ping, then route
+      // Give the database 1.5 seconds to catch up from the Webhook ping, then route to Room 11
       setTimeout(() => {
         setActiveRoom("11"); 
       }, 1500);
@@ -66,19 +70,19 @@ export default function Room07_Distribution() {
       window.history.replaceState(null, '', '/');
     }
 
-    if (coverArtPurchased === 'true' && trackId) {
-      // THE FIX: Force a fresh database pull to display the new Cover Art
+    if (coverArtPurchased === 'true' && searchTrackId) {
       if (addToast) addToast("Cover Art Generated Successfully.", "success");
       
       const fetchFreshArtwork = async () => {
         const { data } = await supabase
           .from('submissions')
           .select('*')
-          .eq('id', trackId)
+          .eq('id', searchTrackId)
           .single();
           
         if (data) {
           setSubmission(data); // This forces the UI to re-render with the new image
+          updateAnrData({ coverUrl: data.cover_url });
         }
       };
       
@@ -86,36 +90,9 @@ export default function Room07_Distribution() {
       setTimeout(fetchFreshArtwork, 2000);
       window.history.replaceState(null, '', '/');
     }
-  }, [searchParams]);
+  }, [searchParams, addToast, setActiveRoom, updateAnrData]);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      
-      // Catch Cover Art
-      if (params.get('cover_purchased') === 'true') {
-        const generatedCoverUrl = params.get('cover_url');
-        window.history.replaceState({}, document.title, window.location.pathname);
-        if (generatedCoverUrl) {
-          updateAnrData({ coverUrl: generatedCoverUrl, status: "success" });
-          if(addToast) addToast("DALL-E 3 Cover Art Generated & Attached.", "success");
-        }
-      }
-
-      // Catch Exec Rollout
-      if (params.get('rollout_purchased') === 'true') {
-        const returnedTrackId = params.get('track_id');
-        window.history.replaceState({}, document.title, window.location.pathname);
-        if (returnedTrackId) {
-          setTrackId(returnedTrackId);
-          updateAnrData({ status: "success" });
-          triggerRolloutGeneration(returnedTrackId);
-        }
-      }
-    }
-  }, [userSession, addToast, updateAnrData]);
-
-  // --- SURGICAL FIX: THE HYBRID INTELLIGENCE PIPELINE ---
+  // --- THE HYBRID INTELLIGENCE PIPELINE ---
   const handleDistributionSequence = async () => {
     if (!anrData.trackTitle.trim()) {
       if (addToast) addToast("A track title is required for distribution.", "error");
@@ -232,16 +209,19 @@ export default function Room07_Distribution() {
 
       if (!submitRes.ok) throw new Error("Failed to secure artifact in Ledger.");
 
-      // STEP 4: FETCH NEW TRACK ID
+      // STEP 4: FETCH NEW TRACK ID & SUBMISSION DATA
       const { data: latestSub } = await supabase
         .from('submissions')
-        .select('id')
+        .select('*')
         .eq('user_id', userSession?.id)
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
         
-      if (latestSub) setTrackId(latestSub.id);
+      if (latestSub) {
+          setTrackId(latestSub.id);
+          setSubmission(latestSub);
+      }
 
       // STEP 5: FINALIZE UI
       updateAnrData({
@@ -266,7 +246,7 @@ export default function Room07_Distribution() {
       const res = await fetch('/api/stripe/cover-art', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ userId: userSession?.id, trackTitle: anrData.trackTitle })
+        body: JSON.stringify({ userId: userSession?.id, trackTitle: anrData.trackTitle, trackId: trackId })
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url; 
@@ -392,7 +372,7 @@ export default function Room07_Distribution() {
         )}
 
         {anrData.status === "success" && (
-          <div className="py-6 animate-in zoom-in relative z-10">
+          <div className="py-6 animate-in zoom-in relative z-10 text-left">
              <div className="flex items-center justify-between mb-8 border-b border-[#222] pb-6">
                <div>
                  <h3 className="font-oswald text-3xl uppercase tracking-widest text-white glow-red">Project Finalized</h3>
