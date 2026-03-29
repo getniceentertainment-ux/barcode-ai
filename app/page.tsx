@@ -30,8 +30,6 @@ import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
 import Room11_Contracts from "../components/matrix/Room11_Contracts";
 
-import SecurityShield from "../components/matrix/SecurityShield";
-
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID; 
 
 export default function MatrixController() {
@@ -125,6 +123,84 @@ export default function MatrixController() {
       setIsHydrated(true);
     });
   }, []);
+
+  // --- SURGICAL FIX: THE GLOBAL STRIPE INTERCEPTOR ---
+  // Guaranteed execution immediately upon Stripe redirect, immune to component unmounts
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const rolloutPurchased = params.get('rollout_purchased');
+    const coverArtPurchased = params.get('cover_art_purchased');
+    const trackId = params.get('track_id') || params.get('trackId');
+
+    if (!trackId) return;
+
+    // Handle Cover Art Generation Globally
+    if (coverArtPurchased === 'true') {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      if (addToast) addToast("Payment Secured. Initializing FLUX.1 Engine globally...", "success");
+      
+      setActiveRoom("07");
+      
+      const generateArt = async () => {
+        try {
+          const { data: sub } = await supabase.from('submissions').select('title').eq('id', trackId).single();
+          const { data: { session } } = await supabase.auth.getSession();
+          
+          const res = await fetch('/api/distribution/cover-art/generate', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json', 
+              'Authorization': `Bearer ${session?.access_token}`,
+              'Cache-Control': 'no-cache, no-store, must-revalidate'
+            },
+            body: JSON.stringify({ trackId, trackTitle: sub?.title || "Artifact" })
+          });
+          
+          const data = await res.json();
+          if (data.coverUrl) {
+            const cacheBustedUrl = `${data.coverUrl}?t=${Date.now()}`;
+            // Update global state directly so Room 07 renders it instantly
+            useMatrixStore.setState(state => ({
+              anrData: { ...state.anrData, coverUrl: cacheBustedUrl, status: "success" }
+            }));
+            if (addToast) addToast("AI Visuals rendered and attached.", "success");
+          }
+        } catch (err) {
+          console.error(err);
+          if (addToast) addToast("Failed to generate visuals.", "error");
+        }
+      };
+      
+      generateArt();
+    }
+
+    // Handle Exec Rollout Teleport
+    if (rolloutPurchased === 'true') {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      const pollLedger = setInterval(async () => {
+        const { data } = await supabase
+          .from('submissions')
+          .select('upstream_deal_signed')
+          .eq('id', trackId)
+          .single();
+
+        if (data?.upstream_deal_signed) {
+          clearInterval(pollLedger);
+          if (addToast) addToast("Upstream Deal Secured. Transferring to The Exec...", "success");
+          setActiveRoom("11"); 
+        }
+      }, 2000);
+
+      setTimeout(() => {
+        clearInterval(pollLedger);
+        if (addToast) addToast("Ledger sync delayed. Proceeding to Hub...", "info");
+        setActiveRoom("11"); 
+      }, 15000);
+    }
+  }, [addToast, setActiveRoom]);
 
   useEffect(() => {    
     setIsHydrated(true);
@@ -428,8 +504,7 @@ export default function MatrixController() {
 
   return (
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-0 md:pb-24 font-mono">
-      {/* INVISIBLE SYSTEM GUARDS */}
-      <SecurityShield />      
+      
       {/* --- EDUCATIONAL UX NOTIFICATION (PRE-FORMAT DELAY OVERLAY) --- */}
       {showLandscapeTip && (
         <div className="fixed inset-0 z-[9999] bg-[#050505] flex flex-col items-center justify-center text-center px-8 animate-in fade-in duration-300">
