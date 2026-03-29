@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { 
   CheckCircle2, Mail, Loader2, Lock, User as UserIcon, ArrowRight, ShieldCheck,
-  UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, Send, Wallet, Radio, Users, FileAudio, ChevronRight, Zap
+  UploadCloud, Cpu, PenTool, Mic2, Layers, Sliders, Send, Wallet, Radio, Users, FileAudio, ChevronRight, Zap, Copy
 } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { AccessTier, UserSession } from "../../lib/types";
@@ -21,14 +21,25 @@ export default function EntryGateway() {
   const [isScanning, setIsScanning] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   
-  const [authStep, setAuthStep] = useState<"landing" | "auth" | "verify_email" | "select_tier">("landing");
+  // SURGICAL UPGRADE: Added "waitlist" to the authentication steps
+  const [authStep, setAuthStep] = useState<"landing" | "auth" | "verify_email" | "select_tier" | "waitlist">("landing");
   const [userProfile, setUserProfile] = useState<any>(null);
   
+  // URL Query State for Referrals
+  const [referredBy, setReferredBy] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener("scroll", handleScroll);
+    
+    // Check URL for referral codes
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const ref = params.get('ref');
+      if (ref) setReferredBy(ref);
+    }
+    
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
@@ -45,7 +56,8 @@ export default function EntryGateway() {
   const processUserSession = async (user: any, retries = 0): Promise<void> => {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('*')
+      // SURGICAL FIX: Request the ref_code from the database payload
+      .select('*, ref_code')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -53,6 +65,17 @@ export default function EntryGateway() {
       setUserProfile({ ...user, ...profile });
 
       if (profile.tier) {
+        // --- SURGICAL UPGRADE: THE VIRAL WAITLIST GUARD ---
+        const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID;
+        const isCreator = user.id === CREATOR_ID;
+        const referrals = profile.total_referrals || 0;
+
+        // Block Free Loaders with less than 3 referrals from entering
+        if (profile.tier === "Free Loader" && referrals < 3 && !isCreator) {
+          setAuthStep("waitlist");
+          return; // Halts the login process
+        }
+
         let safeCredits = profile.credits;
         
         if (safeCredits === null) {
@@ -109,7 +132,13 @@ export default function EntryGateway() {
         const { data, error } = await supabase.auth.signUp({ 
           email, 
           password,
-          options: { data: { stage_name: stageName, device_fingerprint: deviceId } }
+          options: { 
+            data: { 
+              stage_name: stageName, 
+              device_fingerprint: deviceId,
+              referred_by: referredBy // Attaches the referral code to the user metadata
+            } 
+          }
         });
         if (error) throw error;
         if (data.user && !data.session) setAuthStep("verify_email");
@@ -142,7 +171,9 @@ export default function EntryGateway() {
       };
 
       await supabase.from('profiles').update({ tier: "Free Loader", credits: latest?.credits ?? 5 }).eq('id', userProfile.id);
-      grantAccess(session);
+      
+      // Return to the waitlist logic check
+      processUserSession(userProfile);
     } else {
       setLoading(true);
       try {
@@ -160,10 +191,26 @@ export default function EntryGateway() {
     }
   };
 
+  const copyReferralLink = () => {
+    // SURGICAL FIX: Swap userProfile?.id with userProfile?.ref_code
+    const link = typeof window !== 'undefined' ? `${window.location.origin}/?ref=${userProfile?.ref_code || userProfile?.id.substring(0,8)}` : '';
+    const textArea = document.createElement("textarea");
+    textArea.value = link;
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      if (addToast) addToast("Bypass Link Copied", "success");
+    } catch (err) {
+      console.error("Copy failed", err);
+    }
+    document.body.removeChild(textArea);
+  };
+
   const tiers: { name: AccessTier; price: string; features: string[]; isPro?: boolean }[] = [
-    { name: "Free Loader", price: "0", features: ["5 Credits / Mo", "Standard Queue", "Watermarked Audio"] },
-    { name: "The Artist", price: "39", features: ["100 Credits / Mo", "Uncompressed WAVs", "Commercial Rights"] },
-    { name: "The Mogul", price: "99", isPro: true, features: ["Unlimited Generations", "Instant Inference", "A&R Fast-Track"] }
+    { name: "Free Loader", price: "0", features: ["5 Credits / Mo", "Waitlist Queue", "Watermarked Audio"] },
+    { name: "The Artist", price: "39", features: ["100 Credits / Mo", "Uncompressed WAVs", "Commercial Rights", "Bypass Queue"] },
+    { name: "The Mogul", price: "99", isPro: true, features: ["Unlimited Generations", "Instant Inference", "A&R Fast-Track", "Bypass Queue"] }
   ];
 
   const roomsInfo = [
@@ -185,74 +232,101 @@ export default function EntryGateway() {
   // ==========================================
   if (authStep === "landing") {
     return (
-      <div className="min-h-screen bg-[#121212] text-[#E0E0E0] selection:bg-[#E60000] selection:text-white relative overflow-x-hidden font-sans">
+      <div className="min-h-screen bg-[#050505] text-[#E0E0E0] selection:bg-[#E60000] selection:text-white relative overflow-x-hidden font-sans">
         
         {/* Background Grid Overlay */}
         <div 
-          className="fixed inset-0 pointer-events-none opacity-[0.03] z-0" 
+          className="fixed inset-0 pointer-events-none opacity-[0.05] z-0" 
           style={{ backgroundImage: 'linear-gradient(#E0E0E0 1px, transparent 1px), linear-gradient(90deg, #E0E0E0 1px, transparent 1px)', backgroundSize: '40px 40px' }}
         ></div>
 
+        {/* URGENCY BANNER (Drives Waitlist FOMO) */}
+        <div className="w-full bg-[#E60000] text-white py-2 text-center font-mono text-[9px] uppercase tracking-[0.3em] font-bold z-50 relative">
+          <span className="inline-block w-2 h-2 bg-white rounded-full animate-pulse mr-2 mb-[1px]"></span>
+          System Alert: Matrix Capacity at 98%. Viral Waitlist Protocol Active.
+        </div>
+
         {/* Navigation Bar */}
-        <nav className={`fixed w-full top-0 z-50 transition-all duration-300 ${scrolled ? 'bg-[#121212]/90 backdrop-blur-md border-b border-[#333]' : 'bg-transparent'}`}>
-          <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+        <nav className={`fixed w-full top-8 z-50 transition-all duration-300 ${scrolled ? 'bg-[#050505]/95 backdrop-blur-md border-b border-[#222] py-2' : 'bg-transparent py-4'}`}>
+          <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Zap className="text-[#E60000] animate-pulse-fast" size={20} />
-              <span className="font-oswald text-2xl uppercase tracking-[0.2em] font-bold text-[#E60000]">BAR-CODE.AI</span>
+              <Zap className="text-[#E60000]" size={20} />
+              <span className="font-oswald text-xl md:text-2xl uppercase tracking-[0.2em] font-bold text-white">BAR-CODE<span className="text-[#E60000]">.AI</span></span>
             </div>
             
-            {/* FLYOUT: Navbar Button */}
-            <button onClick={() => setAuthStep("auth")} className="gn-btn-outline text-[10px] py-2 px-6 relative group">
+            <button onClick={() => setAuthStep("auth")} className="border border-[#E60000]/50 bg-[#E60000]/10 hover:bg-[#E60000] hover:text-white text-[#E60000] text-[10px] uppercase font-mono font-bold tracking-widest py-2.5 px-6 transition-colors shadow-[0_0_15px_rgba(230,0,0,0.2)]">
               Access System
-              <span className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-md border border-[#333] text-[#aaa] text-[8px] px-3 py-1.5 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50 shadow-[0_0_15px_rgba(230,0,0,0.2)]">
-                Authenticate Node Interface
-              </span>
             </button>
           </div>
         </nav>
 
-{/* Hero Section */}
-        <header className="relative pt-40 pb-24 px-6 flex flex-col items-center text-center z-10 border-b border-[#333]">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#E60000]/5 via-[#121212] to-[#121212] -z-10"></div>
+        {/* Hero Section */}
+        <header className="relative pt-40 pb-20 px-6 flex flex-col items-center text-center z-10 border-b border-[#222]">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#E60000]/10 via-[#050505] to-[#050505] -z-10"></div>
           
-          <div className="inline-flex items-center gap-2 border border-[#333] bg-[#1a1a1a] px-4 py-1.5 rounded-full mb-8 mt-10">
-            <span className="w-2 h-2 rounded-full bg-[#E60000] animate-pulse"></span>
-            <span className="font-mono text-[9px] uppercase tracking-widest text-[#888]">Secure Ingestion Node Ready</span>
+          <div className="inline-flex items-center gap-2 border border-[#333] bg-[#111] px-4 py-2 rounded-sm mb-10 mt-6 shadow-lg">
+            <ShieldCheck size={14} className="text-green-500" />
+            <span className="font-mono text-[9px] uppercase tracking-widest text-[#888]">GetNice Records // Operational</span>
           </div>
 
-          <h1 className="font-oswald text-6xl md:text-8xl font-bold mb-6 tracking-tight uppercase text-white drop-shadow-neon-red">
-            Crack The Code. <br/> <span className="text-[#E60000]">Own The Flow.</span>
+          {/* HEADLINE: Option 2 */}
+          <h1 className="font-oswald text-5xl md:text-7xl lg:text-8xl font-bold mb-6 tracking-tighter uppercase text-white drop-shadow-[0_0_30px_rgba(230,0,0,0.2)] max-w-5xl leading-[1.1]">
+            The First Identity-Aware <br />
+            <span className="text-[#E60000] underline underline-offset-[12px] decoration-[#222]">AI Studio Built For Hip-Hop.</span>
           </h1>
           
-          <p className="max-w-3xl mx-auto text-center text-balance font-sans text-lg text-[#d4c5c5] mb-10 leading-relaxed">
-            The First Identity-Aware AI Studio Built For Hip-Hop. Drop A Beat, Let Our Neural Engine Map Your perfect flow, Record Your Raw Takes, And Instantly Master Them To Industry Standards. We Bridge The Gap From A Concept In Your Head To A Commercial, Global Release. Your Sound, Amplified By The Machine.
+          {/* SUBTEXT: Option 3 */}
+          <p className="max-w-2xl mx-auto text-center font-mono text-xs md:text-sm text-[#888] mb-12 leading-loose uppercase tracking-widest">
+            We put elite A&R, Ghostwriting, and Audio Engineering directly in your browser. Record your vocals, let the matrix mix them to perfection, and distribute your next hit to the world. 
+            <br/><br/>
+            <span className="text-white font-bold">Stop waiting to be discovered. Build your anthem today.</span>
           </p>
           
-          {/* FLYOUT: Hero Button */}
-          <button onClick={() => setAuthStep("auth")} className="gn-btn-outline bg-[#948e8e] text-sm px-10 py-5 group shadow-neon-red uppercase tracking-widest relative">
-            Initialize BarCode 
-            <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform inline-block ml-2" />
-            <span className="absolute -top-12 left-1/2 -translate-x-1/2 bg-black/95 backdrop-blur-md border border-[#E60000]/50 text-white text-[9px] px-4 py-2 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50 shadow-[0_0_20px_rgba(230,0,0,0.3)]">
-              Establish Neural Link To Studio
-            </span>
+          {/* HERO CTA */}
+          <button onClick={() => setAuthStep("auth")} className="bg-[#E60000] text-white font-oswald text-lg md:text-xl px-12 py-6 uppercase tracking-[0.2em] font-bold relative group hover:bg-red-700 transition-all shadow-[0_0_40px_rgba(230,0,0,0.4)] flex items-center gap-3">
+            Initialize Node Interface 
+            <ArrowRight size={24} className="group-hover:translate-x-2 transition-transform" />
           </button>
+
+          {/* LIVE MATRIX STATS (Builds PLG Trust) */}
+          <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 max-w-4xl mx-auto w-full border-t border-[#222] pt-12">
+            <div className="text-center">
+              <p className="font-oswald text-3xl md:text-4xl text-white font-bold tracking-widest mb-1">11</p>
+              <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest">Dedicated Rooms</p>
+            </div>
+            <div className="text-center">
+              <p className="font-oswald text-3xl md:text-4xl text-white font-bold tracking-widest mb-1">8,402</p>
+              <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest">Artifacts Minted</p>
+            </div>
+            <div className="text-center">
+              <p className="font-oswald text-3xl md:text-4xl text-[#E60000] font-bold tracking-widest mb-1">$24.5K</p>
+              <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest">Escrow Secured</p>
+            </div>
+            <div className="text-center">
+              <p className="font-oswald text-3xl md:text-4xl text-green-500 font-bold tracking-widest mb-1">99.9%</p>
+              <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest">DSP Uptime</p>
+            </div>
+          </div>
         </header>
+
         {/* Systems Architecture Grid */}
         <section className="max-w-7xl mx-auto px-6 py-24 relative z-10">
-          <div className="flex flex-col md:flex-row justify-between items-end border-b border-[#333] pb-4 mb-12">
+          <div className="flex flex-col md:flex-row justify-between items-end border-b border-[#222] pb-6 mb-12">
             <div>
-              <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-2">System Architecture</h2>
-              <p className="font-mono text-[10px] uppercase tracking-widest text-[#888]">11 Dedicated Processing Nodes</p>
+              <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-2 flex items-center gap-3">
+                <Cpu className="text-[#E60000]" size={32} /> System Architecture
+              </h2>
+              <p className="font-mono text-[10px] uppercase tracking-widest text-[#888]">The 11 Processing Nodes of the Matrix</p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {roomsInfo.map((room) => (
-              <div key={room.id} className="gn-panel p-6 group hover:border-[#E60000] transition-all duration-300 relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-1 bg-[#E60000]/50 opacity-0 group-hover:opacity-100 group-hover:animate-scan-line blur-[2px]"></div>
+              <div key={room.id} className="bg-[#0a0a0a] border border-[#222] p-8 group hover:border-[#E60000] hover:bg-[#110000] transition-all duration-300 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-[#E60000] opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 
                 <div className="flex justify-between items-start mb-6">
-                  <div className="text-[#E60000] p-3 bg-[#121212] border border-[#333] rounded-lg group-hover:bg-[#E60000] group-hover:text-white transition-colors">
+                  <div className="text-[#E60000] p-3 bg-black border border-[#333] rounded-sm group-hover:shadow-[0_0_15px_rgba(230,0,0,0.3)] transition-all">
                     {room.icon}
                   </div>
                   <span className="font-mono text-[10px] text-[#555] group-hover:text-[#E60000] transition-colors uppercase font-bold tracking-widest">
@@ -260,10 +334,10 @@ export default function EntryGateway() {
                   </span>
                 </div>
                 
-                <h3 className="font-oswald text-xl uppercase tracking-widest font-bold text-white mb-3">
+                <h3 className="font-oswald text-xl uppercase tracking-widest font-bold text-white mb-4">
                   {room.name}
                 </h3>
-                <p className="font-sans text-sm text-[#888] leading-relaxed">
+                <p className="font-mono text-[10px] text-[#888] leading-relaxed uppercase tracking-tighter group-hover:text-gray-300 transition-colors">
                   {room.desc}
                 </p>
               </div>
@@ -271,34 +345,35 @@ export default function EntryGateway() {
           </div>
         </section>
 
-        {/* Footer */}
-        <footer className="border-t border-[#333] py-12 bg-[#0a0a0a] text-center relative z-10">
-          <div className="max-w-7xl mx-auto px-6">
-            <div className="flex justify-center mb-6">
-              <Zap className="text-[#333]" size={24} />
+        {/* Final CTA Footer */}
+        <section className="border-t border-[#222] py-24 bg-black text-center relative z-10 overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-[#E60000]/10 via-transparent to-transparent pointer-events-none"></div>
+          <div className="max-w-3xl mx-auto px-6 relative z-10">
+            <Lock size={48} className="mx-auto text-[#E60000] mb-6" />
+            <h2 className="font-oswald text-4xl md:text-5xl uppercase tracking-widest font-bold text-white mb-6">The Vault Is Closing.</h2>
+            <p className="font-mono text-xs text-[#888] uppercase tracking-widest mb-10 leading-loose">
+              Join the viral waitlist today. Refer 3 artists to bypass the queue instantly, or upgrade your node to guarantee immediate access.
+            </p>
+            <button onClick={() => setAuthStep("auth")} className="bg-white text-black font-oswald text-lg px-10 py-5 uppercase tracking-widest font-bold hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_30px_rgba(255,255,255,0.2)]">
+              Enter The Waitlist Queue
+            </button>
+          </div>
+        </section>
+
+        {/* Legal Footer */}
+        <footer className="border-t border-[#111] py-8 bg-[#020202] text-center relative z-10">
+          <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-2 text-[#555]">
+              <Zap size={14} />
+              <span className="font-mono text-[9px] uppercase tracking-[0.2em]">PROPERTY OF GETNICE™ ENTERTAINMENT & RECORDS ©2026</span>
             </div>
-            <p className="font-mono text-[10px] text-[#555] uppercase tracking-[0.2em] mb-2">
-              PROPERTY OF GETNICE™ ENTERTAINMENT & RECORDS ©2026
-            </p>
-            <p className="font-mono text-[10px] text-[#555] uppercase tracking-[0.2em] mb-6">
-              ALL RIGHTS RESERVED BY: TALON ANDREW LLOYD
-            </p>
             
-            <div className="flex justify-center gap-6">
-              {/* FLYOUT: Terms Link */}
-              <Link href="/terms" className="font-mono text-[10px] text-[#888] hover:text-[#E60000] uppercase tracking-widest transition-colors relative group">
+            <div className="flex gap-6">
+              <Link href="/terms" className="font-mono text-[9px] text-[#555] hover:text-[#E60000] uppercase tracking-widest transition-colors">
                 Terms & Conditions
-                <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-md border border-[#333] text-[#aaa] text-[8px] px-3 py-1.5 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50">
-                  Review Matrix Parameters
-                </span>
               </Link>
-              
-              {/* FLYOUT: Support Link */}
-              <a href="mailto:support@bar-code.ai" className="font-mono text-[10px] text-[#888] hover:text-[#E60000] uppercase tracking-widest transition-colors relative group">
-                Support
-                <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-md border border-[#333] text-[#aaa] text-[8px] px-3 py-1.5 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50">
-                  Ping Admin Operators
-                </span>
+              <a href="mailto:support@bar-code.ai" className="font-mono text-[9px] text-[#555] hover:text-[#E60000] uppercase tracking-widest transition-colors">
+                Admin Support
               </a>
             </div>
           </div>
@@ -310,44 +385,31 @@ export default function EntryGateway() {
   // ==========================================
   // VIEW 2: ORIGINAL AUTHENTICATION FLOW
   // ==========================================
-  return (
-    <div className="min-h-screen bg-[#000] text-white flex flex-col items-center justify-center p-6 font-mono relative">
-      
-      {/* FLYOUT: Abort Login Button */}
-      <button 
-        onClick={() => setAuthStep("landing")} 
-        className="absolute top-8 left-8 text-[#555] hover:text-white flex items-center gap-2 text-xs uppercase tracking-widest transition-colors relative group"
-      >
-        ← Abort Login
-        <span className="absolute -bottom-10 left-0 bg-black/90 backdrop-blur-md border border-[#333] text-[#aaa] text-[8px] px-3 py-1.5 uppercase tracking-widest whitespace-nowrap opacity-0 -translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50">
-          Terminate Secure Handshake
-        </span>
-      </button>
+  if (authStep === "auth") {
+    return (
+      <div className="min-h-screen bg-[#000] text-white flex flex-col items-center justify-center p-6 font-mono relative">
+        <button 
+          onClick={() => setAuthStep("landing")} 
+          className="absolute top-8 left-8 text-[#555] hover:text-white flex items-center gap-2 text-xs uppercase tracking-widest transition-colors relative group"
+        >
+          ← Abort Login
+        </button>
 
-      <div className="text-center mb-12 animate-in fade-in duration-700 mt-12">
-        <div className="w-16 h-16 border-2 border-[#E60000] flex items-center justify-center mx-auto mb-6">
-          <span className="font-oswald text-2xl text-[#E60000] font-bold">BC</span>
+        <div className="text-center mb-12 animate-in fade-in duration-700 mt-12">
+          <div className="w-16 h-16 border-2 border-[#E60000] flex items-center justify-center mx-auto mb-6">
+            <span className="font-oswald text-2xl text-[#E60000] font-bold">BC</span>
+          </div>
+          <h1 className="font-oswald text-5xl uppercase tracking-[0.2em] font-bold">Bar-Code<span className="text-[#E60000]">.ai</span></h1>
         </div>
-        <h1 className="font-oswald text-5xl uppercase tracking-[0.2em] font-bold">Bar-Code<span className="text-[#E60000]">.ai</span></h1>
-      </div>
 
-      {authStep === "auth" && (
         <div className="w-full max-w-md bg-[#050505] border border-[#222] p-8 shadow-2xl">
           <div className="flex gap-4 mb-8 border-b border-[#222] pb-4">
-             {/* FLYOUT: Login Tab */}
              <button onClick={() => setAuthMode("login")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold relative group ${authMode === 'login' ? 'text-[#E60000]' : 'text-[#a8aba6]'}`}>
                Login
-               <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-md border border-[#333] text-[#aaa] text-[8px] px-3 py-1.5 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50">
-                 Authenticate Known Node
-               </span>
              </button>
              
-             {/* FLYOUT: Register Tab */}
              <button onClick={() => setAuthMode("signup")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold relative group ${authMode === 'signup' ? 'text-[#E60000]' : 'text-[#a8aba6]'}`}>
                Register
-               <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-md border border-[#333] text-[#aaa] text-[8px] px-3 py-1.5 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50">
-                 Mint New Node Identity
-               </span>
              </button>
           </div>
 
@@ -365,18 +427,85 @@ export default function EntryGateway() {
               </span>
             </div>
 
-            {/* FLYOUT: Submit Button */}
             <button type="submit" disabled={loading} className="w-full bg-[#948e8e] text-white py-4 text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2 relative group">
               {loading ? "Processing..." : authMode === "login" ? "Enter Studio" : "Register"}
-              <span className="absolute -top-12 left-1/2 -translate-x-1/2 bg-black/95 backdrop-blur-md border border-[#E60000]/50 text-white text-[9px] px-4 py-2 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50 shadow-[0_0_15px_rgba(230,0,0,0.3)]">
-                Execute Identity Verification
-              </span>
             </button>
           </form>
         </div>
-      )}
+      </div>
+    );
+  }
 
-      {authStep === "select_tier" && (
+  // ==========================================
+  // VIEW 3: THE VIRAL WAITLIST QUEUE
+  // ==========================================
+  if (authStep === "waitlist") {
+    const referrals = userProfile?.total_referrals || 0;
+    const progressPercent = Math.min(100, (referrals / 3) * 100);
+
+    return (
+      <div className="min-h-screen bg-[#000] text-white flex flex-col items-center justify-center p-6 font-mono relative">
+        <div className="bg-[#050505] border border-[#E60000]/50 p-8 md:p-12 text-center w-full max-w-lg shadow-[0_0_50px_rgba(230,0,0,0.15)] animate-in zoom-in duration-500">
+          <Lock size={48} className="mx-auto text-[#E60000] mb-6" />
+          <h2 className="font-oswald text-3xl uppercase tracking-widest text-white mb-2 font-bold">Node Queued</h2>
+          <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest leading-relaxed mb-8 border-l-2 border-[#E60000] pl-4 text-left">
+            The Matrix is currently at maximum capacity. Free Loader nodes are placed in a holding pattern to preserve GPU bandwidth for verified operators.
+          </p>
+
+          <div className="bg-black border border-[#222] p-6 mb-8 text-left">
+            <h3 className="font-oswald text-lg text-white uppercase tracking-widest mb-4 flex items-center gap-2">
+              <Zap size={16} className="text-yellow-500" /> Bypass Protocol
+            </h3>
+            <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mb-6 leading-relaxed">
+              Recruit 3 active nodes to the network using your unique cryptographic link to bypass the queue instantly.
+            </p>
+            
+            <div className="flex items-center justify-between mb-2">
+               <span className="font-mono text-[10px] text-white font-bold">{referrals} / 3 Nodes Recruited</span>
+               <span className="font-mono text-[10px] text-[#E60000]">{progressPercent.toFixed(0)}%</span>
+            </div>
+            <div className="h-1.5 w-full bg-[#111] rounded-full overflow-hidden mb-6">
+               <div className="h-full bg-[#E60000] transition-all duration-1000 ease-out" style={{ width: `${progressPercent}%` }} />
+            </div>
+
+            <div className="flex items-center gap-2 bg-[#111] border border-[#333] p-2">
+              {/* SURGICAL FIX: Display the shortcode in the UI */}
+              <code className="font-mono text-[10px] text-[#E60000] font-bold truncate flex-1 pl-2">
+                {typeof window !== 'undefined' ? `${window.location.origin}/?ref=${userProfile?.ref_code || userProfile?.id.substring(0,8)}` : ''}
+              </code>
+              <button 
+                onClick={copyReferralLink}
+                className="bg-[#E60000] text-white px-4 py-2.5 text-[9px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors flex items-center gap-2"
+              >
+                <Copy size={12} /> Copy
+              </button>
+            </div>
+          </div>
+
+          <button 
+            onClick={() => setAuthStep("select_tier")}
+            className="w-full bg-white text-black py-4 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+          >
+            Skip Queue // Upgrade Node
+          </button>
+          
+          <button 
+            onClick={async () => { await supabase.auth.signOut(); setAuthStep("landing"); }}
+            className="mt-6 text-[#555] hover:text-white text-[9px] font-mono uppercase tracking-widest transition-colors"
+          >
+            Disconnect Interface
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // VIEW 4: SUBSCRIPTION / UPGRADE TIER
+  // ==========================================
+  if (authStep === "select_tier") {
+    return (
+      <div className="min-h-screen bg-[#000] text-white flex flex-col items-center justify-center p-6 font-mono relative">
         <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-8 animate-in zoom-in">
           {tiers.map((tier) => (
             <div key={tier.name} className={`bg-[#050505] p-8 border ${tier.isPro ? 'border-[#E60000]' : 'border-[#222]'} flex flex-col`}>
@@ -386,24 +515,23 @@ export default function EntryGateway() {
                 {tier.features.map(f => <li key={f}>• {f}</li>)}
               </ul>
               
-              {/* FLYOUT: Tier Selection Button */}
               <button onClick={() => handleTierSelection(tier.name)} className="w-full py-3 bg-[#E60000] text-white text-[10px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors relative group">
                 Select {tier.name}
-                <span className="absolute -top-12 left-1/2 -translate-x-1/2 bg-black/95 backdrop-blur-md border border-[#E60000]/50 text-white text-[9px] px-4 py-2 uppercase tracking-widest whitespace-nowrap opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 pointer-events-none z-50 shadow-[0_0_15px_rgba(230,0,0,0.3)]">
-                  Lock In Tier Privileges
-                </span>
               </button>
             </div>
           ))}
         </div>
-      )}
-      
-      {authStep === "verify_email" && (
-        <div className="bg-[#050505] border border-[#222] p-12 text-center max-w-md">
-          <Mail size={40} className="mx-auto text-[#E60000] mb-4" />
-          <p className="text-xs uppercase tracking-widest leading-relaxed">Identity Check Dispatch: Verify your email to complete node initialization.</p>
-        </div>
-      )}
+      </div>
+    );
+  }
+
+  // Fallback for Verify Email
+  return (
+    <div className="min-h-screen bg-[#000] text-white flex flex-col items-center justify-center p-6 font-mono relative">
+      <div className="bg-[#050505] border border-[#222] p-12 text-center max-w-md">
+        <Mail size={40} className="mx-auto text-[#E60000] mb-4" />
+        <p className="text-xs uppercase tracking-widest leading-relaxed">Identity Check Dispatch: Verify your email to complete node initialization.</p>
+      </div>
     </div>
   );
 }

@@ -9,23 +9,29 @@ export default function CreditHustleWidget() {
   const { userSession, addToast } = useMatrixStore();
   const [copied, setCopied] = useState(false);
   const [referrals, setReferrals] = useState(0);
+  const [refCode, setRefCode] = useState<string>("");
 
   useEffect(() => {
     if (userSession?.id) {
       supabase
         .from('profiles')
-        .select('total_referrals')
+        .select('total_referrals, ref_code')
         .eq('id', userSession.id)
         .single()
         .then(({ data }) => {
-          if (data) setReferrals(data.total_referrals || 0);
+          if (data) {
+            setReferrals(data.total_referrals || 0);
+            // Fallback to the first 8 of the ID just in case the SQL hasn't run yet
+            setRefCode(data.ref_code || userSession.id.substring(0, 8));
+          }
         });
     }
   }, [userSession?.id]);
 
-  const referralLink = typeof window !== 'undefined' ? `${window.location.origin}/?ref=${userSession?.id}` : '';
+  const referralLink = typeof window !== 'undefined' && refCode ? `${window.location.origin}/?ref=${refCode}` : 'Generating Link...';
 
   const handleCopy = () => {
+    if (!refCode) return;
     const textArea = document.createElement("textarea");
     textArea.value = referralLink;
     document.body.appendChild(textArea);
@@ -57,12 +63,13 @@ export default function CreditHustleWidget() {
       </p>
       
       <div className="flex items-center gap-2 bg-black border border-[#222] p-1.5 shadow-inner">
-        <code className="font-mono text-[9px] text-white truncate flex-1 pl-2 opacity-80">
+        <code className="font-mono text-[9px] text-[#E60000] font-bold truncate flex-1 pl-2 opacity-90">
           {referralLink}
         </code>
         <button 
           onClick={handleCopy}
-          className="bg-[#E60000] text-white px-3 py-2 text-[9px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors flex items-center gap-2 shrink-0 shadow-[0_0_10px_rgba(230,0,0,0.2)]"
+          disabled={!refCode}
+          className="bg-[#E60000] text-white px-3 py-2 text-[9px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors flex items-center gap-2 shrink-0 shadow-[0_0_10px_rgba(230,0,0,0.2)] disabled:opacity-50"
         >
           {copied ? <CheckCircle2 size={12} /> : <Copy size={12} />} {copied ? "Copied" : "Copy"}
         </button>
