@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useSearchParams } from 'next/navigation';
+import React, { useState, useEffect, useRef } from "react";
+import { useSearchParams, useRouter } from 'next/navigation'; // <-- ADDED useRouter
 import Link from "next/link";
 import { 
   Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, 
@@ -17,6 +17,8 @@ export default function Room07_Distribution() {
   } = useMatrixStore();
   
   const searchParams = useSearchParams();
+  const router = useRouter(); // <-- INITIALIZED
+  const interceptorFired = useRef(false); // <-- PREVENTS DOUBLE FIRING
 
   // --- STATE ---
   const [trackId, setTrackId] = useState<string | null>(null);
@@ -54,36 +56,55 @@ export default function Room07_Distribution() {
   
   // --- STRIPE RETURN HANDLER (THE INTERCEPTOR) ---
   useEffect(() => {
+    if (interceptorFired.current) return;
+
     const rolloutPurchased = searchParams.get('rollout_purchased');
     const coverArtPurchased = searchParams.get('cover_art_purchased');
     const searchTrackId = searchParams.get('track_id') || searchParams.get('trackId');              
     
     if (rolloutPurchased === 'true' && searchTrackId) {
-      if (addToast) addToast("Upstream Deal Secured. Transferring to The Exec...", "success");
+      interceptorFired.current = true;
       
-      // Give the database 1.5 seconds to catch up from the Webhook ping, then route to Room 11
+      // SURGICAL FIX: Actively poll the ledger to wait for the Stripe Webhook
+      setLoadingStep("Awaiting Financial Handshake from Stripe...");
+      updateAnrData({ status: "submitting" });
+      
+      const pollLedger = setInterval(async () => {
+        const { data } = await supabase
+          .from('submissions')
+          .select('upstream_deal_signed')
+          .eq('id', searchTrackId)
+          .single();
+
+        if (data?.upstream_deal_signed) {
+          clearInterval(pollLedger);
+          if (addToast) addToast("Upstream Deal Secured. Transferring to The Exec...", "success");
+          setActiveRoom("11"); 
+        }
+      }, 2000);
+
+      // Failsafe timeout after 15 seconds
       setTimeout(() => {
+        clearInterval(pollLedger);
+        if (addToast) addToast("Ledger sync delayed. Proceeding to Hub...", "info");
         setActiveRoom("11"); 
-      }, 1500);
+      }, 15000);
       
-      // Clean up the URL so it doesn't keep triggering
-      window.history.replaceState(null, '', '/');
+      // Clean up the URL natively through Next.js
+      router.replace('/', { scroll: false });
     }
 
     if (coverArtPurchased === 'true' && searchTrackId) {
+      interceptorFired.current = true;
       if (addToast) addToast("Payment Secured. Initializing FLUX.1 Engine...", "success");
       
-      // SURGICAL FIX: Force the UI into the success view immediately 
-      // so the image box is visible while generating, bypassing DB delays
       updateAnrData({ status: "success" });
-      
-      // SURGICAL FIX: We actively command the API to generate the image right now!
       triggerCoverArtGeneration(searchTrackId);
       
-      // Clean up the URL so it doesn't keep triggering
-      window.history.replaceState(null, '', '/');
+      // Clean up the URL natively through Next.js
+      router.replace('/', { scroll: false });
     }
-  }, [searchParams, addToast, setActiveRoom, updateAnrData]);
+  }, [searchParams, addToast, setActiveRoom, updateAnrData, router]);
 
   // --- THE HYBRID INTELLIGENCE PIPELINE ---
   const handleDistributionSequence = async () => {

@@ -1,147 +1,187 @@
-import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
+// 1. Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16',
 });
 
-// Admin client to bypass RLS for secure ledger writes
+// 2. Initialize Supabase Admin (Bypasses RLS to secure the ledger)
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
-  const body = await req.text();
-  const headerList = await headers();
-  const signature = headerList.get('Stripe-Signature') || headerList.get('stripe-signature');
-
-  if (!signature) return NextResponse.json({ error: "Missing Signature" }, { status: 400 });
-
-  let event: Stripe.Event;
-
   try {
-    event = stripe.webhooks.constructEvent(body, signature, process.env.STRIPE_WEBHOOK_SECRET!);
-  } catch (err: any) {
-    console.error(`[WEBHOOK] Signature Error: ${err.message}`);
-    return NextResponse.json({ error: "Verification failed" }, { status: 400 });
-  }
+    const body = await req.text();
+    const signature = req.headers.get('stripe-signature');
 
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object as Stripe.Checkout.Session;
-    const meta = session.metadata || {};
-    
-    // Normalize metadata (supports multiple checkout route variations)
-    const fulfillmentType = meta.type || meta.purchaseType;
-    const effectiveUserId = meta.userId || meta.buyerId;
-    const amountPaid = session.amount_total ? session.amount_total / 100 : 0;
-
-    if (!effectiveUserId) {
-      console.error("[WEBHOOK] Critical: Identity metadata missing.");
-      return NextResponse.json({ error: "Missing Metadata" }, { status: 400 });
+    if (!signature || !process.env.STRIPE_WEBHOOK_SECRET) {
+      console.error("[WEBHOOK ERROR] Missing Stripe Signature or Webhook Secret.");
+      return NextResponse.json({ error: "Missing signature or secret" }, { status: 400 });
     }
 
-    try {
-      // 1. SYNC PROFILE (Captures Email & Stripe Account ID from the real session)
-      await supabaseAdmin
-        .from('profiles')
-        .update({ 
-          email: session.customer_details?.email,
-          stripe_account_id: session.customer as string 
-        })
-        .eq('id', effectiveUserId);
+    let event: Stripe.Event;
 
-      // 2. TIER ELEVATION
-      if (meta.tier) {
-        const creditGrant = meta.tier === 'The Mogul' ? 999999 : meta.tier === 'The Artist' ? 100 : 5;
-        await supabaseAdmin
-          .from('profiles')
-          .update({ tier: meta.tier, credits: creditGrant })
-          .eq('id', effectiveUserId);
-        
-        await supabaseAdmin.from('transactions').insert({
-          user_id: effectiveUserId,
-          amount: -amountPaid,
-          type: 'TIER_UPGRADE',
-          description: `Matrix Node elevated to ${meta.tier}`
-        });
+    // 3. Cryptographic Signature Validation
+    try {
+      event = stripe.webhooks.constructEvent(
+        body,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
+    } catch (err: any) {
+      console.error(`[WEBHOOK ERROR] Signature Verification Failed: ${err.message}`);
+      return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+    }
+
+    // 4. Handle Successful Checkouts
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const meta = session.metadata;
+      
+      if (!meta || !meta.type) {
+        console.error("[WEBHOOK WARNING] Checkout completed but no metadata type found.", session.id);
+        return NextResponse.json({ received: true });
       }
 
-      // 3. FULFILLMENT SWITCH
-      switch (fulfillmentType) {
-        case 'escrow_contract':
-          // Strictly matching your new 'escrow_contracts' naming convention
-          const { error: contractErr } = await supabaseAdmin.from('escrow_contracts').insert({
-            payer_node_id: effectiveUserId,
-            recipient_artist_id: meta.targetNodeId,
-            contract_amount: amountPaid,
-            contract_status: 'funded',
-            interaction_type: meta.interactionType || 'feature',
-            stripe_session_id: session.id
-          });
+      // Safely resolve the User ID (either passed in metadata or as client_reference_id)
+      const effectiveUserId = meta.userId || meta.buyerId || session.client_reference_id;
+      if (!effectiveUserId) {
+         console.error("[WEBHOOK WARNING] No User ID attached to session metadata.");
+         return NextResponse.json({ received: true });
+      }
 
-          if (contractErr) throw contractErr;
+      const amountPaid = session.amount_total ? session.amount_total / 100 : 0;
+      console.log(`[WEBHOOK] Processing ${meta.type} for User ${effectiveUserId} ($${amountPaid})`);
 
-          // Transaction Ledger entry for the Payer
+      // ============================================================================
+      // THE FULFILLMENT ROUTER
+      // ============================================================================
+      switch (meta.type) {
+
+        // --- ROOM 05: ENGINEERING TOKEN ---
+        case 'engineering_token':
+          await supabaseAdmin.from('profiles')
+            .update({ has_engineering_token: true })
+            .eq('id', effectiveUserId);
+            
           await supabaseAdmin.from('transactions').insert({
-            user_id: effectiveUserId,
-            amount: -amountPaid,
-            type: 'ESCROW_LOCK',
-            description: `Escrow Lock: ${meta.interactionType} with ${meta.targetNodeId}`
+            user_id: effectiveUserId, amount: -amountPaid, type: 'TOKEN_PURCHASE', description: 'Unlocked Vocal Engineering Suite'
           });
+          break;
 
-          // Create the "Neural Pings" (These trigger your external email webhooks)
-          await supabaseAdmin.from('notifications').insert([
-            {
-              user_id: meta.targetNodeId,
-              type: 'escrow_received',
-              title: 'NEW CONTRACT FUNDED',
-              message: `A node has locked $${amountPaid} for a ${meta.interactionType}. Respond in Room 10.`
-            },
-            {
-              user_id: process.env.NEXT_PUBLIC_CREATOR_ID, // Notify Admin Node
-              type: 'admin_alert',
-              title: 'ESCROW REVENUE SECURED',
-              message: `Revenue Alert: $${amountPaid} secured between ${effectiveUserId} and ${meta.targetNodeId}.`
-            }
+        // --- ROOM 06: MASTERING TOKEN ---
+        case 'mastering_token':
+          await supabaseAdmin.from('profiles')
+            .update({ has_mastering_token: true })
+            .eq('id', effectiveUserId);
+            
+          await supabaseAdmin.from('transactions').insert({
+            user_id: effectiveUserId, amount: -amountPaid, type: 'TOKEN_PURCHASE', description: 'Unlocked Commercial Mastering Suite'
+          });
+          break;
+
+        // --- ROOM 07: FLUX.1 COVER ART ---
+        case 'cover_art':
+          await supabaseAdmin.from('transactions').insert({
+            user_id: effectiveUserId, amount: -amountPaid, type: 'UPSELL_PURCHASE', description: `FLUX.1 Cover Art Generation`
+          });
+          break;
+
+        // --- ROOM 08/11: THE EXEC ROLLOUT ($1,500 ADVANCE & ROOM 11 UNLOCK) ---
+        case 'exec_rollout':
+          // 1. Instantly unlock Room 11 for the user's specific track
+          if (meta.track_id) {
+             await supabaseAdmin.from('submissions')
+              .update({ upstream_deal_signed: true })
+              .eq('id', meta.track_id);
+          }
+            
+          // 2. Grant the $1500 Marketing Advance so the AI can spend it
+          const { data: profile } = await supabaseAdmin.from('profiles').select('marketing_credits').eq('id', effectiveUserId).single();
+          const currentMarketingCredits = profile?.marketing_credits || 0;
+          
+          await supabaseAdmin.from('profiles')
+            .update({
+              getnice_signed: true,
+              marketing_credits: currentMarketingCredits + 1500
+            })
+            .eq('id', effectiveUserId);
+
+          // 3. Log the revenue and advance in the Bank Ledger
+          await supabaseAdmin.from('transactions').insert([
+            { user_id: effectiveUserId, amount: -amountPaid, type: 'UPSELL_PURCHASE', description: `The Exec: 30-Day Strategy Unlocked` },
+            { user_id: effectiveUserId, amount: 1500, type: 'ADVANCE_DEPOSIT', description: `GetNice Records Advance: Algorithmic Rollout` }
           ]);
           break;
 
-        case 'engineering_token':
-          await supabaseAdmin.from('profiles').update({ has_engineering_token: true }).eq('id', effectiveUserId);
-          break;
-
-        case 'mastering_token':
-          const { data: profile } = await supabaseAdmin.from('profiles').select('mastering_tokens').eq('id', effectiveUserId).single();
-          await supabaseAdmin.from('profiles').update({ 
-            mastering_tokens: (profile?.mastering_tokens || 0) + 1,
-            has_mastering_token: true 
-          }).eq('id', effectiveUserId);
-          break;
-
+        // --- TOP-UP: GPU GENERATION CREDITS ---
         case 'credit_topup':
-          const { data: p } = await supabaseAdmin.from('profiles').select('credits').eq('id', effectiveUserId).single();
-          const topupCount = parseInt(meta.credit_amount || '50');
-          await supabaseAdmin.from('profiles').update({ credits: (p?.credits || 0) + topupCount }).eq('id', effectiveUserId);
-          break;
+          const addedCredits = parseInt(meta.credit_amount || '50');
+          const { data: currentProf } = await supabaseAdmin.from('profiles').select('credits').eq('id', effectiveUserId).single();
+          
+          await supabaseAdmin.from('profiles')
+            .update({ credits: (currentProf?.credits || 0) + addedCredits })
+            .eq('id', effectiveUserId);
 
-        case 'beat_lease':
-          await supabaseAdmin.from('purchases').insert({
-            user_id: effectiveUserId, item_type: 'beat', item_id: meta.beat_id, amount_paid: amountPaid
+          await supabaseAdmin.from('transactions').insert({
+            user_id: effectiveUserId, amount: -amountPaid, type: 'CREDIT_PURCHASE', description: `Purchased ${addedCredits} AI Generations`
           });
           break;
+
+        // --- ROOM 10: ESCROW BROKERAGE ---
+        case 'escrow_contract':
+          await supabaseAdmin.from('escrow_contracts').insert({
+             buyer_id: meta.buyerId,
+             artist_id: meta.targetNodeId,
+             amount: amountPaid,
+             status: 'funded',
+             interaction_type: meta.interactionType || 'feature',
+             stripe_session_id: session.id
+          });
+          
+          await supabaseAdmin.from('transactions').insert({
+            user_id: effectiveUserId, amount: -amountPaid, type: 'ESCROW_LOCK', description: `Funds secured for ${meta.interactionType} contract.`
+          });
+          break;
+
+        // --- ROOM 01: BEAT LEASING ---
+        case 'beat_lease':
+          // Optional: Add logic to save the beat to the user's inventory
+          await supabaseAdmin.from('transactions').insert({
+            user_id: effectiveUserId, amount: -amountPaid, type: 'MARKETPLACE_PURCHASE', description: `Beat Lease Acquired`
+          });
+          break;
+
+        // --- ENTRY GATEWAY: SUBSCRIPTION TIER UPGRADE ---
+        case 'tier_upgrade':
+          const tierName = meta.tier || 'The Artist';
+          let startingCredits = tierName === 'The Mogul' ? 999999 : 100;
+          
+          await supabaseAdmin.from('profiles')
+            .update({ tier: tierName, credits: startingCredits })
+            .eq('id', effectiveUserId);
+
+          await supabaseAdmin.from('transactions').insert({
+            user_id: effectiveUserId, amount: -amountPaid, type: 'TIER_UPGRADE', description: `Upgraded to ${tierName} Node`
+          });
+          break;
+
+        default:
+          console.warn(`[WEBHOOK] Unrecognized metadata type: ${meta.type}`);
       }
 
-      console.log(`[STRIPE SUCCESS] Full fulfillment for User ${effectiveUserId}`);
-      return NextResponse.json({ received: true });
-
-    } catch (dbErr: any) {
-      console.error(`[WEBHOOK FATAL] ${dbErr.message}`);
-      return NextResponse.json({ error: "Database sync failed" }, { status: 500 });
+      console.log(`[WEBHOOK SUCCESS] Fulfillment executed for ${meta.type}`);
     }
-  }
 
-  return NextResponse.json({ received: true });
+    return NextResponse.json({ received: true });
+  } catch (error: any) {
+    console.error("[WEBHOOK FATAL ERROR]", error);
+    return NextResponse.json({ error: "Internal Webhook Error" }, { status: 500 });
+  }
 }
