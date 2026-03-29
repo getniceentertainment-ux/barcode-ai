@@ -30,11 +30,6 @@ export default function Room07_Distribution() {
 
   const isFreestyle = !generatedLyrics || generatedLyrics.trim() === "";
 
-  // --- DYNAMIC PRICING CALCULATION ---
-  const targetScore = 90;
-  const pointsShort = Math.max(0, targetScore - (anrData.hitScore || 0));
-  const dynamicRolloutPrice = (14.99 + (pointsShort * 1.00)).toFixed(2);
-
   // --- RECOVERY LOGIC: FETCH TRACK ID & ROLLOUT ON MOUNT IF ALREADY SUCCESSFUL ---
   useEffect(() => {
     if (anrData.status === 'success' && userSession?.id) {
@@ -77,13 +72,13 @@ export default function Room07_Distribution() {
       const pollLedger = setInterval(async () => {
         const { data } = await supabase
           .from('submissions')
-          .select('upstream_deal_signed')
+          .select('rollout_purchased') // SURGICAL FIX: We poll for the SaaS purchase, not the label deal
           .eq('id', searchTrackId)
           .single();
 
-        if (data?.upstream_deal_signed) {
+        if (data?.rollout_purchased) {
           clearInterval(pollLedger);
-          if (addToast) addToast("Deal Secured. Initializing Exec AI (This takes ~10s)...", "success");
+          if (addToast) addToast("SaaS Access Secured. Initializing Exec AI (This takes ~10s)...", "success");
           setLoadingStep("The Exec is generating your 30-Day Strategy...");
           
           try {
@@ -105,11 +100,6 @@ export default function Room07_Distribution() {
 
           if (addToast) addToast("Campaign Deployed. Transferring to Command Center...", "success");
           
-          // SURGICAL FIX: Fire the delayed Room 08 reminder just before teleporting
-          setTimeout(() => {
-            if (addToast) addToast("SYSTEM NOTE: Visit R08 (The Bank) to review your Upstream Terms & Conditions.", "info");
-          }, 3000);
-
           window.history.replaceState({}, document.title, window.location.pathname);
           setActiveRoom("11"); 
         }
@@ -295,15 +285,14 @@ export default function Room07_Distribution() {
     }
     setIsGeneratingRollout(true);
     try {
-      // SURGICAL FIX: We now send the hitScore to the Cashier to dynamically calculate the price
       const res = await fetch('/api/stripe/rollout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           userId: userSession?.id, 
           trackTitle: anrData.trackTitle, 
-          trackId,
-          hitScore: anrData.hitScore 
+          trackId 
+          // Removed hitScore to enforce standard $14.99 SaaS pricing
         })
       });
       const data = await res.json();
@@ -470,11 +459,11 @@ export default function Room07_Distribution() {
                       <BarChart size={14} className="text-[#E60000]" /> A&R Score
                     </span>
                     <div className={`text-7xl font-oswald font-bold tracking-tighter relative z-10 drop-shadow-lg
-                      ${anrData.hitScore >= 85 ? 'text-green-500' : anrData.hitScore >= 70 ? 'text-yellow-500' : 'text-[#E60000]'}`}>
+                      ${anrData.hitScore >= 90 ? 'text-green-500' : anrData.hitScore >= 70 ? 'text-yellow-500' : 'text-[#E60000]'}`}>
                       {anrData.hitScore}
                     </div>
                     <p className="text-[9px] font-mono uppercase mt-2 text-[#555] relative z-10 font-bold tracking-widest border-t border-[#222] pt-2 w-1/2 text-center">
-                       {anrData.hitScore >= 85 ? 'Algorithmic Priority' : anrData.hitScore >= 70 ? 'Gold Standard' : 'Underground Mix'}
+                       {anrData.hitScore >= 90 ? 'Upstream Target' : anrData.hitScore >= 70 ? 'Gold Standard' : 'Underground Mix'}
                     </p>
                   </div>
                </div>
@@ -508,7 +497,7 @@ export default function Room07_Distribution() {
                   )}
                </div>
 
-               {/* The Exec Rollout (DYNAMIC SLIDING SCALE PAYOLA) */}
+               {/* The Exec Rollout (SaaS PRODUCT) */}
                <div className="bg-black border border-[#222] p-6 text-left relative overflow-hidden flex flex-col">
                   <span className="text-[10px] font-mono text-purple-500 uppercase tracking-[0.3em] font-bold mb-4 block">
                     The Exec // 30-Day Rollout
@@ -521,22 +510,10 @@ export default function Room07_Distribution() {
                   ) : (
                     <div className="flex-1 flex flex-col justify-center border border-dashed border-purple-500/20 m-2 bg-purple-900/5 relative p-4">
                       
-                      {/* SLIDING SCALE PENALTY UI */}
-                      {pointsShort > 0 && (
-                        <div className="bg-yellow-500/10 border border-yellow-500/30 p-3 mb-4 rounded-sm">
-                           <p className="text-[9px] font-mono text-yellow-500 uppercase tracking-widest font-bold flex items-center">
-                             <Zap size={10} className="mr-1.5" /> Algorithmic Bypass Active
-                           </p>
-                           <p className="text-[8px] font-mono text-[#888] mt-1.5 uppercase leading-relaxed">
-                             Score is <span className="text-white font-bold">{pointsShort} pts</span> shy of Upstream Priority. A network override fee of $1.00/pt is applied to the base rate.
-                           </p>
-                        </div>
-                      )}
-
                       <div className="flex flex-col items-center text-center mt-2">
                         <Lock size={16} className="mb-2 text-purple-500/50" />
                         <p className="text-[8px] font-mono uppercase tracking-widest text-[#888] mb-4">
-                          Awaiting algorithmic strategy deployment.
+                          Deploy AI Manager for Independent Releases.
                         </p>
                         <button 
                           onClick={handlePurchaseRollout}
@@ -544,7 +521,7 @@ export default function Room07_Distribution() {
                           className="bg-purple-900/20 border border-purple-500/30 text-purple-400 px-6 py-3 text-[9px] font-bold uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-colors disabled:opacity-50 shadow-lg flex items-center gap-2 w-full justify-center"
                         >
                           {isGeneratingRollout ? <Loader2 size={12} className="animate-spin" /> : <BarChart size={12} />}
-                          Unlock Strategy (${dynamicRolloutPrice})
+                          Unlock Independent Strategy ($14.99)
                         </button>
                       </div>
                     </div>

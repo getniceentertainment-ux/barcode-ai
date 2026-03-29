@@ -93,30 +93,23 @@ export async function POST(req: Request) {
           });
           break;
 
-        // --- ROOM 08/11: THE EXEC ROLLOUT ($1,500 ADVANCE & ROOM 11 UNLOCK) ---
+        // --- ROOM 11: THE EXEC ROLLOUT (INDEPENDENT SAAS PURCHASE) ---
         case 'exec_rollout':
-          // 1. Instantly unlock Room 11 for the user's specific track
+          // 1. Instantly unlock Room 11 for the user's specific track (AS INDEPENDENT)
           if (meta.track_id) {
              await supabaseAdmin.from('submissions')
-              .update({ upstream_deal_signed: true })
+              .update({ rollout_purchased: true }) // <-- Flips the SaaS switch, NOT the Label switch
               .eq('id', meta.track_id);
           }
             
-          // 2. Grant the $1500 Marketing Advance so the AI can spend it
-          const { data: profile } = await supabaseAdmin.from('profiles').select('marketing_credits').eq('id', effectiveUserId).single();
-          const currentMarketingCredits = profile?.marketing_credits || 0;
-          
-          await supabaseAdmin.from('profiles')
-            .update({
-              getnice_signed: true,
-              marketing_credits: currentMarketingCredits + 1500
-            })
-            .eq('id', effectiveUserId);
-
-          // 3. Log the revenue and advance in the Bank Ledger
+          // 2. Log the SaaS revenue in the ledger (No $1500 advance for independent buyers)
           await supabaseAdmin.from('transactions').insert([
-            { user_id: effectiveUserId, amount: -amountPaid, type: 'UPSELL_PURCHASE', description: `The Exec: 30-Day Strategy Unlocked` },
-            { user_id: effectiveUserId, amount: 1500, type: 'ADVANCE_DEPOSIT', description: `GetNice Records Advance: Algorithmic Rollout` }
+            { 
+              user_id: effectiveUserId, 
+              amount: -amountPaid, 
+              type: 'SAAS_PURCHASE', 
+              description: `The Exec: 30-Day Strategy Unlocked (Independent)` 
+            }
           ]);
           break;
 
@@ -152,7 +145,6 @@ export async function POST(req: Request) {
 
         // --- ROOM 01: BEAT LEASING ---
         case 'beat_lease':
-          // Optional: Add logic to save the beat to the user's inventory
           await supabaseAdmin.from('transactions').insert({
             user_id: effectiveUserId, amount: -amountPaid, type: 'MARKETPLACE_PURCHASE', description: `Beat Lease Acquired`
           });
