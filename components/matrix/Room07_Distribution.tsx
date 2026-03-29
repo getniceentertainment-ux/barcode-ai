@@ -1,6 +1,6 @@
 "use client";
-
 import React, { useState, useEffect, useRef } from "react";
+import { useSearchParams } from 'next/navigation';
 import Link from "next/link";
 import { 
   Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, 
@@ -15,8 +15,8 @@ export default function Room07_Distribution() {
     finalMaster, blueprint, flowDNA, anrData, updateAnrData 
   } = useMatrixStore();
   
-  // SURGICAL FIX: Removed reactive useSearchParams, added static ref guard
-  const interceptorFired = useRef(false);
+  const searchParams = useSearchParams();
+  const interceptorFired = useRef(false); // SURGICAL FIX: Prevents reactive double-firing
 
   // --- STATE ---
   const [trackId, setTrackId] = useState<string | null>(null);
@@ -54,10 +54,9 @@ export default function Room07_Distribution() {
   
   // --- STRIPE RETURN HANDLER (THE INTERCEPTOR) ---
   useEffect(() => {
-    // 1. Guard against server-side rendering and double-fires
     if (typeof window === 'undefined' || interceptorFired.current) return;
 
-    // 2. Use Vanilla JS to bypass Next.js reactive loop wipeouts
+    // Use Vanilla JS to bypass Next.js reactive loop wipeouts
     const params = new URLSearchParams(window.location.search);
     const rolloutPurchased = params.get('rollout_purchased');
     const coverArtPurchased = params.get('cover_art_purchased');
@@ -68,7 +67,7 @@ export default function Room07_Distribution() {
     if (rolloutPurchased === 'true') {
       interceptorFired.current = true;
       
-      // Actively poll the ledger to wait for the Stripe Webhook to flip the deal switch
+      // 1. Lock UI into a loading state to hold the user in Room 07
       setLoadingStep("Awaiting Financial Handshake from Stripe...");
       updateAnrData({ status: "submitting" });
       
@@ -79,21 +78,45 @@ export default function Room07_Distribution() {
           .eq('id', searchTrackId)
           .single();
 
+        // 2. When webhook flips the deal switch to true
         if (data?.upstream_deal_signed) {
           clearInterval(pollLedger);
-          if (addToast) addToast("Upstream Deal Secured. Transferring to The Exec...", "success");
+          if (addToast) addToast("Deal Secured. Initializing Exec AI (This takes ~10s)...", "success");
+          setLoadingStep("The Exec is generating your 30-Day Strategy...");
+          
+          try {
+            // 3. Sync Ledger so the $1500 advance shows up in the background
+            await useMatrixStore.getState().syncLedger();
+
+            // 4. Force the AI to build the campaign BEFORE teleporting
+            const { data: { session } } = await supabase.auth.getSession();
+            await fetch('/api/campaign/initialize', {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json', 
+                'Authorization': `Bearer ${session?.access_token}`,
+                'Cache-Control': 'no-cache'
+              },
+              body: JSON.stringify({ trackId: searchTrackId })
+            });
+          } catch (e) {
+            console.error("Auto-campaign init failed", e);
+          }
+
+          if (addToast) addToast("Campaign Deployed. Transferring to Command Center...", "success");
+          
+          // 5. Clean URL natively and teleport ONLY when finished
+          window.history.replaceState({}, document.title, window.location.pathname);
           setActiveRoom("11"); 
         }
       }, 2000);
 
-      // Failsafe timeout after 15 seconds
+      // Failsafe timeout
       setTimeout(() => {
         clearInterval(pollLedger);
-        if (addToast) addToast("Ledger sync delayed. Proceeding to Hub...", "info");
+        window.history.replaceState({}, document.title, window.location.pathname);
         setActiveRoom("11"); 
-      }, 15000);
-      
-      window.history.replaceState({}, document.title, window.location.pathname);
+      }, 25000);
     }
 
     if (coverArtPurchased === 'true') {
@@ -105,7 +128,7 @@ export default function Room07_Distribution() {
       
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, []); // <-- Empty dependency array ensures this absolutely never loops
+  }, []); // Empty dependency array ensures it fires only once
 
   // --- THE HYBRID INTELLIGENCE PIPELINE ---
   const handleDistributionSequence = async () => {
@@ -159,7 +182,6 @@ export default function Room07_Distribution() {
             formData.append('audio', targetBlob, 'master.wav');
             formData.append('bpm', audioData?.bpm?.toString() || '120');
 
-            // Routing to our existing cadence endpoint to leverage Whisper Large V3
             const whisperRes = await fetch('/api/dsp/cadence', {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${session.access_token}` },
@@ -170,7 +192,6 @@ export default function Room07_Distribution() {
               const whisperData = await whisperRes.json();
               if (whisperData.transcription && whisperData.transcription.trim().length > 0) {
                  lyricsForScan = whisperData.transcription;
-                 // Save the extracted lyrics to global state so the user can see them!
                  useMatrixStore.getState().setGeneratedLyrics(whisperData.transcription);
               }
             } else {
@@ -193,7 +214,7 @@ export default function Room07_Distribution() {
         },
         body: JSON.stringify({ 
           title: anrData.trackTitle, 
-          lyrics: lyricsForScan, // <-- INJECTS THE WRITTEN OR TRANSCRIBED LYRICS
+          lyrics: lyricsForScan, 
           bpm: audioData?.bpm || 120,
           blueprint: blueprint,
           flowDNA: flowDNA
@@ -238,71 +259,6 @@ export default function Room07_Distribution() {
           setSubmission(latestSub);
       }
 
-      // STEP 5: FINALIZE UI
-      updateAnrData({
-        hitScore: analyzeData.hitScore,
-        coverUrl: analyzeData.coverUrl,
-        tiktokSnippet: analyzeData.tiktokSnippet,
-        status: "success"
-      });
-      if (addToast) addToast("Artifact secured. Global Nodes synchronized.", "success");
-
-    } catch (error: any) {
-      console.error("Distribution Error:", error);
-      if (addToast) addToast(error.message, "error");
-      updateAnrData({ status: "idle" });
-    }
-  };
-
-  const handlePurchaseCoverArt = async () => {
-    setIsGeneratingCover(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/api/stripe/cover-art', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ userId: userSession?.id, trackTitle: anrData.trackTitle, trackId: trackId })
-      });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url; 
-      else throw new Error(data.error || "Failed to initialize Stripe.");
-    } catch (err: any) {
-      if (addToast) addToast("Checkout failed: " + err.message, "error");
-      setIsGeneratingCover(false);
-    }
-  };
-
-  const handlePurchaseRollout = async () => {
-    if (!trackId) {
-      if (addToast) addToast("Submission ID missing. Resubmit track.", "error");
-      return;
-    }
-    setIsGeneratingRollout(true);
-    try {
-      const res = await fetch('/api/stripe/rollout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: userSession?.id, trackTitle: anrData.trackTitle, trackId })
-      });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url; 
-      else throw new Error(data.error || "Failed to initialize Stripe.");
-    } catch (err: any) {
-      if (addToast) addToast("Checkout failed: " + err.message, "error");
-      setIsGeneratingRollout(false);
-    }
-  };
-
-  const triggerRolloutGeneration = async (tId: string) => {
-    setIsGeneratingRollout(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/api/distribution/rollout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ trackId: tId })
-      });
-      const data = await res.json();
       if (data.rollout) {
         setExecRollout(data.rollout);
         if(addToast) addToast("The Exec has deployed your 30-Day Strategy.", "success");
@@ -332,7 +288,6 @@ export default function Room07_Distribution() {
         headers: { 
           'Content-Type': 'application/json', 
           'Authorization': `Bearer ${session?.access_token}`,
-          // Brutal anti-caching headers to kill the 304 error
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
           'Expires': '0'
