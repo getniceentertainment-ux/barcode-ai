@@ -1,77 +1,71 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { Share2, Copy, CheckCircle2, Users, Coins } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import React, { useState, useEffect } from "react";
+import { Copy, CheckCircle2, Share2, Zap } from "lucide-react";
+import { useMatrixStore } from "../../store/useMatrixStore";
+import { supabase } from "../../lib/supabase";
 
-export default function CreditHustle({ userId }: { userId: string }) {
-  const [profile, setProfile] = useState<any>(null);
+export default function CreditHustleWidget() {
+  const { userSession, addToast } = useMatrixStore();
   const [copied, setCopied] = useState(false);
+  const [referrals, setReferrals] = useState(0);
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-      if (data) setProfile(data);
-    };
-    fetchProfile();
-  }, [userId]);
+    if (userSession?.id) {
+      supabase
+        .from('profiles')
+        .select('total_referrals')
+        .eq('id', userSession.id)
+        .single()
+        .then(({ data }) => {
+          if (data) setReferrals(data.total_referrals || 0);
+        });
+    }
+  }, [userSession?.id]);
 
-  if (!profile) return null;
+  const referralLink = typeof window !== 'undefined' ? `${window.location.origin}/?ref=${userSession?.id}` : '';
 
-  // Dynamically build their affiliate link based on whatever domain they are currently on
-  const affiliateLink = typeof window !== 'undefined' 
-    ? `${window.location.origin}/?ref=${profile.referral_code}` 
-    : '';
-
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(affiliateLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = () => {
+    const textArea = document.createElement("textarea");
+    textArea.value = referralLink;
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      setCopied(true);
+      if (addToast) addToast("Hustle Link Copied. Go recruit nodes.", "success");
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Copy failed", err);
+    }
+    document.body.removeChild(textArea);
   };
 
   return (
-    <div className="bg-[#050505] border border-[#222] p-6 w-full max-w-md animate-in fade-in zoom-in duration-300">
-      <div className="flex items-center gap-3 border-b border-[#222] pb-4 mb-4">
-        <Users className="text-[#E60000]" size={24} />
-        <div>
-          <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-white">The Syndicate</h2>
-          <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest">Affiliate Node // Credit Hustle</p>
-        </div>
+    <div className="bg-[#110000] border border-[#E60000]/30 p-4 mt-4 group hover:border-[#E60000]/60 transition-all shadow-[inset_0_0_15px_rgba(230,0,0,0.05)]">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="font-oswald text-sm uppercase tracking-widest text-[#E60000] flex items-center gap-2 font-bold">
+          <Share2 size={14} /> Credit Hustle
+        </h3>
+        <span className="bg-black border border-[#330000] px-2 py-1 text-[9px] font-mono text-[#E60000] font-bold flex items-center gap-1 shadow-sm">
+          <Zap size={10} /> {referrals} Recruits
+        </span>
       </div>
-
-      <div className="bg-black border border-[#111] p-4 mb-6">
-        <p className="font-mono text-[10px] text-gray-400 uppercase leading-relaxed mb-4">
-          Invite producers and artists to the Matrix. <strong className="text-white">They get 10 free generations. You get 10 free generations.</strong> Unlimited stacking.
-        </p>
-
-        <label className="text-[9px] text-[#E60000] font-mono uppercase font-bold tracking-widest mb-1 block">Your Unique Uplink</label>
-        <div className="flex gap-2">
-          <input 
-            type="text" 
-            readOnly 
-            value={affiliateLink}
-            className="flex-1 bg-[#111] border border-[#333] p-2 text-[10px] font-mono text-white outline-none"
-          />
-          <button 
-            onClick={copyToClipboard}
-            className="bg-[#E60000] text-white px-4 hover:bg-red-700 transition-colors flex items-center justify-center"
-          >
-            {copied ? <CheckCircle2 size={16} /> : <Copy size={16} />}
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-[#110000] border border-[#E60000]/30 p-4 flex flex-col items-center justify-center">
-          <Share2 className="text-[#E60000] mb-2" size={20} />
-          <span className="font-oswald text-2xl font-bold text-white">{profile.total_referrals}</span>
-          <span className="font-mono text-[9px] text-[#888] uppercase tracking-widest">Network Recruits</span>
-        </div>
-        <div className="bg-black border border-[#222] p-4 flex flex-col items-center justify-center">
-          <Coins className="text-white mb-2" size={20} />
-          <span className="font-oswald text-2xl font-bold text-white">{profile.credits}</span>
-          <span className="font-mono text-[9px] text-[#888] uppercase tracking-widest">Active Credits</span>
-        </div>
+      
+      <p className="font-mono text-[9px] text-[#888] uppercase tracking-widest leading-relaxed mb-3">
+        Recruit external nodes. Earn <strong className="text-white">5 Free GPU Credits</strong> per successful network onboarding.
+      </p>
+      
+      <div className="flex items-center gap-2 bg-black border border-[#222] p-1.5 shadow-inner">
+        <code className="font-mono text-[9px] text-white truncate flex-1 pl-2 opacity-80">
+          {referralLink}
+        </code>
+        <button 
+          onClick={handleCopy}
+          className="bg-[#E60000] text-white px-3 py-2 text-[9px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors flex items-center gap-2 shrink-0 shadow-[0_0_10px_rgba(230,0,0,0.2)]"
+        >
+          {copied ? <CheckCircle2 size={12} /> : <Copy size={12} />} {copied ? "Copied" : "Copy"}
+        </button>
       </div>
     </div>
   );

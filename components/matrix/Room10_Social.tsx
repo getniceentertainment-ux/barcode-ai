@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import ChatRules from "./ChatRules";
+import CreditHustleWidget from "./CreditHustleWidget"; // NEW IMPORT
 
 interface RosterNode {
   id: string;
@@ -206,6 +207,10 @@ export default function Room10_Social() {
               <Heart size={12} /> Commercial Cult
             </button>
           </div>
+
+          {/* SURGICAL ADDITION: The Credit Hustle Engine */}
+          <CreditHustleWidget />
+
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-[#020202]">
