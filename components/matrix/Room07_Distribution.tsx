@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { useSearchParams, useRouter } from 'next/navigation'; // <-- ADDED useRouter
 import Link from "next/link";
 import { 
   Send, Loader2, CheckCircle2, BarChart, ArrowRight, ShieldAlert, 
@@ -16,9 +15,8 @@ export default function Room07_Distribution() {
     finalMaster, blueprint, flowDNA, anrData, updateAnrData 
   } = useMatrixStore();
   
-  const searchParams = useSearchParams();
-  const router = useRouter(); // <-- INITIALIZED
-  const interceptorFired = useRef(false); // <-- PREVENTS DOUBLE FIRING
+  // SURGICAL FIX: Removed reactive useSearchParams, added static ref guard
+  const interceptorFired = useRef(false);
 
   // --- STATE ---
   const [trackId, setTrackId] = useState<string | null>(null);
@@ -56,16 +54,21 @@ export default function Room07_Distribution() {
   
   // --- STRIPE RETURN HANDLER (THE INTERCEPTOR) ---
   useEffect(() => {
-    if (interceptorFired.current) return;
+    // 1. Guard against server-side rendering and double-fires
+    if (typeof window === 'undefined' || interceptorFired.current) return;
 
-    const rolloutPurchased = searchParams.get('rollout_purchased');
-    const coverArtPurchased = searchParams.get('cover_art_purchased');
-    const searchTrackId = searchParams.get('track_id') || searchParams.get('trackId');              
+    // 2. Use Vanilla JS to bypass Next.js reactive loop wipeouts
+    const params = new URLSearchParams(window.location.search);
+    const rolloutPurchased = params.get('rollout_purchased');
+    const coverArtPurchased = params.get('cover_art_purchased');
+    const searchTrackId = params.get('track_id') || params.get('trackId');              
     
-    if (rolloutPurchased === 'true' && searchTrackId) {
+    if (!searchTrackId) return;
+
+    if (rolloutPurchased === 'true') {
       interceptorFired.current = true;
       
-      // SURGICAL FIX: Actively poll the ledger to wait for the Stripe Webhook
+      // Actively poll the ledger to wait for the Stripe Webhook to flip the deal switch
       setLoadingStep("Awaiting Financial Handshake from Stripe...");
       updateAnrData({ status: "submitting" });
       
@@ -90,21 +93,19 @@ export default function Room07_Distribution() {
         setActiveRoom("11"); 
       }, 15000);
       
-      // Clean up the URL natively through Next.js
-      router.replace('/', { scroll: false });
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
 
-    if (coverArtPurchased === 'true' && searchTrackId) {
+    if (coverArtPurchased === 'true') {
       interceptorFired.current = true;
       if (addToast) addToast("Payment Secured. Initializing FLUX.1 Engine...", "success");
       
       updateAnrData({ status: "success" });
       triggerCoverArtGeneration(searchTrackId);
       
-      // Clean up the URL natively through Next.js
-      router.replace('/', { scroll: false });
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, [searchParams, addToast, setActiveRoom, updateAnrData, router]);
+  }, []); // <-- Empty dependency array ensures this absolutely never loops
 
   // --- THE HYBRID INTELLIGENCE PIPELINE ---
   const handleDistributionSequence = async () => {
@@ -313,13 +314,13 @@ export default function Room07_Distribution() {
     }
   };
 
-  // SURGICAL FIX: The FLUX.1 Generation Engine Caller (Anti-304 Protocol)
+  // SURGICAL FIX: The FLUX.1 Generation Engine Caller (Anti-304 & Hydration Guard)
   const triggerCoverArtGeneration = async (tId: string) => {
     setIsGeneratingCover(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
-      // Safely resolve the track title even if the page reloaded during Stripe redirect
+      // Safely resolve the track title even if the UI memory wiped during Stripe redirect
       let safeTitle = anrData.trackTitle || submission?.title;
       if (!safeTitle) {
         const { data: subData } = await supabase.from('submissions').select('title').eq('id', tId).single();
@@ -341,7 +342,7 @@ export default function Room07_Distribution() {
       
       const data = await res.json();
       if (data.coverUrl) {
-        // Append unique timestamp to bust browser image cache
+        // Append unique timestamp to bust browser image cache completely
         const cacheBustedUrl = `${data.coverUrl}?t=${Date.now()}`;
         
         setSubmission((prev: any) => ({ ...prev, cover_url: cacheBustedUrl }));
