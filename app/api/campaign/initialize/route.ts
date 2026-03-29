@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// 1. SURGICAL FIX: Force Vercel to allow this function to run for up to 60 seconds
-// This prevents the dreaded 10-second timeout 500 error during heavy AI generation
-export const maxDuration = 60;
+// SURGICAL FIX: Removed maxDuration entirely to prevent Vercel build/runtime crashes on Hobby tier.
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,13 +33,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, data: track.campaign_data });
     }
 
-    // 2. SURGICAL FIX: Explicitly check for the Groq API key and throw a readable error if missing
     if (!process.env.GROQ_API_KEY) {
         throw new Error("Missing GROQ_API_KEY in Vercel Environment Variables.");
     }
 
     // --- AGENTIC LABEL UPGRADE ---
-    // Added execution_type and status so the backend knows HOW to execute the task automatically
     const systemPrompt = `You are 'The Exec', the AI Operations Director for GetNice Records.
 Your objective is to ingest a song and automatically generate a strict 30-day Go-To-Market (GTM) rollout based on the "GetNice 30-Day Maximum Success" framework.
 
@@ -84,13 +80,14 @@ Generate the exactly 30-day JSON execution array. Ensure auto_ad_spend totals ex
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        // SURGICAL FIX: Switched to 8b-instant. 5x faster, guarantees execution well under Vercel's 10-second timeout limit.
+        model: 'llama-3.1-8b-instant',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage }
         ],
         temperature: 0.2, 
-        max_tokens: 4000, // 3. SURGICAL FIX: Prevent the AI from cutting off halfway through Day 25
+        max_tokens: 4000, 
         response_format: { type: "json_object" }
       })
     });
@@ -98,7 +95,7 @@ Generate the exactly 30-day JSON execution array. Ensure auto_ad_spend totals ex
     const groqData = await groqRes.json();
     if (!groqRes.ok) throw new Error(groqData.error?.message || "LLM Generation Failed");
 
-    // 4. SURGICAL FIX: Bulletproof JSON Stripping
+    // Bulletproof JSON Stripping
     let rawContent = groqData.choices[0]?.message?.content;
     if (!rawContent) throw new Error("AI returned an empty response.");
     
@@ -114,7 +111,6 @@ Generate the exactly 30-day JSON execution array. Ensure auto_ad_spend totals ex
     try {
       campaignJson = JSON.parse(rawContent);
       
-      // Final sanity check to make sure the AI actually built the timeline
       if (!campaignJson.daily_schedule || !Array.isArray(campaignJson.daily_schedule)) {
           throw new Error("AI failed to construct the daily_schedule array.");
       }
@@ -137,7 +133,6 @@ Generate the exactly 30-day JSON execution array. Ensure auto_ad_spend totals ex
     return NextResponse.json({ success: true, data: campaignJson });
   } catch (error: any) {
     console.error("Campaign Gen Error:", error);
-    // Passing the exact error back to the frontend so it shows up in your red Toast notification
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

@@ -1,34 +1,28 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { 
-  Zap, Calendar, BarChart3, Users, Copy, 
-  ExternalLink, CheckCircle2, Loader2, Play, 
-  Mail, Globe, ShieldCheck, TrendingUp, RefreshCw,
-  Target, Share2, Server, UserCog, Terminal, BrainCircuit, ChevronRight, Activity, FileText
-} from "lucide-react";
+import { Activity, Calendar, ShieldCheck, Zap, ArrowRight, Loader2, FileText, Send, BrainCircuit, Target, CheckCircle2, ChevronRight, RefreshCw, Mail, Share2, UserCog, Server, Terminal } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
-export default function Room11_Exec() {
+export default function Room11_Contracts() {
   const { userSession, addToast, setActiveRoom } = useMatrixStore();
   
   const [loading, setLoading] = useState(true);
   const [initializing, setInitializing] = useState(false);
-  const [campaign, setCampaign] = useState<any>(null);
-  const [fanCount, setFanCount] = useState(0);
-  const [totalStreams, setTotalStreams] = useState(0);
-  const [copied, setCopied] = useState(false);
-  const [currentDay, setCurrentDay] = useState(1);
+  const [submission, setSubmission] = useState<any>(null);
+  const [campaignData, setCampaignData] = useState<any>(null);
+  const [currentDay, setCurrentDay] = useState<number>(0);
+  const [totalStreams, setTotalStreams] = useState<number>(0);
 
   const [isExecuting, setIsExecuting] = useState(false);
   const [execLogs, setExecLogs] = useState<string[]>([]);
 
   useEffect(() => {
-    fetchCampaignData();
-  }, [userSession?.id]);
+    fetchActiveCampaign();
+  }, [userSession]);
 
-  const fetchCampaignData = async () => {
+  const fetchActiveCampaign = async () => {
     if (!userSession?.id) return;
     setLoading(true);
     try {
@@ -42,22 +36,15 @@ export default function Room11_Exec() {
         .maybeSingle();
 
       if (subData) {
-        setCampaign(subData);
+        setSubmission(subData);
         if (subData.campaign_data && Object.keys(subData.campaign_data).length > 0) {
+          setCampaignData(subData.campaign_data);
           setCurrentDay(subData.campaign_day || 1);
           calculateStreams(subData.campaign_data, subData.campaign_day || 1);
         }
       }
-
-      const { count } = await supabase
-        .from('fans')
-        .select('*', { count: 'exact', head: true })
-        .eq('artist_id', userSession.id);
-        
-      setFanCount(count || 0);
-
     } catch (err) {
-      console.error("Exec Hub Error:", err);
+      console.error("Campaign fetch error:", err);
     } finally {
       setLoading(false);
     }
@@ -75,29 +62,30 @@ export default function Room11_Exec() {
     setTotalStreams(Math.floor(spent * 14.5) + (day * 125));
   };
 
+  // --- SURGICAL FIX: Bulletproof Response Parsing ---
   const handleInitializeCampaign = async () => {
-    if (!campaign?.id) return;
+    if (!submission?.id) return;
     setInitializing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/api/campaign/initialize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ trackId: campaign.id })
+        body: JSON.stringify({ trackId: submission.id })
       });
 
-      // BULLETPROOF PARSING: Catch HTML 500 pages from Vercel safely
+      // Trap Vercel HTML timeout pages securely
       const rawText = await res.text();
       let json;
       try {
         json = JSON.parse(rawText);
       } catch (parseErr) {
-        throw new Error("Server Exception: API returned an HTML error. Verify Vercel deployment.");
+        throw new Error("Server Exception: The AI request timed out. Please try again.");
       }
 
       if (!res.ok) throw new Error(json.error || "Initialization failed");
 
-      setCampaign({ ...campaign, campaign_data: json.data, campaign_day: 1 });
+      setCampaignData(json.data);
       setCurrentDay(1);
       calculateStreams(json.data, 1);
       if(addToast) addToast("The Exec has mapped your 30-Day Campaign.", "success");
@@ -108,14 +96,37 @@ export default function Room11_Exec() {
     }
   };
 
+  // --- SURGICAL FIX: Bulletproof Response Parsing ---
   const handleRegenerate = async () => {
-    if (!campaign?.id) return;
+    if (!submission?.id) return;
     if (!confirm("This will wipe your current timeline and regenerate a fresh framework. Proceed?")) return;
     
     setInitializing(true);
     try {
-      await supabase.from('submissions').update({ campaign_data: {}, campaign_day: 0 }).eq('id', campaign.id);
-      await handleInitializeCampaign();
+      await supabase.from('submissions').update({ campaign_data: {}, campaign_day: 0 }).eq('id', submission.id);
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/campaign/initialize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ trackId: submission.id })
+      });
+
+      // Trap Vercel HTML timeout pages securely
+      const rawText = await res.text();
+      let json;
+      try {
+        json = JSON.parse(rawText);
+      } catch (parseErr) {
+        throw new Error("Server Exception: The AI request timed out. Please try again.");
+      }
+
+      if (!res.ok) throw new Error(json.error || "Initialization failed");
+
+      setCampaignData(json.data);
+      setCurrentDay(1);
+      calculateStreams(json.data, 1);
+      if(addToast) addToast("Campaign Regenerated with newest Neural framework.", "success");
     } catch(err: any) {
       if(addToast) addToast(err.message, "error");
     } finally {
@@ -124,9 +135,9 @@ export default function Room11_Exec() {
   };
 
   const handleAdvanceDay = async () => {
-    if (!campaign?.id || currentDay >= 30) return;
+    if (!submission?.id || currentDay >= 30) return;
     
-    const todayData = campaign.campaign_data?.daily_schedule?.[currentDay - 1];
+    const todayData = campaignData?.daily_schedule?.[currentDay - 1];
     const nextDay = currentDay + 1;
 
     if (!todayData) return;
@@ -138,10 +149,13 @@ export default function Room11_Exec() {
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
     try {
+      const execType = todayData.execution_type || "manual_action";
+      
       await sleep(800);
       addLog(`[NODE] Reading Day ${currentDay} Directives...`);
       await sleep(1000);
 
+      addLog(`[SYSTEM] Authenticating secure API connection...`);
       const { data: { session } } = await supabase.auth.getSession();
       
       const execRes = await fetch('/api/campaign/execute', {
@@ -151,22 +165,17 @@ export default function Room11_Exec() {
           'Authorization': `Bearer ${session?.access_token}` 
         },
         body: JSON.stringify({ 
-          trackId: campaign.id,
+          trackId: submission.id,
           taskData: todayData,
           day: currentDay
         })
       });
 
-      // BULLETPROOF PARSING: Prevents the `<DOCTYPE html>` crash
-      const rawText = await execRes.text();
-      let execData;
-      try {
-        execData = JSON.parse(rawText);
-      } catch (parseErr) {
-        throw new Error("Server Exception: Endpoint returned an HTML error. Verify Vercel deployment.");
+      const execData = await execRes.json();
+      
+      if (!execRes.ok) {
+        throw new Error(execData.error || "Backend Execution Failed.");
       }
-
-      if (!execRes.ok) throw new Error(execData.error || "Backend Execution Failed.");
 
       if (execData.logs && Array.isArray(execData.logs)) {
         for (const log of execData.logs) {
@@ -175,38 +184,45 @@ export default function Room11_Exec() {
         }
       }
 
-      const updatedCampaignData = { ...campaign.campaign_data };
-      if (updatedCampaignData.daily_schedule && updatedCampaignData.daily_schedule[currentDay - 1]) {
-        updatedCampaignData.daily_schedule[currentDay - 1].status = "completed";
+      await sleep(1000);
+      addLog("[SYSTEM] Synchronizing ledger...");
+      await sleep(800);
+
+      const updatedCampaign = JSON.parse(JSON.stringify(campaignData));
+      if (updatedCampaign?.daily_schedule && Array.isArray(updatedCampaign.daily_schedule)) {
+        if (updatedCampaign.daily_schedule[currentDay - 1]) {
+           updatedCampaign.daily_schedule[currentDay - 1].status = "completed";
+        }
       }
 
       const { error: updateErr } = await supabase
         .from('submissions')
         .update({ 
           campaign_day: nextDay,
-          campaign_data: updatedCampaignData 
+          campaign_data: updatedCampaign 
         })
-        .eq('id', campaign.id);
+        .eq('id', submission.id);
 
-      if (updateErr) throw updateErr;
+      if (updateErr) throw new Error(updateErr.message);
 
       addLog("[SYSTEM] Operations Concluded. Advancing Timeline.");
       await sleep(1500); 
       
-      setCampaign({ ...campaign, campaign_data: updatedCampaignData, campaign_day: nextDay });
+      setCampaignData(updatedCampaign);
       setCurrentDay(nextDay);
-      calculateStreams(updatedCampaignData, nextDay);
-
+      calculateStreams(updatedCampaign, nextDay);
+      
       if (todayData.auto_ad_spend > 0) {
-        useMatrixStore.setState((state) => ({ 
-          userSession: state.userSession ? { 
-            ...state.userSession, 
-            marketingCredits: (state.userSession as any).marketingCredits - todayData.auto_ad_spend 
-          } as any : null 
-        }));
+         useMatrixStore.setState((state) => ({ 
+           userSession: state.userSession ? { 
+             ...state.userSession, 
+             marketingCredits: (state.userSession as any).marketingCredits - todayData.auto_ad_spend 
+           } as any : null 
+         }));
       }
 
     } catch (err: any) {
+      console.error("Advance Day Error:", err);
       addLog(`[FATAL] Execution Failed: ${err.message}`);
       if (addToast) addToast(`System Failed: ${err.message}`, "error");
       await sleep(3000);
@@ -216,54 +232,44 @@ export default function Room11_Exec() {
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    const textArea = document.createElement("textarea");
-    textArea.value = text;
-    document.body.appendChild(textArea);
-    textArea.select();
-    try {
-      document.execCommand('copy');
-      setCopied(true);
-      if (addToast) addToast("Smart Link Copied to Clipboard", "success");
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("Copy failed", err);
-    }
-    document.body.removeChild(textArea);
-  };
+  const renderNoDeal = () => (
+    <div className="h-full flex flex-col items-center justify-center p-8 text-center border border-dashed border-[#333] opacity-60">
+      <ShieldCheck size={64} className="text-[#555] mb-6" />
+      <h2 className="font-oswald text-3xl uppercase tracking-widest text-white mb-2">No Active Operations</h2>
+      <p className="font-mono text-xs text-[#888] uppercase tracking-widest leading-relaxed max-w-lg mb-8">
+        The AI Label Manager requires an active Upstream Deal. Score 90+ in Distribution and execute the contract in The Bank to unlock automated campaign execution.
+      </p>
+      <button onClick={() => setActiveRoom("08")} className="bg-[#111] border border-[#333] text-white px-8 py-3 text-[10px] font-bold uppercase tracking-widest hover:border-white transition-all">
+        Check Vault Eligibility
+      </button>
+    </div>
+  );
 
   const getExecutionBadge = (type: string) => {
     switch(type) {
       case 'auto_email': return <span className="bg-blue-500/10 text-blue-500 border border-blue-500/30 px-3 py-1 text-[9px] uppercase font-bold tracking-widest flex items-center gap-2 w-fit"><Mail size={12}/> System: Auto-Email</span>;
       case 'social_post': return <span className="bg-purple-500/10 text-purple-500 border border-purple-500/30 px-3 py-1 text-[9px] uppercase font-bold tracking-widest flex items-center gap-2 w-fit"><Share2 size={12}/> System: Auto-Post</span>;
       case 'auto_ad_spend': return <span className="bg-green-500/10 text-green-500 border border-green-500/30 px-3 py-1 text-[9px] uppercase font-bold tracking-widest flex items-center gap-2 w-fit"><Server size={12}/> System: Ad Deploy</span>;
+      case 'manual_action':
       default: return <span className="bg-yellow-500/10 text-yellow-500 border border-yellow-500/30 px-3 py-1 text-[9px] uppercase font-bold tracking-widest flex items-center gap-2 w-fit"><UserCog size={12}/> Manual Action Required</span>;
     }
   };
 
-  if (loading) return <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-[#E60000]" size={48} /></div>;
-
-  if (!campaign) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center p-12 text-center opacity-40">
-        <ShieldCheck size={64} className="mb-6 text-[#555]" />
-        <h3 className="font-oswald text-3xl uppercase tracking-widest text-white mb-2">Command Center Locked</h3>
-        <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest max-w-xs">
-          An active Upstream Partner Deal is required to initialize the GetNice Exec AI. Visit R08 Bank once you have a 90+ Hit Score.
-        </p>
-      </div>
-    );
+  if (loading) {
+    return <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-[#E60000]" size={48} /></div>;
   }
 
-  if (!campaign.campaign_data || Object.keys(campaign.campaign_data).length === 0) {
+  if (!submission) return renderNoDeal();
+
+  if (!campaignData) {
     return (
       <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-[#0a0a0a] border border-[#E60000]/30 relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#E60000]/10 via-transparent to-transparent pointer-events-none" />
         <BrainCircuit size={64} className="text-[#E60000] mb-6 animate-pulse" />
-        <h2 className="font-oswald text-4xl uppercase tracking-widest text-white mb-4 font-bold relative z-10">Neural Analysis Pending</h2>
+        <h2 className="font-oswald text-4xl uppercase tracking-widest text-white mb-4 font-bold relative z-10">Upstream Deal Detected</h2>
         <p className="font-mono text-[10px] text-[#aaa] uppercase tracking-widest leading-relaxed max-w-xl mb-10 relative z-10">
-          Artifact: {campaign.title} <br/><br/>
-          Your upstream deal is secure. The Exec AI is ready to ingest your artifact and map out a strict 30-Day Marketing Framework. This will automate your $1,500 advance deployment and generate your daily deliverables.
+          Artifact: {submission.title} <br/><br/>
+          Your track is secured. The Exec AI is ready to ingest your artifact and map out a strict 30-Day Marketing Framework. This will automate your $1,500 advance deployment and generate your daily deliverables.
         </p>
         <button 
           onClick={handleInitializeCampaign}
@@ -276,15 +282,14 @@ export default function Room11_Exec() {
     );
   }
 
-  const dropUrl = `https://www.bar-code.ai/drop/${campaign.id}`;
-  const todayTask = campaign.campaign_data?.daily_schedule?.[currentDay - 1];
-  const phaseTitle = currentDay <= 10 ? campaign.campaign_data.phases?.phase_1 : currentDay <= 20 ? campaign.campaign_data.phases?.phase_2 : campaign.campaign_data.phases?.phase_3;
+  const todayTask = campaignData?.daily_schedule?.[currentDay - 1];
+  const phaseTitle = currentDay <= 10 ? campaignData.phases?.phase_1 : currentDay <= 20 ? campaignData.phases?.phase_2 : campaignData.phases?.phase_3;
 
   return (
     <div className="h-full flex flex-col bg-[#050505] animate-in fade-in duration-500 overflow-hidden border border-[#222] relative">
       
       {isExecuting && (
-        <div className="absolute inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 animate-in fade-in">
+        <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 animate-in fade-in">
           <div className="max-w-2xl w-full bg-[#050505] border border-[#333] p-8 shadow-[0_0_50px_rgba(230,0,0,0.15)] font-mono rounded-sm">
              <div className="flex items-center gap-3 mb-6 border-b border-[#222] pb-4">
                <Terminal size={20} className="text-[#E60000]" />
@@ -305,66 +310,48 @@ export default function Room11_Exec() {
         </div>
       )}
 
-      <div className="p-8 border-b border-[#111] bg-black grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="lg:col-span-2">
-          <div className="flex items-center gap-3 mb-2">
-            <Target className="text-[#E60000]" size={20} />
-            <h2 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white">The Exec: Campaign Hub</h2>
+      {/* HEADER: COMMAND CENTER */}
+      <div className="p-8 border-b border-[#222] bg-black flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative">
+        <div className="absolute top-0 right-0 p-4 opacity-5"><BrainCircuit size={100} className="text-[#E60000]" /></div>
+        <div className="relative z-10 flex flex-col items-start gap-4">
+          <div className="flex items-center gap-3">
+            <span className="bg-[#110000] border border-[#E60000]/50 text-[#E60000] px-3 py-1 text-[9px] uppercase font-bold tracking-widest flex items-center gap-2">
+              <div className="w-1.5 h-1.5 bg-[#E60000] rounded-full animate-pulse"></div> Label Automation Active
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white flex items-center gap-3">
+               <Target className="text-[#E60000]" size={28} /> The Exec // Campaign Hub
+            </h2>
             <button 
               onClick={handleRegenerate} 
               disabled={initializing || isExecuting}
-              className="ml-4 text-[8px] bg-[#111] border border-[#333] text-[#555] px-2 py-1 hover:text-white transition-all uppercase tracking-widest flex items-center gap-1"
+              className="text-[9px] bg-[#111] border border-[#333] text-[#888] px-3 py-1.5 hover:text-white hover:border-[#555] transition-all uppercase tracking-widest flex items-center gap-2"
             >
-              {initializing ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Force Regenerate
+              {initializing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              Force Regenerate
             </button>
           </div>
-          
-          <div className="bg-[#0a0a0a] border border-[#222] p-4 flex flex-col md:flex-row items-center justify-between gap-4 mt-4">
-            <div className="flex items-center gap-4 w-full md:w-auto">
-              <div className="p-3 bg-[#111] border border-[#333] rounded-sm text-[#E60000]">
-                <Globe size={20} />
-              </div>
-              <div className="overflow-hidden">
-                <p className="text-[8px] font-mono text-[#555] uppercase font-bold mb-1">Smart Bio-Link (Drop Page)</p>
-                <p className="text-xs font-mono text-white truncate max-w-[150px] md:max-w-none">{dropUrl}</p>
-              </div>
-            </div>
-            <div className="flex gap-2 w-full md:w-auto">
-              <button 
-                onClick={() => copyToClipboard(dropUrl)}
-                className="flex-1 md:flex-none bg-[#E60000] text-white px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-red-700 transition-colors"
-              >
-                {copied ? <CheckCircle2 size={14}/> : <Copy size={14} />} {copied ? "Copied" : "Copy"}
-              </button>
-              <a 
-                href={dropUrl} target="_blank" rel="noopener noreferrer"
-                className="bg-black border border-[#333] text-[#888] px-3 py-2.5 hover:text-white hover:border-white transition-colors"
-              >
-                <ExternalLink size={14} />
-              </a>
-            </div>
+          <p className="font-mono text-[10px] text-[#555] uppercase tracking-[0.3em]">
+            Artifact: {submission.title}
+          </p>
+        </div>
+        
+        <div className="flex gap-4 relative z-10">
+          <div className="bg-[#0a0a0a] border border-[#222] p-4 text-center min-w-[120px]">
+            <p className="text-[8px] font-mono text-[#555] uppercase mb-1 font-bold">Campaign Timeline</p>
+            <p className="text-3xl font-oswald font-bold text-[#E60000]">Day {currentDay}<span className="text-sm text-[#555]">/30</span></p>
           </div>
-        </div>
-
-        <div className="bg-[#111] border border-[#222] p-6 flex flex-col justify-center items-center relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-2 opacity-10"><Users size={48} className="text-[#E60000]" /></div>
-          <p className="text-[9px] font-mono text-[#888] uppercase tracking-widest mb-2 font-bold flex items-center gap-2">
-            <Users size={12} className="text-[#E60000]" /> Captured Fans
-          </p>
-          <p className="text-4xl font-oswald font-bold text-white tracking-tighter animate-pulse">{fanCount}</p>
-        </div>
-
-        <div className="bg-[#0a0a0a] border border-[#222] p-6 flex flex-col justify-center items-center">
-          <p className="text-[9px] font-mono text-[#555] uppercase mb-2 font-bold flex items-center gap-2">
-            <TrendingUp size={12} className="text-green-500" /> Projected Reach
-          </p>
-          <p className="text-4xl font-oswald font-bold text-white tracking-tighter">{totalStreams.toLocaleString()}</p>
-          <p className="text-[8px] font-mono text-green-500 uppercase mt-2 font-bold">Live Synced</p>
+          <div className="bg-[#0a0a0a] border border-[#222] p-4 text-center min-w-[140px]">
+            <p className="text-[8px] font-mono text-[#555] uppercase mb-1 font-bold">Projected Reach</p>
+            <p className="text-3xl font-oswald font-bold text-white">{totalStreams.toLocaleString()}</p>
+          </div>
         </div>
       </div>
 
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         
+        {/* LEFT: TIMELINE OVERVIEW */}
         <div className="w-full lg:w-1/3 border-r border-[#222] bg-[#020202] flex flex-col overflow-y-auto custom-scrollbar">
           <div className="p-6 border-b border-[#111] sticky top-0 bg-black z-10">
             <h3 className="font-oswald text-sm uppercase tracking-widest text-[#888] flex items-center gap-2">
@@ -373,10 +360,11 @@ export default function Room11_Exec() {
           </div>
           <div className="p-6">
             <div className="space-y-2">
-              {campaign.campaign_data.daily_schedule?.map((day: any, i: number) => {
+              {[...Array(30)].map((_, i) => {
                 const dayNum = i + 1;
                 const isPast = dayNum < currentDay;
                 const isCurrent = dayNum === currentDay;
+                const task = campaignData?.daily_schedule?.[i];
                 
                 return (
                   <div key={dayNum} className={`flex items-center gap-4 p-3 border transition-colors ${isCurrent ? 'bg-[#110000] border-[#E60000]/50' : isPast ? 'bg-[#050505] border-[#111] opacity-50' : 'bg-black border-[#222]'}`}>
@@ -385,7 +373,7 @@ export default function Room11_Exec() {
                     </div>
                     <div className="flex-1 truncate">
                       <p className={`font-mono text-[10px] uppercase font-bold tracking-widest truncate ${isCurrent ? 'text-[#E60000]' : 'text-gray-400'}`}>
-                        {day?.objective || "Directive Block"}
+                        {task?.objective || "Scheduled Task"}
                       </p>
                     </div>
                   </div>
@@ -395,6 +383,7 @@ export default function Room11_Exec() {
           </div>
         </div>
 
+        {/* RIGHT: DAILY ACTION PORTAL */}
         <div className="flex-1 flex flex-col bg-black">
           {todayTask ? (
             <>
@@ -430,7 +419,7 @@ export default function Room11_Exec() {
                     <p className="font-oswald text-4xl font-bold text-green-500 tracking-tighter">
                       ${todayTask.auto_ad_spend?.toFixed(2) || "0.00"}
                     </p>
-                    <p className="text-[9px] font-mono text-[#555] uppercase mt-2">Deducted from Ledger Advance</p>
+                    <p className="text-[9px] font-mono text-[#555] uppercase mt-2">Deducted from $1,500 Advance</p>
                   </div>
                 </div>
 
@@ -445,17 +434,17 @@ export default function Room11_Exec() {
 
               </div>
 
+              {/* STICKY FOOTER ADVANCE BUTTON */}
               <div className="bg-[#0a0a0a] p-4 md:p-6 border-t border-[#222] flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 z-10">
                 <p className="text-[9px] font-mono text-[#555] uppercase text-center sm:text-left leading-relaxed max-w-sm">
-                  This terminal executes real API calls to SendGrid, RunPod, and Meta. Progress is irreversible.
+                  In production, this board advances and auto-executes tasks via Cron Job at 00:00 EST.
                 </p>
                 <button 
                   onClick={handleAdvanceDay}
                   disabled={currentDay >= 30 || isExecuting}
-                  className="bg-white text-black px-8 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center justify-center gap-2 disabled:opacity-30 w-full sm:w-auto shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
+                  className="bg-white text-black px-6 py-3 font-oswald text-sm font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center justify-center gap-2 disabled:opacity-30 w-full sm:w-auto shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
                 >
-                  {isExecuting ? <Loader2 size={16} className="animate-spin" /> : <ChevronRight size={16} />}
-                  Execute & Advance Day
+                  Execute & Advance Day <ChevronRight size={16} />
                 </button>
               </div>
             </>
