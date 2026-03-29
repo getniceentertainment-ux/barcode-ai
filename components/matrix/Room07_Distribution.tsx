@@ -56,7 +56,7 @@ export default function Room07_Distribution() {
   useEffect(() => {
     const rolloutPurchased = searchParams.get('rollout_purchased');
     const coverArtPurchased = searchParams.get('cover_art_purchased');
-    const searchTrackId = searchParams.get('track_id');              
+    const searchTrackId = searchParams.get('track_id') || searchParams.get('trackId');              
     
     if (rolloutPurchased === 'true' && searchTrackId) {
       if (addToast) addToast("Upstream Deal Secured. Transferring to The Exec...", "success");
@@ -71,23 +71,12 @@ export default function Room07_Distribution() {
     }
 
     if (coverArtPurchased === 'true' && searchTrackId) {
-      if (addToast) addToast("Cover Art Generated Successfully.", "success");
+      if (addToast) addToast("Payment Secured. Initializing FLUX.1 Engine...", "success");
       
-      const fetchFreshArtwork = async () => {
-        const { data } = await supabase
-          .from('submissions')
-          .select('*')
-          .eq('id', searchTrackId)
-          .single();
-          
-        if (data) {
-          setSubmission(data); // This forces the UI to re-render with the new image
-          updateAnrData({ coverUrl: data.cover_url });
-        }
-      };
+      // SURGICAL FIX: We actively command the API to generate the image right now!
+      triggerCoverArtGeneration(searchTrackId);
       
-      // Give the Webhook a moment to save the AI image, then fetch it
-      setTimeout(fetchFreshArtwork, 2000);
+      // Clean up the URL so it doesn't keep triggering
       window.history.replaceState(null, '', '/');
     }
   }, [searchParams, addToast, setActiveRoom, updateAnrData]);
@@ -296,6 +285,33 @@ export default function Room07_Distribution() {
       console.error("Rollout Error:", err);
     } finally {
       setIsGeneratingRollout(false);
+    }
+  };
+
+  // SURGICAL FIX: The FLUX.1 Generation Engine Caller
+  const triggerCoverArtGeneration = async (tId: string) => {
+    setIsGeneratingCover(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/distribution/cover-art/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ trackId: tId, trackTitle: anrData.trackTitle })
+      });
+      
+      const data = await res.json();
+      if (data.coverUrl) {
+        setSubmission((prev: any) => ({ ...prev, cover_url: data.coverUrl }));
+        updateAnrData({ coverUrl: data.coverUrl });
+        if(addToast) addToast("AI Visuals rendered and attached.", "success");
+      } else {
+        throw new Error(data.error || "Generation failed.");
+      }
+    } catch (err: any) {
+      console.error("Cover Art Error:", err);
+      if(addToast) addToast(`Failed: ${err.message}`, "error");
+    } finally {
+      setIsGeneratingCover(false);
     }
   };
 
