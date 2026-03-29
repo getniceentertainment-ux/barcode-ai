@@ -1,54 +1,57 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
+import { createClient } from '@supabase/supabase-js';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16',
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2023-10-16' });
+const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
 export async function POST(req: Request) {
   try {
-    const { trackId, trackTitle, userId, hitScore } = await req.json();
+    const body = await req.text();
+    const signature = req.headers.get('stripe-signature') || '';
+    const event = stripe.webhooks.constructEvent(body, signature, process.env.STRIPE_WEBHOOK_SECRET!);
 
-    if (!userId || !trackId) {
-      return NextResponse.json({ error: "Unauthorized: Missing Node ID" }, { status: 401 });
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const meta = session.metadata;
+
+      if (meta?.type === 'exec_rollout') {
+        // 1. Fetch the artifact to safely check its current score
+        const { data: sub } = await supabaseAdmin
+          .from('submissions')
+          .select('hit_score, base_hit_score')
+          .eq('id', meta.track_id)
+          .single();
+        
+        let updatePayload: any = { rollout_purchased: true };
+        
+        // 2. THE EGO BOOST (PAYOLA MECHANIC)
+        // If they scored under 95, save their real score and boost them to 95!
+        if (sub && sub.hit_score < 95) {
+          updatePayload.base_hit_score = sub.base_hit_score || sub.hit_score;
+          updatePayload.hit_score = 95;
+        }
+
+        // 3. Apply the update to the Database
+        await supabaseAdmin.from('submissions').update(updatePayload).eq('id', meta.track_id);
+        
+        // 4. Log the transaction
+        await supabaseAdmin.from('transactions').insert({
+          user_id: meta.userId,
+          amount: -(session.amount_total! / 100),
+          type: 'UPSELL_PURCHASE',
+          description: `Independent Rollout: ${meta.track_id}`
+        });
+      }
+      
+      // Standard token/tier handling...
+      if (meta?.type === 'mastering_token') {
+        await supabaseAdmin.from('profiles').update({ has_mastering_token: true }).eq('id', meta.userId);
+      }
     }
-
-    // --- ALGORITHMIC BYPASS PRICING MATH ---
-    const score = typeof hitScore === 'number' ? hitScore : 0;
-    const targetScore = 95; 
-    const pointsShort = Math.max(0, targetScore - score);
-
-    // Base price $14.99 + $1.00 per point they are short of 95
-    const basePriceCents = 1499; 
-    const penaltyCents = pointsShort * 100; 
-    const finalPriceCents = basePriceCents + penaltyCents;
-
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://www.bar-code.ai";
-
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [{
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: 'The Exec: 30-Day Go-To-Market Rollout',
-            description: pointsShort > 0 
-              ? `Algorithmic Strategy for "${trackTitle}". Bypass Fee: +$${pointsShort}.00 (-${pointsShort} pts shy of target).` 
-              : `Premium Strategy & Ad Campaign for "${trackTitle}".`,
-          },
-          unit_amount: finalPriceCents,
-        },
-        quantity: 1,
-      }],
-      mode: 'payment',
-      success_url: `${siteUrl}/?rollout_purchased=true&track_id=${trackId}`,
-      cancel_url: `${siteUrl}/`,
-      metadata: { userId, type: 'exec_rollout', track_id: trackId }
-    });
-
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({ received: true });
   } catch (error: any) {
-    console.error("Rollout Checkout Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Webhook Logic Failure:", error.message);
+    return NextResponse.json({ error: "Webhook Error" }, { status: 400 });
   }
 }
