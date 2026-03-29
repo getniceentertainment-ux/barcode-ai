@@ -30,6 +30,8 @@ import Room09_Radio from "../components/matrix/Room09_Radio";
 import Room10_Social from "../components/matrix/Room10_Social";
 import Room11_Contracts from "../components/matrix/Room11_Contracts";
 
+import SecurityShield from "../components/matrix/SecurityShield";
+
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID; 
 
 export default function MatrixController() {
@@ -123,27 +125,6 @@ export default function MatrixController() {
       setIsHydrated(true);
     });
   }, []);
-
-  // --- SURGICAL FIX: THE GLOBAL STRIPE ROUTER ---
-  // Delegates the actual heavy lifting to the local rooms so they can show their custom loading screens.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const params = new URLSearchParams(window.location.search);
-    const rolloutPurchased = params.get('rollout_purchased');
-    const coverArtPurchased = params.get('cover_art_purchased');
-    
-    // Do NOT strip the URL here. Do NOT poll the database here.
-    // Simply route the user to the correct room so the room can display its custom loading UI,
-    // poll the ledger securely, and then strip the URL itself.
-    if (coverArtPurchased === 'true') {
-      setActiveRoom("07");
-    }
-
-    if (rolloutPurchased === 'true') {
-      setActiveRoom("11"); 
-    }
-  }, [setActiveRoom]);
 
   useEffect(() => {    
     setIsHydrated(true);
@@ -447,7 +428,8 @@ export default function MatrixController() {
 
   return (
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-0 md:pb-24 font-mono">
-      
+      {/* INVISIBLE SYSTEM GUARDS */}
+      <SecurityShield />      
       {/* --- EDUCATIONAL UX NOTIFICATION (PRE-FORMAT DELAY OVERLAY) --- */}
       {showLandscapeTip && (
         <div className="fixed inset-0 z-[9999] bg-[#050505] flex flex-col items-center justify-center text-center px-8 animate-in fade-in duration-300">
