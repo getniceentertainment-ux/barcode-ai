@@ -19,103 +19,103 @@ interface RoomData {
 
 const ROOM_MAP: Record<string, RoomData> = {
   "01": {
-    title: "Forensic Ingestion",
+    title: "Forensic Audio Injection",
     icon: <Terminal size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "DATA PURITY", desc: "Upload high-fidelity instrumentals. Low-bitrate files corrupt the DSP extraction." },
-      { id: 2, title: "MDX SEPARATION", desc: "Use the stem splitter to isolate the drums. The algorithm needs a clean transient pulse." }
+      { id: 1, title: "SECURE INGESTION", desc: "Upload strict high-fidelity WAV/MP3s (20MB limit) via encrypted Supabase storage buckets, or lease premium instrumentals directly from the internal Stripe marketplace." },
+      { id: 2, title: "DSP FORENSICS", desc: "The pipeline automatically extracts the exact mathematical foundation of the beat—BPM, Musical Key (e.g., C# Minor), and Total Bar Count—to feed the Ghostwriter's blueprint." }
     ],
-    encouragement: "Precision starts at the source. If the math is wrong here, the Hit Score suffers later."
+    encouragement: "The entry point of the Matrix. Precision starts at the source. If the math is wrong here, the Hit Score suffers later."
   },
   "02": {
     title: "Neural Mind-Meld",
     icon: <Cpu size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "CADENCE LOCK", desc: "Record 10 seconds of raw mumble flow. Focus on rhythmic patterns, not words." },
-      { id: 2, title: "FLOW DNA", desc: "Ensure your transients are sharp. The Ghostwriter uses these to map syllable density." }
+      { id: 1, title: "VOCAL DSP EXTRACTION", desc: "Hit the mic and record a 10-second mumble cadence. The Matrix automatically analyzes your transients, crosses them with the BPM, and detects your exact flow architecture (e.g., NY Drill, Boom Bap, Triplet)." },
+      { id: 2, title: "LYRICAL DNA PARSING", desc: "Paste previous verses to calculate syllable density and word frequency. This extracted DNA acts as a permanent anchor, guaranteeing the Ghostwriter mirrors your exact penmanship without breaking the vibe." }
     ],
-    encouragement: "Synchronize your biological rhythm with the machine's clock."
+    encouragement: "Instead of forcing you into a rigid box, we extract your exact rhythm to create the ultimate GetNice Hybrid Flow."
   },
   "03": {
     title: "Synthetic Synthesis",
     icon: <Target size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "THEMATIC INTENT", desc: "Input your Motive, Struggle, and Hustle. Gritty authenticity is required for 90+ scores." },
-      { id: 2, title: "BLUEPRINT MAPPING", desc: "Respect the Hook-Verse-Hook structure. CTR (Code 1) depends on immediate capture." }
+      { id: 1, title: "GETNICE HYBRID SYNTHESIS", desc: "Powered by fine-tuned LoRA on RunPod GPUs, the engine generates complex multi-syllabic rhyme schemes and inserts mid-bar pipes (|) to dictate physical breath control in the booth." },
+      { id: 2, title: "STATELESS RAG INTELLIGENCE", desc: "Injects live daily news and street slang directly into the LLM context so lyrics are chronologically relevant to the hour. Use Micro-Refinement to rewrite lines without breaking the rhyme scheme." }
     ],
-    encouragement: "The TALON engine does not write poetry. It writes commercial warfare."
+    encouragement: "The TALON engine does not write polite poetry. It writes aggressive, authentic commercial warfare."
   },
   "04": {
-    title: "Hardware Tracking",
+    title: "Zero-Latency Tracking",
     icon: <Activity size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "SIGNAL CHAIN", desc: "Ensure your input gain is peaking at -6dB. Digital clipping is permanent failure." },
-      { id: 2, title: "TELEPROMPTER SYNC", desc: "Follow the red bar. Perfect timing increases the 'Addiction' (APV) metric." }
+      { id: 1, title: "ZERO-LATENCY RECORDING", desc: "Bypasses standard web latency using WebAssembly and AudioWorklets. We apply a 150ms mathematical offset to guarantee vocal punch-ins are perfectly quantized to the beat." },
+      { id: 2, title: "TELEPROMPTER SYNC", desc: "Generated lyrics scroll perfectly in time with the beat's BPM, acting as a live, mathematically synced karaoke prompter for your Lead, Adlib, and Dub vocal tracks." }
     ],
-    encouragement: "Lay down the source data. Don't overthink the take; the Matrix will fix the energy."
+    encouragement: "A hardware-accelerated, browser-based DAW. Lay down the source data and let the Matrix fix the latency."
   },
   "05": {
-    title: "Vocal Engineering",
+    title: "Proprietary Mix Rack",
     icon: <ShieldAlert size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "TONAL BALANCE", desc: "Use the GetNice EQ preset for vocal-forward clarity. Avoid muddy low-mids." },
-      { id: 2, title: "PRESENCE PUNCH", desc: "Saturation adds harmonic excitement. Too much creates fatigue; balance is key." }
+      { id: 1, title: "PROPRIETARY BLUEPRINTS", desc: "Apply CEO-crafted EQ curves mathematically customized for your exact sub-genre (Foundation, Gangsta, Modern, Fusion) utilizing the Web Audio API." },
+      { id: 2, title: "THE GETNICE GLUE", desc: "Auto-calculates bus compressor ratios, attacks, and releases to dynamically sit your vocal directly inside the pocket of the beat. Bakes the final chain losslessly using Offline AudioContext." }
     ],
-    encouragement: "Glue the performance into the pocket. Make the vocal feel like it was born in the beat."
+    encouragement: "The magic of the GetNice sound. Glue your raw performance to the beat in real-time, directly in the browser."
   },
   "06": {
-    title: "Commercial Mastering",
+    title: "Commercial Render Engine",
     icon: <Zap size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "LUFS STANDARDS", desc: "Aim for -14 LUFS for DSPs. -9 LUFS for club/aggressive playback." },
-      { id: 2, title: "BRICKWALL LIMITING", desc: "Zero ceiling violation is mandatory. Protect the signal from digital bleed." }
+      { id: 1, title: "ANALOG LUFS METERING", desc: "Visual targeting to hit the perfect -14 LUFS (Spotify standard) or -6 LUFS (Brickwall club standard) using an integrated dynamics compressor to protect against digital bleed." },
+      { id: 2, title: "STUDIO ARTIFACT EXPORT", desc: "Session Locking permanently secures the project upon export. Generates a complete .ZIP file containing the Lossless WAV Final Master, Instrumental, Raw Stems, and an Official PDF Lyric Sheet." }
     ],
-    encouragement: "Prepare for global release. This is the final firewall before the algorithm takes over."
+    encouragement: "This is the final firewall. We sum the beat and engineered vocals, limit the peaks, and securely write all metadata."
   },
   "07": {
-    title: "A&R Neural Scan",
+    title: "Algorithmic A&R Node",
     icon: <TrendingUp size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "THE 3 CODES", desc: "Your score is based on CTR (The Hook), AVP (Audio Pacing), and APV (Addiction)." },
-      { id: 2, title: "VIRAL SLICING", desc: "The isolated snippet is your primary weapon. Use it for social infiltration." }
+      { id: 1, title: "HIT SCORE CALCULATION", desc: "Scans the track's sonic profile to generate an algorithmic score out of 100 based on the 3 Codes: The Hook (CTR), Audio Pacing (AVP), and The Addiction (APV)." },
+      { id: 2, title: "VIRAL EXTRACTION & ART", desc: "Automatically isolates the most catchy 15-second lyric snippet for TikTok/Reels marketing, and utilizes DALL-E 3 to generate a 3000x3000px Spotify-compliant album cover." }
     ],
-    encouragement: "The algorithm is ruthless. If you score under 90, go back to the blueprint."
+    encouragement: "The bridge to the industry. Instead of just exporting audio, your master is uploaded and scanned for commercial viability."
   },
   "08": {
-    title: "The Smart Ledger",
+    title: "The Royalty Ledger",
     icon: <ShieldAlert size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "UPSTREAM DEALS", desc: "Signing the contract triggers an irreversible 60/40 master split." },
-      { id: 2, title: "FIAT LIQUIDITY", desc: "Royalties are withdrawable once the Stripe secure tunnel is verified." }
+      { id: 1, title: "ALGORITHMIC LABEL ADVANCES", desc: "Artifacts achieving a Hit Score > 90 trigger an automated $1,500 marketing advance Upstream Contract (zero-recoupment) to deploy via programmatic ad-spend." },
+      { id: 2, title: "FIAT LIQUIDITY", desc: "Access your encrypted Vault history. Withdraw your cleared 60% royalty fiat balance directly to your personal bank account via our secure Stripe Connect integration." }
     ],
-    encouragement: "Own your data. Capitalize on your artifact's performance."
+    encouragement: "Your financial headquarters. Own your data, secure your master splits, and capitalize on algorithmic deals."
   },
   "09": {
-    title: "Nation FM Broadcast",
+    title: "Live Global Syndication",
     icon: <Activity size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "BOOST PROTOCOL", desc: "Deploy marketing credits to increase rotational frequency." },
-      { id: 2, title: "NETWORK REACH", desc: "Boosts add a multiplier to your global Hit Score visibility." }
+      { id: 1, title: "ALGORITHMIC CHARTING", desc: "GetNice Nation FM is a 24/7 broadcast. Tracks are strictly ordered by their A&R Hit Score, with Top 3 badges awarded to the highest-performing records on the platform." },
+      { id: 2, title: "GLOBAL PLAYBACK", desc: "Clicking play seamlessly hijacks the persistent global audio player at the bottom of the screen. Utilize the Live Syndicate Chat to network and exchange feedback." }
     ],
-    encouragement: "Dominate the airwaves. Every credit spent is a neural node activated."
+    encouragement: "Dominate the frequencies. Approved tracks are pushed here for the entire community to hear."
   },
   "10": {
-    title: "Syndicate Brokerage",
+    title: "Open Verse Economy",
     icon: <Zap size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "ESCROW SECURITY", desc: "Never exchange data outside the matrix. Funds are only safe in Escrow." },
-      { id: 2, title: "RESONANCE PURGE", desc: "Low-value chatter is deleted. Maintain high-fidelity collaboration." }
+      { id: 1, title: "MOGUL LEADERBOARD", desc: "The B2B Artist Network. Tracks top-tier users globally based on platform activity, hit scores, and successful waitlist referrals." },
+      { id: 2, title: "SMART ESCROW CONTRACTS", desc: "Lock funds securely via Stripe to request a feature verse or live booking. Funds are held in Escrow and only released when the collaborator delivers the verified audio." }
     ],
-    encouragement: "Expand the network. The larger the Syndicate, the higher the ROI."
+    encouragement: "Expand the network. Secure programmatic fiat escrows guarantee safe data exchange and eliminate fraudulent features."
   },
   "11": {
-    title: "Agentic Execution",
+    title: "The Exec: Campaign Hub",
     icon: <Terminal size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "30-DAY FRAMEWORK", desc: "The Exec AI handles the ads. You handle the energy. Do not miss a day." },
-      { id: 2, title: "BIO-LINK TRAFFIC", desc: "Your Smart Drop link is your only path to fan email harvesting." }
+      { id: 1, title: "30-DAY MAXIMUM SUCCESS", desc: "The Exec AI ingests your Artifact and maps out a strict 3-Phase rollout: Infrastructure Validation, Content Saturation (Strike), and Commercial Extraction." },
+      { id: 2, title: "AGENTIC DEPLOYMENT", desc: "The terminal executes real API calls to deploy your $1,500 marketing advance on Meta Ads, push viral clips to social networks, and blast Fan CRM emails." }
     ],
-    encouragement: "Follow the framework. Let the machine execute while you scale."
+    encouragement: "You are selling pickaxes during the gold rush. Let the machine execute the marketing while you scale the brand."
   }
 };
 
