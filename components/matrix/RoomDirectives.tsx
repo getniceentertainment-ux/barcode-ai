@@ -76,10 +76,10 @@ const ROOM_MAP: Record<string, RoomData> = {
     title: "Algorithmic A&R Node",
     icon: <TrendingUp size={28} className="text-[#E60000]" />,
     directives: [
-      { id: 1, title: "HIT SCORE CALCULATION", desc: "Scans the track's sonic profile to generate an algorithmic score out of 100 based on the 3 Codes: The Hook (CTR), Audio Pacing (AVP), and The Addiction (APV)." },
-      { id: 2, title: "VIRAL EXTRACTION & ART", desc: "Automatically isolates the most catchy 15-second lyric snippet for TikTok/Reels marketing, and utilizes DALL-E 3 to generate a 3000x3000px Spotify-compliant album cover." }
+      { id: 1, title: "THE 3 CODES", desc: "Your score is based on CTR (The Hook), AVP (Audio Pacing), and APV (Addiction)." },
+      { id: 2, title: "VIRAL SLICING", desc: "The isolated snippet is your primary weapon. Use it for social infiltration." }
     ],
-    encouragement: "The bridge to the industry. Instead of just exporting audio, your master is uploaded and scanned for commercial viability."
+    encouragement: "The algorithm is ruthless. If you score under 90, go back to the blueprint."
   },
   "08": {
     title: "The Royalty Ledger",
@@ -125,79 +125,22 @@ export default function RoomDirectives({ roomId }: { roomId: string }) {
   const [mounted, setMounted] = useState(false);
   const data = ROOM_MAP[roomId];
   
-  // Triggers the 15-second light pulse every time the user enters a new room
   useEffect(() => {
-    setMounted(true); // Ensures document.body is available for the Portal
+    setMounted(true);
     setIsFlashing(true);
     const timer = setTimeout(() => setIsFlashing(false), 15000);
     return () => clearTimeout(timer);
   }, [roomId]);
 
-  if (!data) return null;
+  if (!data || !mounted) return null;
 
-  // React Portal injects the modal directly into the <body>, breaking it out of all z-index traps
-  const modalContent = isOpen && mounted ? createPortal(
-    <div className="fixed inset-0 z-[999999] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200">
-      <div className="bg-[#050505] border-2 border-[#E60000] w-full max-w-4xl p-8 md:p-12 shadow-[0_0_80px_rgba(230,0,0,0.5)] relative animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col rounded-sm">
-        
-        {/* CLOSE BUTTON */}
-        <button 
-          onClick={() => setIsOpen(false)}
-          className="absolute top-6 right-6 text-[#888] hover:text-white transition-colors p-2 bg-[#111] border border-[#333] rounded-full hover:bg-[#E60000] hover:border-[#E60000] shadow-md"
-        >
-          <X size={24} />
-        </button>
-
-        {/* MODAL HEADER */}
-        <div className="flex items-center gap-5 mb-10 border-b border-[#E60000]/40 pb-8 shrink-0 pr-12">
-          <div className="p-4 bg-[#110000] border-2 border-[#E60000]/40 text-[#E60000] rounded-sm shadow-[0_0_20px_rgba(230,0,0,0.2)]">
-            {data.icon}
-          </div>
-          <div>
-            <p className="text-xs text-[#E60000] font-bold uppercase tracking-widest animate-pulse mb-1 drop-shadow-md">
-              System Directives // Node R{roomId}
-            </p>
-            <h3 className="text-white text-3xl md:text-5xl font-bold uppercase tracking-widest underline underline-offset-8 decoration-[#E60000] drop-shadow-lg">
-              {data.title}
-            </h3>
-          </div>
-        </div>
-        
-        {/* SCROLLABLE CONTENT */}
-        <div className="overflow-y-auto custom-scrollbar flex-1 pr-4 space-y-6">
-          {data.directives.map((d) => (
-            <div key={d.id} className="flex items-start gap-5 p-8 bg-[#0a0a0a] border border-[#222] hover:border-[#E60000]/70 transition-colors group shadow-lg">
-              <span className="text-[#E60000] font-black text-4xl mt-0 drop-shadow-md">{d.id}.</span>
-              <div>
-                <p className="text-white text-xl md:text-2xl font-bold uppercase tracking-widest mb-3 underline underline-offset-4 decoration-[#444] group-hover:decoration-[#E60000] transition-colors drop-shadow-sm">
-                  {d.title}
-                </p>
-                <p className="text-white text-base md:text-lg leading-relaxed tracking-wide font-mono opacity-90 group-hover:opacity-100 transition-opacity">
-                  {d.desc}
-                </p>
-              </div>
-            </div>
-          ))}
-
-          <div className="mt-10 p-8 border-2 border-[#330000] bg-[#110000] shadow-[inset_0_0_30px_rgba(230,0,0,0.1)]">
-            <p className="text-base md:text-lg text-white leading-relaxed font-mono drop-shadow-sm">
-              <span className="text-[#E60000] font-bold uppercase tracking-widest block mb-2 underline underline-offset-4 decoration-[#E60000]">OPERATOR NOTE:</span> 
-              {data.encouragement}
-            </p>
-          </div>
-        </div>
-
-      </div>
-    </div>,
-    document.body
-  ) : null;
-
-  return (
+  // React Portal injects BOTH the button AND the modal directly into the <body>
+  return createPortal(
     <>
       {/* FLOATING HOLOGRAPHIC BUTTON */}
       <button 
         onClick={() => setIsOpen(true)}
-        className={`fixed bottom-28 right-6 md:right-10 z-[50] w-20 h-20 flex items-center justify-center rounded-full transition-all hover:scale-110 focus:outline-none group ${isFlashing ? 'animate-pulse' : 'opacity-90 hover:opacity-100'}`}
+        className={`fixed bottom-28 right-6 md:right-10 z-[999998] w-20 h-20 flex items-center justify-center rounded-full transition-all hover:scale-110 focus:outline-none group ${isFlashing ? 'animate-pulse' : 'opacity-90 hover:opacity-100'}`}
         title="View Room Directives"
       >
         {/* 90% Transparent Background */}
@@ -217,8 +160,62 @@ export default function RoomDirectives({ roomId }: { roomId: string }) {
         <HelpCircle size={28} className="text-yellow-400 relative z-10 drop-shadow-[0_0_15px_rgba(234,179,8,1)] group-hover:text-yellow-300 transition-colors" />
       </button>
 
-      {/* Render the portal output */}
-      {modalContent}
-    </>
+      {/* POPUP MODAL OVERLAY */}
+      {isOpen && (
+        <div className="fixed inset-0 z-[999999] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200">
+          <div className="bg-[#050505] border-2 border-[#E60000] w-full max-w-4xl p-8 md:p-12 shadow-[0_0_80px_rgba(230,0,0,0.5)] relative animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col rounded-sm">
+            
+            {/* CLOSE BUTTON */}
+            <button 
+              onClick={() => setIsOpen(false)}
+              className="absolute top-6 right-6 text-[#888] hover:text-white transition-colors p-2 bg-[#111] border border-[#333] rounded-full hover:bg-[#E60000] hover:border-[#E60000] shadow-md"
+            >
+              <X size={24} />
+            </button>
+
+            {/* MODAL HEADER */}
+            <div className="flex items-center gap-5 mb-10 border-b border-[#E60000]/40 pb-8 shrink-0 pr-12">
+              <div className="p-4 bg-[#110000] border-2 border-[#E60000]/40 text-[#E60000] rounded-sm shadow-[0_0_20px_rgba(230,0,0,0.2)]">
+                {data.icon}
+              </div>
+              <div>
+                <p className="text-xs text-[#E60000] font-bold uppercase tracking-widest animate-pulse mb-1 drop-shadow-md">
+                  System Directives // Node R{roomId}
+                </p>
+                <h3 className="text-white text-3xl md:text-5xl font-bold uppercase tracking-widest underline underline-offset-8 decoration-[#E60000] drop-shadow-lg">
+                  {data.title}
+                </h3>
+              </div>
+            </div>
+            
+            {/* SCROLLABLE CONTENT */}
+            <div className="overflow-y-auto custom-scrollbar flex-1 pr-4 space-y-6">
+              {data.directives.map((d) => (
+                <div key={d.id} className="flex items-start gap-5 p-8 bg-[#0a0a0a] border border-[#222] hover:border-[#E60000]/70 transition-colors group shadow-lg">
+                  <span className="text-[#E60000] font-black text-4xl mt-0 drop-shadow-md">{d.id}.</span>
+                  <div>
+                    <p className="text-white text-xl md:text-2xl font-bold uppercase tracking-widest mb-3 underline underline-offset-4 decoration-[#444] group-hover:decoration-[#E60000] transition-colors drop-shadow-sm">
+                      {d.title}
+                    </p>
+                    <p className="text-white text-base md:text-lg leading-relaxed tracking-wide font-mono opacity-90 group-hover:opacity-100 transition-opacity">
+                      {d.desc}
+                    </p>
+                  </div>
+                </div>
+              ))}
+
+              <div className="mt-10 p-8 border-2 border-[#330000] bg-[#110000] shadow-[inset_0_0_30px_rgba(230,0,0,0.1)]">
+                <p className="text-base md:text-lg text-white leading-relaxed font-mono drop-shadow-sm">
+                  <span className="text-[#E60000] font-bold uppercase tracking-widest block mb-2 underline underline-offset-4 decoration-[#E60000]">OPERATOR NOTE:</span> 
+                  {data.encouragement}
+                </p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+    </>,
+    document.body
   );
 }

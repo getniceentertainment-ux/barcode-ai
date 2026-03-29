@@ -32,7 +32,6 @@ import Room11_Contracts from "../components/matrix/Room11_Contracts";
 
 import SecurityShield from "../components/matrix/SecurityShield";
 
-
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID; 
 
 export default function MatrixController() {
