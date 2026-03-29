@@ -67,56 +67,11 @@ export default function Room07_Distribution() {
     if (rolloutPurchased === 'true') {
       interceptorFired.current = true;
       
-      // 1. Lock UI into a loading state to hold the user in Room 07
-      setLoadingStep("Awaiting Financial Handshake from Stripe...");
-      updateAnrData({ status: "submitting" });
-      
-      const pollLedger = setInterval(async () => {
-        const { data } = await supabase
-          .from('submissions')
-          .select('upstream_deal_signed')
-          .eq('id', searchTrackId)
-          .single();
-
-        // 2. When webhook flips the deal switch to true
-        if (data?.upstream_deal_signed) {
-          clearInterval(pollLedger);
-          if (addToast) addToast("Deal Secured. Initializing Exec AI (This takes ~10s)...", "success");
-          setLoadingStep("The Exec is generating your 30-Day Strategy...");
-          
-          try {
-            // 3. Sync Ledger so the $1500 advance shows up in the background
-            await useMatrixStore.getState().syncLedger();
-
-            // 4. Force the AI to build the campaign BEFORE teleporting
-            const { data: { session } } = await supabase.auth.getSession();
-            await fetch('/api/campaign/initialize', {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json', 
-                'Authorization': `Bearer ${session?.access_token}`,
-                'Cache-Control': 'no-cache'
-              },
-              body: JSON.stringify({ trackId: searchTrackId })
-            });
-          } catch (e) {
-            console.error("Auto-campaign init failed", e);
-          }
-
-          if (addToast) addToast("Campaign Deployed. Transferring to Command Center...", "success");
-          
-          // 5. Clean URL natively and teleport ONLY when finished
-          window.history.replaceState({}, document.title, window.location.pathname);
-          setActiveRoom("11"); 
-        }
-      }, 2000);
-
-      // Failsafe timeout
-      setTimeout(() => {
-        clearInterval(pollLedger);
-        window.history.replaceState({}, document.title, window.location.pathname);
-        setActiveRoom("11"); 
-      }, 25000);
+      // SURGICAL FIX: Handoff directly to Room 11 without clearing the URL
+      // Room 11 will intercept the URL, poll the ledger, and display a proper loading screen
+      if (addToast) addToast("Financial Handshake Initiated. Transferring to Ledger...", "info");
+      setActiveRoom("11"); 
+      return;
     }
 
     if (coverArtPurchased === 'true') {

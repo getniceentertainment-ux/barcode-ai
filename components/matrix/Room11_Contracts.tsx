@@ -10,6 +10,7 @@ export default function Room11_Contracts() {
   
   const [loading, setLoading] = useState(true);
   const [initializing, setInitializing] = useState(false);
+  const [isPollingLedger, setIsPollingLedger] = useState(false); // SURGICAL FIX: New Ledger Polling State
   const [submission, setSubmission] = useState<any>(null);
   const [campaignData, setCampaignData] = useState<any>(null);
   const [currentDay, setCurrentDay] = useState<number>(0);
@@ -18,7 +19,48 @@ export default function Room11_Contracts() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [execLogs, setExecLogs] = useState<string[]>([]);
 
+  // SURGICAL FIX: The Room 11 Stripe Interceptor & Ledger Poller
   useEffect(() => {
+    if (!userSession?.id) return;
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const rolloutPurchased = params.get('rollout_purchased');
+      const trackId = params.get('track_id') || params.get('trackId');
+
+      if (rolloutPurchased === 'true' && trackId) {
+        setIsPollingLedger(true);
+        
+        const poll = setInterval(async () => {
+          const { data } = await supabase
+            .from('submissions')
+            .select('upstream_deal_signed')
+            .eq('id', trackId)
+            .single();
+            
+          // When the Stripe Webhook completes, the DB flips to true
+          if (data?.upstream_deal_signed) {
+            clearInterval(poll);
+            setIsPollingLedger(false);
+            window.history.replaceState({}, document.title, window.location.pathname);
+            if (addToast) addToast("Financial Ledger Synced. Vault Authorized.", "success");
+            fetchActiveCampaign();
+          }
+        }, 2000);
+
+        // 30-second failsafe to prevent infinite loading
+        setTimeout(() => {
+          clearInterval(poll);
+          setIsPollingLedger(false);
+          window.history.replaceState({}, document.title, window.location.pathname);
+          fetchActiveCampaign();
+        }, 30000);
+        
+        return () => clearInterval(poll);
+      }
+    }
+    
+    // Standard load if no Stripe redirect is present
     fetchActiveCampaign();
   }, [userSession]);
 
@@ -254,6 +296,17 @@ export default function Room11_Contracts() {
       default: return <span className="bg-yellow-500/10 text-yellow-500 border border-yellow-500/30 px-3 py-1 text-[9px] uppercase font-bold tracking-widest flex items-center gap-2 w-fit"><UserCog size={12}/> Manual Action Required</span>;
     }
   };
+
+  // SURGICAL FIX: Intercept the UI to show the Ledger Polling Screen
+  if (isPollingLedger) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-8 text-center border border-[#E60000]/30 bg-[#0a0a0a] animate-in fade-in">
+        <Loader2 size={64} className="text-[#E60000] animate-spin mb-6" />
+        <h2 className="font-oswald text-3xl uppercase tracking-widest text-white mb-2">Syncing Financial Ledger</h2>
+        <p className="font-mono text-xs text-[#888] uppercase tracking-widest">Awaiting cryptographic handshake from Stripe...</p>
+      </div>
+    );
+  }
 
   if (loading) {
     return <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-[#E60000]" size={48} /></div>;
