@@ -11,7 +11,7 @@ import { supabase } from "../../lib/supabase";
 import Link from "next/link"; 
 
 export default function EntryGateway() {
-  const { grantAccess, addToast } = useMatrixStore();
+  const { grantAccess, addToast, setActiveRoom } = useMatrixStore();
   
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,13 +21,34 @@ export default function EntryGateway() {
   const [isScanning, setIsScanning] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   
-  // SURGICAL UPGRADE: Added "waitlist" to the authentication steps
   const [authStep, setAuthStep] = useState<"landing" | "auth" | "verify_email" | "select_tier" | "waitlist">("landing");
   const [userProfile, setUserProfile] = useState<any>(null);
   
   // URL Query State for Referrals
   const [referredBy, setReferredBy] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [copied, setCopied] = useState(false); // Restored copy state
+
+  // --- SURGICAL FIX: THE STRIPE RETURN INTERCEPTOR ---
+  // Catches the user returning from Stripe and instantly re-authenticates them to unlock the doors
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('queue_skipped') === 'true' || params.get('success') === 'true') {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        if (addToast) addToast("Node Upgraded. Access Granted.", "success");
+        
+        // Re-run the session check to pull the new upgraded tier from the database
+        const verifyUpgrade = async () => {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            await processUserSession(session.user);
+          }
+        };
+        verifyUpgrade();
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
@@ -56,7 +77,6 @@ export default function EntryGateway() {
   const processUserSession = async (user: any, retries = 0): Promise<void> => {
     const { data: profile } = await supabase
       .from('profiles')
-      // SURGICAL FIX: Request the ref_code from the database payload
       .select('*, ref_code')
       .eq('id', user.id)
       .maybeSingle();
@@ -65,7 +85,6 @@ export default function EntryGateway() {
       setUserProfile({ ...user, ...profile });
 
       if (profile.tier) {
-        // --- SURGICAL UPGRADE: THE VIRAL WAITLIST GUARD ---
         const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID;
         const isCreator = user.id === CREATOR_ID;
         const referrals = profile.total_referrals || 0;
@@ -92,6 +111,7 @@ export default function EntryGateway() {
         };
 
         grantAccess(session);
+        setActiveRoom("01"); // Explicitly drop them in the Lab
 
         try {
           const { data: savedData } = await supabase
@@ -136,7 +156,7 @@ export default function EntryGateway() {
             data: { 
               stage_name: stageName, 
               device_fingerprint: deviceId,
-              referred_by: referredBy // Attaches the referral code to the user metadata
+              referred_by: referredBy 
             } 
           }
         });
@@ -192,7 +212,6 @@ export default function EntryGateway() {
   };
 
   const copyReferralLink = () => {
-    // SURGICAL FIX: Swap userProfile?.id with userProfile?.ref_code
     const link = typeof window !== 'undefined' ? `${window.location.origin}/?ref=${userProfile?.ref_code || userProfile?.id.substring(0,8)}` : '';
     const textArea = document.createElement("textarea");
     textArea.value = link;
@@ -200,7 +219,9 @@ export default function EntryGateway() {
     textArea.select();
     try {
       document.execCommand('copy');
+      setCopied(true);
       if (addToast) addToast("Bypass Link Copied", "success");
+      setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error("Copy failed", err);
     }
@@ -269,26 +290,22 @@ export default function EntryGateway() {
             <span className="font-mono text-[9px] uppercase tracking-widest text-[#888]">GetNice Records // Operational</span>
           </div>
 
-          {/* HEADLINE: Option 2 */}
           <h1 className="font-oswald text-5xl md:text-7xl lg:text-8xl font-bold mb-6 tracking-tighter uppercase text-white drop-shadow-[0_0_30px_rgba(230,0,0,0.2)] max-w-5xl leading-[1.1]">
             The First Identity-Aware <br />
             <span className="text-[#E60000] underline underline-offset-[12px] decoration-[#222]">AI Studio Built For Hip-Hop.</span>
           </h1>
           
-          {/* SUBTEXT: Option 3 */}
           <p className="max-w-2xl mx-auto text-center font-mono text-xs md:text-sm text-[#888] mb-12 leading-loose uppercase tracking-widest">
             We put elite A&R, Ghostwriting, and Audio Engineering directly in your browser. Record your vocals, let the matrix mix them to perfection, and distribute your next hit to the world. 
             <br/><br/>
             <span className="text-white font-bold">Stop waiting to be discovered. Build your anthem today.</span>
           </p>
           
-          {/* HERO CTA */}
           <button onClick={() => setAuthStep("auth")} className="bg-[#E60000] text-white font-oswald text-lg md:text-xl px-12 py-6 uppercase tracking-[0.2em] font-bold relative group hover:bg-red-700 transition-all shadow-[0_0_40px_rgba(230,0,0,0.4)] flex items-center gap-3">
             Initialize Node Interface 
             <ArrowRight size={24} className="group-hover:translate-x-2 transition-transform" />
           </button>
 
-          {/* LIVE MATRIX STATS (Builds PLG Trust) */}
           <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 max-w-4xl mx-auto w-full border-t border-[#222] pt-12">
             <div className="text-center">
               <p className="font-oswald text-3xl md:text-4xl text-white font-bold tracking-widest mb-1">11</p>
@@ -428,7 +445,7 @@ export default function EntryGateway() {
             </div>
 
             <button type="submit" disabled={loading} className="w-full bg-[#948e8e] text-white py-4 text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2 relative group">
-              {loading ? "Processing..." : authMode === "login" ? "Enter Studio" : "Register"}
+              {loading ? <Loader2 size={16} className="animate-spin" /> : authMode === "login" ? "Enter Studio" : "Register"}
             </button>
           </form>
         </div>
@@ -469,7 +486,6 @@ export default function EntryGateway() {
             </div>
 
             <div className="flex items-center gap-2 bg-[#111] border border-[#333] p-2">
-              {/* SURGICAL FIX: Display the shortcode in the UI */}
               <code className="font-mono text-[10px] text-[#E60000] font-bold truncate flex-1 pl-2">
                 {typeof window !== 'undefined' ? `${window.location.origin}/?ref=${userProfile?.ref_code || userProfile?.id.substring(0,8)}` : ''}
               </code>
@@ -477,7 +493,7 @@ export default function EntryGateway() {
                 onClick={copyReferralLink}
                 className="bg-[#E60000] text-white px-4 py-2.5 text-[9px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors flex items-center gap-2"
               >
-                <Copy size={12} /> Copy
+                {copied ? <CheckCircle2 size={12} /> : <Copy size={12} />} {copied ? "Copied" : "Copy"}
               </button>
             </div>
           </div>
@@ -506,6 +522,13 @@ export default function EntryGateway() {
   if (authStep === "select_tier") {
     return (
       <div className="min-h-screen bg-[#000] text-white flex flex-col items-center justify-center p-6 font-mono relative">
+        <button 
+          onClick={() => setAuthStep("waitlist")} 
+          className="absolute top-8 left-8 text-[#555] hover:text-white flex items-center gap-2 text-xs uppercase tracking-widest transition-colors relative group"
+        >
+          ← Return to Waitlist
+        </button>
+
         <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-8 animate-in zoom-in">
           {tiers.map((tier) => (
             <div key={tier.name} className={`bg-[#050505] p-8 border ${tier.isPro ? 'border-[#E60000]' : 'border-[#222]'} flex flex-col`}>
@@ -515,8 +538,12 @@ export default function EntryGateway() {
                 {tier.features.map(f => <li key={f}>• {f}</li>)}
               </ul>
               
-              <button onClick={() => handleTierSelection(tier.name)} className="w-full py-3 bg-[#E60000] text-white text-[10px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors relative group">
-                Select {tier.name}
+              <button 
+                onClick={() => handleTierSelection(tier.name)} 
+                disabled={loading}
+                className="w-full py-3 bg-[#E60000] text-white text-[10px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors relative flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {loading ? <Loader2 size={14} className="animate-spin" /> : `Select ${tier.name}`}
               </button>
             </div>
           ))}
