@@ -1,56 +1,56 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2023-10-16',
+});
+
 export async function POST(req: Request) {
   try {
-    if (!process.env.STRIPE_SECRET_KEY) {
-      throw new Error("CRITICAL: Missing STRIPE_SECRET_KEY in Vercel Environment Variables.");
-    }
-
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: '2023-10-16', 
-    });
-
-    const body = await req.json();
-    const { tier, userId, email } = body;
-
+    const { tier, userId, email } = await req.json();
+    
     if (!userId || !tier) {
-      return NextResponse.json({ error: "Missing user ID or tier" }, { status: 400 });
+      return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
     }
 
-    // Map your Matrix tiers to secure Environment Variables
-    let priceId = '';
-    if (tier === 'The Artist') priceId = process.env.STRIPE_ARTIST_PRICE_ID || '';
-    if (tier === 'The Mogul') priceId = process.env.STRIPE_MOGUL_PRICE_ID || '';
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://www.bar-code.ai";
+    
+    // SURGICAL FIX 1: Set the pricing dynamically so you don't need to mess with Vercel Env Variables
+    const priceCents = tier === 'The Mogul' ? 9900 : 3900;
 
-    if (!priceId) {
-       throw new Error(`CRITICAL: Missing Vercel Environment Variable for ${tier} (e.g., STRIPE_ARTIST_PRICE_ID). You must add your Stripe Price ID to Vercel.`);
-    }
-
-    // Create a secure Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       customer_email: email || undefined,
       line_items: [
         {
-          price: priceId,
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: `${tier} Node Access`,
+              description: `Permanent upgrade to ${tier} status in the Bar-Code Matrix.`,
+            },
+            unit_amount: priceCents,
+          },
           quantity: 1,
         },
       ],
-      mode: 'subscription', 
-      success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://bar-code.ai'}?success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://bar-code.ai'}?canceled=true`,
-      metadata: {
-        userId: userId,
-        tier: tier,
-      },
+      mode: 'payment', // Set to 'payment' for a one-time upgrade fee
+      
+      // SURGICAL FIX 2: Point to /studio to ensure the EntryGateway UI intercepts it and opens the doors
+      success_url: `${siteUrl}/studio?success=true`,
+      cancel_url: `${siteUrl}/`,
+      
+      // SURGICAL FIX 3: Added 'type: tier_upgrade'. Without this, the Master Webhook ignores the transaction!
+      metadata: { 
+        userId, 
+        type: 'tier_upgrade',
+        tier: tier 
+      }
     });
 
-    // Return the Stripe URL so the frontend can securely redirect the user
     return NextResponse.json({ url: session.url });
-
-  } catch (err: any) {
-    console.error("Stripe API Error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (error: any) {
+    console.error("Tier Checkout Error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
