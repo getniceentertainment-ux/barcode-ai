@@ -197,7 +197,7 @@ export default function EntryGateway() {
     } else {
       setLoading(true);
       try {
-        const res = await fetch('/api/stripe/checkout', {
+        const res = await fetch('../api/stripe/checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tier, userId: userProfile.id, email: userProfile.email })
