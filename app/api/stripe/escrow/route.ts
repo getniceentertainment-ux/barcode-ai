@@ -43,8 +43,8 @@ export async function POST(req: Request) {
       ],
       mode: 'payment',
       // SURGICAL FIX 1: Routing to /studio so your main controller catches it
-      success_url: `${siteUrl}/studio?escrow_funded=true&target_node=${encodeURIComponent(targetNodeId)}&interaction=${encodeURIComponent(type)}`,
-      cancel_url: `${siteUrl}/studio`,
+      success_url: `${siteUrl}/?escrow_funded=true&target_node=${encodeURIComponent(targetNodeId)}&interaction=${encodeURIComponent(type)}`,
+      cancel_url: `${siteUrl}/`,
       metadata: { 
         buyerId: buyerId, // SURGICAL FIX 2: Fixed undefined variable 
         targetNodeId: targetNodeId, 
