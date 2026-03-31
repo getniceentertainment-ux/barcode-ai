@@ -118,7 +118,7 @@ export default function Room01_Lab() {
           // We wait exactly 500ms to guarantee React has checked the box BEFORE the function runs!
           setTimeout(() => {
             if (handlePurchasedBeatDSP) {
-               handlePurchasedBeatDSP(beatUrl, beatName);
+               handlePurchasedBeatDSP(beatUrl, beatName || "GetNice_Marketplace_Beat.mp3");
             }
           }, 500);
         }
