@@ -130,7 +130,7 @@ export default function Room04_Booth() {
   const [isProcessingTrim, setIsProcessingTrim] = useState(false);
 
   // --- HYPER-PRECISE BPM MATH ENGINE ---
-  const [trackDuration, setTrackDuration] = useState<number>(audioData?.duration || 128);
+const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
 
   const totalBars = blueprint.length > 0 
     ? ((blueprint[blueprint.length - 1] as any).startBar || 0) + ((blueprint[blueprint.length - 1] as any).bars || 16)
