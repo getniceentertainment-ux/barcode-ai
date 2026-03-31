@@ -129,6 +129,17 @@ export default function Room04_Booth() {
   const [trimDuration, setTrimDuration] = useState(0);
   const [isProcessingTrim, setIsProcessingTrim] = useState(false);
 
+  // --- HYPER-PRECISE BPM MATH ENGINE ---
+  const [trackDuration, setTrackDuration] = useState<number>(audioData?.duration || 128);
+
+  const totalBars = blueprint.length > 0 
+    ? ((blueprint[blueprint.length - 1] as any).startBar || 0) + ((blueprint[blueprint.length - 1] as any).bars || 16)
+    : 87;
+
+  const preciseBpm = trackDuration > 0 ? ((totalBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
+  const secondsPerBar = trackDuration > 0 ? (trackDuration / totalBars) : (60 / preciseBpm) * 4;
+  // -------------------------------------
+
   const trimWaveformRef = useRef<HTMLDivElement>(null);
   const trimWavesurferRef = useRef<WaveSurfer | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -143,11 +154,9 @@ export default function Room04_Booth() {
   const workletLoadedRef = useRef(false);
   const teleprompterRef = useRef<HTMLDivElement>(null);
 
-  const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
-  // --- SURGICAL FIX: Perfectly Synced TTS Generation ---
   const handleGenerateGuide = async () => {
     if (!lyricLines || lyricLines.length === 0) {
       if (addToast) addToast("No valid lyrics found to generate guide.", "error");
@@ -156,7 +165,6 @@ export default function Room04_Booth() {
     
     setIsGeneratingGuide(true);
     try {
-      // Grab the ALREADY SANITIZED lines from our state so it matches the teleprompter exactly
       const parsedLines = lyricLines.filter(l => !l.isHeader);
       const linesToRead = parsedLines
         .slice(0, 16)
@@ -166,7 +174,7 @@ export default function Room04_Booth() {
       const res = await fetch('/api/audio/generate-guide', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lyrics: linesToRead, bpm: audioData?.bpm || 120 })
+        body: JSON.stringify({ lyrics: linesToRead, bpm: preciseBpm }) // Injecting exact decimal BPM here
       });
 
       if (!res.ok) throw new Error("Groq API disconnected or rate limited.");
@@ -175,7 +183,6 @@ export default function Room04_Booth() {
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
 
-      // Calculate the EXACT mathematical offset using the actual start time
       const firstLineStartTime = parsedLines.length > 0 ? parsedLines[0].startTime : 0;
       const exactOffsetBars = firstLineStartTime / secondsPerBar;
 
@@ -185,7 +192,7 @@ export default function Room04_Booth() {
         url: url, 
         blob: blob, 
         volume: 0.3, 
-        offsetBars: exactOffsetBars // Decimal offset ensures millisecond-perfect placement
+        offsetBars: exactOffsetBars 
       });
       
       if (addToast) addToast("Neural Flow Guide injected perfectly on beat.", "success");
@@ -488,6 +495,11 @@ export default function Room04_Booth() {
       wavesurferRef.current.on('error', (err) => console.warn("WaveSurfer Soft-fail:", err));
       wavesurferRef.current.load(audioData.url).catch(e => console.warn("WaveSurfer Load Aborted:", e.message));
       
+      wavesurferRef.current.on('ready', () => {
+        const dur = wavesurferRef.current?.getDuration() || 0;
+        if (dur > 0) setTrackDuration(dur);
+      });
+
       let lastRender = 0;
       wavesurferRef.current.on('audioprocess', (time) => {
         if (time - lastRender > 0.1) { setCurrentTime(time); lastRender = time; }
@@ -497,21 +509,17 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- SURGICAL FIX: The Master Text Sanitizer & Math Parser ---
   useEffect(() => {
     if (!generatedLyrics) return;
     const lines = generatedLyrics.split('\n');
     let currentBlockIndex = -1; 
     let barOffsetWithinBlock = 0; 
     
-    // Step 1 & 2: Sanitize before we map to prevent empty/rogue lines
     const parsed = lines.map(l => l.trim()).filter(l => {
       if (l.startsWith('[')) return true;
-      // Strip timestamps to see if there is actual text left on this line
       const cleanText = l.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
       return cleanText.length > 0;
     }).map((rawText) => {
-      // It's a header
       if (rawText.startsWith('[')) { 
         currentBlockIndex++; 
         barOffsetWithinBlock = 0; 
@@ -522,7 +530,6 @@ export default function Room04_Booth() {
         return { text: rawText, startTime: blockStartBar * secondsPerBar, isHeader: true, timestamp: "" }; 
       }
       
-      // Step 3: It's a lyric line. Strip the timestamp for clean display and TTS.
       const cleanText = rawText.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
 
       let blockStartBar = 0;
@@ -614,7 +621,8 @@ export default function Room04_Booth() {
                Neural Guide
              </button>
            </div>
-           {audioData?.bpm && <span className="text-[10px] text-[#E60000] font-mono absolute right-8 top-3">{Math.round(audioData.bpm)} BPM</span>}
+           {/* UI updated to show the exact decimal Math */}
+           {audioData?.bpm && <span className="text-[10px] text-[#E60000] font-mono absolute right-8 top-3">{preciseBpm.toFixed(3)} BPM</span>}
         </div>
         
         <div 
