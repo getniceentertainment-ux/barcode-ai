@@ -45,19 +45,33 @@ export default function Room10_Social() {
 
   const isFreeLoader = userSession?.tier === "Free Loader";
 
-  useEffect(() => {
-    fetchLeaderboard();
+useEffect(() => {
+    fetchLeaderboard(); // Initial load
     
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('escrow_success') === 'true') {
+      
+      // Look for the exact flags we set in the Stripe Checkout Route
+      if (params.get('escrow_funded') === 'true') {
+        const targetNode = params.get('target_node');
+        const interaction = params.get('interaction') || 'contract';
+        
+        // 1. Wipe the URL clean instantly
         window.history.replaceState({}, document.title, window.location.pathname);
+        
+        // 2. Format the Node ID and fire the dynamic success toast
+        const shortNode = targetNode ? targetNode.substring(0, 8).toUpperCase() : 'UNKNOWN';
+        if (addToast) addToast(`${interaction.toUpperCase()} Escrow Secured for NODE_${shortNode}`, "success");
+
+        // 3. Force the UI to show the beautiful "Funds Secured" success screen
         setEscrowStatus("locked");
-        if (addToast) addToast("Escrow Funds Captured & Secured in Ledger.", "success");
+        setActiveTab("brokerage");
+
+        // 4. Silently refresh the network data to show updated stats
+        fetchLeaderboard();
       }
     }
   }, []);
-
   useEffect(() => {
     const fetchHistory = async () => {
       const { data, error } = await supabase
