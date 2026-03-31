@@ -26,8 +26,8 @@ export async function POST(req: Request) {
     console.log(`[ESCROW API] Creating Session for ${buyerId} -> ${targetNodeId} ($${amount})`);
 
     // 3. Create Real Stripe Session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+const sessionConfig: Stripe.Checkout.SessionCreateParams = {      
+payment_method_types: ['card'],
       line_items: [
         {
           price_data: {
@@ -43,17 +43,15 @@ export async function POST(req: Request) {
       ],
       mode: 'payment',
       // Success URL includes the flag that Room 10 looks for to show the "Funds Secured" checkmark
-      success_url: `${siteUrl}/?escrow_funded=true&target_node=${encodeURIComponent(targetNodeId)}&interaction=${encodeURIComponent(type)}`,
-      cancel_url: `${siteUrl}`,
-      
-      // CRITICAL: Metadata used by the ACTUAL Webhook to fulfill the order
+success_url: `${siteUrl}/studio?escrow_funded=true&target_node=${encodeURIComponent(targetNodeId)}&interaction=${encodeURIComponent(interactionType)}`,
+      cancel_url: `${siteUrl}/studio`,
       metadata: { 
-        buyerId: buyerId, 
-        targetNodeId: targetNodeId,
-        interactionType: type,
+        buyerId: userId, 
+        targetNodeId: targetNodeId, 
+        interactionType: interactionType, 
         type: 'escrow_contract' 
       }
-    });
+    };
 
     console.log(`[ESCROW API] Session Created: ${session.id}`);
     return NextResponse.json({ url: session.url });
