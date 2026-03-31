@@ -158,7 +158,7 @@ const handleGenerateGuide = async () => {
       const linesToRead = generatedLyrics
         .split('\n')
         .filter(l => l.trim().length > 0 && !l.startsWith('['))
-        .slice(0, 16)
+        .slice(0, 80)
         .map(l => l.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim()) // <-- The Sanitizer Shield
         .join(' ');
 
