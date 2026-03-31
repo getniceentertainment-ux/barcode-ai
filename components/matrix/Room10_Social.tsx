@@ -5,12 +5,12 @@ import {
   Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, 
   DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, 
   Terminal, Loader2, Star, BadgeCheck, TrendingUp, Heart, Info, X 
-} from "lucide-react"; // ADDED 'X' HERE
+} from "lucide-react";
 import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 import ChatRules from "./ChatRules";
-import CreditHustleWidget from "./CreditHustleWidget"; // NEW IMPORT
+import CreditHustleWidget from "./CreditHustleWidget";
 
 interface RosterNode {
   id: string;
@@ -45,33 +45,51 @@ export default function Room10_Social() {
 
   const isFreeLoader = userSession?.tier === "Free Loader";
 
-useEffect(() => {
+  // --- SURGICAL FIX: URL INTERCEPTOR & AUTO-FETCH TO RESTORE STATE ---
+  useEffect(() => {
     fetchLeaderboard(); // Initial load
     
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      
-      // Look for the exact flags we set in the Stripe Checkout Route
-      if (params.get('escrow_funded') === 'true') {
-        const targetNode = params.get('target_node');
-        const interaction = params.get('interaction') || 'contract';
+    const handleStripeReturn = async () => {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
         
-        // 1. Wipe the URL clean instantly
-        window.history.replaceState({}, document.title, window.location.pathname);
-        
-        // 2. Format the Node ID and fire the dynamic success toast
-        const shortNode = targetNode ? targetNode.substring(0, 8).toUpperCase() : 'UNKNOWN';
-        if (addToast) addToast(`${interaction.toUpperCase()} Escrow Secured for NODE_${shortNode}`, "success");
+        if (params.get('escrow_funded') === 'true') {
+          const targetNodeId = params.get('target_node');
+          const interaction = params.get('interaction') || 'contract';
+          
+          // 1. Wipe the URL clean instantly
+          window.history.replaceState({}, document.title, window.location.pathname);
+          
+          // 2. Fetch the target artist so the UI bypasses "Select a Node"
+          if (targetNodeId) {
+            const { data: returningNode } = await supabase
+              .from('profiles')
+              .select('id, stage_name, avatar_url, mogul_score, total_referrals, tier, total_fans, getnice_signed')
+              .eq('id', targetNodeId)
+              .single();
+              
+            if (returningNode) {
+              setSelectedNode(returningNode);
+            }
+          }
 
-        // 3. Force the UI to show the beautiful "Funds Secured" success screen
-        setEscrowStatus("locked");
-        setActiveTab("brokerage");
+          // 3. Format the Node ID and fire the dynamic success toast
+          const shortNode = targetNodeId ? targetNodeId.substring(0, 8).toUpperCase() : 'UNKNOWN';
+          if (addToast) addToast(`${interaction.toUpperCase()} Escrow Secured for NODE_${shortNode}`, "success");
 
-        // 4. Silently refresh the network data to show updated stats
-        fetchLeaderboard();
+          // 4. Force the UI to show the beautiful "Funds Secured" success screen
+          setEscrowStatus("locked");
+          setActiveTab("brokerage");
+
+          // 5. Silently refresh the network data
+          fetchLeaderboard();
+        }
       }
-    }
+    };
+
+    handleStripeReturn();
   }, []);
+
   useEffect(() => {
     const fetchHistory = async () => {
       const { data, error } = await supabase
@@ -222,7 +240,6 @@ useEffect(() => {
             </button>
           </div>
 
-          {/* SURGICAL ADDITION: The Credit Hustle Engine */}
           <CreditHustleWidget />
 
         </div>

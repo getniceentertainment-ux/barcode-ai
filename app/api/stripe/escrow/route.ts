@@ -26,8 +26,8 @@ export async function POST(req: Request) {
     console.log(`[ESCROW API] Creating Session for ${buyerId} -> ${targetNodeId} ($${amount})`);
 
     // 3. Create Real Stripe Session
-const sessionConfig: Stripe.Checkout.SessionCreateParams = {      
-payment_method_types: ['card'],
+    const sessionConfig: Stripe.Checkout.SessionCreateParams = {      
+      payment_method_types: ['card'],
       line_items: [
         {
           price_data: {
@@ -42,16 +42,19 @@ payment_method_types: ['card'],
         },
       ],
       mode: 'payment',
-      // Success URL includes the flag that Room 10 looks for to show the "Funds Secured" checkmark
-success_url: `${siteUrl}/studio?escrow_funded=true&target_node=${encodeURIComponent(targetNodeId)}&interaction=${encodeURIComponent(type)}`,
+      // SURGICAL FIX 1: Routing to /studio so your main controller catches it
+      success_url: `${siteUrl}/studio?escrow_funded=true&target_node=${encodeURIComponent(targetNodeId)}&interaction=${encodeURIComponent(type)}`,
       cancel_url: `${siteUrl}/studio`,
       metadata: { 
-        buyerId: userSession.id, 
-        targetNodeId: selectedNode.id, 
+        buyerId: buyerId, // SURGICAL FIX 2: Fixed undefined variable 
+        targetNodeId: targetNodeId, 
         interactionType: type, 
         type: 'escrow_contract' 
       }
     };
+
+    // SURGICAL FIX 3: Actually execute the Stripe call to create the session!
+    const session = await stripe.checkout.sessions.create(sessionConfig);
 
     console.log(`[ESCROW API] Session Created: ${session.id}`);
     return NextResponse.json({ url: session.url });
