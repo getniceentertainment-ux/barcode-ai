@@ -615,9 +615,9 @@ useEffect(() => {
                   })}
                 </span>
               </div>
+
             );
           })}
-
           {/* THE "RESUME SYNC" BUTTON */}
           {!autoScroll && (
             <div className="sticky bottom-4 w-full flex justify-center mt-8">
