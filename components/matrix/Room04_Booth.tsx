@@ -6,7 +6,6 @@ import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase"; 
 
-// SURGICAL ADDITION: Added "Guide" to the valid track types
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
 // --- BULLETPROOF AUDIO TRIMMING UTILITIES ---
@@ -113,12 +112,8 @@ export default function Room04_Booth() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  // SURGICAL ADDITION: Groq Generation State
-  const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
-  // SURGICAL ADDITION: Groq Generation State
-  const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
   
-  // SURGICAL ADDITION: Teleprompter Scroll & Sync States
+  const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [activeLineIndex, setActiveLineIndex] = useState(-1);
 
@@ -151,8 +146,7 @@ export default function Room04_Booth() {
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
-  // --- SURGICAL ADDITION: The Groq Neural Guide Generator ---
-const handleGenerateGuide = async () => {
+  const handleGenerateGuide = async () => {
     if (!generatedLyrics) {
       if (addToast) addToast("No lyrics found in the Teleprompter to read.", "error");
       return;
@@ -179,8 +173,6 @@ const handleGenerateGuide = async () => {
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
 
-      // --- NEW: DYNAMIC OFFSET MATH ---
-      // Find the start time of the very first actual lyric line to align the guide track
       const parsedLines = lyricLines.filter(l => !l.isHeader);
       const firstLineStartTime = parsedLines.length > 0 ? parsedLines[0].startTime : 0;
       const offsetBarsCalculated = Math.floor(firstLineStartTime / secondsPerBar);
@@ -191,7 +183,7 @@ const handleGenerateGuide = async () => {
         url: url, 
         blob: blob, 
         volume: 0.3, 
-        offsetBars: offsetBarsCalculated // <-- Dynamically drops exactly where the lyrics start!
+        offsetBars: offsetBarsCalculated
       });
       
       if (addToast) addToast("Neural Flow Guide injected on beat.", "success");
@@ -534,13 +526,12 @@ const handleGenerateGuide = async () => {
     return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
   }, [trimmingStem]);
 
-useEffect(() => {
+  useEffect(() => {
     const currentLineIndex = lyricLines.findIndex((l, i) => {
       const nextLine = lyricLines[i + 1];
       return currentTime >= l.startTime && (!nextLine || currentTime < nextLine.startTime);
     });
 
-    // Only update and scroll if the line changed AND the user hasn't manually scrolled away
     if (currentLineIndex !== activeLineIndex) {
       setActiveLineIndex(currentLineIndex);
       
@@ -570,7 +561,6 @@ useEffect(() => {
            <div className="flex items-center gap-4">
              <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
              
-             {/* SURGICAL ADDITION: The Neural Guide Generator Button */}
              <button 
                onClick={handleGenerateGuide}
                disabled={isGeneratingGuide || !generatedLyrics}
@@ -582,10 +572,11 @@ useEffect(() => {
            </div>
            {audioData?.bpm && <span className="text-[10px] text-[#E60000] font-mono absolute right-8 top-3">{Math.round(audioData.bpm)} BPM</span>}
         </div>
-<div 
+        
+        <div 
           ref={teleprompterRef} 
-          onWheel={() => setAutoScroll(false)} // Breaks lock if user scrolls mouse
-          onTouchMove={() => setAutoScroll(false)} // Breaks lock if user swipes screen
+          onWheel={() => setAutoScroll(false)} 
+          onTouchMove={() => setAutoScroll(false)} 
           className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative"
         >
           {lyricLines.map((line, i) => {
@@ -597,11 +588,8 @@ useEffect(() => {
                 
                 <span className="flex-1">
                   {line.isHeader ? line.text : line.text.split(' ').map((word, wIdx, wArr) => {
-                    // KARAOKE MATH: Distribute the words evenly across the bar's duration
                     const timePerWord = secondsPerBar / Math.max(1, wArr.length);
                     const wordStartTime = line.startTime + (wIdx * timePerWord);
-                    
-                    // Word lights up if the playhead passes it while the line is active
                     const isWordActive = isActive && currentTime >= wordStartTime;
 
                     return (
@@ -615,16 +603,14 @@ useEffect(() => {
                   })}
                 </span>
               </div>
-
             );
           })}
-          {/* THE "RESUME SYNC" BUTTON */}
+          
           {!autoScroll && (
             <div className="sticky bottom-4 w-full flex justify-center mt-8">
               <button 
                 onClick={() => {
                   setAutoScroll(true);
-                  // Force a quick scroll back to the active line
                   if (activeLineIndex !== -1 && teleprompterRef.current) {
                     const activeEl = teleprompterRef.current.children[activeLineIndex] as HTMLElement;
                     if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
@@ -637,6 +623,7 @@ useEffect(() => {
             </div>
           )}
         </div>
+      </div>
 
       {/* RIGHT PANEL: MIXER & RECORDER */}
       <div className="flex-1 flex flex-col relative bg-black">
@@ -670,7 +657,6 @@ useEffect(() => {
 
         <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
           <div className="flex border-b border-[#111] mb-6">
-            {/* SURGICAL ADDITION: Added "Guide" to the Track Type Selection Tabs */}
             {(["Lead", "Adlib", "Double", "Guide"] as TrackType[]).map(t => (
               <button key={t} onClick={() => setActiveTrack(t)} className={`flex-1 py-3 font-oswald text-[10px] uppercase tracking-[0.2em] font-bold transition-all ${activeTrack === t ? 'bg-[#E60000] text-white' : 'text-[#444] hover:text-white hover:bg-[#0a0a0a]'}`}>{t} Tracking</button>
             ))}
@@ -684,7 +670,6 @@ useEffect(() => {
               <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
                 <div className="flex justify-between items-center mb-3">
                   <div className="flex items-center gap-4">
-                    {/* SURGICAL ADDITION: Added "Guide" to the dropdown options */}
                     <select value={s.type || "Lead"} onChange={(e) => handleUpdateTakeType(s.id, e.target.value)} className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white">
                       <option value="Lead">Lead</option><option value="Adlib">Adlib</option><option value="Double">Double</option><option value="Guide">Guide</option>
                     </select>
