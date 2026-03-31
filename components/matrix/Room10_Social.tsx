@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { 
   Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, 
   DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, 
-  Terminal, Loader2, Star, BadgeCheck, TrendingUp, Heart, Info, X, Clock
+  Terminal, Loader2, Star, BadgeCheck, TrendingUp, Heart, Info, X, Clock, Inbox, FileAudio
 } from "lucide-react";
 import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
@@ -26,7 +26,8 @@ interface RosterNode {
 export default function Room10_Social() {
   const { userSession, addToast } = useMatrixStore();
   
-  const [activeTab, setActiveTab] = useState<"brokerage" | "chat">("brokerage");
+  // SURGICAL FIX: Added "inbox" as a 3rd tab state
+  const [activeTab, setActiveTab] = useState<"brokerage" | "chat" | "inbox">("brokerage");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortMode, setSortMode] = useState<"score" | "fans">("score");
   const [roster, setRoster] = useState<RosterNode[]>([]);
@@ -36,8 +37,8 @@ export default function Room10_Social() {
   const [interactionType, setInteractionType] = useState<"feature" | "booking">("feature");
   const [escrowStatus, setEscrowStatus] = useState<"idle" | "processing" | "locked">("idle");
   
-  // SURGICAL FIX: Store the user's active contracts to prevent double-booking
   const [activeContracts, setActiveContracts] = useState<any[]>([]);
+  const [isProcessingAction, setIsProcessingAction] = useState<string | null>(null); // For Accept/Decline buttons
 
   const [messages, setMessages] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -48,21 +49,27 @@ export default function Room10_Social() {
 
   const isFreeLoader = userSession?.tier === "Free Loader";
 
-  // --- ESCROW GOVERNANCE DATA FETCH ---
+  // --- MODIFIED ESCROW GOVERNANCE DATA FETCH ---
   const fetchActiveContracts = async () => {
     if (!userSession?.id) return;
+    
+    // Fetch ALL contracts related to the user (both buying and selling) so we can populate the Inbox too!
     const { data, error } = await supabase
       .from('escrow_contracts')
-      .select('*')
-      .eq('user_id', userSession.id) // Corrected from buyer_id
-      .in('status', ['funded', 'accepted']); // Only block if actively pending
+      .select(`
+        *,
+        buyer:profiles!escrow_contracts_user_id_fkey(stage_name, avatar_url),
+        artist:profiles!escrow_contracts_artist_id_fkey(stage_name, avatar_url)
+      `)
+      .or(`user_id.eq.${userSession.id},artist_id.eq.${userSession.id}`)
+      .order('created_at', { ascending: false });
       
     if (data) setActiveContracts(data);
   };
 
   useEffect(() => {
     fetchLeaderboard();
-    fetchActiveContracts(); // Load governance data on mount
+    fetchActiveContracts(); 
     
     const handleStripeReturn = async () => {
       if (typeof window !== 'undefined') {
@@ -74,21 +81,16 @@ export default function Room10_Social() {
           
           window.history.replaceState({}, document.title, window.location.pathname);
           
-if (targetNodeId) {
-            try {
-              const { data: returningNode, error: nodeErr } = await supabase
-                .from('profiles')
-                .select('id, stage_name, avatar_url, mogul_score, total_referrals, tier, total_fans, getnice_signed')
-                .eq('id', targetNodeId)
-                .single();
-                
-              if (nodeErr) console.error("Supabase Target Fetch Error:", nodeErr.message);
-                
-              if (returningNode) {
-                setSelectedNode(returningNode);
-              }
-            } catch (err: any) {
-              console.error("Critical Fetch Error:", err.message);
+          if (targetNodeId) {
+            const { data: returningNode } = await supabase
+              .from('profiles')
+              .select('id, stage_name, avatar_url, mogul_score, total_referrals, tier, total_fans, getnice_signed')
+              .eq('id', targetNodeId)
+              .single();
+              
+            if (returningNode) {
+              setSelectedNode(returningNode);
+              setInteractionType(interaction as "feature" | "booking");
             }
           }
 
@@ -98,7 +100,6 @@ if (targetNodeId) {
           setEscrowStatus("locked");
           setActiveTab("brokerage");
 
-          // Refresh data to reflect new purchase globally
           fetchLeaderboard();
           fetchActiveContracts();
         }
@@ -211,6 +212,42 @@ if (targetNodeId) {
     } catch (err) { console.error(err); } finally { setIsSending(false); }
   };
 
+  // --- SURGICAL FIX: The Accept/Decline Function for the Inbox ---
+  const handleContractAction = async (contractId: string, action: 'accept' | 'decline') => {
+    if (!userSession?.id) return;
+    setIsProcessingAction(contractId);
+
+    try {
+      const res = await fetch('/api/escrow/respond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contractId,
+          artistId: userSession.id,
+          action
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        if (addToast) {
+          addToast(
+            action === 'accept' ? "Contract Locked. Awaiting your delivery." : "Contract Declined. Funds refunded to buyer.", 
+            action === 'accept' ? "success" : "info"
+          );
+        }
+        fetchActiveContracts(); // Refresh the ledger immediately
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (err: any) {
+      if (addToast) addToast(`Action Failed: ${err.message}`, "error");
+    } finally {
+      setIsProcessingAction(null);
+    }
+  };
+
   const formatTime = (ts: string) => {
     if (!ts) return "";
     const date = new Date(ts);
@@ -226,8 +263,11 @@ if (targetNodeId) {
 
   const filteredRoster = sortedRoster.filter(node => (node.stage_name || node.id).toLowerCase().includes(searchQuery.toLowerCase()));
 
-  // SURGICAL FIX: Check if an active contract exists for the selected node AND the selected interaction type
-  const existingContract = selectedNode ? activeContracts.find(c => c.artist_id === selectedNode.id && c.interaction_type === interactionType) : null;
+  // Ensure Governance guard only looks at active contracts where the user is the BUYER
+  const existingContract = selectedNode ? activeContracts.find(c => c.user_id === userSession?.id && c.artist_id === selectedNode.id && c.interaction_type === interactionType && (c.status === 'funded' || c.status === 'accepted')) : null;
+  
+  // Filter for the Inbox Tab (Contracts where the user is the ARTIST)
+  const inboundContracts = activeContracts.filter(c => c.artist_id === userSession?.id);
 
   return (
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 overflow-hidden border border-[#222]">
@@ -310,8 +350,16 @@ if (targetNodeId) {
 
       <div className="flex-1 bg-[#0a0a0a] flex flex-col h-full overflow-hidden relative">
         <div className="flex border-b border-[#222] bg-black shrink-0">
-          <button onClick={() => setActiveTab("brokerage")} className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'brokerage' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}><Handshake size={16} /> Brokerage</button>
-          <button onClick={() => setActiveTab("chat")} className={`flex-1 py-4 font-oswald text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'chat' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}><MessageSquare size={16} /> Comms</button>
+          <button onClick={() => setActiveTab("brokerage")} className={`flex-1 py-4 font-oswald text-[10px] md:text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'brokerage' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}><Handshake size={14} /> Brokerage</button>
+          <button onClick={() => setActiveTab("inbox")} className={`flex-1 py-4 font-oswald text-[10px] md:text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 relative ${activeTab === 'inbox' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}>
+            <Inbox size={14} /> Inbox
+            {inboundContracts.filter(c => c.status === 'funded').length > 0 && (
+              <span className="absolute top-2 right-4 bg-[#E60000] text-white text-[8px] w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
+                {inboundContracts.filter(c => c.status === 'funded').length}
+              </span>
+            )}
+          </button>
+          <button onClick={() => setActiveTab("chat")} className={`flex-1 py-4 font-oswald text-[10px] md:text-sm uppercase tracking-widest font-bold border-b-2 transition-colors flex justify-center items-center gap-2 ${activeTab === 'chat' ? 'border-[#E60000] text-[#E60000]' : 'border-transparent text-[#555] hover:text-white'}`}><MessageSquare size={14} /> Comms</button>
         </div>
 
         {activeTab === "brokerage" && (
@@ -346,7 +394,7 @@ if (targetNodeId) {
                 </div>
 
                 <div className="flex-1 flex flex-col">
-                  {/* GOVERNANCE GUARD: Blocks Double-Booking */}
+                  {/* GOVERNANCE GUARD */}
                   {escrowStatus === "idle" && existingContract ? (
                     <div className="bg-[#110000] border border-yellow-600/50 p-8 flex flex-col items-center text-center">
                       <Clock size={48} className="text-yellow-500 mb-4 animate-pulse" />
@@ -382,25 +430,85 @@ if (targetNodeId) {
           </div>
         )}
 
+        {/* --- SURGICAL FIX: THE INBOX TAB (ESCROW RESPONSES) --- */}
+        {activeTab === "inbox" && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-[#020202] animate-in slide-in-from-left-8">
+            <h3 className="font-oswald text-xl uppercase tracking-widest text-[#E60000] mb-6 flex items-center gap-2">
+              <Inbox size={20} /> Contract Inbox
+            </h3>
+            
+            {inboundContracts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 opacity-30 text-center">
+                <FileAudio size={48} className="mb-4 text-[#444]" />
+                <p className="font-mono text-xs uppercase tracking-widest">No inbound contracts pending.</p>
+              </div>
+            ) : (
+              inboundContracts.map((contract) => (
+                <div key={contract.id} className="bg-black border border-[#222] p-6 hover:border-[#333] transition-all relative overflow-hidden group">
+                  <div className={`absolute top-0 left-0 w-1 h-full ${contract.status === 'funded' ? 'bg-yellow-500' : contract.status === 'accepted' ? 'bg-green-500' : 'bg-[#444]'}`} />
+
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pl-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className={`text-[9px] font-mono uppercase tracking-widest px-2 py-1 border ${
+                          contract.status === 'funded' ? 'border-yellow-500/50 text-yellow-500 bg-yellow-500/10' :
+                          contract.status === 'accepted' ? 'border-green-500/50 text-green-500 bg-green-500/10' : 'border-[#444] text-[#666] bg-[#111]'
+                        }`}>
+                          {contract.status === 'funded' ? 'PENDING RESPONSE' : contract.status === 'accepted' ? 'ACTIVE / IN PROGRESS' : 'DECLINED & REFUNDED'}
+                        </span>
+                        <span className="text-[9px] font-mono text-[#555] uppercase">{new Date(contract.created_at).toLocaleDateString()}</span>
+                      </div>
+
+                      <h3 className="font-oswald text-2xl uppercase tracking-widest text-white mb-1">{contract.interaction_type} Escrow</h3>
+                      <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest">
+                        From: <span className="text-white font-bold">{contract.buyer?.stage_name || `NODE_${contract.user_id.substring(0,6)}`}</span>
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-4 min-w-[200px]">
+                      <div className="text-right">
+                        <span className="text-[9px] font-mono text-[#E60000] uppercase block mb-1">Secured Funds</span>
+                        <div className="text-3xl font-oswald font-bold text-white flex items-center justify-end gap-1">
+                          <DollarSign size={20} className="text-[#555]" />{contract.amount.toFixed(2)}
+                        </div>
+                      </div>
+
+                      {contract.status === 'funded' && (
+                        <div className="flex gap-2 w-full">
+                          <button 
+                            onClick={() => handleContractAction(contract.id, 'decline')}
+                            disabled={isProcessingAction !== null}
+                            className="flex-1 py-2 border border-[#333] text-[#888] hover:text-white hover:bg-[#111] text-[9px] font-mono uppercase font-bold transition-all disabled:opacity-50"
+                          >
+                            {isProcessingAction === contract.id ? <Loader2 size={12} className="animate-spin mx-auto" /> : 'Decline'}
+                          </button>
+                          <button 
+                            onClick={() => handleContractAction(contract.id, 'accept')}
+                            disabled={isProcessingAction !== null}
+                            className="flex-1 py-2 bg-[#E60000] text-white hover:bg-red-700 text-[9px] font-mono uppercase font-bold transition-all shadow-[0_0_10px_rgba(230,0,0,0.3)] disabled:opacity-50"
+                          >
+                            {isProcessingAction === contract.id ? <Loader2 size={12} className="animate-spin mx-auto" /> : 'Accept'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
         {activeTab === "chat" && (
           <div className="flex-1 flex flex-col animate-in slide-in-from-left-8 h-full bg-[#020202]">
             <div className="p-4 border-b border-[#222] bg-black">
               {showRules ? (
                 <div className="relative">
                   <ChatRules />
-                  <button 
-                    onClick={() => setShowRules(false)}
-                    className="absolute top-2 right-2 text-[#444] hover:text-white transition-colors"
-                    title="Hide Rules"
-                  >
-                    <X size={16} />
-                  </button>
+                  <button onClick={() => setShowRules(false)} className="absolute top-2 right-2 text-[#444] hover:text-white transition-colors" title="Hide Rules"><X size={16} /></button>
                 </div>
               ) : (
-                <button 
-                  onClick={() => setShowRules(true)}
-                  className="w-full py-2 bg-[#0a0000] border border-[#E60000]/20 flex items-center justify-center gap-2 text-[9px] font-mono text-[#888] hover:text-[#E60000] transition-colors uppercase tracking-widest"
-                >
+                <button onClick={() => setShowRules(true)} className="w-full py-2 bg-[#0a0000] border border-[#E60000]/20 flex items-center justify-center gap-2 text-[9px] font-mono text-[#888] hover:text-[#E60000] transition-colors uppercase tracking-widest">
                   <Info size={12} /> View System Directives
                 </button>
               )}
@@ -413,18 +521,12 @@ if (targetNodeId) {
             <div className="p-4 bg-black border-t border-[#222] shrink-0">
               <form onSubmit={handleSendMessage} className="relative flex gap-2">
                 <input 
-                  type="text" 
-                  value={chatInput} 
-                  onChange={(e) => setChatInput(e.target.value)} 
+                  type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} 
                   placeholder={isFreeLoader ? "Chat locked. Upgrade to an Artist Node." : "Broadcast to syndicate..."} 
                   disabled={!isConnected || isFreeLoader} 
                   className="flex-1 bg-[#111] border border-[#333] px-4 py-4 text-xs text-white outline-none focus:border-[#E60000] font-mono transition-colors disabled:opacity-50" 
                 />
-                <button 
-                  type="submit" 
-                  disabled={!chatInput.trim() || isSending || !isConnected || isFreeLoader} 
-                  className="bg-[#E60000] text-white px-6 transition-colors flex items-center justify-center disabled:opacity-50 disabled:bg-[#333]"
-                >
+                <button type="submit" disabled={!chatInput.trim() || isSending || !isConnected || isFreeLoader} className="bg-[#E60000] text-white px-6 transition-colors flex items-center justify-center disabled:opacity-50 disabled:bg-[#333]">
                   {isSending ? <Loader2 size={18} className="animate-spin" /> : (isFreeLoader ? <Lock size={18} /> : <Send size={18} />)}
                 </button>
               </form>
