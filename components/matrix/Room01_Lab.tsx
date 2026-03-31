@@ -89,17 +89,42 @@ export default function Room01_Lab() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
+      
       if (params.get('beat_purchased') === 'true') {
         const beatUrl = params.get('beat_url');
-        const beatName = params.get('beat_name');
-        if (beatUrl && beatName) {
+        let beatName = params.get('beat_name');
+        
+        if (beatUrl) {
+          // --- SUPABASE URL EXTRACTOR ---
+          // Since your test link didn't have the name, this slices it perfectly from the end of the .mp3 URL
+          if (!beatName) {
+            try {
+              const urlParts = beatUrl.split('/');
+              beatName = decodeURIComponent(urlParts[urlParts.length - 1].split('?')[0]);
+            } catch (err) {
+              beatName = "GetNice_Marketplace_Beat.mp3";
+            }
+          }
+
+          // 1. Clean the URL instantly so it doesn't double-fire if the user refreshes
           window.history.replaceState({}, document.title, window.location.pathname);
+          
+          // 2. Visually check the disclaimer box for the user
           setIsDisclaimerAccepted(true); 
-          handlePurchasedBeatDSP(beatUrl, beatName);
+          
+          if (addToast) addToast(`License Acquired: ${beatName}. Booting DSP...`, "info");
+          
+          // 3. SURGICAL FIX: The Delay-Fire 
+          // We wait exactly 500ms to guarantee React has checked the box BEFORE the function runs!
+          setTimeout(() => {
+            if (handlePurchasedBeatDSP) {
+               handlePurchasedBeatDSP(beatUrl, beatName);
+            }
+          }, 500);
         }
       }
     }
-  }, [userSession]);
+  }, []);
 
   // --- SURGICAL FIXER: The Hydration Catcher ---
   // Listens for the audioData to arrive from the hard drive after a refresh
