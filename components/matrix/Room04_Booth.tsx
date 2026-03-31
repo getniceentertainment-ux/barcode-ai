@@ -115,7 +115,13 @@ export default function Room04_Booth() {
   const [isUploading, setIsUploading] = useState(false);
   // SURGICAL ADDITION: Groq Generation State
   const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
+  // SURGICAL ADDITION: Groq Generation State
+  const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
   
+  // SURGICAL ADDITION: Teleprompter Scroll & Sync States
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [activeLineIndex, setActiveLineIndex] = useState(-1);
+
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean, timestamp?: string}[]>([]);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
@@ -154,12 +160,11 @@ const handleGenerateGuide = async () => {
     
     setIsGeneratingGuide(true);
     try {
-      // SURGICAL FIX: Strip timestamps like (0:17) or 0:17 before sending to TTS
       const linesToRead = generatedLyrics
         .split('\n')
         .filter(l => l.trim().length > 0 && !l.startsWith('['))
-        .slice(0, 32)
-        .map(l => l.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim()) // <-- The Sanitizer Shield
+        .slice(0, 16)
+        .map(l => l.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim())
         .join(' ');
 
       const res = await fetch('/api/audio/generate-guide', {
@@ -168,24 +173,28 @@ const handleGenerateGuide = async () => {
         body: JSON.stringify({ lyrics: linesToRead, bpm: audioData?.bpm || 120 })
       });
 
-      if (!res.ok) {
-        throw new Error("Groq API disconnected or rate limited.");
-      }
+      if (!res.ok) throw new Error("Groq API disconnected or rate limited.");
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
+
+      // --- NEW: DYNAMIC OFFSET MATH ---
+      // Find the start time of the very first actual lyric line to align the guide track
+      const parsedLines = lyricLines.filter(l => !l.isHeader);
+      const firstLineStartTime = parsedLines.length > 0 ? parsedLines[0].startTime : 0;
+      const offsetBarsCalculated = Math.floor(firstLineStartTime / secondsPerBar);
 
       addVocalStem({ 
         id: takeId, 
         type: "Guide" as TrackType, 
         url: url, 
         blob: blob, 
-        volume: 0.3, // Set default low so it acts as a ghost reference track
-        offsetBars: 0 
+        volume: 0.3, 
+        offsetBars: offsetBarsCalculated // <-- Dynamically drops exactly where the lyrics start!
       });
       
-      if (addToast) addToast("Neural Flow Guide injected into timeline.", "success");
+      if (addToast) addToast("Neural Flow Guide injected on beat.", "success");
     } catch (err: any) {
       console.error(err);
       if (addToast) addToast("Guide Error: " + err.message, "error");
@@ -525,16 +534,22 @@ const handleGenerateGuide = async () => {
     return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
   }, [trimmingStem]);
 
-  useEffect(() => {
+useEffect(() => {
     const currentLineIndex = lyricLines.findIndex((l, i) => {
       const nextLine = lyricLines[i + 1];
       return currentTime >= l.startTime && (!nextLine || currentTime < nextLine.startTime);
     });
-    if (currentLineIndex !== -1 && teleprompterRef.current) {
-      const activeEl = teleprompterRef.current.children[currentLineIndex] as HTMLElement;
-      if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
+
+    // Only update and scroll if the line changed AND the user hasn't manually scrolled away
+    if (currentLineIndex !== activeLineIndex) {
+      setActiveLineIndex(currentLineIndex);
+      
+      if (autoScroll && currentLineIndex !== -1 && teleprompterRef.current) {
+        const activeEl = teleprompterRef.current.children[currentLineIndex] as HTMLElement;
+        if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
+      }
     }
-  }, [currentTime, lyricLines]);
+  }, [currentTime, lyricLines, autoScroll, activeLineIndex]);
 
   if (!audioData) {
     return (
@@ -567,18 +582,61 @@ const handleGenerateGuide = async () => {
            </div>
            {audioData?.bpm && <span className="text-[10px] text-[#E60000] font-mono absolute right-8 top-3">{Math.round(audioData.bpm)} BPM</span>}
         </div>
-        <div ref={teleprompterRef} className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose">
+<div 
+          ref={teleprompterRef} 
+          onWheel={() => setAutoScroll(false)} // Breaks lock if user scrolls mouse
+          onTouchMove={() => setAutoScroll(false)} // Breaks lock if user swipes screen
+          className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative"
+        >
           {lyricLines.map((line, i) => {
-            const isActive = !line.isHeader && isPlaying && currentTime >= line.startTime && currentTime < (line.startTime + secondsPerBar);
+            const isActive = !line.isHeader && i === activeLineIndex;
+            
             return (
-              <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActive ? 'text-white bg-[#E60000]/20 py-1 px-3 rounded' : 'py-1 px-3'}`}>
+              <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActive ? 'bg-[#E60000]/10 py-1 px-3 rounded border-l-2 border-[#E60000]' : 'py-1 px-3 border-l-2 border-transparent'}`}>
                 {!line.isHeader && line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
-                <span className="flex-1">{line.text}</span>
+                
+                <span className="flex-1">
+                  {line.isHeader ? line.text : line.text.split(' ').map((word, wIdx, wArr) => {
+                    // KARAOKE MATH: Distribute the words evenly across the bar's duration
+                    const timePerWord = secondsPerBar / Math.max(1, wArr.length);
+                    const wordStartTime = line.startTime + (wIdx * timePerWord);
+                    
+                    // Word lights up if the playhead passes it while the line is active
+                    const isWordActive = isActive && currentTime >= wordStartTime;
+
+                    return (
+                      <span 
+                        key={wIdx} 
+                        className={`transition-colors duration-200 ${isWordActive ? "text-white font-bold drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" : (isActive ? "text-[#888]" : "text-inherit")}`}
+                      >
+                        {word}{' '}
+                      </span>
+                    );
+                  })}
+                </span>
               </div>
             );
           })}
+
+          {/* THE "RESUME SYNC" BUTTON */}
+          {!autoScroll && (
+            <div className="sticky bottom-4 w-full flex justify-center mt-8">
+              <button 
+                onClick={() => {
+                  setAutoScroll(true);
+                  // Force a quick scroll back to the active line
+                  if (activeLineIndex !== -1 && teleprompterRef.current) {
+                    const activeEl = teleprompterRef.current.children[activeLineIndex] as HTMLElement;
+                    if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
+                  }
+                }} 
+                className="bg-[#E60000] text-white text-[9px] px-4 py-2 font-mono uppercase tracking-widest shadow-[0_0_15px_rgba(230,0,0,0.5)] rounded-full flex items-center gap-2 transition-all hover:bg-red-700 hover:scale-105"
+              >
+                <Activity size={12} className="animate-pulse" /> Resume Sync
+              </button>
+            </div>
+          )}
         </div>
-      </div>
 
       {/* RIGHT PANEL: MIXER & RECORDER */}
       <div className="flex-1 flex flex-col relative bg-black">
