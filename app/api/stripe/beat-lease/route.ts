@@ -45,8 +45,8 @@ export async function POST(req: Request) {
       }],
       mode: 'payment',
       // SURGICAL FIX: Route directly to /studio so the URL params survive the redirect!
-      success_url: `${siteUrl}/studio?beat_purchased=true&beat_url=${encodeURIComponent(beatUrl)}`,
-      cancel_url: `${siteUrl}/studio`,
+      success_url: `${siteUrl}?beat_purchased=true&beat_url=${encodeURIComponent(beatUrl)}`,
+      cancel_url: `${siteUrl}`,
       // SURGICAL FIX: Passing beat_name so the Webhook can log it properly
       metadata: { userId, type: 'beat_lease', beat_id: beatId, beat_name: beatName }
     };
