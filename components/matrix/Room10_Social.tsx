@@ -74,16 +74,21 @@ export default function Room10_Social() {
           
           window.history.replaceState({}, document.title, window.location.pathname);
           
-          if (targetNodeId) {
-            const { data: returningNode } = await supabase
-              .from('profiles')
-              .select('id, stage_name, avatar_url, mogul_score, total_referrals, tier, total_fans, getnice_signed')
-              .eq('id', targetNodeId)
-              .single();
-              
-            if (returningNode) {
-              setSelectedNode(returningNode);
-              setInteractionType(interaction as "feature" | "booking");
+if (targetNodeId) {
+            try {
+              const { data: returningNode, error: nodeErr } = await supabase
+                .from('profiles')
+                .select('id, stage_name, avatar_url, mogul_score, total_referrals, tier, total_fans, getnice_signed')
+                .eq('id', targetNodeId)
+                .single();
+                
+              if (nodeErr) console.error("Supabase Target Fetch Error:", nodeErr.message);
+                
+              if (returningNode) {
+                setSelectedNode(returningNode);
+              }
+            } catch (err: any) {
+              console.error("Critical Fetch Error:", err.message);
             }
           }
 
