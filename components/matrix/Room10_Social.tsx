@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { 
   Users, ShieldCheck, Zap, Handshake, Lock, Search, ArrowRight, Mic2, Calendar, 
   DollarSign, Disc3, RefreshCw, MessageSquare, Send, ExternalLink, User, 
-  Terminal, Loader2, Star, BadgeCheck, TrendingUp, Heart, Info, X 
+  Terminal, Loader2, Star, BadgeCheck, TrendingUp, Heart, Info, X, Clock
 } from "lucide-react";
 import Link from "next/link";
 import { useMatrixStore } from "../../store/useMatrixStore";
@@ -35,6 +35,9 @@ export default function Room10_Social() {
   
   const [interactionType, setInteractionType] = useState<"feature" | "booking">("feature");
   const [escrowStatus, setEscrowStatus] = useState<"idle" | "processing" | "locked">("idle");
+  
+  // SURGICAL FIX: Store the user's active contracts to prevent double-booking
+  const [activeContracts, setActiveContracts] = useState<any[]>([]);
 
   const [messages, setMessages] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -45,9 +48,21 @@ export default function Room10_Social() {
 
   const isFreeLoader = userSession?.tier === "Free Loader";
 
-  // --- SURGICAL FIX: URL INTERCEPTOR & AUTO-FETCH TO RESTORE STATE ---
+  // --- ESCROW GOVERNANCE DATA FETCH ---
+  const fetchActiveContracts = async () => {
+    if (!userSession?.id) return;
+    const { data, error } = await supabase
+      .from('escrow_contracts')
+      .select('*')
+      .eq('buyer_id', userSession.id)
+      .in('status', ['funded', 'accepted']); // Only block if it's actively pending/working
+      
+    if (data) setActiveContracts(data);
+  };
+
   useEffect(() => {
-    fetchLeaderboard(); // Initial load
+    fetchLeaderboard();
+    fetchActiveContracts(); // Load governance data on mount
     
     const handleStripeReturn = async () => {
       if (typeof window !== 'undefined') {
@@ -57,10 +72,8 @@ export default function Room10_Social() {
           const targetNodeId = params.get('target_node');
           const interaction = params.get('interaction') || 'contract';
           
-          // 1. Wipe the URL clean instantly
           window.history.replaceState({}, document.title, window.location.pathname);
           
-          // 2. Fetch the target artist so the UI bypasses "Select a Node"
           if (targetNodeId) {
             const { data: returningNode } = await supabase
               .from('profiles')
@@ -70,25 +83,26 @@ export default function Room10_Social() {
               
             if (returningNode) {
               setSelectedNode(returningNode);
+              // Ensure the interaction type matches what they just bought
+              setInteractionType(interaction as "feature" | "booking");
             }
           }
 
-          // 3. Format the Node ID and fire the dynamic success toast
           const shortNode = targetNodeId ? targetNodeId.substring(0, 8).toUpperCase() : 'UNKNOWN';
           if (addToast) addToast(`${interaction.toUpperCase()} Escrow Secured for NODE_${shortNode}`, "success");
 
-          // 4. Force the UI to show the beautiful "Funds Secured" success screen
           setEscrowStatus("locked");
           setActiveTab("brokerage");
 
-          // 5. Silently refresh the network data
+          // Refresh data to reflect the new purchase globally
           fetchLeaderboard();
+          fetchActiveContracts();
         }
       }
     };
 
     handleStripeReturn();
-  }, []);
+  }, [userSession?.id]);
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -208,6 +222,9 @@ export default function Room10_Social() {
 
   const filteredRoster = sortedRoster.filter(node => (node.stage_name || node.id).toLowerCase().includes(searchQuery.toLowerCase()));
 
+  // SURGICAL FIX: Check if an active contract exists for the selected node AND the selected interaction type
+  const existingContract = selectedNode ? activeContracts.find(c => c.artist_id === selectedNode.id && c.interaction_type === interactionType) : null;
+
   return (
     <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 overflow-hidden border border-[#222]">
       
@@ -310,12 +327,34 @@ export default function Room10_Social() {
                 </div>
 
                 <div className="flex gap-2 mb-8">
-                  <button onClick={() => setInteractionType("feature")} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'feature' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555] hover:text-white hover:border-white'}`}>Request Verse</button>
-                  <button onClick={() => setInteractionType("booking")} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'booking' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555] hover:text-white hover:border-white'}`}>Live Booking</button>
+                  <button 
+                    onClick={() => { setInteractionType("feature"); setEscrowStatus("idle"); }} 
+                    className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'feature' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555] hover:text-white hover:border-white'}`}
+                  >
+                    Request Verse
+                  </button>
+                  <button 
+                    onClick={() => { setInteractionType("booking"); setEscrowStatus("idle"); }} 
+                    className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all ${interactionType === 'booking' ? 'bg-[#E60000] border-[#E60000] text-white' : 'bg-black border-[#222] text-[#555] hover:text-white hover:border-white'}`}
+                  >
+                    Live Booking
+                  </button>
                 </div>
 
                 <div className="flex-1 flex flex-col">
-                  {escrowStatus === "idle" && (
+                  {/* GOVERNANCE GUARD: If an active contract already exists for this interaction type, lock them out */}
+                  {escrowStatus === "idle" && existingContract ? (
+                    <div className="bg-[#110000] border border-yellow-600/50 p-8 flex flex-col items-center text-center">
+                      <Clock size={48} className="text-yellow-500 mb-4 animate-pulse" />
+                      <h3 className="font-oswald text-2xl uppercase tracking-widest text-white mb-2">Contract Pending</h3>
+                      <p className="font-mono text-xs text-[#888] uppercase tracking-widest mb-6 leading-relaxed">
+                        You already have an active {interactionType} contract secured with this node.
+                      </p>
+                      <div className="inline-flex items-center gap-2 border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-[10px] font-mono uppercase text-yellow-500 font-bold">
+                        <Lock size={12} /> Awaiting Node Fulfillment
+                      </div>
+                    </div>
+                  ) : escrowStatus === "idle" ? (
                     <div className="bg-black border border-[#222] p-6 group hover:border-[#E60000]/50 transition-all">
                       <h3 className="font-oswald text-lg uppercase tracking-widest text-[#E60000] mb-6 border-b border-[#222] pb-3 flex items-center gap-2"><Lock size={16} /> Escrow Breakdown</h3>
                       <div className="space-y-4 font-mono text-[10px]">
@@ -325,7 +364,8 @@ export default function Room10_Social() {
                       </div>
                       <button onClick={handleInitiateEscrow} className="w-full mt-8 bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(230,0,0,0.2)]">Lock Funds in Escrow <ArrowRight size={18} /></button>
                     </div>
-                  )}
+                  ) : null}
+                  
                   {escrowStatus === "processing" && (
                     <div className="flex-1 flex flex-col items-center justify-center text-center"><Zap size={48} className="text-[#E60000] animate-pulse mb-6" /><p className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-2">Routing to Stripe Secure...</p><p className="font-mono text-[10px] text-[#E60000] uppercase tracking-widest">Awaiting Financial Handshake</p></div>
                   )}
