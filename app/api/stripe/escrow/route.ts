@@ -43,12 +43,12 @@ payment_method_types: ['card'],
       ],
       mode: 'payment',
       // Success URL includes the flag that Room 10 looks for to show the "Funds Secured" checkmark
-success_url: `${siteUrl}/studio?escrow_funded=true&target_node=${encodeURIComponent(targetNodeId)}&interaction=${encodeURIComponent(interactionType)}`,
+success_url: `${siteUrl}/studio?escrow_funded=true&target_node=${encodeURIComponent(targetNodeId)}&interaction=${encodeURIComponent(type)}`,
       cancel_url: `${siteUrl}/studio`,
       metadata: { 
         buyerId: userId, 
         targetNodeId: targetNodeId, 
-        interactionType: Type, 
+        interactionType: type, 
         type: 'escrow_contract' 
       }
     };
