@@ -144,7 +144,7 @@ export async function POST(req: Request) {
         // 4. ESCROW PIPELINE: Financial Capture for Features/Bookings
         case 'escrow_contract': {
           await supabaseAdmin.from('escrow_contracts').insert({
-            buyer_id: effectiveUserId,
+            user_id: effectiveUserId,
             artist_id: targetNodeId,
             amount: amountTotalDollars,
             status: 'funded',

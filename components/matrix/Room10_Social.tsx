@@ -54,7 +54,7 @@ export default function Room10_Social() {
     const { data, error } = await supabase
       .from('escrow_contracts')
       .select('*')
-      .eq('buyer_id', userSession.id)
+      .eq('user_id', userSession.id)
       .in('status', ['funded', 'accepted']); // Only block if it's actively pending/working
       
     if (data) setActiveContracts(data);
