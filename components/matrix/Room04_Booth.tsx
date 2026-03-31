@@ -146,7 +146,7 @@ export default function Room04_Booth() {
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
   // --- SURGICAL ADDITION: The Groq Neural Guide Generator ---
-  const handleGenerateGuide = async () => {
+const handleGenerateGuide = async () => {
     if (!generatedLyrics) {
       if (addToast) addToast("No lyrics found in the Teleprompter to read.", "error");
       return;
@@ -154,11 +154,12 @@ export default function Room04_Booth() {
     
     setIsGeneratingGuide(true);
     try {
-      // Extract the first ~8 lines to act as the flow guide, ignoring structural tags like [Verse 1]
+      // SURGICAL FIX: Strip timestamps like (0:17) or 0:17 before sending to TTS
       const linesToRead = generatedLyrics
         .split('\n')
         .filter(l => l.trim().length > 0 && !l.startsWith('['))
-        .slice(0, 8)
+        .slice(0, 16)
+        .map(l => l.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim()) // <-- The Sanitizer Shield
         .join(' ');
 
       const res = await fetch('/api/audio/generate-guide', {
