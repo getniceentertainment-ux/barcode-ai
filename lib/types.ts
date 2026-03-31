@@ -31,7 +31,7 @@ export interface BlueprintSection {
 
 export interface VocalStem {
   id: string;
-  type: "Lead" | "Adlib" | "Double";
+  type: "Lead" | "Adlib" | "Double" | "Guide";
   url: string;
   blob?: Blob;
   volume: number; 
