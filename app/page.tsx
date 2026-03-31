@@ -223,6 +223,44 @@ export default function MatrixController() {
     window.dispatchEvent(new CustomEvent('matrix-global-sys-seek', { detail: newTime }));
   };
 
+// --- THE GLOBAL BEAT INTERCEPTOR ---
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const beatPurchased = params.get('beat_purchased');
+    const beatUrl = params.get('beat_url');
+
+    if (beatPurchased === 'true' && beatUrl) {
+      if (addToast) addToast("Beat License Acquired. Downloading to Lab...", "info");
+
+      fetch(decodeURIComponent(beatUrl))
+        .then(res => res.blob())
+        .then(blob => {
+          // 1. Inject the audio directly into the Matrix state
+          setAudioData({
+            url: URL.createObjectURL(blob),
+            blob: blob,
+            fileName: "Licensed_Marketplace_Beat.wav",
+            duration: 0,
+            bpm: 120,
+            totalBars: 0
+          });
+          
+          // 2. Teleport the user to Room 01
+          setActiveRoom("01"); 
+          if (addToast) addToast("Beat injected. Ready for DSP Analysis.", "success");
+
+          // 3. Clean the URL so it doesn't re-download on page refresh
+          window.history.replaceState({}, document.title, window.location.pathname);
+        })
+        .catch(err => {
+          console.error("Beat injection failed:", err);
+          if (addToast) addToast("Failed to inject beat. Please download manually.", "error");
+        });
+    }
+  }, [setActiveRoom, setAudioData, addToast]);
+
   // --- NEW: AUTO-DJ ENDLESS RADIO LOGIC ---
   const handleTrackEnd = async () => {
     setIsPlaying(false);
