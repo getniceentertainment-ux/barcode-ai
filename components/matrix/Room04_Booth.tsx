@@ -116,6 +116,9 @@ export default function Room04_Booth() {
   const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [activeLineIndex, setActiveLineIndex] = useState(-1);
+  
+  // SURGICAL ADDITION: The Pacing State (Defaults to 2 Bars per Line)
+  const [barsPerLine, setBarsPerLine] = useState<number>(2);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean, timestamp?: string}[]>([]);
@@ -495,21 +498,45 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
+  // --- SURGICAL FIX: The Pacing & Math Parser ---
   useEffect(() => {
     if (!generatedLyrics) return;
     const lines = generatedLyrics.split('\n');
-    let currentBlockIndex = -1; let barOffsetWithinBlock = 0; 
+    let currentBlockIndex = -1; 
+    let barOffsetWithinBlock = 0; 
+    
     const parsed = lines.filter(l => l.trim()).map((text) => {
-      if (text.startsWith('[')) { currentBlockIndex++; barOffsetWithinBlock = 0; return { text, startTime: 0, isHeader: true, timestamp: "" }; }
+      // Handle Headers [Verse 1]
+      if (text.startsWith('[')) { 
+        currentBlockIndex++; 
+        barOffsetWithinBlock = 0; 
+        let blockStartBar = 0;
+        if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
+          blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
+        }
+        return { text, startTime: blockStartBar * secondsPerBar, isHeader: true, timestamp: "" }; 
+      }
+      
+      // Handle actual lyrics
       let blockStartBar = 0;
-      if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
+      if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
+        blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
+      }
       const absoluteBar = blockStartBar + barOffsetWithinBlock;
       const startTimeSec = absoluteBar * secondsPerBar;
-      barOffsetWithinBlock++;
-      return { text, startTime: startTimeSec, isHeader: false, timestamp: `(${Math.floor(startTimeSec / 60)}:${Math.floor(startTimeSec % 60).toString().padStart(2, '0')})` };
+      
+      // Add the user's selected pacing (default 2 bars per line)
+      barOffsetWithinBlock += barsPerLine; 
+      
+      return { 
+        text, 
+        startTime: startTimeSec, 
+        isHeader: false, 
+        timestamp: `(${Math.floor(startTimeSec / 60)}:${Math.floor(startTimeSec % 60).toString().padStart(2, '0')})` 
+      };
     });
     setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar]);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar, barsPerLine]);
 
   useEffect(() => {
     if (trimmingStem && trimWaveformRef.current) {
@@ -561,6 +588,17 @@ export default function Room04_Booth() {
            <div className="flex items-center gap-4">
              <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
              
+             {/* SURGICAL ADDITION: Flow Pace Dropdown */}
+             <select 
+               value={barsPerLine}
+               onChange={(e) => setBarsPerLine(Number(e.target.value))}
+               className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white"
+             >
+               <option value={1}>Fast (1 Bar/Line)</option>
+               <option value={2}>Standard (2 Bars/Line)</option>
+               <option value={4}>Slow (4 Bars/Line)</option>
+             </select>
+
              <button 
                onClick={handleGenerateGuide}
                disabled={isGeneratingGuide || !generatedLyrics}
@@ -588,7 +626,8 @@ export default function Room04_Booth() {
                 
                 <span className="flex-1">
                   {line.isHeader ? line.text : line.text.split(' ').map((word, wIdx, wArr) => {
-                    const timePerWord = secondsPerBar / Math.max(1, wArr.length);
+                    // THE KARAOKE MATH
+                    const timePerWord = (secondsPerBar * barsPerLine) / Math.max(1, wArr.length);
                     const wordStartTime = line.startTime + (wIdx * timePerWord);
                     const isWordActive = isActive && currentTime >= wordStartTime;
 
