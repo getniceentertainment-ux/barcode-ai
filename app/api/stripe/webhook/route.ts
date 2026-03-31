@@ -49,6 +49,7 @@ export async function POST(req: Request) {
       tier, 
       credit_amount, 
       beat_id, 
+      beat_name,
       track_id,
       targetNodeId, 
       interactionType 
@@ -216,7 +217,7 @@ export async function POST(req: Request) {
             user_id: effectiveUserId,
             amount: -amountTotalDollars,
             type: 'BEAT_PURCHASE',
-            description: `Acquired Commercial Beat License: ${beat_id || 'Marketplace Asset'}`
+            description: `Acquired Commercial Beat License: ${beat_name || beat_id || 'Marketplace Asset'}`
           });
           console.log(`[STRIPE] Beat ${beat_id} leased by ${effectiveUserId}`);
           break;

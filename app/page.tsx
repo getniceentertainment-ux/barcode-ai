@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabase";
 import EntryGateway from "../components/matrix/EntryGateway";
 import GlobalSyncIndicator from "../components/matrix/GlobalSyncIndicator";
 import HelpOverlay from "../components/matrix/HelpOverlay";
-import RoomDirectives from "../components/matrix/RoomDirectives"; // FIXED IMPORT PATH
+import RoomDirectives from "../components/matrix/RoomDirectives";
 
 // The 11 Matrix Rooms
 import Room01_Lab from "../components/matrix/Room01_Lab";
@@ -37,7 +37,7 @@ const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID;
 export default function MatrixController() {
   const { 
     hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix, 
-    audioData, isProjectFinalized, playbackMode, setPlaybackMode, 
+    audioData, setAudioData, isProjectFinalized, playbackMode, setPlaybackMode, 
     radioTrack, setRadioTrack, addToast, hydrateDiskAudio 
   } = useMatrixStore();
 
@@ -52,7 +52,7 @@ export default function MatrixController() {
   // --- UI STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showLandscapeTip, setShowLandscapeTip] = useState(false);
-  const [showHelp, setShowHelp] = useState(false); // NEW: Help Overlay State
+  const [showHelp, setShowHelp] = useState(false);
   const formatTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- GOOGLE CHROME AUTO-SCALER (5-SECOND DELAY FIX) ---
@@ -113,6 +113,50 @@ export default function MatrixController() {
     });
     return () => subscription.unsubscribe();
   }, [userSession?.id, clearMatrix]);
+
+  // --- THE GLOBAL STRIPE ROUTER (Beat Auto-Injector) ---
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const rolloutPurchased = params.get('rollout_purchased');
+    const coverArtPurchased = params.get('cover_art_purchased');
+    const beatPurchased = params.get('beat_purchased');
+    const beatUrl = params.get('beat_url');
+    
+    if (coverArtPurchased === 'true') {
+      setActiveRoom("07");
+    }
+
+    if (rolloutPurchased === 'true') {
+      setActiveRoom("11"); 
+    }
+
+    if (beatPurchased === 'true' && beatUrl) {
+      if (addToast) addToast("Beat License Acquired. Downloading to Lab...", "info");
+      
+      fetch(decodeURIComponent(beatUrl))
+        .then(res => res.blob())
+        .then(blob => {
+          setAudioData({
+            url: URL.createObjectURL(blob),
+            blob: blob,
+            fileName: "Licensed_Marketplace_Beat.wav",
+            duration: 0, 
+            bpm: 120,
+            totalBars: 0
+          });
+          setActiveRoom("01"); 
+          if (addToast) addToast("Beat injected. Ready for DSP Analysis.", "success");
+          
+          window.history.replaceState({}, document.title, window.location.pathname);
+        })
+        .catch(err => {
+          console.error("Beat injection failed:", err);
+          if (addToast) addToast("Failed to inject beat. Please download manually.", "error");
+        });
+    }
+  }, [setActiveRoom, setAudioData, addToast]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024) {
@@ -223,7 +267,6 @@ export default function MatrixController() {
     window.dispatchEvent(new CustomEvent('matrix-global-sys-seek', { detail: newTime }));
   };
 
-  // --- NEW: AUTO-DJ ENDLESS RADIO LOGIC ---
   const handleTrackEnd = async () => {
     setIsPlaying(false);
     if (playbackMode === 'radio') {
@@ -236,7 +279,6 @@ export default function MatrixController() {
           .limit(50);
           
         if (subs && subs.length > 0) {
-          // Prevent playing the exact same track twice in a row if possible
           const available = subs.filter(s => s.audio_url !== radioTrack?.url);
           const nextTracks = available.length > 0 ? available : subs;
           const nextTrack = nextTracks[Math.floor(Math.random() * nextTracks.length)];
@@ -250,7 +292,6 @@ export default function MatrixController() {
             score: nextTrack.hit_score 
           });
           
-          // Slight delay to allow Zustand state to hydrate before forcing play
           setTimeout(() => {
             if (audioRef.current) {
               audioRef.current.play().catch(() => {});
@@ -271,7 +312,6 @@ export default function MatrixController() {
     if (playbackMode === 'radio') {
       setPlaybackMode('session');
     } else {
-      // --- NEW: DYNAMIC FIRST-TRACK FETCHER ---
       if (!radioTrack || radioTrack.title === "GETNICE FM LIVE") {
         try {
           const { data: subs } = await supabase

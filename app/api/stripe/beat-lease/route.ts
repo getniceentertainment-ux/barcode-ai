@@ -18,6 +18,7 @@ export async function POST(req: Request) {
 
     let destinationAccount = null;
 
+    // Securely resolve the Producer's Stripe Connect Account ID
     if (producerId) {
       const { data: producer } = await supabaseAdmin
         .from('profiles')
@@ -43,11 +44,14 @@ export async function POST(req: Request) {
         quantity: 1,
       }],
       mode: 'payment',
-      success_url: `${siteUrl}/?beat_purchased=true&beat_url=${encodeURIComponent(beatUrl)}`,
-      cancel_url: `${siteUrl}/`,
-      metadata: { userId, type: 'beat_lease', beat_id: beatId }
+      // SURGICAL FIX: Route directly to /studio so the URL params survive the redirect!
+      success_url: `${siteUrl}/studio?beat_purchased=true&beat_url=${encodeURIComponent(beatUrl)}`,
+      cancel_url: `${siteUrl}/studio`,
+      // SURGICAL FIX: Passing beat_name so the Webhook can log it properly
+      metadata: { userId, type: 'beat_lease', beat_id: beatId, beat_name: beatName }
     };
 
+    // If it's a 3rd party producer, route 80% of funds to them and keep 20% platform fee
     if (destinationAccount) {
       const platformFee = Math.round(amountInCents * 0.20); 
       sessionConfig.payment_intent_data = {
