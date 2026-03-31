@@ -46,7 +46,7 @@ payment_method_types: ['card'],
 success_url: `${siteUrl}/studio?escrow_funded=true&target_node=${encodeURIComponent(targetNodeId)}&interaction=${encodeURIComponent(type)}`,
       cancel_url: `${siteUrl}/studio`,
       metadata: { 
-        buyerId: userSession.id,, 
+        buyerId: userSession.id, 
         targetNodeId: selectedNode.id, 
         interactionType: type, 
         type: 'escrow_contract' 
