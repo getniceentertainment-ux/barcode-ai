@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       mode: 'payment', // Set to 'payment' for a one-time upgrade fee
       
       // SURGICAL FIX 2: Point to /studio to ensure the EntryGateway UI intercepts it and opens the doors
-      success_url: `${siteUrl}/studio?success=true`,
+      success_url: `${siteUrl}/?success=true`,
       cancel_url: `${siteUrl}/`,
       
       // SURGICAL FIX 3: Added 'type: tier_upgrade'. Without this, the Master Webhook ignores the transaction!
