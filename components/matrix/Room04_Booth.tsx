@@ -6,7 +6,8 @@ import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase"; 
 
-type TrackType = "Lead" | "Adlib" | "Double";
+// SURGICAL ADDITION: Added "Guide" to the valid track types
+type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
 // --- BULLETPROOF AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
@@ -112,6 +113,9 @@ export default function Room04_Booth() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  // SURGICAL ADDITION: Groq Generation State
+  const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
+  
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean, timestamp?: string}[]>([]);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
@@ -140,6 +144,54 @@ export default function Room04_Booth() {
   const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
+
+  // --- SURGICAL ADDITION: The Groq Neural Guide Generator ---
+  const handleGenerateGuide = async () => {
+    if (!generatedLyrics) {
+      if (addToast) addToast("No lyrics found in the Teleprompter to read.", "error");
+      return;
+    }
+    
+    setIsGeneratingGuide(true);
+    try {
+      // Extract the first ~8 lines to act as the flow guide, ignoring structural tags like [Verse 1]
+      const linesToRead = generatedLyrics
+        .split('\n')
+        .filter(l => l.trim().length > 0 && !l.startsWith('['))
+        .slice(0, 8)
+        .join(' ');
+
+      const res = await fetch('/api/audio/generate-guide', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lyrics: linesToRead, bpm: audioData?.bpm || 120 })
+      });
+
+      if (!res.ok) {
+        throw new Error("Groq API disconnected or rate limited.");
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const takeId = `GUIDE_${Date.now()}`;
+
+      addVocalStem({ 
+        id: takeId, 
+        type: "Guide" as TrackType, 
+        url: url, 
+        blob: blob, 
+        volume: 0.3, // Set default low so it acts as a ghost reference track
+        offsetBars: 0 
+      });
+      
+      if (addToast) addToast("Neural Flow Guide injected into timeline.", "success");
+    } catch (err: any) {
+      console.error(err);
+      if (addToast) addToast("Guide Error: " + err.message, "error");
+    } finally {
+      setIsGeneratingGuide(false);
+    }
+  };
 
   const handleUpdateTakeType = (id: string, newType: string) => {
     const updatedStems = vocalStems.map(stem => stem.id === id ? { ...stem, type: newType as TrackType } : stem);
@@ -498,9 +550,21 @@ export default function Room04_Booth() {
       
       {/* LEFT SIDEBAR: TELEPROMPTER */}
       <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
-        <div className="p-8 pb-4 border-b border-[#111] flex justify-between items-center">
-           <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
-           {audioData?.bpm && <span className="text-[10px] text-[#E60000] font-mono">{Math.round(audioData.bpm)} BPM</span>}
+        <div className="p-8 pb-4 border-b border-[#111] flex justify-between items-center relative">
+           <div className="flex items-center gap-4">
+             <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
+             
+             {/* SURGICAL ADDITION: The Neural Guide Generator Button */}
+             <button 
+               onClick={handleGenerateGuide}
+               disabled={isGeneratingGuide || !generatedLyrics}
+               className="bg-[#111] border border-[#333] text-[#E60000] hover:bg-white hover:text-black hover:border-white px-2.5 py-1 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+             >
+               {isGeneratingGuide ? <Loader2 size={10} className="animate-spin" /> : <Mic size={10} />}
+               Neural Guide
+             </button>
+           </div>
+           {audioData?.bpm && <span className="text-[10px] text-[#E60000] font-mono absolute right-8 top-3">{Math.round(audioData.bpm)} BPM</span>}
         </div>
         <div ref={teleprompterRef} className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose">
           {lyricLines.map((line, i) => {
@@ -547,7 +611,8 @@ export default function Room04_Booth() {
 
         <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
           <div className="flex border-b border-[#111] mb-6">
-            {(["Lead", "Adlib", "Double"] as TrackType[]).map(t => (
+            {/* SURGICAL ADDITION: Added "Guide" to the Track Type Selection Tabs */}
+            {(["Lead", "Adlib", "Double", "Guide"] as TrackType[]).map(t => (
               <button key={t} onClick={() => setActiveTrack(t)} className={`flex-1 py-3 font-oswald text-[10px] uppercase tracking-[0.2em] font-bold transition-all ${activeTrack === t ? 'bg-[#E60000] text-white' : 'text-[#444] hover:text-white hover:bg-[#0a0a0a]'}`}>{t} Tracking</button>
             ))}
           </div>
@@ -560,11 +625,14 @@ export default function Room04_Booth() {
               <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
                 <div className="flex justify-between items-center mb-3">
                   <div className="flex items-center gap-4">
+                    {/* SURGICAL ADDITION: Added "Guide" to the dropdown options */}
                     <select value={s.type || "Lead"} onChange={(e) => handleUpdateTakeType(s.id, e.target.value)} className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white">
-                      <option value="Lead">Lead</option><option value="Adlib">Adlib</option><option value="Double">Double</option>
+                      <option value="Lead">Lead</option><option value="Adlib">Adlib</option><option value="Double">Double</option><option value="Guide">Guide</option>
                     </select>
                     <span className="font-mono text-[10px] text-[#444]">{s.id.substring(5, 12)}</span>
-                    <span className="font-mono text-[8px] px-1 bg-green-500/10 text-green-500 border border-green-500/20">RAW-AUDIO</span>
+                    <span className={`font-mono text-[8px] px-1 border ${s.type === 'Guide' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-green-500/10 text-green-500 border-green-500/20'}`}>
+                      {s.type === 'Guide' ? 'NEURAL-AUDIO' : 'RAW-AUDIO'}
+                    </span>
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 mr-4">
