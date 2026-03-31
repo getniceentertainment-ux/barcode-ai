@@ -50,7 +50,7 @@ export async function POST(req: Request) {
       metadata: { 
         buyerId: buyerId, 
         targetNodeId: targetNodeId,
-        interactionType: type,
+        interactionType: interactiontype,
         type: 'escrow_contract' 
       }
     });
