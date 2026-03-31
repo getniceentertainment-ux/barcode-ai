@@ -116,8 +116,6 @@ export default function Room04_Booth() {
   const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [activeLineIndex, setActiveLineIndex] = useState(-1);
-  
-  // SURGICAL ADDITION: The Pacing State (Defaults to 2 Bars per Line)
   const [barsPerLine, setBarsPerLine] = useState<number>(2);
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -149,19 +147,20 @@ export default function Room04_Booth() {
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
+  // --- SURGICAL FIX: Perfectly Synced TTS Generation ---
   const handleGenerateGuide = async () => {
-    if (!generatedLyrics) {
-      if (addToast) addToast("No lyrics found in the Teleprompter to read.", "error");
+    if (!lyricLines || lyricLines.length === 0) {
+      if (addToast) addToast("No valid lyrics found to generate guide.", "error");
       return;
     }
     
     setIsGeneratingGuide(true);
     try {
-      const linesToRead = generatedLyrics
-        .split('\n')
-        .filter(l => l.trim().length > 0 && !l.startsWith('['))
+      // Grab the ALREADY SANITIZED lines from our state so it matches the teleprompter exactly
+      const parsedLines = lyricLines.filter(l => !l.isHeader);
+      const linesToRead = parsedLines
         .slice(0, 16)
-        .map(l => l.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim())
+        .map(l => l.text)
         .join(' ');
 
       const res = await fetch('/api/audio/generate-guide', {
@@ -176,9 +175,9 @@ export default function Room04_Booth() {
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
 
-      const parsedLines = lyricLines.filter(l => !l.isHeader);
+      // Calculate the EXACT mathematical offset using the actual start time
       const firstLineStartTime = parsedLines.length > 0 ? parsedLines[0].startTime : 0;
-      const offsetBarsCalculated = Math.floor(firstLineStartTime / secondsPerBar);
+      const exactOffsetBars = firstLineStartTime / secondsPerBar;
 
       addVocalStem({ 
         id: takeId, 
@@ -186,10 +185,10 @@ export default function Room04_Booth() {
         url: url, 
         blob: blob, 
         volume: 0.3, 
-        offsetBars: offsetBarsCalculated
+        offsetBars: exactOffsetBars // Decimal offset ensures millisecond-perfect placement
       });
       
-      if (addToast) addToast("Neural Flow Guide injected on beat.", "success");
+      if (addToast) addToast("Neural Flow Guide injected perfectly on beat.", "success");
     } catch (err: any) {
       console.error(err);
       if (addToast) addToast("Guide Error: " + err.message, "error");
@@ -498,26 +497,34 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- SURGICAL FIX: The Pacing & Math Parser ---
+  // --- SURGICAL FIX: The Master Text Sanitizer & Math Parser ---
   useEffect(() => {
     if (!generatedLyrics) return;
     const lines = generatedLyrics.split('\n');
     let currentBlockIndex = -1; 
     let barOffsetWithinBlock = 0; 
     
-    const parsed = lines.filter(l => l.trim()).map((text) => {
-      // Handle Headers [Verse 1]
-      if (text.startsWith('[')) { 
+    // Step 1 & 2: Sanitize before we map to prevent empty/rogue lines
+    const parsed = lines.map(l => l.trim()).filter(l => {
+      if (l.startsWith('[')) return true;
+      // Strip timestamps to see if there is actual text left on this line
+      const cleanText = l.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
+      return cleanText.length > 0;
+    }).map((rawText) => {
+      // It's a header
+      if (rawText.startsWith('[')) { 
         currentBlockIndex++; 
         barOffsetWithinBlock = 0; 
         let blockStartBar = 0;
         if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
           blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
         }
-        return { text, startTime: blockStartBar * secondsPerBar, isHeader: true, timestamp: "" }; 
+        return { text: rawText, startTime: blockStartBar * secondsPerBar, isHeader: true, timestamp: "" }; 
       }
       
-      // Handle actual lyrics
+      // Step 3: It's a lyric line. Strip the timestamp for clean display and TTS.
+      const cleanText = rawText.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
+
       let blockStartBar = 0;
       if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
         blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
@@ -525,16 +532,16 @@ export default function Room04_Booth() {
       const absoluteBar = blockStartBar + barOffsetWithinBlock;
       const startTimeSec = absoluteBar * secondsPerBar;
       
-      // Add the user's selected pacing (default 2 bars per line)
       barOffsetWithinBlock += barsPerLine; 
       
       return { 
-        text, 
+        text: cleanText, 
         startTime: startTimeSec, 
         isHeader: false, 
         timestamp: `(${Math.floor(startTimeSec / 60)}:${Math.floor(startTimeSec % 60).toString().padStart(2, '0')})` 
       };
     });
+    
     setLyricLines(parsed);
   }, [generatedLyrics, audioData, blueprint, secondsPerBar, barsPerLine]);
 
@@ -588,7 +595,6 @@ export default function Room04_Booth() {
            <div className="flex items-center gap-4">
              <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
              
-             {/* SURGICAL ADDITION: Flow Pace Dropdown */}
              <select 
                value={barsPerLine}
                onChange={(e) => setBarsPerLine(Number(e.target.value))}
@@ -625,8 +631,7 @@ export default function Room04_Booth() {
                 {!line.isHeader && line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
                 
                 <span className="flex-1">
-                  {line.isHeader ? line.text : line.text.split(' ').map((word, wIdx, wArr) => {
-                    // THE KARAOKE MATH
+                  {line.isHeader ? line.text : line.text.split(/\s+/).filter(w => w.length > 0).map((word, wIdx, wArr) => {
                     const timePerWord = (secondsPerBar * barsPerLine) / Math.max(1, wArr.length);
                     const wordStartTime = line.startTime + (wIdx * timePerWord);
                     const isWordActive = isActive && currentTime >= wordStartTime;
