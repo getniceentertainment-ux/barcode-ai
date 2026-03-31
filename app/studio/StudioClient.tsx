@@ -5,17 +5,17 @@ import { useMatrixStore } from "../../store/useMatrixStore";
 import RoomDirectives from "../../components/matrix/RoomDirectives";
 
 // Import your rooms
-import Room01_Lab from "../components/matrix/Room01_Lab";
-import Room02_BrainTrain from "../components/matrix/Room02_BrainTrain";
-import Room03_Ghostwriter from "../components/matrix/Room03_Ghostwriter";
-import Room04_Booth from "../components/matrix/Room04_Booth";
-import Room05_VocalSuite from "../components/matrix/Room05_VocalSuite";
-import Room06_Mastering from "../components/matrix/Room06_Mastering";
-import Room07_Distribution from "../components/matrix/Room07_Distribution";
-import Room08_Bank from "../components/matrix/Room08_Bank";
-import Room09_Radio from "../components/matrix/Room09_Radio";
-import Room10_Social from "../components/matrix/Room10_Social";
-import Room11_Exec from "../components/matrix/Room11_Exec";
+import Room01_Lab from "./components/matrix/Room01_Lab";
+import Room02_BrainTrain from "./components/matrix/Room02_BrainTrain";
+import Room03_Ghostwriter from "./components/matrix/Room03_Ghostwriter";
+import Room04_Booth from "./components/matrix/Room04_Booth";
+import Room05_VocalSuite from "./components/matrix/Room05_VocalSuite";
+import Room06_Mastering from "./components/matrix/Room06_Mastering";
+import Room07_Distribution from "./components/matrix/Room07_Distribution";
+import Room08_Bank from "./components/matrix/Room08_Bank";
+import Room09_Radio from "./components/matrix/Room09_Radio";
+import Room10_Social from "./components/matrix/Room10_Social";
+import Room11_Exec from "./components/matrix/Room11_Exec";
 
 export default function StudioClient() {
   const { activeRoom, setActiveRoom, setAudioData, addToast } = useMatrixStore();
