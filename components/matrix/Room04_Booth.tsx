@@ -1,12 +1,15 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, Info } from "lucide-react";
+import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, Info, ToggleLeft, ToggleRight } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase"; 
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
+
+type WordMapping = { word: string; startTime: number };
+type LyricLine = { text: string; startTime: number; isHeader: boolean; timestamp?: string; words?: WordMapping[] };
 
 // --- BULLETPROOF AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
@@ -116,10 +119,11 @@ export default function Room04_Booth() {
   const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [activeLineIndex, setActiveLineIndex] = useState(-1);
-  const [barsPerLine, setBarsPerLine] = useState<number>(2);
+  const [teleprompterEnabled, setTeleprompterEnabled] = useState(true); // SURGICAL ADDITION: The Master Toggle
+  const [guideDuration, setGuideDuration] = useState<number>(0); // SURGICAL ADDITION: Governor Duration
 
   const [currentTime, setCurrentTime] = useState(0);
-  const [lyricLines, setLyricLines] = useState<{text: string, startTime: number, isHeader: boolean, timestamp?: string}[]>([]);
+  const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
 
@@ -130,7 +134,7 @@ export default function Room04_Booth() {
   const [isProcessingTrim, setIsProcessingTrim] = useState(false);
 
   // --- HYPER-PRECISE BPM MATH ENGINE ---
-const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
+  const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
 
   const totalBars = blueprint.length > 0 
     ? ((blueprint[blueprint.length - 1] as any).startBar || 0) + ((blueprint[blueprint.length - 1] as any).bars || 16)
@@ -166,15 +170,14 @@ const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.d
     setIsGeneratingGuide(true);
     try {
       const parsedLines = lyricLines.filter(l => !l.isHeader);
-      const linesToRead = parsedLines
-        .slice(0, 16)
-        .map(l => l.text)
-        .join(' ');
+      
+      // SURGICAL ADDITION: God Mode. It reads the ENTIRE song so it can govern the whole track.
+      const linesToRead = parsedLines.map(l => l.text).join(' ');
 
       const res = await fetch('/api/audio/generate-guide', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lyrics: linesToRead, bpm: preciseBpm }) // Injecting exact decimal BPM here
+        body: JSON.stringify({ lyrics: linesToRead, bpm: preciseBpm })
       });
 
       if (!res.ok) throw new Error("Groq API disconnected or rate limited.");
@@ -195,7 +198,7 @@ const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.d
         offsetBars: exactOffsetBars 
       });
       
-      if (addToast) addToast("Neural Flow Guide injected perfectly on beat.", "success");
+      if (addToast) addToast("Governor Active: Neural Flow Guide injected.", "success");
     } catch (err: any) {
       console.error(err);
       if (addToast) addToast("Guide Error: " + err.message, "error");
@@ -475,7 +478,11 @@ const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.d
             const audioBuf = await new Promise<AudioBuffer>((resolve, reject) => {
                audioCtxRef.current!.decodeAudioData(arrayBuf, resolve, reject);
             });
-            if (isMounted) stemBuffersRef.current.set(stem.id, audioBuf);
+            if (isMounted) {
+              stemBuffersRef.current.set(stem.id, audioBuf);
+              // SURGICAL ADDITION: Capture the exact duration of the Guide audio when it loads
+              if (stem.type === 'Guide') setGuideDuration(audioBuf.duration);
+            }
           } catch (e: any) { 
             if (e.name !== 'AbortError') console.warn(`Soft-fail decoding stem ${stem.id}:`, e); 
           }
@@ -509,17 +516,42 @@ const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.d
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
+  // --- SURGICAL FIX: THE GOVERNOR MATRIX (TELEPROMPTER PARSER) ---
   useEffect(() => {
     if (!generatedLyrics) return;
-    const lines = generatedLyrics.split('\n');
-    let currentBlockIndex = -1; 
-    let barOffsetWithinBlock = 0; 
     
-    const parsed = lines.map(l => l.trim()).filter(l => {
+    // Check if the Governor is active
+    const guideStem = vocalStems.find(s => s.type === 'Guide');
+    const hasGovernor = !!guideStem && guideDuration > 0;
+    
+    // If the user deleted the guide track, reset the governor duration so it falls back to math
+    if (!guideStem && guideDuration !== 0) setGuideDuration(0);
+
+    const lines = generatedLyrics.split('\n');
+    
+    // Clean and extract valid lines and words first
+    const cleanLines = lines.map(l => l.trim()).filter(l => {
       if (l.startsWith('[')) return true;
       const cleanText = l.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
       return cleanText.length > 0;
-    }).map((rawText) => {
+    });
+
+    // Governor Math: Calculate the exact average time per word based on the Audio buffer length
+    let totalWords = 0;
+    cleanLines.forEach(l => {
+       if (!l.startsWith('[')) {
+         totalWords += l.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim().split(/\s+/).filter(w => w.length > 0).length;
+       }
+    });
+
+    // If Governor is active, time per word is absolute based on the vocal file. Otherwise, default to Grid time.
+    const timePerWord = hasGovernor && totalWords > 0 ? guideDuration / totalWords : 0;
+    let runningWordTime = hasGovernor ? (guideStem.offsetBars || 0) * secondsPerBar : 0;
+
+    let currentBlockIndex = -1; 
+    let barOffsetWithinBlock = 0; 
+
+    const parsed = cleanLines.map((rawText) => {
       if (rawText.startsWith('[')) { 
         currentBlockIndex++; 
         barOffsetWithinBlock = 0; 
@@ -527,30 +559,56 @@ const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.d
         if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
           blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
         }
-        return { text: rawText, startTime: blockStartBar * secondsPerBar, isHeader: true, timestamp: "" }; 
+        // If Governed, headers float with the audio time. If Grid, they use math.
+        const headerStart = hasGovernor ? runningWordTime : blockStartBar * secondsPerBar;
+        return { text: rawText, startTime: headerStart, isHeader: true, timestamp: "", words: [] }; 
       }
       
       const cleanText = rawText.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
+      const words = cleanText.split(/\s+/).filter(w => w.length > 0);
 
-      let blockStartBar = 0;
-      if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
-        blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
+      if (hasGovernor) {
+        // --- GOVERNOR ACTIVE: Ignore all Math Grids, use purely Audio Buffer Time ---
+        const lineStartTime = runningWordTime;
+        const mappedWords = words.map(w => {
+          const wordStart = runningWordTime;
+          runningWordTime += timePerWord;
+          return { word: w, startTime: wordStart };
+        });
+
+        return { 
+          text: cleanText, startTime: lineStartTime, isHeader: false, 
+          timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
+          words: mappedWords 
+        };
+      } else {
+        // --- GOVERNOR OFF: Fallback to the standard Mathematical Grid (2 bars per line) ---
+        let blockStartBar = 0;
+        if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
+          blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
+        }
+        const absoluteBar = blockStartBar + barOffsetWithinBlock;
+        const lineStartTime = absoluteBar * secondsPerBar;
+        barOffsetWithinBlock += 2; 
+
+        const fallbackTimePerWord = (secondsPerBar * 2) / Math.max(1, words.length);
+        let localWordTime = lineStartTime;
+        const mappedWords = words.map(w => {
+          const wordStart = localWordTime;
+          localWordTime += fallbackTimePerWord;
+          return { word: w, startTime: wordStart };
+        });
+
+        return { 
+          text: cleanText, startTime: lineStartTime, isHeader: false, 
+          timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
+          words: mappedWords 
+        };
       }
-      const absoluteBar = blockStartBar + barOffsetWithinBlock;
-      const startTimeSec = absoluteBar * secondsPerBar;
-      
-      barOffsetWithinBlock += barsPerLine; 
-      
-      return { 
-        text: cleanText, 
-        startTime: startTimeSec, 
-        isHeader: false, 
-        timestamp: `(${Math.floor(startTimeSec / 60)}:${Math.floor(startTimeSec % 60).toString().padStart(2, '0')})` 
-      };
     });
     
     setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar, barsPerLine]);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar, vocalStems, guideDuration]);
 
   useEffect(() => {
     if (trimmingStem && trimWaveformRef.current) {
@@ -568,6 +626,8 @@ const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.d
   }, [trimmingStem]);
 
   useEffect(() => {
+    if (!teleprompterEnabled) return; // Prevent scroll fighting if disabled
+
     const currentLineIndex = lyricLines.findIndex((l, i) => {
       const nextLine = lyricLines[i + 1];
       return currentTime >= l.startTime && (!nextLine || currentTime < nextLine.startTime);
@@ -581,7 +641,7 @@ const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.d
         if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
       }
     }
-  }, [currentTime, lyricLines, autoScroll, activeLineIndex]);
+  }, [currentTime, lyricLines, autoScroll, activeLineIndex, teleprompterEnabled]);
 
   if (!audioData) {
     return (
@@ -602,26 +662,25 @@ const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.d
            <div className="flex items-center gap-4">
              <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
              
-             <select 
-               value={barsPerLine}
-               onChange={(e) => setBarsPerLine(Number(e.target.value))}
-               className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white"
+             {/* SURGICAL ADDITION: Teleprompter Master Toggle */}
+             <button 
+               onClick={() => setTeleprompterEnabled(!teleprompterEnabled)}
+               className={`px-3 py-1 text-[9px] uppercase font-mono font-bold transition-all border flex items-center gap-1.5 ${teleprompterEnabled ? 'bg-[#E60000]/20 text-[#E60000] border-[#E60000]/50' : 'bg-black text-[#555] border-[#333] hover:text-white'}`}
              >
-               <option value={1}>Fast (1 Bar/Line)</option>
-               <option value={2}>Standard (2 Bars/Line)</option>
-               <option value={4}>Slow (4 Bars/Line)</option>
-             </select>
+               {teleprompterEnabled ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+               {teleprompterEnabled ? 'Active' : 'Muted'}
+             </button>
 
              <button 
                onClick={handleGenerateGuide}
                disabled={isGeneratingGuide || !generatedLyrics}
                className="bg-[#111] border border-[#333] text-[#E60000] hover:bg-white hover:text-black hover:border-white px-2.5 py-1 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+               title="Generate AI Guide to govern teleprompter pace"
              >
                {isGeneratingGuide ? <Loader2 size={10} className="animate-spin" /> : <Mic size={10} />}
-               Neural Guide
+               Generate Guide
              </button>
            </div>
-           {/* UI updated to show the exact decimal Math */}
            {audioData?.bpm && <span className="text-[10px] text-[#E60000] font-mono absolute right-8 top-3">{preciseBpm.toFixed(3)} BPM</span>}
         </div>
         
@@ -632,24 +691,22 @@ const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.d
           className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative"
         >
           {lyricLines.map((line, i) => {
-            const isActive = !line.isHeader && i === activeLineIndex;
+            const isActive = teleprompterEnabled && !line.isHeader && i === activeLineIndex;
             
             return (
               <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActive ? 'bg-[#E60000]/10 py-1 px-3 rounded border-l-2 border-[#E60000]' : 'py-1 px-3 border-l-2 border-transparent'}`}>
                 {!line.isHeader && line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
                 
                 <span className="flex-1">
-                  {line.isHeader ? line.text : line.text.split(/\s+/).filter(w => w.length > 0).map((word, wIdx, wArr) => {
-                    const timePerWord = (secondsPerBar * barsPerLine) / Math.max(1, wArr.length);
-                    const wordStartTime = line.startTime + (wIdx * timePerWord);
-                    const isWordActive = isActive && currentTime >= wordStartTime;
+                  {line.isHeader ? line.text : line.words?.map((wObj, wIdx) => {
+                    const isWordActive = isActive && currentTime >= wObj.startTime;
 
                     return (
                       <span 
                         key={wIdx} 
                         className={`transition-colors duration-200 ${isWordActive ? "text-white font-bold drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" : (isActive ? "text-[#888]" : "text-inherit")}`}
                       >
-                        {word}{' '}
+                        {wObj.word}{' '}
                       </span>
                     );
                   })}
@@ -658,7 +715,7 @@ const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.d
             );
           })}
           
-          {!autoScroll && (
+          {teleprompterEnabled && !autoScroll && (
             <div className="sticky bottom-4 w-full flex justify-center mt-8">
               <button 
                 onClick={() => {
