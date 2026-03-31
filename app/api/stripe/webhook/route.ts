@@ -141,9 +141,9 @@ export async function POST(req: Request) {
           break;
         }
 
-        // 4. ESCROW PIPELINE: Financial Capture for Features/Bookings
+// 4. ESCROW PIPELINE: Financial Capture for Features/Bookings
         case 'escrow_contract': {
-          await supabaseAdmin.from('escrow_contracts').insert({
+          const { error: escrowErr } = await supabaseAdmin.from('escrow_contracts').insert({
             user_id: effectiveUserId,
             artist_id: targetNodeId,
             amount: amountTotalDollars,
@@ -151,6 +151,11 @@ export async function POST(req: Request) {
             interaction_type: interactionType || 'feature',
             stripe_session_id: session.id
           });
+
+          // SURGICAL FIX: Log the exact error so we can see what column is broken!
+          if (escrowErr) {
+            console.error("[CRITICAL DB ERROR] Escrow Insert Failed:", escrowErr.message);
+          }
 
           // TRIGGER NEURAL PING: Notify the target artist
           await supabaseAdmin.from('notifications').insert({

@@ -54,8 +54,8 @@ export default function Room10_Social() {
     const { data, error } = await supabase
       .from('escrow_contracts')
       .select('*')
-      .eq('user_id', userSession.id)
-      .in('status', ['funded', 'accepted']); // Only block if it's actively pending/working
+      .eq('user_id', userSession.id) // Corrected from buyer_id
+      .in('status', ['funded', 'accepted']); // Only block if actively pending
       
     if (data) setActiveContracts(data);
   };
@@ -83,7 +83,6 @@ export default function Room10_Social() {
               
             if (returningNode) {
               setSelectedNode(returningNode);
-              // Ensure the interaction type matches what they just bought
               setInteractionType(interaction as "feature" | "booking");
             }
           }
@@ -94,7 +93,7 @@ export default function Room10_Social() {
           setEscrowStatus("locked");
           setActiveTab("brokerage");
 
-          // Refresh data to reflect the new purchase globally
+          // Refresh data to reflect new purchase globally
           fetchLeaderboard();
           fetchActiveContracts();
         }
@@ -342,7 +341,7 @@ export default function Room10_Social() {
                 </div>
 
                 <div className="flex-1 flex flex-col">
-                  {/* GOVERNANCE GUARD: If an active contract already exists for this interaction type, lock them out */}
+                  {/* GOVERNANCE GUARD: Blocks Double-Booking */}
                   {escrowStatus === "idle" && existingContract ? (
                     <div className="bg-[#110000] border border-yellow-600/50 p-8 flex flex-col items-center text-center">
                       <Clock size={48} className="text-yellow-500 mb-4 animate-pulse" />
