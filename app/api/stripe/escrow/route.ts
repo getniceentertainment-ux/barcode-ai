@@ -48,7 +48,7 @@ success_url: `${siteUrl}/studio?escrow_funded=true&target_node=${encodeURICompon
       metadata: { 
         buyerId: userId, 
         targetNodeId: targetNodeId, 
-        interactionType: interactionType, 
+        interactionType: Type, 
         type: 'escrow_contract' 
       }
     };
