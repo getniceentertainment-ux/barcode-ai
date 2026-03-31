@@ -38,7 +38,7 @@ export default function MatrixController() {
   const { 
     hasAccess, activeRoom, setActiveRoom, userSession, clearMatrix, 
     audioData, isProjectFinalized, playbackMode, setPlaybackMode, 
-    radioTrack, setRadioTrack, addToast, hydrateDiskAudio, interactionType
+    radioTrack, setRadioTrack, addToast, hydrateDiskAudio 
   } = useMatrixStore();
 
   const [isHydrated, setIsHydrated] = useState(false);
