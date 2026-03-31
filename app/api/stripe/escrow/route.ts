@@ -43,14 +43,14 @@ export async function POST(req: Request) {
       ],
       mode: 'payment',
       // Success URL includes the flag that Room 10 looks for to show the "Funds Secured" checkmark
-      success_url: `${siteUrl}/??escrow_funded=true&target_node=${encodeURIComponent(targetNodeId)}&interaction=${encodeURIComponent(interactionType)}`,
+      success_url: `${siteUrl}/??escrow_funded=true&target_node=${encodeURIComponent(targetNodeId)}&interaction=${encodeURIComponent(Type)}`,
       cancel_url: `${siteUrl}`,
       
       // CRITICAL: Metadata used by the ACTUAL Webhook to fulfill the order
       metadata: { 
         buyerId: buyerId, 
         targetNodeId: targetNodeId,
-        interactionType: interactiontype,
+        interactionType: type,
         type: 'escrow_contract' 
       }
     });
