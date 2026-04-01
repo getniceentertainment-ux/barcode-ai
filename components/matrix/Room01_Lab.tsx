@@ -1,12 +1,29 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { UploadCloud, FileAudio, Loader2, CheckCircle2, AlertTriangle, ShieldCheck, Music, ArrowRight, Zap, Activity, Network, Play, Pause } from "lucide-react";
+import { 
+  UploadCloud, 
+  FileAudio, 
+  Loader2, 
+  CheckCircle2, 
+  AlertTriangle, 
+  ShieldCheck, 
+  Music, 
+  ArrowRight, 
+  Zap, 
+  Activity, 
+  Network, 
+  Play, 
+  Pause, 
+  Trash2, 
+  Lock,
+  FlaskConical 
+} from "lucide-react";
+import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
 // --- SURGICAL ADDITION: The Silent Extractor ---
-// This grabs the exact floating-point duration of the file without the user knowing
 const getExactAudioDuration = (url: string): Promise<number> => {
   return new Promise((resolve) => {
     const audio = new Audio(url);
@@ -22,34 +39,68 @@ const getExactAudioDuration = (url: string): Promise<number> => {
 export default function Room01_Lab() {
   const { audioData, setAudioData, setActiveRoom, addToast, userSession } = useMatrixStore();
   
+  // --- PERSISTENCE INITIALIZATION ---
+  // We initialize status based on existing store data to prevent UI "flicker" or loss of state on refresh
+  const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">(
+    audioData?.bpm ? "success" : "idle"
+  );
+  const [analysisComplete, setAnalysisComplete] = useState(!!audioData?.bpm);
   const [dragActive, setDragActive] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
-  const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">(audioData ? "success" : "idle");
   const [isDisclaimerAccepted, setIsDisclaimerAccepted] = useState(false);
   const [pollingAttempts, setPollingAttempts] = useState(0);
-  
-  // Audio Preview State
+  const [isUploading, setIsUploading] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // Audio Preview / Marketplace State
+  const [beats, setBeats] = useState<any[]>([]);
   const [playingPreview, setPlayingPreview] = useState<string | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement>(null);
-  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Hardcoded beats removed - relying purely on Supabase Fetch
-  const [beats, setBeats] = useState<any[]>([]);
+  // Waveform State
+  const waveformRef = useRef<HTMLDivElement>(null);
+  const wavesurferRef = useRef<WaveSurfer | null>(null);
 
-  // Clean up polling intervals and audio on unmount
+  // --- MONETIZATION: CREDIT CHECK ---
+  const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID;
+  const isCreator = userSession?.id && userSession.id === CREATOR_ID;
+  const hasCredits = isCreator || (userSession?.creditsRemaining && (userSession.creditsRemaining === "UNLIMITED" || userSession.creditsRemaining > 0));
+
+  // --- WAVESURFER LIFECYCLE ---
   useEffect(() => {
+    if (waveformRef.current && audioData?.url && !wavesurferRef.current) {
+      wavesurferRef.current = WaveSurfer.create({
+        container: waveformRef.current,
+        waveColor: '#333333',
+        progressColor: '#E60000',
+        cursorColor: '#ffffff',
+        barWidth: 2,
+        barGap: 1,
+        barRadius: 2,
+        height: 80,
+        normalize: true,
+      });
+
+      wavesurferRef.current.load(audioData.url);
+      wavesurferRef.current.on('finish', () => setIsPlaying(false));
+      wavesurferRef.current.on('ready', () => {
+         const duration = wavesurferRef.current?.getDuration() || 0;
+         if (duration > 0 && audioData && !audioData.duration) {
+             setAudioData({ ...audioData, duration });
+         }
+      });
+    }
+
     return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-      if (previewAudioRef.current) {
-        previewAudioRef.current.pause();
-        previewAudioRef.current.src = "";
+      if (wavesurferRef.current) {
+        wavesurferRef.current.destroy();
+        wavesurferRef.current = null;
       }
     };
-  }, []);
+  }, [audioData?.url]); // Only re-init if the URL changes
 
-  // FETCH REAL BEATS FROM SUPABASE BUCKET
+  // --- FETCH MARKETPLACE BEATS ---
   useEffect(() => {
     const fetchMarketplaceBeats = async () => {
       try {
@@ -82,136 +133,44 @@ export default function Room01_Lab() {
                 key: "Unknown"
               };
             });
-          
-          if (fetchedBeats.length > 0) {
-            setBeats(prev => {
-              const existingUrls = new Set(prev.map(p => p.url));
-              const newBeats = fetchedBeats.filter(fb => !existingUrls.has(fb.url));
-              return [...prev, ...newBeats];
-            });
-          }
+          setBeats(fetchedBeats);
         }
       } catch (err) {
-        console.error("Failed to load beats from Supabase marketplace:", err);
+        console.error("Failed to load beats:", err);
       }
     };
-    
     fetchMarketplaceBeats();
   }, []);
 
-  // Catch returning Stripe redirects for purchased leases
+  // --- STRIPE REDIRECT HANDLER ---
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      
       if (params.get('beat_purchased') === 'true') {
         const beatUrl = params.get('beat_url');
         let beatName = params.get('beat_name');
-        
         if (beatUrl) {
-          // --- SUPABASE URL EXTRACTOR ---
-          // Since your test link didn't have the name, this slices it perfectly from the end of the .mp3 URL
           if (!beatName) {
             try {
               const urlParts = beatUrl.split('/');
               beatName = decodeURIComponent(urlParts[urlParts.length - 1].split('?')[0]);
             } catch (err) {
-              beatName = "GetNice_Marketplace_Beat.mp3";
+              beatName = "Purchased_Beat.mp3";
             }
           }
-
-          // 1. Clean the URL instantly so it doesn't double-fire if the user refreshes
           window.history.replaceState({}, document.title, window.location.pathname);
-          
-          // 2. Visually check the disclaimer box for the user
           setIsDisclaimerAccepted(true); 
-          
-          if (addToast) addToast(`License Acquired: ${beatName}. Booting DSP...`, "info");
-          
-          // 3. SURGICAL FIX: The Delay-Fire 
-          // We wait exactly 500ms to guarantee React has checked the box BEFORE the function runs!
-          setTimeout(() => {
-            if (handlePurchasedBeatDSP) {
-               handlePurchasedBeatDSP(beatUrl, beatName || "GetNice_Marketplace_Beat.mp3");
-            }
-          }, 500);
+          if (addToast) addToast(`License Acquired: ${beatName}`, "success");
+          setTimeout(() => handlePurchasedBeatDSP(beatUrl, beatName || "Beat.mp3"), 500);
         }
       }
     }
   }, []);
 
-  // --- SURGICAL FIXER: The Hydration Catcher ---
-  // Listens for the audioData to arrive from the hard drive after a refresh
-  useEffect(() => {
-    if (audioData) {
-      // If the beat arrives, but the UI is stuck on idle, flip it to success
-      if (status === "idle") {
-        setStatus("success");
-      }
-    } else {
-      // If the matrix gets cleared (e.g., user hits trash can), reset the room
-      if (status === "success") {
-        setStatus("idle");
-      }
-    }
-  }, [audioData, status]);
-
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!isDisclaimerAccepted) return; 
-    if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
-    else if (e.type === "dragleave") setDragActive(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    
-    if (!isDisclaimerAccepted) {
-      if (addToast) addToast("Please accept the IP & Licensing Declaration below first.", "error");
-      return;
-    }
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processRealFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    if (e.target.files && e.target.files[0]) {
-      processRealFile(e.target.files[0]);
-    }
-  };
-
-  // --- AUDIO PREVIEW LOGIC (60s Limit) ---
-  const togglePreview = (url: string) => {
-    if (playingPreview === url) {
-      previewAudioRef.current?.pause();
-      setPlayingPreview(null);
-    } else {
-      setPlayingPreview(url);
-      if (previewAudioRef.current) {
-        previewAudioRef.current.src = url;
-        previewAudioRef.current.currentTime = 0;
-        previewAudioRef.current.play().catch(e => console.error("Preview play failed:", e));
-      }
-    }
-  };
-
-  const handlePreviewTimeUpdate = () => {
-    if (previewAudioRef.current && previewAudioRef.current.currentTime >= 60) {
-      previewAudioRef.current.pause();
-      setPlayingPreview(null);
-      if (addToast) addToast("Preview limited to 60 seconds. Secure a lease to unlock.", "info");
-    }
-  };
-
-  // --- THE ASYNC POLLING LOGIC ---
+  // --- CORE DSP LOGIC ---
   const pollDSPJob = (jobId: string, cloudUrl: string, fileName: string) => {
     let attempts = 0;
+    setStatus("analyzing");
     
     pollIntervalRef.current = setInterval(async () => {
       attempts++;
@@ -224,26 +183,27 @@ export default function Room01_Lab() {
         if (statusData.status === 'COMPLETED') {
           if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
           
-          // --- SURGICAL EXPLOIT: Capture exact duration before saving to store ---
           const exactDuration = await getExactAudioDuration(cloudUrl);
+          const output = statusData.output;
 
           setAudioData({
             url: cloudUrl,
             fileName: fileName,
-            bpm: statusData.output.bpm || 120,
-            totalBars: statusData.output.total_bars || 64,
-            key: statusData.output.key || "Unknown",
-            grid: statusData.output.grid || [],
-            duration: exactDuration > 0 ? exactDuration : undefined // Secretly injected
+            bpm: output.bpm || 120,
+            totalBars: output.total_bars || Math.round(((exactDuration || 180) / 60) * (output.bpm || 120) / 4),
+            key: output.key || "Unknown",
+            grid: output.grid || output.beats || [],
+            duration: exactDuration > 0 ? exactDuration : undefined
           });
 
           setStatus("success");
-          if (addToast) addToast("Smart Analysis Complete. Blueprint Primed.", "success");
+          setAnalysisComplete(true);
+          if (addToast) addToast("Smart Analysis Complete.", "success");
 
         } else if (statusData.status === 'FAILED') {
           if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
           setStatus("idle");
-          if (addToast) addToast("RunPod DSP Execution Failed.", "error");
+          if (addToast) addToast("DSP Execution Failed.", "error");
         }
       } catch (pollErr) {
         console.error("DSP Polling Error", pollErr);
@@ -251,22 +211,17 @@ export default function Room01_Lab() {
     }, 3000);
   };
 
-  // THE LIVE DSP INGESTION PIPELINE
-  const processRealFile = async (selectedFile: File) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
     if (!selectedFile || !userSession?.id) return;
 
     if (!selectedFile.type.includes("audio/")) {
       if (addToast) addToast("Invalid artifact. Audio files only.", "error");
       return;
     }
-
-    if (selectedFile.size > 20 * 1024 * 1024) {
-      if (addToast) addToast("Payload Exceeds 20MB Limit. Please compress audio file.", "error");
-      return;
-    }
     
-    setFile(selectedFile);
     setStatus("uploading");
+    setIsUploading(true);
 
     try {
       const filePath = `${userSession.id}/${Date.now()}_${selectedFile.name.replace(/\s+/g, '_')}`;
@@ -276,258 +231,217 @@ export default function Room01_Lab() {
       const { data: publicUrlData } = supabase.storage.from('audio_raw').getPublicUrl(filePath);
       const currentCloudUrl = publicUrlData.publicUrl;
 
+      setAudioData({ url: currentCloudUrl, fileName: selectedFile.name, bpm: 0, totalBars: 0 });
+      setStatus("idle"); // Ready to analyze
+    } catch (err: any) {
+      if (addToast) addToast(err.message, "error");
+      setStatus("idle");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!audioData?.url || !hasCredits) return;
+    setStatus("analyzing");
+
+    try {
       const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) throw new Error("Security Exception: Valid JWT Token required.");
-
-      setStatus("analyzing");
-      setPollingAttempts(0);
-
       const res = await fetch('/api/dsp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${session?.access_token}`
         },
-        body: JSON.stringify({ file_url: currentCloudUrl })
+        body: JSON.stringify({ file_url: audioData.url })
       });
 
       const initData = await res.json();
-
-      if (!res.ok) {
-        await supabase.storage.from('audio_raw').remove([filePath]);
-        throw new Error(initData.error || "DSP Initialization failed");
-      }
-
-      // Initiate Polling with the real Job ID
-      if (initData.jobId) {
-        pollDSPJob(initData.jobId, currentCloudUrl, selectedFile.name);
-      } else {
-        throw new Error("No DSP Job ID returned from worker.");
-      }
-
+      if (!res.ok) throw new Error(initData.error || "DSP Init failed");
+      if (initData.jobId) pollDSPJob(initData.jobId, audioData.url, audioData.fileName);
     } catch (err: any) {
-      console.error("DSP Pipeline Error:", err);
-      if (addToast) addToast(err.message || "Error processing audio.", "error");
-      setStatus("idle");
-    }
-  };
-
-  // STRIPE BEAT LEASING & BUYOUT
-  const handleMarketplaceSelect = async (beat: any, licenseType: 'lease' | 'exclusive') => {
-    if (!isDisclaimerAccepted) {
-      if (addToast) addToast("Please accept the IP & Licensing Declaration below first.", "error");
-      return;
-    }
-    
-    // Stop preview if it's playing
-    if (previewAudioRef.current) previewAudioRef.current.pause();
-    setPlayingPreview(null);
-
-    const price = licenseType === 'lease' ? beat.leasePrice : beat.exclusivePrice;
-    const beatNameLabel = licenseType === 'lease' ? `${beat.title} (Lease)` : `${beat.title} (Exclusive Buyout)`;
-
-    setStatus("analyzing"); 
-    try {
-      const res = await fetch('/api/stripe/beat-lease', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          beatName: beatNameLabel,
-          beatUrl: beat.url,
-          price: price,
-          userId: userSession?.id
-        })
-      });
-
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url; 
-      } else {
-        throw new Error(data.error || "Failed to initialize Stripe.");
-      }
-    } catch (err: any) {
-      console.error("Marketplace Error:", err);
       if (addToast) addToast(err.message, "error");
       setStatus("idle");
     }
   };
 
-  // HANDLE RETURNING USERS AFTER SUCCESSFUL STRIPE LEASE
   const handlePurchasedBeatDSP = async (beatUrl: string, beatName: string) => {
     setStatus("analyzing");
-    setPollingAttempts(0);
-
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      
       const res = await fetch('/api/dsp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${session?.access_token}`
         },
         body: JSON.stringify({ file_url: beatUrl })
       });
-      
       const initData = await res.json();
-      if (!res.ok) throw new Error(initData.error || "DSP Processing failed");
-
-      if (initData.jobId) {
-        pollDSPJob(initData.jobId, beatUrl, beatName);
-      } else {
-        throw new Error("No DSP Job ID returned.");
-      }
-
+      if (initData.jobId) pollDSPJob(initData.jobId, beatUrl, beatName);
     } catch (err: any) {
-      console.error("Purchased Beat DSP Error:", err);
-      if (addToast) addToast("Failed to analyze beat: " + err.message, "error");
+      if (addToast) addToast(err.message, "error");
       setStatus("idle");
+    }
+  };
+
+  const handleMarketplaceSelect = async (beat: any, licenseType: 'lease' | 'exclusive') => {
+    if (!isDisclaimerAccepted) {
+      if (addToast) addToast("Please accept the IP Declaration first.", "error");
+      return;
+    }
+    const price = licenseType === 'lease' ? beat.leasePrice : beat.exclusivePrice;
+    try {
+      const res = await fetch('/api/stripe/beat-lease', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          beatName: `${beat.title} (${licenseType})`,
+          beatUrl: beat.url,
+          price: price,
+          userId: userSession?.id
+        })
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+    } catch (err: any) {
+      if (addToast) addToast(err.message, "error");
+    }
+  };
+
+  const togglePlayback = () => {
+    if (wavesurferRef.current) {
+      wavesurferRef.current.playPause();
+      setIsPlaying(wavesurferRef.current.isPlaying());
+    }
+  };
+
+  const togglePreview = (url: string) => {
+    if (playingPreview === url) {
+      previewAudioRef.current?.pause();
+      setPlayingPreview(null);
+    } else {
+      setPlayingPreview(url);
+      if (previewAudioRef.current) {
+        previewAudioRef.current.src = url;
+        previewAudioRef.current.play();
+      }
     }
   };
 
   return (
     <div className="h-full flex flex-col lg:flex-row gap-8 animate-in fade-in duration-500">
-      
-      {/* Hidden audio player for 60s beat previews */}
-      <audio 
-        ref={previewAudioRef} 
-        onTimeUpdate={handlePreviewTimeUpdate}
-        onEnded={() => setPlayingPreview(null)}
-        className="hidden" 
-      />
+      <audio ref={previewAudioRef} onEnded={() => setPlayingPreview(null)} className="hidden" />
 
       {/* LEFT COLUMN: UPLOAD & DSP */}
       <div className="flex-1 flex flex-col">
         <div className="mb-6">
           <h2 className="font-oswald text-3xl uppercase tracking-widest font-bold text-white flex items-center gap-3">
-            <UploadCloud className="text-[#E60000]" /> Room 01 // The Lab
+            <FlaskConical className="text-[#E60000]" /> Room 01 // The Lab
           </h2>
           <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest mt-2">
             Initialize Digital Signal Processing (DSP) & BPM Extraction
           </p>
         </div>
 
-        <div 
-          className={`flex-1 border-2 border-dashed rounded-lg text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[400px] transition-all group
-            ${status === 'idle' ? 'border-[#222] bg-[#050505] hover:border-[#E60000]' : 'border-[#E60000] bg-[#110000] border-solid'}`}
-          onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}
-          onClick={() => {
-            if (status !== 'idle') return;
-            if (!isDisclaimerAccepted) {
-              if (addToast) addToast("Please accept the IP & Licensing Declaration below first.", "error");
-              return;
-            }
-            fileInputRef.current?.click();
-          }}
-        >
-          <input ref={fileInputRef} type="file" accept="audio/*" onChange={handleChange} className="hidden" />
-
-          {status === "idle" && (
-            <div className={`text-center flex flex-col items-center animate-in zoom-in transition-opacity w-full ${!isDisclaimerAccepted ? 'opacity-40' : 'opacity-100'}`}>
-              <div className="absolute top-4 right-4 bg-[#111] border border-[#333] px-3 py-1 flex items-center gap-2 rounded-full">
-                <Zap size={12} className="text-[#E60000]" />
-                <span className="text-[9px] font-mono uppercase tracking-widest text-[#888]">Cost: 1 Credit</span>
-              </div>
-
-              <div className="w-20 h-20 bg-black border border-[#333] rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
-                <FileAudio size={32} className="text-[#E60000]" />
-              </div>
-              <h3 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-2">Drop Artifact Here</h3>
-              <p className="font-mono text-xs text-[#555] uppercase tracking-widest mb-6">WAV / MP3 (MAX 20MB)</p>
-              <button 
-                className={`px-8 py-3 font-bold text-[10px] uppercase tracking-widest transition-colors ${!isDisclaimerAccepted ? 'bg-[#333] text-[#888]' : 'bg-white text-black hover:bg-[#E60000] hover:text-white'}`}
-              >
-                {isDisclaimerAccepted ? "Browse Local Files" : "Awaiting IP Declaration"}
-              </button>
+        <div className="flex-1 border border-[#222] bg-[#050505] rounded-lg relative overflow-hidden flex flex-col items-center justify-center min-h-[450px]">
+          
+          {!audioData ? (
+            <div className="text-center p-10">
+               <input ref={fileInputRef} type="file" accept="audio/*" onChange={handleFileUpload} className="hidden" />
+               <div 
+                 onClick={() => isDisclaimerAccepted ? fileInputRef.current?.click() : addToast?.("Accept IP Declaration first.", "error")}
+                 className={`w-24 h-24 rounded-full bg-[#111] border border-[#222] flex items-center justify-center mb-6 mx-auto cursor-pointer hover:border-[#E60000] transition-all ${!isDisclaimerAccepted && 'opacity-30'}`}
+               >
+                 {isUploading ? <Loader2 className="text-[#E60000] animate-spin" size={32} /> : <UploadCloud size={32} className="text-[#555]" />}
+               </div>
+               <h3 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-2">Initialize Substrate</h3>
+               <p className="font-mono text-[10px] text-[#555] uppercase tracking-widest">Drop MP3/WAV (Max 20MB)</p>
             </div>
-          )}
-
-          {status === "uploading" && (
-            <div className="relative z-10 flex flex-col items-center animate-in zoom-in">
-              <Loader2 size={48} className="text-[#E60000] animate-spin mb-6" />
-              <h3 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-2">Transmitting Payload</h3>
-              <p className="font-mono text-xs text-[#888] uppercase tracking-widest">Encrypting to secure storage node...</p>
-            </div>
-          )}
-
-          {status === "analyzing" && (
-            <div className="relative z-10 flex flex-col items-center animate-in zoom-in">
-              <div className="relative w-24 h-24 flex items-center justify-center mb-6">
-                <div className="absolute inset-0 border-4 border-[#333] rounded-full"></div>
-                <div className="absolute inset-0 border-4 border-[#E60000] rounded-full border-t-transparent animate-spin"></div>
-                <Music size={24} className="text-[#E60000] animate-pulse" />
-              </div>
-              <h3 className="font-oswald text-2xl uppercase tracking-widest font-bold text-white mb-2">Running DSP Analysis</h3>
-              <p className="font-mono text-xs text-[#888] uppercase tracking-widest">Polling RunPod Serverless Architecture...</p>
-              <div className="mt-4 flex items-center gap-2 text-[10px] font-mono text-[#E60000] border border-[#E60000]/30 bg-[#E60000]/10 px-3 py-1">
-                <Network size={12} className="animate-pulse" /> Compute Attempt: {pollingAttempts}
-              </div>
-            </div>
-          )}
-
-          {status === "success" && audioData && (
-            <div className="relative z-10 flex flex-col items-center animate-in zoom-in w-full px-8 py-10">
-              <Activity size={48} className="mx-auto mb-4 text-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] rounded-full bg-green-500/10 p-2" />
-              <h2 className="font-oswald text-3xl uppercase tracking-widest mb-6 font-bold text-white">Smart Analysis Complete</h2>
-              
-              <div className="bg-black border border-green-500/30 p-6 w-full max-w-sm mb-8 space-y-4 shadow-[0_0_20px_rgba(0,0,0,0.5)] text-left">
-                <div className="flex justify-between items-center border-b border-[#222] pb-2">
-                  <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Detected BPM</span>
-                  <span className="text-lg font-oswald text-green-500 font-bold">{Math.round(audioData.bpm)}</span>
+          ) : (
+            <div className="w-full p-8 animate-in zoom-in duration-300">
+                <div className="flex justify-between items-center mb-6">
+                   <div className="flex items-center gap-3">
+                     <Music className="text-[#E60000]" size={18} />
+                     <span className="font-mono text-[10px] text-white uppercase tracking-widest truncate max-w-[200px]">{audioData.fileName}</span>
+                   </div>
+                   <button onClick={() => { setAudioData(null); setStatus("idle"); setAnalysisComplete(false); }} className="text-[#555] hover:text-[#E60000] transition-colors font-mono text-[10px] uppercase flex items-center gap-1">
+                     <Trash2 size={12} /> Eject
+                   </button>
                 </div>
-                <div className="flex justify-between items-center border-b border-[#222] pb-2">
-                  <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Extracted Key</span>
-                  <span className="text-lg font-oswald text-green-500 font-bold">{audioData.key || "Unknown"}</span>
-                </div>
-                <div className="flex justify-between items-center border-b border-[#222] pb-2">
-                  <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Structural Length</span>
-                  <span className="text-lg font-oswald text-green-500 font-bold">{audioData.totalBars} Bars</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-[#888] font-mono uppercase tracking-widest">Algorithm Routing</span>
-                  <span className="text-[10px] font-mono text-green-500 font-bold tracking-widest flex items-center gap-1">
-                     <ArrowRight size={10} /> Primed for Room 02
-                  </span>
-                </div>
-              </div>
 
-              <div className="w-full max-w-sm flex flex-col gap-3">
-                <button 
-                  onClick={() => setActiveRoom("02")}
-                  className="w-full bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)] flex items-center justify-center gap-2"
-                >
-                  Advance to Brain Train <ArrowRight size={18} />
-                </button>
-              </div>
+                <div className="bg-black border border-[#111] p-4 rounded-lg mb-6 flex items-center gap-4">
+                  <button onClick={togglePlayback} className="w-12 h-12 rounded-full bg-[#E60000] flex items-center justify-center shrink-0">
+                    {isPlaying ? <Pause size={20} /> : <Play size={20} className="ml-1" />}
+                  </button>
+                  <div ref={waveformRef} className="flex-1" />
+                </div>
+
+                {!analysisComplete ? (
+                  <div className="relative">
+                    {!hasCredits && (
+                      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center z-10 border border-[#E60000]/20 rounded-lg">
+                        <Lock size={20} className="text-[#E60000] mb-2" />
+                        <span className="font-mono text-[10px] uppercase text-white">Insufficient Credits</span>
+                      </div>
+                    )}
+                    <button 
+                      onClick={handleAnalyze}
+                      disabled={status === "analyzing" || !hasCredits}
+                      className="w-full bg-[#111] border border-[#222] py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center justify-center gap-3 rounded-lg"
+                    >
+                      {status === "analyzing" ? (
+                        <><Loader2 className="animate-spin" /> Analyzing...</>
+                      ) : (
+                        <><Activity size={18} /> Run DSP Diagnostics <Zap size={14} className="text-[#E60000]" /></>
+                      )}
+                    </button>
+                    {status === "analyzing" && (
+                      <p className="text-center font-mono text-[9px] text-[#E60000] mt-3 uppercase animate-pulse">Compute Attempt: {pollingAttempts}</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-black border border-[#111] p-4 rounded text-center">
+                        <span className="block text-[8px] font-mono text-[#555] uppercase mb-1">Tempo</span>
+                        <span className="font-oswald text-xl text-[#E60000] font-bold">{Math.round(audioData.bpm)}</span>
+                      </div>
+                      <div className="bg-black border border-[#111] p-4 rounded text-center">
+                        <span className="block text-[8px] font-mono text-[#555] uppercase mb-1">Key</span>
+                        <span className="font-oswald text-xl text-white font-bold">{audioData.key}</span>
+                      </div>
+                      <div className="bg-black border border-[#111] p-4 rounded text-center">
+                        <span className="block text-[8px] font-mono text-[#555] uppercase mb-1">Bars</span>
+                        <span className="font-oswald text-xl text-white font-bold">{audioData.totalBars}</span>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setActiveRoom("02")}
+                      className="w-full bg-white text-black py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex items-center justify-center gap-2 rounded-lg"
+                    >
+                      Advance to Brain Train <ArrowRight size={18} />
+                    </button>
+                  </div>
+                )}
             </div>
           )}
         </div>
 
-        {/* THE LEGAL DISCLAIMER LOCK */}
+        {/* IP DISCLAIMER */}
         <div 
           onClick={() => setIsDisclaimerAccepted(!isDisclaimerAccepted)}
           className={`mt-6 border p-5 flex gap-4 items-start rounded-sm transition-all cursor-pointer select-none
-            ${isDisclaimerAccepted ? 'border-[#E60000] bg-[#110000]' : 'border-[#330000] bg-[#0a0a0a] hover:bg-[#110000]'}`}
+            ${isDisclaimerAccepted ? 'border-[#E60000] bg-[#110000]' : 'border-[#222] bg-[#0a0a0a] hover:bg-[#110000]'}`}
         >
-          <div className="mt-0.5">
-            <input 
-              type="checkbox" 
-              checked={isDisclaimerAccepted} 
-              onChange={(e) => setIsDisclaimerAccepted(e.target.checked)} 
-              onClick={(e) => e.stopPropagation()}
-              className="accent-[#E60000] w-5 h-5 cursor-pointer" 
-            />
-          </div>
+          <input type="checkbox" checked={isDisclaimerAccepted} onChange={() => {}} className="accent-[#E60000] w-5 h-5 mt-0.5" />
           <div>
             <h4 className="font-oswald text-sm uppercase tracking-widest font-bold text-[#E60000] mb-1 flex items-center gap-2">
               <ShieldCheck size={16} /> IP & Licensing Declaration
             </h4>
-            <p className="font-mono text-[9px] text-[#888] uppercase tracking-wider leading-relaxed">
-              By checking this box, I cryptographically attest that this artifact is an original, 100% owned work. 
-              Bar-Code.ai acts strictly as a processing conduit and explicitly prohibits the upload of unauthorized copyrighted material. 
-              All stems and processing metadata are securely sandboxed and are never utilized to train foundation AI models.
+            <p className="font-mono text-[9px] text-[#888] uppercase leading-relaxed">
+              I attest this artifact is original and 100% owned work. 
+              Bar-Code.ai acts as a processing conduit and prohibits unauthorized copyrighted material.
             </p>
           </div>
         </div>
@@ -539,59 +453,40 @@ export default function Room01_Lab() {
           <h3 className="font-oswald text-xl uppercase tracking-widest font-bold text-white mb-2 flex items-center gap-2">
             <AlertTriangle size={16} className="text-yellow-500" /> Need a Canvas?
           </h3>
-          <p className="font-mono text-[9px] text-[#666] uppercase tracking-widest leading-relaxed">
-            Don't have a beat ready? Pull a royalty-free structural canvas directly from the A&R Neural Network.
+          <p className="font-mono text-[9px] text-[#666] uppercase tracking-widest">
+            Pull royalty-free structural canvases from the A&R Neural Network.
           </p>
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
           {beats.length === 0 ? (
-            <div className="text-center text-[#555] font-mono text-[9px] uppercase tracking-widest mt-10">
-              <Loader2 size={16} className="animate-spin mx-auto mb-2" />
-              Syncing Ledger...
-            </div>
+            <div className="text-center py-10"><Loader2 size={16} className="animate-spin mx-auto mb-2 text-[#E60000]" /><span className="text-[9px] font-mono text-[#555]">Syncing Ledger...</span></div>
           ) : beats.map((beat) => (
-            <div key={beat.id} className={`bg-black border p-4 transition-all group flex flex-col justify-between ${!isDisclaimerAccepted ? 'border-[#111] opacity-50' : 'border-[#222] hover:border-[#E60000]'}`}>
-              <div className="mb-4 flex items-center gap-3">
+            <div key={beat.id} className="bg-black border border-[#111] p-4 hover:border-[#E60000] transition-all group">
+              <div className="flex items-center gap-3 mb-4">
                 <button 
                   onClick={() => togglePreview(beat.url)}
-                  disabled={!isDisclaimerAccepted}
-                  className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-all disabled:cursor-not-allowed
-                    ${playingPreview === beat.url ? 'bg-[#E60000] text-white shadow-[0_0_15px_rgba(230,0,0,0.5)] animate-pulse' : 'bg-[#111] text-[#888] hover:text-white hover:bg-[#222]'}`}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${playingPreview === beat.url ? 'bg-[#E60000] text-white' : 'bg-[#111] text-[#555]'}`}
                 >
                   {playingPreview === beat.url ? <Pause size={14} /> : <Play size={14} className="ml-1" />}
                 </button>
                 <div>
-                  <h4 className={`font-oswald text-sm uppercase tracking-widest font-bold transition-colors ${!isDisclaimerAccepted ? 'text-[#888]' : 'text-white group-hover:text-[#E60000]'}`}>{beat.title}</h4>
-                  <p className="font-mono text-[9px] text-[#555] uppercase tracking-widest mt-1">
-                    PROD: {beat.producer}
-                  </p>
+                  <h4 className="font-oswald text-sm uppercase tracking-widest font-bold text-white group-hover:text-[#E60000] transition-colors">{beat.title}</h4>
+                  <p className="font-mono text-[8px] text-[#555] uppercase">{beat.bpm} BPM // {beat.producer}</p>
                 </div>
               </div>
-              
-              <div className="flex flex-col gap-2 shrink-0">
-                <button 
-                  onClick={() => handleMarketplaceSelect(beat, 'lease')}
-                  disabled={status !== "idle" || !isDisclaimerAccepted}
-                  className={`w-full px-4 py-2 flex items-center justify-center font-bold text-[9px] uppercase tracking-widest transition-all disabled:cursor-not-allowed
-                    ${!isDisclaimerAccepted ? 'bg-[#111] text-[#333]' : 'bg-[#111] text-[#888] hover:bg-white hover:text-black'}`}
-                >
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => handleMarketplaceSelect(beat, 'lease')} className="bg-[#111] text-[#888] py-2 text-[9px] font-bold uppercase hover:bg-white hover:text-black transition-all">
                   ${beat.leasePrice.toFixed(2)} Lease
                 </button>
-                <button 
-                  onClick={() => handleMarketplaceSelect(beat, 'exclusive')}
-                  disabled={status !== "idle" || !isDisclaimerAccepted}
-                  className={`w-full px-4 py-2 flex items-center justify-center font-bold text-[9px] uppercase tracking-widest transition-all disabled:cursor-not-allowed
-                    ${!isDisclaimerAccepted ? 'bg-[#111] text-[#333]' : 'border border-yellow-500/50 text-yellow-500 hover:bg-yellow-500 hover:text-black'}`}
-                >
-                  ${beat.exclusivePrice.toFixed(2)} Exclusive Buyout
+                <button onClick={() => handleMarketplaceSelect(beat, 'exclusive')} className="border border-yellow-500/30 text-yellow-500 py-2 text-[9px] font-bold uppercase hover:bg-yellow-500 hover:text-black transition-all">
+                   Buyout
                 </button>
               </div>
             </div>
           ))}
         </div>
       </div>
-      
     </div>
   );
 }
