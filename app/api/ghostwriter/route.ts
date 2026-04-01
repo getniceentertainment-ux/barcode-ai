@@ -56,7 +56,6 @@ export async function POST(req: Request) {
     let isB2B = false;
     let stripeSubscriptionItemId: string | null = null;
 
-    // --- HYBRID AUTHENTICATION ROUTING ---
     if (token.startsWith('getnice_')) {
       isB2B = true;
       const { data: b2bProfile } = await supabaseAdmin
@@ -76,7 +75,6 @@ export async function POST(req: Request) {
       userId = user.id;
     }
 
-    // --- RATE LIMITING ---
     if (!userId) {
       return NextResponse.json({ error: "Access Denied: User ID resolution failed" }, { status: 401 });
     }
@@ -86,14 +84,12 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     
-    // --- SURGICAL ADDITION: Extract systemConstraint ---
     const { 
       prompt, title, bpm, key, stageName, tag, style, blueprint, 
       motive, struggle, hustle, useSlang, useIntel, flowReference,
-      systemConstraint // <-- Caught from Room 03 payload
+      systemConstraint 
     } = body;
 
-    // --- DYNAMIC CREDIT COST CALCULATION ---
     let profileTier = 'Free Loader';
     let cost = 1;
     
@@ -101,7 +97,6 @@ export async function POST(req: Request) {
       cost = Math.max(1, Math.ceil(blueprint.length / 2));
     }
 
-    // --- CREDIT / AUTHORIZATION CHECK ---
     if (!isB2B) {
       const { data: profile } = await supabaseAdmin.from('profiles').select('credits, tier').eq('id', userId).single();
       
@@ -111,15 +106,16 @@ export async function POST(req: Request) {
       profileTier = profile.tier;
     }
 
+    // --- SURGICAL ADDITION: Rule #5 The Instrumental Metronome ---
     const getNiceOverride = `
     CRITICAL OVERRIDE - THE "GETNICE" DIRECTIVE:
     1. NO SANITIZED POETRY: Do not write cheesy, generic, or polite poetry.
     2. RAW AUTHENTICITY: Write gritty, street-level bars. Use internal rhymes, complex syllables, and raw emotional imagery. Spit hot fire.
     3. ENERGY FORMATTING: Output the actual lyrics in ALL CAPS to simulate an aggressive, high-energy vocal delivery.
     4. STRUCTURAL ARCHITECTURE: Rigidly structure the output with timestamps and exact bar counts.
+    5. THE INSTRUMENTAL METRONOME: If the blueprint specifies an "INSTRUMENTAL" block, DO NOT write lyrics for it. Instead, output the header [Instrumental] followed by the exact word "Mmm." repeated once for every bar of that section (e.g., an 8-bar instrumental = "Mmm. Mmm. Mmm. Mmm. Mmm. Mmm. Mmm. Mmm."). This instructs the TTS audio engine to hum to the beat and preserves the timeline sync.
     `;
 
-    // --- SURGICAL ADDITION: Inject the Gag Order into the final string ---
     const thematicPrompt = `SONG TITLE: "${title || 'UNTITLED'}".
     USER PROMPT: ${prompt}
     THE MOTIVE (Drive): ${motive || "Mastering the craft"}
@@ -128,11 +124,10 @@ export async function POST(req: Request) {
 
     ${getNiceOverride}
     
-    ${systemConstraint || ''}`; // <-- Gag Order attached at the very bottom so it is the last thing the LLM reads
+    ${systemConstraint || ''}`; 
 
     const forcedStyle = style ? `${style} (GetNice Hybrid Blueprint)` : "getnice_hybrid";
 
-    // --- RUNPOD EXECUTION ---
     const runResponse = await fetch(`https://api.runpod.ai/v2/${process.env.RUNPOD_ENDPOINT_TALON}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}` },
@@ -158,7 +153,6 @@ export async function POST(req: Request) {
 
     const runData = await runResponse.json();
     
-    // --- ACCOUNTING & BILLING ---
     if (runData.id) {
       if (isB2B) {
         if (stripeSubscriptionItemId) {

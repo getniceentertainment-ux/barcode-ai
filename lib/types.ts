@@ -13,7 +13,7 @@ export interface AudioAnalysis {
   fileName: string;
   bpm: number;
   totalBars: number;
-  duration?: number; // <-- SURGICAL ADDITION: The exact millisecond length of the beat
+  duration?: number; // Preserving our Phase 1 addition
   grid?: number[];
   key?: string;
 }
@@ -26,7 +26,7 @@ export interface FlowDNA {
 
 export interface BlueprintSection {
   id: string;
-  type: "INTRO" | "HOOK" | "VERSE" | "OUTRO" | "BRIDGE";
+  type: "INTRO" | "HOOK" | "VERSE" | "OUTRO" | "BRIDGE" | "INSTRUMENTAL"; // <-- SURGICAL ADDITION
   bars: number;
 }
 

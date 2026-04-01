@@ -73,7 +73,8 @@ export default function Room03_Ghostwriter() {
     syncTimeline(newBp);
   };
 
-  const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
+  // --- SURGICAL FIX: Allow INSTRUMENTAL block generation ---
+  const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE" | "INSTRUMENTAL", bars: number) => {
     const isFreeLoader = (userSession?.tier as string) === "Free Loader";
     const currentSectionCount = blueprint.length;
 
@@ -116,9 +117,8 @@ export default function Room03_Ghostwriter() {
     setIsGenerating(true);
     setUxState("Synthesizing Bars via GETNICE Engine...");
 
-    // --- SURGICAL ADDITION: The LLM Gag Order ---
-    // This strictly prevents the AI from outputting structural text that breaks Room 04's math.
-    const systemConstraint = `ABSOLUTE RULE: You are a structural lyrics API. You must ONLY output raw lyrics and section headers (e.g. [Verse 1]). NEVER output instructions, bar counts (e.g. 'Bars 1-8'), timestamps (e.g. '(0:15)'), or phonetic spellings of symbols like 'Pipe Symbol'. Do not explain your output.`;
+    // --- THE GAG ORDER & METRONOME DIRECTIVE ---
+    const systemConstraint = `ABSOLUTE RULE: You are a structural lyrics API. You must ONLY output raw lyrics and section headers (e.g. [Verse 1], [Instrumental]). NEVER output instructions, bar counts (e.g. 'Bars 1-8'), timestamps (e.g. '(0:15)'), or phonetic spellings of symbols like 'Pipe Symbol'. Do not explain your output.`;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -145,7 +145,7 @@ export default function Room03_Ghostwriter() {
           tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
-          systemConstraint: systemConstraint, // <-- Passed to backend to restrict generation
+          systemConstraint: systemConstraint, 
           blueprint: blueprint.map(b => ({ 
             type: b.type, 
             bars: b.bars, 
@@ -375,7 +375,7 @@ export default function Room03_Ghostwriter() {
                 <span>Block {index + 1}</span>
               </div>
               <div>
-                <h4 className="font-oswald text-lg uppercase tracking-widest text-white">{block.type}</h4>
+                <h4 className={`font-oswald text-lg uppercase tracking-widest ${block.type === 'INSTRUMENTAL' ? 'text-blue-500' : 'text-white'}`}>{block.type}</h4>
                 <p className="font-mono text-[10px] text-[#E60000] font-bold">{block.bars} BARS</p>
               </div>
 
@@ -395,7 +395,7 @@ export default function Room03_Ghostwriter() {
           ))}
           
           {/* ADD STRUCTURE BLOCK */}
-          <div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2 relative">
+          <div className="w-48 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2 relative">
             {(userSession?.tier as string) === "Free Loader" && blueprint.length >= 2 && (
               <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-10">
                 <Lock size={14} className="text-[#E60000] mb-1" />
@@ -403,7 +403,7 @@ export default function Room03_Ghostwriter() {
               </div>
             )}
             <p className="text-[8px] font-mono text-[#555] uppercase text-center tracking-widest">Add Structure</p>
-            <div className="flex gap-1 justify-center">
+            <div className="flex gap-1 justify-center flex-wrap">
               <button 
                 onClick={() => addSection("HOOK", 8)} 
                 disabled={(userSession?.tier as string) === "Free Loader" && blueprint.length >= 2}
@@ -417,6 +417,14 @@ export default function Room03_Ghostwriter() {
                 className="bg-[#111] hover:bg-[#E60000] hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 Verse
+              </button>
+              {/* SURGICAL ADDITION: The Instrumental Button */}
+              <button 
+                onClick={() => addSection("INSTRUMENTAL", 8)} 
+                disabled={(userSession?.tier as string) === "Free Loader" && blueprint.length >= 2}
+                className="bg-[#111] hover:bg-blue-600 hover:text-white text-[#888] text-[9px] px-2 py-1 uppercase font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Instr.
               </button>
             </div>
           </div>
