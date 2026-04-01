@@ -422,12 +422,22 @@ export default function Room02_BrainTrain() {
              <div className="space-y-3">
                {blueprint.map((block, index) => (
                  <div key={block.id} className="flex items-center gap-4 bg-[#0a0a0a] border border-[#222] p-3">
-                   <select value={block.type} onChange={(e) => updateBlueprintType(index, e.target.value)} className="bg-black text-white font-oswald uppercase p-2 text-sm outline-none">
-                     <option value="INTRO">Intro</option><option value="HOOK">Hook</option><option value="VERSE">Verse</option><option value="OUTRO">Outro</option>
+                   {/* SURGICAL FIX: Added INSTRUMENTAL option and dynamic styling */}
+                   <select 
+                     value={block.type} 
+                     onChange={(e) => updateBlueprintType(index, e.target.value)} 
+                     className={`bg-black font-oswald uppercase p-2 text-sm outline-none transition-colors ${block.type === 'INSTRUMENTAL' ? 'text-blue-500 font-bold' : 'text-white'}`}
+                   >
+                     <option value="INTRO">Intro</option>
+                     <option value="HOOK">Hook</option>
+                     <option value="VERSE">Verse</option>
+                     <option value="INSTRUMENTAL">Instr.</option>
+                     <option value="OUTRO">Outro</option>
                    </select>
                    <div className="ml-auto flex items-center gap-4 font-mono text-sm">
                      <button onClick={() => updateBlueprintBar(index, -1)} className="hover:text-[#E60000]"><Minus size={16} /></button>
-                     <span className="w-12 text-center">{block.bars} BARS</span>
+                     {/* SURGICAL FIX: Dynamic color styling for bars text */}
+                     <span className={`w-12 text-center ${block.type === 'INSTRUMENTAL' ? 'text-blue-500 font-bold' : 'text-white'}`}>{block.bars} BARS</span>
                      <button 
                        onClick={() => updateBlueprintBar(index, 1)} 
                        disabled={block.bars >= 16}
