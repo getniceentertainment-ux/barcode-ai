@@ -1,21 +1,21 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, Info, ToggleLeft, ToggleRight } from "lucide-react";
+import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, ToggleLeft, ToggleRight } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase"; 
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
-type WordMapping = { word: string; startTime: number };
+type WordMapping = { word: string; startTime: number; duration: number };
 type LyricLine = { text: string; startTime: number; isHeader: boolean; timestamp?: string; words?: WordMapping[] };
 
 // --- BULLETPROOF AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const numChannels = buffer.numberOfChannels;
   const sampleRate = buffer.sampleRate;
-  const format = 1; // PCM
+  const format = 1; 
   const bitDepth = 16;
   const bytesPerSample = bitDepth / 8;
   const blockAlign = numChannels * bytesPerSample;
@@ -133,7 +133,6 @@ export default function Room04_Booth() {
   const [trimDuration, setTrimDuration] = useState(0);
   const [isProcessingTrim, setIsProcessingTrim] = useState(false);
 
-  // --- HYPER-PRECISE BPM MATH ENGINE ---
   const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
 
   const totalBars = blueprint.length > 0 
@@ -142,7 +141,6 @@ export default function Room04_Booth() {
 
   const preciseBpm = trackDuration > 0 ? ((totalBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
   const secondsPerBar = trackDuration > 0 ? (trackDuration / totalBars) : (60 / preciseBpm) * 4;
-  // -------------------------------------
 
   const trimWaveformRef = useRef<HTMLDivElement>(null);
   const trimWavesurferRef = useRef<WaveSurfer | null>(null);
@@ -169,9 +167,7 @@ export default function Room04_Booth() {
     
     setIsGeneratingGuide(true);
     try {
-      // The lyrics in state are already hyper-sanitized by the matrix below!
       const parsedLines = lyricLines.filter(l => !l.isHeader);
-      
       const linesToRead = parsedLines.map(l => l.text).join(' ');
 
       const res = await fetch('/api/audio/generate-guide', {
@@ -444,18 +440,6 @@ export default function Room04_Booth() {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('engineering_unlocked') === 'true') {
-        window.history.replaceState({}, document.title, window.location.pathname);
-        useMatrixStore.setState((state) => ({ userSession: state.userSession ? { ...state.userSession, has_engineering_token: true } as any : null }));
-        if (addToast) addToast("Engineering Token Secured. Suite Unlocked.", "success");
-        setActiveRoom("05");
-      }
-    }
-  }, [userSession, setActiveRoom, addToast]);
-
-  useEffect(() => {
     let isMounted = true;
     const loadBuffers = async () => {
       if (!audioCtxRef.current) return;
@@ -470,8 +454,6 @@ export default function Room04_Booth() {
                const resp = await fetch(stem.url, { signal: controller.signal });
                clearTimeout(timeoutId);
                if (!resp.ok) continue;
-               const contentType = resp.headers.get('content-type') || '';
-               if (contentType.includes('text/html') || contentType.includes('application/json')) continue;
                arrayBuf = await resp.arrayBuffer();
             }
             if (!isMounted) return;
@@ -515,7 +497,7 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- SURGICAL FIX: THE ULTIMATE SANITIZER & GOVERNOR MATRIX ---
+  // --- SURGICAL FIX: CHARACTER-WEIGHTED GOVERNOR MATH & BOUNCING BALL ---
   useEffect(() => {
     if (!generatedLyrics) return;
     
@@ -527,36 +509,41 @@ export default function Room04_Booth() {
     const lines = generatedLyrics.split('\n');
     
     // STEP 1: The Ultimate Sanitizer Pipeline
-    // Hunt and destroy timestamps, AI bar-counts, pipe text, and pipe symbols.
     const sanitizedLines = lines.map(l => {
       let text = l.trim();
-      if (text.startsWith('[')) return { text, isHeader: true }; // Preserve [Headers] untouched
+      if (text.startsWith('[')) return { text, isHeader: true }; 
       
       text = text
-        .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') // Scrub (0:15)
-        .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') // Scrub "Bars 1-4"
-        .replace(/pipe\s*symbol/gi, '') // Scrub spoken "Pipe Symbol"
-        .replace(/\|/g, '') // Scrub actual "|"
+        .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
+        .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
+        .replace(/pipe\s*symbol/gi, '') 
+        .replace(/\|/g, '') 
         .trim();
         
       return { text, isHeader: false };
-    }).filter(obj => obj.text.length > 0); // Purge any line that became completely empty
+    }).filter(obj => obj.text.length > 0);
 
-    // STEP 2: Governor Math (Count only valid, scrubbed words)
-    let totalWords = 0;
+    // STEP 2: Character-Weighted Governor Math
+    // Instead of raw word counts, we calculate "weight" based on syllables/characters and breath pauses.
+    let totalWeight = 0;
     sanitizedLines.forEach(obj => {
        if (!obj.isHeader) {
-         totalWords += obj.text.split(/\s+/).filter(w => w.length > 0).length;
+         const words = obj.text.split(/\s+/).filter(w => w.length > 0);
+         words.forEach(w => {
+            totalWeight += w.length; // 1 weight per character
+         });
+         totalWeight += (words.length * 1.5); // Weight for the space/breath between words
+         totalWeight += 5; // Weight for the pause at the end of a line
        }
     });
 
-    const timePerWord = hasGovernor && totalWords > 0 ? guideDuration / totalWords : 0;
+    const timePerWeight = hasGovernor && totalWeight > 0 ? guideDuration / totalWeight : 0;
     let runningWordTime = hasGovernor ? (guideStem.offsetBars || 0) * secondsPerBar : 0;
 
     let currentBlockIndex = -1; 
     let barOffsetWithinBlock = 0; 
 
-    // STEP 3: Map the timeline using the pristine text
+    // STEP 3: Map the timeline using precise proportional weights
     const parsed = sanitizedLines.map((obj) => {
       if (obj.isHeader) { 
         currentBlockIndex++; 
@@ -572,13 +559,22 @@ export default function Room04_Booth() {
       const words = obj.text.split(/\s+/).filter(w => w.length > 0);
 
       if (hasGovernor) {
-        // Governor Active: Float absolute time based on word count over buffer duration
+        // Governor Active: Allocate time based EXACTLY on word length (syllables)
         const lineStartTime = runningWordTime;
+        
         const mappedWords = words.map(w => {
+          const wordWeight = w.length;
+          const wordDuration = wordWeight * timePerWeight;
           const wordStart = runningWordTime;
-          runningWordTime += timePerWord;
-          return { word: w, startTime: wordStart };
+          
+          // Advance the running clock by the word length PLUS the standard space gap
+          runningWordTime += wordDuration + (1.5 * timePerWeight);
+          
+          return { word: w, startTime: wordStart, duration: wordDuration };
         });
+
+        // Add the end-of-line breath pause to the running clock
+        runningWordTime += 5 * timePerWeight;
 
         return { 
           text: obj.text, startTime: lineStartTime, isHeader: false, 
@@ -586,7 +582,7 @@ export default function Room04_Booth() {
           words: mappedWords 
         };
       } else {
-        // Governor Off: Fall back to rigorous math grid (2 Bars per line)
+        // Governor Off: Fall back to rigorous math grid
         let blockStartBar = 0;
         if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
           blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
@@ -600,7 +596,7 @@ export default function Room04_Booth() {
         const mappedWords = words.map(w => {
           const wordStart = localWordTime;
           localWordTime += fallbackTimePerWord;
-          return { word: w, startTime: wordStart };
+          return { word: w, startTime: wordStart, duration: fallbackTimePerWord };
         });
 
         return { 
@@ -694,22 +690,27 @@ export default function Room04_Booth() {
           className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative"
         >
           {lyricLines.map((line, i) => {
-            const isActive = teleprompterEnabled && !line.isHeader && i === activeLineIndex;
+            const isActiveLine = teleprompterEnabled && !line.isHeader && i === activeLineIndex;
             
             return (
-              <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActive ? 'bg-[#E60000]/10 py-1 px-3 rounded border-l-2 border-[#E60000]' : 'py-1 px-3 border-l-2 border-transparent'}`}>
+              <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActiveLine ? 'bg-[#E60000]/10 py-2 px-3 rounded border-l-2 border-[#E60000]' : 'py-2 px-3 border-l-2 border-transparent'}`}>
                 {!line.isHeader && line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
                 
-                <span className="flex-1">
+                <span className="flex-1 leading-loose">
                   {line.isHeader ? line.text : line.words?.map((wObj, wIdx) => {
-                    const isWordActive = isActive && currentTime >= wObj.startTime;
+                    // THE KARAOKE / BOUNCING BALL RENDERER
+                    const isPast = currentTime >= wObj.startTime + wObj.duration;
+                    const isActiveWord = isActiveLine && currentTime >= wObj.startTime && currentTime < wObj.startTime + wObj.duration;
 
                     return (
-                      <span 
-                        key={wIdx} 
-                        className={`transition-colors duration-200 ${isWordActive ? "text-white font-bold drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" : (isActive ? "text-[#888]" : "text-inherit")}`}
-                      >
-                        {wObj.word}{' '}
+                      <span key={wIdx} className="relative inline-block mr-2">
+                        {/* THE BOUNCING BALL VISUAL */}
+                        {isActiveWord && (
+                          <span className="absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#E60000] rounded-full animate-bounce shadow-[0_0_5px_#E60000]"></span>
+                        )}
+                        <span className={`transition-colors duration-100 ${isPast ? "text-[#888]" : isActiveWord ? "text-white font-bold drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" : "text-[#444]"}`}>
+                          {wObj.word}
+                        </span>
                       </span>
                     );
                   })}
