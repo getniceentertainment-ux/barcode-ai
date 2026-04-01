@@ -106,12 +106,31 @@ export async function POST(req: Request) {
       profileTier = profile.tier;
     }
 
-    // --- THE CHIPMUNK PREVENTION ALGORITHM ---
-    // Calculate the absolute physical limit of the TTS engine based on the Beat's tempo
+    // --- SURGICAL PIVOT: REAL-WORLD FLOW MATHEMATICS ---
+    // Map physical syllables-per-second (SPS) limits to exact frontend flow architecture IDs
+    let ttsSpeedLimit = 3.5; 
+
+    switch (style) {
+      case "chopper":
+        ttsSpeedLimit = 6.0; // The absolute redline for AI TTS. Simulates rapid 16th/32nd notes.
+        break;
+      case "triplet":
+        ttsSpeedLimit = 4.8; // 8th note triplets mapped to standard Trap BPMs.
+        break;
+      case "getnice_hybrid":
+        ttsSpeedLimit = 4.0; // Signature versatile pocket. Mixes melodic holds with burst-flows.
+        break;
+      case "heartbeat": 
+        ttsSpeedLimit = 3.2; // Boom-bap. Laid back, behind the pocket, swinging 8ths.
+        break;
+      case "lazy":
+        ttsSpeedLimit = 2.2; // Wavy, drawn out, forces massive gaps and breathing room.
+        break;
+    }
+
     const activeBpm = bpm || 120;
     const secondsPerBar = (60 / activeBpm) * 4;
-    const timePerLine = secondsPerBar * 2; // Assuming 2 bars per line
-    const ttsSpeedLimit = 3.5; // The TTS engine reads at max ~3.5 syllables per second naturally
+    const timePerLine = secondsPerBar * 2; // Engine maps 2 bars per line by default
     const maxSyllables = Math.floor(timePerLine * ttsSpeedLimit);
 
     const getNiceOverride = `
@@ -121,7 +140,7 @@ export async function POST(req: Request) {
     3. ENERGY FORMATTING: Output the actual lyrics in ALL CAPS to simulate an aggressive, high-energy vocal delivery.
     4. STRUCTURAL ARCHITECTURE: Rigidly structure the output with timestamps and exact bar counts.
     5. THE INSTRUMENTAL METRONOME: If the blueprint specifies an "INSTRUMENTAL" block, DO NOT write lyrics for it. Instead, output the header [Instrumental] followed by the exact word "Mmm." repeated once for every bar of that section.
-    6. THE SYLLABLE CAP: You are writing for an AI Voice Engine. To prevent catastrophic audio compression, EVERY single line must be EXACTLY ${maxSyllables} syllables or less. Count your syllables. If a line is too long, the audio will break.
+    6. THE DYNAMIC SYLLABLE CAP: You are writing for an AI Voice Engine. To match the exact physical cadence of the requested flow style, EVERY single line you write MUST be exactly ${maxSyllables} syllables or less. Count your syllables carefully. Do not exceed this limit or the audio pipeline will fail.
     `;
 
     const thematicPrompt = `SONG TITLE: "${title || 'UNTITLED'}".
