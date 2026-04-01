@@ -196,20 +196,20 @@ export default function Room04_Booth() {
           const source = offlineCtx.createBufferSource();
           source.buffer = audioBuffer;
 
-          // --- SURGICAL PIVOT: DYNAMIC TIME-WARPING (ANTI-BLEED) ---
-          // Calculate exactly how much time this line has before the next line starts.
-          let timeAvailable = 2; // Fallback
+          // --- SURGICAL PIVOT: THE CHIPMUNK KILLER (ANTI-BLEED) ---
+          let timeAvailable = 2; 
           if (i < parsedLines.length - 1) {
             timeAvailable = parsedLines[i + 1].startTime - line.startTime;
           } else {
             timeAvailable = trackDuration > line.startTime ? (trackDuration - line.startTime) : 5;
           }
 
-          // If the AI generated audio that is LONGER than the available pocket, 
-          // we physically time-warp (speed up) the audio slice so it fits perfectly without bleeding.
           if (audioBuffer.duration > timeAvailable && timeAvailable > 0.1) {
-            // We subtract 0.05s to give it a microscopic natural breath before the next grid hit.
-            source.playbackRate.value = audioBuffer.duration / Math.max(0.1, (timeAvailable - 0.05));
+            const targetSpeed = audioBuffer.duration / Math.max(0.1, (timeAvailable - 0.05));
+            // HARD CAP at 1.25x speed. 
+            // If the text is still too long, it naturally bleeds into the next line.
+            // This creates a modern rap "punch-in" effect rather than an Alvin and the Chipmunks squeak.
+            source.playbackRate.value = Math.min(1.25, targetSpeed);
           }
           // ---------------------------------------------------------
 
@@ -234,7 +234,7 @@ export default function Room04_Booth() {
         offsetBars: 0 
       });
       
-      if (addToast) addToast("Vocal Chop Quantization complete. Time-Warping enabled.", "success");
+      if (addToast) addToast("Vocal Chop Quantization complete. Punch-ins enabled.", "success");
     } catch (err: any) {
       console.error(err);
       if (addToast) addToast("Guide Error: " + err.message, "error");

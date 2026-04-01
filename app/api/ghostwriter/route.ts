@@ -106,14 +106,22 @@ export async function POST(req: Request) {
       profileTier = profile.tier;
     }
 
-    // --- SURGICAL ADDITION: Rule #5 The Instrumental Metronome ---
+    // --- THE CHIPMUNK PREVENTION ALGORITHM ---
+    // Calculate the absolute physical limit of the TTS engine based on the Beat's tempo
+    const activeBpm = bpm || 120;
+    const secondsPerBar = (60 / activeBpm) * 4;
+    const timePerLine = secondsPerBar * 2; // Assuming 2 bars per line
+    const ttsSpeedLimit = 3.5; // The TTS engine reads at max ~3.5 syllables per second naturally
+    const maxSyllables = Math.floor(timePerLine * ttsSpeedLimit);
+
     const getNiceOverride = `
     CRITICAL OVERRIDE - THE "GETNICE" DIRECTIVE:
     1. NO SANITIZED POETRY: Do not write cheesy, generic, or polite poetry.
     2. RAW AUTHENTICITY: Write gritty, street-level bars. Use internal rhymes, complex syllables, and raw emotional imagery. Spit hot fire.
     3. ENERGY FORMATTING: Output the actual lyrics in ALL CAPS to simulate an aggressive, high-energy vocal delivery.
     4. STRUCTURAL ARCHITECTURE: Rigidly structure the output with timestamps and exact bar counts.
-    5. THE INSTRUMENTAL METRONOME: If the blueprint specifies an "INSTRUMENTAL" block, DO NOT write lyrics for it. Instead, output the header [Instrumental] followed by the exact word "Mmm." repeated once for every bar of that section (e.g., an 8-bar instrumental = "Mmm. Mmm. Mmm. Mmm. Mmm. Mmm. Mmm. Mmm."). This instructs the TTS audio engine to hum to the beat and preserves the timeline sync.
+    5. THE INSTRUMENTAL METRONOME: If the blueprint specifies an "INSTRUMENTAL" block, DO NOT write lyrics for it. Instead, output the header [Instrumental] followed by the exact word "Mmm." repeated once for every bar of that section.
+    6. THE SYLLABLE CAP: You are writing for an AI Voice Engine. To prevent catastrophic audio compression, EVERY single line must be EXACTLY ${maxSyllables} syllables or less. Count your syllables. If a line is too long, the audio will break.
     `;
 
     const thematicPrompt = `SONG TITLE: "${title || 'UNTITLED'}".
@@ -139,7 +147,7 @@ export async function POST(req: Request) {
           motive: motive || "Mastering the craft",
           struggle: struggle || "Against the odds",
           hustle: hustle || "Relentless execution",
-          bpm: bpm || 120,
+          bpm: activeBpm,
           key: key || "Unknown Key",            
           style: forcedStyle, 
           stageName: stageName || "The Artist", 
