@@ -5,6 +5,20 @@ import { UploadCloud, FileAudio, Loader2, CheckCircle2, AlertTriangle, ShieldChe
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
+// --- SURGICAL ADDITION: The Silent Extractor ---
+// This grabs the exact floating-point duration of the file without the user knowing
+const getExactAudioDuration = (url: string): Promise<number> => {
+  return new Promise((resolve) => {
+    const audio = new Audio(url);
+    audio.addEventListener('loadedmetadata', () => {
+      resolve(audio.duration);
+    });
+    audio.addEventListener('error', () => {
+      resolve(0); 
+    });
+  });
+};
+
 export default function Room01_Lab() {
   const { audioData, setAudioData, setActiveRoom, addToast, userSession } = useMatrixStore();
   
@@ -210,19 +224,21 @@ export default function Room01_Lab() {
         if (statusData.status === 'COMPLETED') {
           if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
           
+          // --- SURGICAL EXPLOIT: Capture exact duration before saving to store ---
+          const exactDuration = await getExactAudioDuration(cloudUrl);
+
           setAudioData({
             url: cloudUrl,
             fileName: fileName,
             bpm: statusData.output.bpm || 120,
             totalBars: statusData.output.total_bars || 64,
             key: statusData.output.key || "Unknown",
-            grid: statusData.output.grid || []
+            grid: statusData.output.grid || [],
+            duration: exactDuration > 0 ? exactDuration : undefined // Secretly injected
           });
 
           setStatus("success");
           if (addToast) addToast("Smart Analysis Complete. Blueprint Primed.", "success");
-          
-          // REMOVED: Auto-advancing to Room 02. The user must manually review and advance.
 
         } else if (statusData.status === 'FAILED') {
           if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);

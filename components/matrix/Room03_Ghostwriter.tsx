@@ -15,7 +15,6 @@ export default function Room03_Ghostwriter() {
     gwTitle, setGwTitle, gwPrompt, setGwPrompt, gwStyle, setGwStyle, gwGender, setGwGender, 
     gwUseSlang, setGwUseSlang, gwUseIntel, setGwUseIntel, userSession,
     
-    // NEW: Safely pulling from the global store to retain state across rooms
     gwMotive = "", setGwMotive = () => {},
     gwStruggle = "", setGwStruggle = () => {},
     gwHustle = "", setGwHustle = () => {}
@@ -75,7 +74,6 @@ export default function Room03_Ghostwriter() {
   };
 
   const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE", bars: number) => {
-    // --- REVENUE PROTECTION: TYPE-SAFE CHECK ---
     const isFreeLoader = (userSession?.tier as string) === "Free Loader";
     const currentSectionCount = blueprint.length;
 
@@ -118,6 +116,10 @@ export default function Room03_Ghostwriter() {
     setIsGenerating(true);
     setUxState("Synthesizing Bars via GETNICE Engine...");
 
+    // --- SURGICAL ADDITION: The LLM Gag Order ---
+    // This strictly prevents the AI from outputting structural text that breaks Room 04's math.
+    const systemConstraint = `ABSOLUTE RULE: You are a structural lyrics API. You must ONLY output raw lyrics and section headers (e.g. [Verse 1]). NEVER output instructions, bar counts (e.g. 'Bars 1-8'), timestamps (e.g. '(0:15)'), or phonetic spellings of symbols like 'Pipe Symbol'. Do not explain your output.`;
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
@@ -131,10 +133,10 @@ export default function Room03_Ghostwriter() {
         },
         body: JSON.stringify({
           userId: userSession?.id,
-          stageName: userSession?.stageName || "Unknown Artist", // <-- ADDED EXPLICIT STAGE NAME PASS
+          stageName: userSession?.stageName || "Unknown Artist", 
           prompt: gwPrompt,
-	  flowReference: flowDNA?.referenceText, // <-- NEW: Passing your recorded cadence secretly
-          motive: gwMotive || "Mastering the craft", // Using global store variables
+          flowReference: flowDNA?.referenceText,
+          motive: gwMotive || "Mastering the craft",
           struggle: gwStruggle || "Against the odds",
           hustle: gwHustle || "Relentless execution",
           title: gwTitle,
@@ -143,6 +145,7 @@ export default function Room03_Ghostwriter() {
           tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
+          systemConstraint: systemConstraint, // <-- Passed to backend to restrict generation
           blueprint: blueprint.map(b => ({ 
             type: b.type, 
             bars: b.bars, 
@@ -207,7 +210,7 @@ export default function Room03_Ghostwriter() {
         },
         body: JSON.stringify({ 
           userId: userSession?.id,
-          stageName: userSession?.stageName || "Unknown Artist", // <-- ADDED HERE AS WELL
+          stageName: userSession?.stageName || "Unknown Artist",
           originalLine: selectedLine, 
           instruction: refineInstruction,
           style: gwStyle 
@@ -391,7 +394,7 @@ export default function Room03_Ghostwriter() {
             </div>
           ))}
           
-          {/* ADD STRUCTURE BLOCK - SECURED WITH THE LOOPHOLE FIX */}
+          {/* ADD STRUCTURE BLOCK */}
           <div className="w-36 shrink-0 bg-transparent border border-dashed border-[#333] p-3 flex flex-col justify-center h-32 gap-2 relative">
             {(userSession?.tier as string) === "Free Loader" && blueprint.length >= 2 && (
               <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-10">

@@ -119,8 +119,8 @@ export default function Room04_Booth() {
   const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [activeLineIndex, setActiveLineIndex] = useState(-1);
-  const [teleprompterEnabled, setTeleprompterEnabled] = useState(true); // SURGICAL ADDITION: The Master Toggle
-  const [guideDuration, setGuideDuration] = useState<number>(0); // SURGICAL ADDITION: Governor Duration
+  const [teleprompterEnabled, setTeleprompterEnabled] = useState(true);
+  const [guideDuration, setGuideDuration] = useState<number>(0);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
@@ -169,9 +169,9 @@ export default function Room04_Booth() {
     
     setIsGeneratingGuide(true);
     try {
+      // The lyrics in state are already hyper-sanitized by the matrix below!
       const parsedLines = lyricLines.filter(l => !l.isHeader);
       
-      // SURGICAL ADDITION: God Mode. It reads the ENTIRE song so it can govern the whole track.
       const linesToRead = parsedLines.map(l => l.text).join(' ');
 
       const res = await fetch('/api/audio/generate-guide', {
@@ -480,7 +480,6 @@ export default function Room04_Booth() {
             });
             if (isMounted) {
               stemBuffersRef.current.set(stem.id, audioBuf);
-              // SURGICAL ADDITION: Capture the exact duration of the Guide audio when it loads
               if (stem.type === 'Guide') setGuideDuration(audioBuf.duration);
             }
           } catch (e: any) { 
@@ -516,59 +515,64 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- SURGICAL FIX: THE GOVERNOR MATRIX (TELEPROMPTER PARSER) ---
+  // --- SURGICAL FIX: THE ULTIMATE SANITIZER & GOVERNOR MATRIX ---
   useEffect(() => {
     if (!generatedLyrics) return;
     
-    // Check if the Governor is active
     const guideStem = vocalStems.find(s => s.type === 'Guide');
     const hasGovernor = !!guideStem && guideDuration > 0;
     
-    // If the user deleted the guide track, reset the governor duration so it falls back to math
     if (!guideStem && guideDuration !== 0) setGuideDuration(0);
 
     const lines = generatedLyrics.split('\n');
     
-    // Clean and extract valid lines and words first
-    const cleanLines = lines.map(l => l.trim()).filter(l => {
-      if (l.startsWith('[')) return true;
-      const cleanText = l.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
-      return cleanText.length > 0;
-    });
+    // STEP 1: The Ultimate Sanitizer Pipeline
+    // Hunt and destroy timestamps, AI bar-counts, pipe text, and pipe symbols.
+    const sanitizedLines = lines.map(l => {
+      let text = l.trim();
+      if (text.startsWith('[')) return { text, isHeader: true }; // Preserve [Headers] untouched
+      
+      text = text
+        .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') // Scrub (0:15)
+        .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') // Scrub "Bars 1-4"
+        .replace(/pipe\s*symbol/gi, '') // Scrub spoken "Pipe Symbol"
+        .replace(/\|/g, '') // Scrub actual "|"
+        .trim();
+        
+      return { text, isHeader: false };
+    }).filter(obj => obj.text.length > 0); // Purge any line that became completely empty
 
-    // Governor Math: Calculate the exact average time per word based on the Audio buffer length
+    // STEP 2: Governor Math (Count only valid, scrubbed words)
     let totalWords = 0;
-    cleanLines.forEach(l => {
-       if (!l.startsWith('[')) {
-         totalWords += l.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim().split(/\s+/).filter(w => w.length > 0).length;
+    sanitizedLines.forEach(obj => {
+       if (!obj.isHeader) {
+         totalWords += obj.text.split(/\s+/).filter(w => w.length > 0).length;
        }
     });
 
-    // If Governor is active, time per word is absolute based on the vocal file. Otherwise, default to Grid time.
     const timePerWord = hasGovernor && totalWords > 0 ? guideDuration / totalWords : 0;
     let runningWordTime = hasGovernor ? (guideStem.offsetBars || 0) * secondsPerBar : 0;
 
     let currentBlockIndex = -1; 
     let barOffsetWithinBlock = 0; 
 
-    const parsed = cleanLines.map((rawText) => {
-      if (rawText.startsWith('[')) { 
+    // STEP 3: Map the timeline using the pristine text
+    const parsed = sanitizedLines.map((obj) => {
+      if (obj.isHeader) { 
         currentBlockIndex++; 
         barOffsetWithinBlock = 0; 
         let blockStartBar = 0;
         if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
           blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
         }
-        // If Governed, headers float with the audio time. If Grid, they use math.
         const headerStart = hasGovernor ? runningWordTime : blockStartBar * secondsPerBar;
-        return { text: rawText, startTime: headerStart, isHeader: true, timestamp: "", words: [] }; 
+        return { text: obj.text, startTime: headerStart, isHeader: true, timestamp: "", words: [] }; 
       }
       
-      const cleanText = rawText.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
-      const words = cleanText.split(/\s+/).filter(w => w.length > 0);
+      const words = obj.text.split(/\s+/).filter(w => w.length > 0);
 
       if (hasGovernor) {
-        // --- GOVERNOR ACTIVE: Ignore all Math Grids, use purely Audio Buffer Time ---
+        // Governor Active: Float absolute time based on word count over buffer duration
         const lineStartTime = runningWordTime;
         const mappedWords = words.map(w => {
           const wordStart = runningWordTime;
@@ -577,12 +581,12 @@ export default function Room04_Booth() {
         });
 
         return { 
-          text: cleanText, startTime: lineStartTime, isHeader: false, 
+          text: obj.text, startTime: lineStartTime, isHeader: false, 
           timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
           words: mappedWords 
         };
       } else {
-        // --- GOVERNOR OFF: Fallback to the standard Mathematical Grid (2 bars per line) ---
+        // Governor Off: Fall back to rigorous math grid (2 Bars per line)
         let blockStartBar = 0;
         if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
           blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
@@ -600,7 +604,7 @@ export default function Room04_Booth() {
         });
 
         return { 
-          text: cleanText, startTime: lineStartTime, isHeader: false, 
+          text: obj.text, startTime: lineStartTime, isHeader: false, 
           timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
           words: mappedWords 
         };
@@ -626,7 +630,7 @@ export default function Room04_Booth() {
   }, [trimmingStem]);
 
   useEffect(() => {
-    if (!teleprompterEnabled) return; // Prevent scroll fighting if disabled
+    if (!teleprompterEnabled) return; 
 
     const currentLineIndex = lyricLines.findIndex((l, i) => {
       const nextLine = lyricLines[i + 1];
@@ -662,7 +666,6 @@ export default function Room04_Booth() {
            <div className="flex items-center gap-4">
              <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
              
-             {/* SURGICAL ADDITION: Teleprompter Master Toggle */}
              <button 
                onClick={() => setTeleprompterEnabled(!teleprompterEnabled)}
                className={`px-3 py-1 text-[9px] uppercase font-mono font-bold transition-all border flex items-center gap-1.5 ${teleprompterEnabled ? 'bg-[#E60000]/20 text-[#E60000] border-[#E60000]/50' : 'bg-black text-[#555] border-[#333] hover:text-white'}`}

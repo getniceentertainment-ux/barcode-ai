@@ -13,6 +13,7 @@ export interface AudioAnalysis {
   fileName: string;
   bpm: number;
   totalBars: number;
+  duration?: number; // <-- SURGICAL ADDITION: The exact millisecond length of the beat
   grid?: number[];
   key?: string;
 }

@@ -85,10 +85,12 @@ export async function POST(req: Request) {
     if (!success) return NextResponse.json({ error: "Rate Limit Exceeded. Please hold." }, { status: 429 });
 
     const body = await req.json();
-    // NEW: Extracted the new parameters sent from Room 03
+    
+    // --- SURGICAL ADDITION: Extract systemConstraint ---
     const { 
       prompt, title, bpm, key, stageName, tag, style, blueprint, 
-      motive, struggle, hustle, useSlang, useIntel,flowReference 
+      motive, struggle, hustle, useSlang, useIntel, flowReference,
+      systemConstraint // <-- Caught from Room 03 payload
     } = body;
 
     // --- DYNAMIC CREDIT COST CALCULATION ---
@@ -109,7 +111,6 @@ export async function POST(req: Request) {
       profileTier = profile.tier;
     }
 
-    // --- SURGICAL FIX: THE GETNICE OVERRIDE ---
     const getNiceOverride = `
     CRITICAL OVERRIDE - THE "GETNICE" DIRECTIVE:
     1. NO SANITIZED POETRY: Do not write cheesy, generic, or polite poetry.
@@ -118,16 +119,17 @@ export async function POST(req: Request) {
     4. STRUCTURAL ARCHITECTURE: Rigidly structure the output with timestamps and exact bar counts.
     `;
 
-    // NEW: Injected Motive, Struggle, and Hustle directly into the prompt context
+    // --- SURGICAL ADDITION: Inject the Gag Order into the final string ---
     const thematicPrompt = `SONG TITLE: "${title || 'UNTITLED'}".
     USER PROMPT: ${prompt}
     THE MOTIVE (Drive): ${motive || "Mastering the craft"}
     THE STRUGGLE (Setback): ${struggle || "Against the odds"}
     THE HUSTLE (Execution): ${hustle || "Relentless execution"}
 
-    ${getNiceOverride}`;
+    ${getNiceOverride}
+    
+    ${systemConstraint || ''}`; // <-- Gag Order attached at the very bottom so it is the last thing the LLM reads
 
-    // Force the LoRA to trigger by secretly appending our custom style string
     const forcedStyle = style ? `${style} (GetNice Hybrid Blueprint)` : "getnice_hybrid";
 
     // --- RUNPOD EXECUTION ---
@@ -138,8 +140,7 @@ export async function POST(req: Request) {
         input: {
           task_type: "generate",
           prompt: thematicPrompt,
-	  flowReference: flowReference, // <-- NEW: Hand it to the Python worker
-          // NEW: Passing parameters explicitly to the worker
+          flowReference: flowReference,
           motive: motive || "Mastering the craft",
           struggle: struggle || "Against the odds",
           hustle: hustle || "Relentless execution",
@@ -177,7 +178,6 @@ export async function POST(req: Request) {
         if (currentProfile) {
           await supabaseAdmin.from('profiles').update({ credits: currentProfile.credits - cost }).eq('id', userId);
           
-          // NEW: Log the deduction to the Audit Ledger for Room 08 visibility
           await supabaseAdmin.from('transactions').insert({
             user_id: userId,
             amount: -cost,
