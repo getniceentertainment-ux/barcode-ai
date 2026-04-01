@@ -17,18 +17,14 @@ CULTURE_FILE = "master_index.json"
 
 # --- REVISION 1: THE CONCENTRATED KILL LIST (2026 UPDATE) ---
 BAN_LIST = [
-    # The 90s/Corny Rap Ban
     "concrete jungle", "jiggy", "phat", "cheddar", "rags to riches", "no pain no gain",
     "weathered storms", "naysayers", "darkest hour", "spirits took flight",
     "dreams dare to breathe", "rise from our knees", "time's arrow", "chatter",
-    # AI Corporate Slop
     "tapestry", "delve", "testament", "beacon", "journey", "myriad", "landscape", 
     "navigate", "resonate", "foster", "catalyst", "paradigm", "synergy", "unleash",
-    # Melodrama & Poetry
     "plight", "fright", "ignite", "divine", "sublime", "mindstream", "whispers", 
     "shadows", "dancing", "embrace", "souls", "abyss", "void", "chaos", "destiny", 
     "fate", "tears", "sorrow", "melody", "symphony", "ashes", "strife", "yearning",
-    # Epic/Medieval Fantasy
     "kingdom", "throne", "crown", "realm", "legacy", "quest", "vanquish", "fortress", 
     "prophecy", "omen", "crusade", "vanguard", "sovereign", "dominion", "forsaken",
     "weave", "forge", "craft", "sculpt", "flutter", "plunge", "unfurl", "awaken", 
@@ -44,9 +40,7 @@ def load_rag_intel():
             return f.read()
     return "No live intel available."
 
-# --- REVISION 2: EXECUTIVE 2026 SLANG ROUTER + CUSTOM DICTIONARY PARSER ---
 def load_street_slang(style="getnice_hybrid"):
-    # 1. The 2026 Hardcoded Fallbacks
     drill_slang = ["opp", "spin", "motion", "clear the board", "tactical", "steppin'"]
     trap_slang = ["bag", "margins", "overhead", "frontend", "clearance", "motion"]
     executive_slang = ["equity", "leverage", "routing", "offshore", "dividend", "infrastructure", "bandwidth", "allocation", "vault", "code"]
@@ -58,11 +52,9 @@ def load_street_slang(style="getnice_hybrid"):
     else:
         target_list = executive_slang
 
-    # 2. Check for Custom Dictionary File
     if not os.path.exists(SLANG_FILE):
         return target_list 
 
-    # 3. The Original Parser Logic (Restored & Upgraded for Nested JSON)
     words = []
     try:
         with open(SLANG_FILE, "r", encoding="utf-8") as f:
@@ -70,16 +62,11 @@ def load_street_slang(style="getnice_hybrid"):
             
         try:
             data = json.loads(content)
-            
-            # 🚨 NEW LOGIC: If it finds your exact JSON structure, it grabs the keys 🚨
             if isinstance(data, dict) and "slang_terms" in data:
                 words = list(data["slang_terms"].keys())
-            # Fallback for old list formats
             elif isinstance(data, list):
                 words = [item.get("word", "") for item in data if "word" in item]
-                
         except json.JSONDecodeError:
-            # Fallback to parsing as text file with 'noun', 'verb' labels
             lines = content.split('\n')
             for i, line in enumerate(lines):
                 clean_line = line.strip().lower()
@@ -89,7 +76,6 @@ def load_street_slang(style="getnice_hybrid"):
                         words.append(word)
                         
         if words:
-            # Clean up the words (remove anything empty) and combine with fallback
             words = [w.strip() for w in words if w.strip()]
             combined_list = list(set(words + target_list))
             return random.sample(combined_list, min(8, len(combined_list)))
@@ -141,7 +127,6 @@ def sanitize_lora_config():
     except Exception as e:
         print(f"Auto-Cleaner Error: {e}")
 
-# --- RESTORED: THE ENGINE IGNITION ---
 def init_model():
     global model, tokenizer
     print("Initiating GETNICE Engine Deep Burn-In...")
@@ -167,8 +152,8 @@ def init_model():
     _ = model.generate(**dummy, max_new_tokens=5)
     print("Deep Burn-In Complete. Worker Ready.")
 
-# --- REVISION 3: THE PARAMETRIC GRINDER (SAAS ENGINE) ---
-def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive, struggle, hustle, topic,flow_reference="", bpm=120):
+# --- SURGICAL PIVOT: ADDED `max_syllables` PARAMETER ---
+def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive, struggle, hustle, topic, flow_reference="", bpm=120, max_syllables=12):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
     slang_list = ", ".join(load_street_slang(genre_style)) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
@@ -176,18 +161,17 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive,
     
     bpm_val = float(bpm)
     if bpm_val <= 100:
-        rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Slow/Heavy). Target 10-14 syllables per bar. Drag the flow."
+        rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Slow/Heavy). Drag the flow."
     elif bpm_val <= 135:
-        rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Mid). Target 9-12 syllables per bar. Rhythmic, steady pocket."
+        rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Mid). Rhythmic, steady pocket."
     else:
-        rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Fast). Target 7-10 syllables per bar. Fast, staccato."
+        rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Fast). Fast, staccato."
     
     if genre_style == "getnice_hybrid" or genre_style == "getnice_flow":
         flow_architecture = """[FLOW ARCHITECTURE: GETNICE HYBRID (SIGNATURE FLOW)]
 - CADENCE: Mid-bar breath control with aggressive internal rhymes.
 - FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause.
-- SCHEME: Internal multi-syllabic rhymes leading into the break, resolving on the end-bar.
-- CRITICAL INSTRUCTION: Every single bar you write MUST feature this exact internal rhyme structure and use the '|' symbol."""
+- SCHEME: Internal multi-syllabic rhymes leading into the break, resolving on the end-bar."""
     elif genre_style == "drill":
         flow_architecture = """[FLOW ARCHITECTURE: NY DRILL]
 - CADENCE: Off-beat, aggressive staccato stops. Sliding 808 pockets.
@@ -201,7 +185,6 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive,
     else:
         flow_architecture = f"[FLOW ARCHITECTURE: {genre_style.upper()}]\n- CADENCE: Standard 4/4 rhythm structure.\n- FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line."
 
-    # --- NEW: THE CADENCE THEFT LOGIC ---
     flow_mimicry = ""
     if flow_reference and len(flow_reference) > 5 and flow_reference != "Focus on survival and rhythm.":
         flow_mimicry = f"""[USER'S VOCAL CADENCE BLUEPRINT]
@@ -209,40 +192,37 @@ The artist recorded this exact mumble-flow to establish their personal bounce:
 "{flow_reference}"
 -> CRITICAL INSTRUCTION: Analyze the syllable density, internal rhyme placement, and rhythm of that quote. You MUST format your generated lyrics to perfectly match that specific bounce and flow structure so the artist can rap it easily. Do NOT copy the words, copy the RHYTHMIC ARCHITECTURE."""
     
-    # --- THE INJECTION ---
     return f"""<|im_start|>system
 You are the GETNICE Ghostwriter Engine. You are a highly articulate, business-minded creator who refuses to quit. You embody the modern independent entrepreneur.
 
-You must synthesize these specific user variables into a cohesive, matter-of-fact delivery. Treat these lyrics as a business plan:
+You must synthesize these specific user variables into a cohesive, matter-of-fact delivery:
 - THE DRIVE (Motive): {motive}
 - THE SETBACK (Struggle): {struggle}
 - THE EXECUTION (Hustle): {hustle}
 - THE CURRENT TOPIC: {topic}
 
 1. FATAL ERROR IF USED (BAN LIST): {banned_words_str}. NEVER use outdated rap clichés or poetic flowery words.
-2. TONE ENFORCEMENT: You are a modern street executive in 2026. You MUST speak with casual hip-hop swagger and conversational street syntax. NEVER use inverted, theatrical sentences to force a rhyme (e.g., do not write "control I wield", write "I took control"). Use natural street terms for objects (whip, slab, drop, bag). You are a boss in the studio, not a robot or a poet. Make the rhymes sound like actual spoken conversation.
-3. MANDATORY VOCABULARY INJECTION: You MUST organically weave at least TWO of these specific words into this generation: [ {slang_list} ]. Do not fail this instruction.
+2. TONE ENFORCEMENT: You are a modern street executive in 2026. You MUST speak with casual hip-hop swagger and conversational street syntax. NEVER use inverted, theatrical sentences to force a rhyme. Use natural street terms for objects. Make the rhymes sound like actual spoken conversation.
+3. MANDATORY VOCABULARY INJECTION: You MUST organically weave at least TWO of these specific words into this generation: [ {slang_list} ].
 4. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. ONE LINE EQUALS ONE BAR. DO NOT WRITE ANY HEADERS.
 5. BAR COUNT MATH IS ABSOLUTE: Generate EXACTLY the requested lines.
 6. NO TIMESTAMPS: Do NOT write any timestamps.
 7. TELEPROMPTER CADENCE (CRITICAL): You are writing for a visual prompter. 
    - Output EXACTLY one sentence per musical bar.
    - You MUST use the '|' symbol to visually cut the sentence exactly where the internal rhyme hits or where the breath drops.
+8. THE SYLLABLE CAP (ANTI-BLEED): To match the physical TTS cadence limit, EVERY SINGLE LINE YOU WRITE MUST BE EXACTLY {max_syllables} SYLLABLES OR LESS. Count them carefully!
 
 {rhythm_logic}
-
 {flow_architecture}
 
 [LIVE INTEL]
 {rag_context}
-
 [CULTURAL ANCHOR]
 {culture_context}
 <|im_end|>
 """
 
-# SURGICAL FIX: Added `section_index` and `anchor_hook` parameters
-def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0, anchor_hook=None):
+def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0, anchor_hook=None, max_syllables=12):
     if section_index == 0:
         arc_instruction = "Establish the setting and the origin. Ground the listener."
     elif section_type.upper() == "HOOK":
@@ -252,12 +232,9 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_
     else:
         arc_instruction = "The resolution, the takeaway. High confidence, grounded reality."
     
-    # Optional context injection to keep the story locked to the Hook
     hook_context = f"\n[THE ANCHOR HOOK]:\n{anchor_hook}\n" if anchor_hook and section_type.upper() != "HOOK" else ""
     
-    # ==========================================
-    # PASS 1: THE STUDIO DRAFT (First Crack)
-    # ==========================================
+    # PASS 1: DRAFT
     draft_prompt = f"""<|im_start|>user
 [STUDIO DRAFTING PHASE]
 GENERATE A {section_type.upper()}. EXACTLY {bars} LINES (BARS). Topic: '{prompt_topic}'.
@@ -283,9 +260,7 @@ Write the draft now.
     )
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
     
-    # ==========================================
-    # PASS 2: THE SECOND CRACK (Analysis & Polish)
-    # ==========================================
+    # PASS 2: REFINEMENT & SYLLABLE ENFORCEMENT
     refine_prompt = f"""<|im_start|>user
 [THE SECOND CRACK - FINAL POLISH]
 You just drafted this {bars}-bar {section_type.upper()}:
@@ -296,6 +271,7 @@ CRITICAL ANALYSIS & REWRITE INSTRUCTIONS:
 2. Dump any weak lines. Ensure you are using the mandatory 2026 Executive vocabulary.
 3. 🚨 OVERRIDE: YOU MUST INSERT EXACTLY ONE PIPE SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE TO MARK THE BREATH. 
 4. DO NOT WRITE HEADERS (e.g., [Verse]). JUST OUTPUT EXACTLY {bars} LINES.
+5. 🚨 THE SYLLABLE CAP: Every single line MUST be EXACTLY {max_syllables} syllables or less. Do not exceed this limit!
 
 Take a second crack at it and rewrite the final {bars} lines now.
 <|im_end|>
@@ -306,7 +282,7 @@ Take a second crack at it and rewrite the final {bars} lines now.
     outputs_refine = model.generate(
         **inputs_refine,
         max_new_tokens=40 * bars,
-        temperature=0.75, # Lower temp for the final polish to force strict rule adherence
+        temperature=0.75, 
         top_p=0.9,
         repetition_penalty=1.15,
         pad_token_id=tokenizer.eos_token_id,
@@ -315,14 +291,12 @@ Take a second crack at it and rewrite the final {bars} lines now.
     
     final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True)
     
-    # 🧹 AGGRESSIVE CLEANUP PIPELINE (Ghost Timestamp Killer included)
     final_text = final_text.replace("<|im_end|>", "").strip()
     final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL)
     final_text = final_text.replace("```", "")
     final_text = re.sub(r'\[.*?\]', '', final_text)
     final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE)
     
-    # Only keep lines longer than 5 characters to kill stray AI timestamps like (0:02)
     clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and len(line.strip()) > 5 and not line.strip().startswith(('+', '-')) and not line.lower().startswith("here are")]
     
     if len(clean_lines) > bars:
@@ -347,7 +321,6 @@ def handler(event):
     task_type = job_input.get("task_type", "generate")
     topic = job_input.get("prompt", "Securing the legacy")
     
-    # --- SAAS VARIABLES ---
     flow_reference = job_input.get("flowReference", "")    
     motive = job_input.get("motive", "Mastering the technical craft")
     struggle = job_input.get("struggle", "Industry doors closing")
@@ -360,9 +333,21 @@ def handler(event):
     bpm = float(job_input.get("bpm", 120))
     if bpm <= 0: bpm = 120
     seconds_per_bar = (60.0 / bpm) * 4.0
+
+    # --- SURGICAL LOGIC: PHYSICAL SYLLABLE LIMIT MATH ---
+    # The Python backend now maps TTS limits directly based on user flow.
+    tts_speed_limit = 3.5
+    if style == "chopper": tts_speed_limit = 6.0
+    elif style == "triplet": tts_speed_limit = 4.8
+    elif style == "getnice_hybrid": tts_speed_limit = 4.0
+    elif style == "heartbeat": tts_speed_limit = 3.2
+    elif style == "lazy": tts_speed_limit = 2.2
+
+    # In our Python engine, 1 line = 1 bar
+    time_per_line = seconds_per_bar
+    max_syllables = max(4, int(time_per_line * tts_speed_limit))
     
-    # --- PASS SAAS VARIABLES TO PROMPT ---
-    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel, motive, struggle, hustle, topic, flow_reference, bpm)
+    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel, motive, struggle, hustle, topic, flow_reference, bpm, max_syllables)
     
     if task_type == "refine":
         original_line = job_input.get("originalLine", "")
@@ -401,15 +386,12 @@ Output ONLY the rewritten line. Do not explain yourself.
         context_lyrics = ""
         current_cumulative_bar = 0
         
-        # 1. THE ANCHOR: Pre-Generate the Hook first
         saved_hook = None
         for section in blueprint:
             if section.get("type", "VERSE").upper() == "HOOK":
-                # SURGICAL FIX: Using section_index instead of index
-                saved_hook = generate_section(system_prompt, "", "HOOK", section.get("bars", 4), topic, section_index=0)
+                saved_hook = generate_section(system_prompt, "", "HOOK", section.get("bars", 4), topic, section_index=0, max_syllables=max_syllables)
                 break
         
-        # 2. THE TIMELINE GENERATION (Verse -> Hook -> Verse)
         for index, section in enumerate(blueprint):
             sec_type = section.get("type", "VERSE").upper()
             bars = section.get("bars", 16)
@@ -421,11 +403,17 @@ Output ONLY the rewritten line. Do not explain yourself.
             
             final_lyrics += f"\n[{sec_type} - {bars} BARS | STARTS @ {mins}:{secs:02d} (BAR {start_bar})]\n"
             
-            if sec_type == "HOOK" and saved_hook is not None:
+            # --- SURGICAL PIVOT: THE INSTRUMENTAL BYPASS ---
+            # Instead of asking the AI to output "Mmm.", we bypass the LLM completely.
+            # Instant execution. Zero risk of hallucination.
+            if sec_type == "INSTRUMENTAL":
+                # Create exactly 1 line (2 hums) per bar to map perfectly to the grid
+                hums = ["Mmm. Mmm." for _ in range(bars)]
+                raw_section_text = "\n".join(hums)
+            elif sec_type == "HOOK" and saved_hook is not None:
                 raw_section_text = saved_hook
             else:
-                # SURGICAL FIX: Using section_index instead of index
-                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, section_index=index, anchor_hook=saved_hook)
+                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, section_index=index, anchor_hook=saved_hook, max_syllables=max_syllables)
                 if sec_type == "HOOK" and saved_hook is None:
                     saved_hook = raw_section_text
             
