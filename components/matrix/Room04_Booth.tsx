@@ -117,10 +117,11 @@ export default function Room04_Booth() {
   const [isUploading, setIsUploading] = useState(false);
   
   const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
+  const [guideProgress, setGuideProgress] = useState(0); // SURGICAL ADDITION: Quantizer Progress
+  
   const [autoScroll, setAutoScroll] = useState(true);
   const [activeLineIndex, setActiveLineIndex] = useState(-1);
   const [teleprompterEnabled, setTeleprompterEnabled] = useState(true);
-  const [guideDuration, setGuideDuration] = useState<number>(0);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
@@ -133,6 +134,7 @@ export default function Room04_Booth() {
   const [trimDuration, setTrimDuration] = useState(0);
   const [isProcessingTrim, setIsProcessingTrim] = useState(false);
 
+  // --- HYPER-PRECISE BPM MATH ENGINE ---
   const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
 
   const totalBars = blueprint.length > 0 
@@ -141,6 +143,7 @@ export default function Room04_Booth() {
 
   const preciseBpm = trackDuration > 0 ? ((totalBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
   const secondsPerBar = trackDuration > 0 ? (trackDuration / totalBars) : (60 / preciseBpm) * 4;
+  // -------------------------------------
 
   const trimWaveformRef = useRef<HTMLDivElement>(null);
   const trimWavesurferRef = useRef<WaveSurfer | null>(null);
@@ -159,6 +162,7 @@ export default function Room04_Booth() {
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
+  // --- SURGICAL PIVOT: THE VOCAL CHOP QUANTIZER ---
   const handleGenerateGuide = async () => {
     if (!lyricLines || lyricLines.length === 0) {
       if (addToast) addToast("No valid lyrics found to generate guide.", "error");
@@ -166,24 +170,52 @@ export default function Room04_Booth() {
     }
     
     setIsGeneratingGuide(true);
+    setGuideProgress(0);
+    
     try {
-      const parsedLines = lyricLines.filter(l => !l.isHeader);
-      const linesToRead = parsedLines.map(l => l.text).join(' ');
+      const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
+      if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
-      const res = await fetch('/api/audio/generate-guide', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lyrics: linesToRead, bpm: preciseBpm })
-      });
+      // Calculate total needed duration for the master buffer (adding 10 seconds of padding)
+      const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
+      const sampleRate = 44100;
+      
+      // The OfflineAudioContext acts as an invisible DAW timeline
+      const OfflineCtxClass = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
+      const offlineCtx = new OfflineCtxClass(1, Math.ceil(sampleRate * renderDuration), sampleRate);
 
-      if (!res.ok) throw new Error("Groq API disconnected or rate limited.");
+      for (let i = 0; i < parsedLines.length; i++) {
+        const line = parsedLines[i];
+        setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
 
-      const blob = await res.blob();
+        try {
+          const res = await fetch('/api/audio/generate-guide', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lyrics: line.text, bpm: preciseBpm })
+          });
+          
+          if (!res.ok) throw new Error("Groq API rate limit or disconnect.");
+
+          const arrayBuffer = await res.arrayBuffer();
+          const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+
+          // Drop the audio slice exactly onto its absolute mathematical grid point
+          const source = offlineCtx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(offlineCtx.destination);
+          source.start(line.startTime);
+        } catch (lineErr) {
+          console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
+          // We continue so a single network hiccup doesn't destroy the whole song
+        }
+      }
+
+      // Render the stitched master track
+      const renderedBuffer = await offlineCtx.startRendering();
+      const blob = audioBufferToWavBlob(renderedBuffer);
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
-
-      const firstLineStartTime = parsedLines.length > 0 ? parsedLines[0].startTime : 0;
-      const exactOffsetBars = firstLineStartTime / secondsPerBar;
 
       addVocalStem({ 
         id: takeId, 
@@ -191,15 +223,16 @@ export default function Room04_Booth() {
         url: url, 
         blob: blob, 
         volume: 0.3, 
-        offsetBars: exactOffsetBars 
+        offsetBars: 0 // Offset is 0 because the silence padding is baked into the buffer!
       });
       
-      if (addToast) addToast("Governor Active: Neural Flow Guide injected.", "success");
+      if (addToast) addToast("Vocal Chop Quantization complete. Locked to pocket.", "success");
     } catch (err: any) {
       console.error(err);
       if (addToast) addToast("Guide Error: " + err.message, "error");
     } finally {
       setIsGeneratingGuide(false);
+      setGuideProgress(0);
     }
   };
 
@@ -440,6 +473,18 @@ export default function Room04_Booth() {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('engineering_unlocked') === 'true') {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        useMatrixStore.setState((state) => ({ userSession: state.userSession ? { ...state.userSession, has_engineering_token: true } as any : null }));
+        if (addToast) addToast("Engineering Token Secured. Suite Unlocked.", "success");
+        setActiveRoom("05");
+      }
+    }
+  }, [userSession, setActiveRoom, addToast]);
+
+  useEffect(() => {
     let isMounted = true;
     const loadBuffers = async () => {
       if (!audioCtxRef.current) return;
@@ -454,16 +499,15 @@ export default function Room04_Booth() {
                const resp = await fetch(stem.url, { signal: controller.signal });
                clearTimeout(timeoutId);
                if (!resp.ok) continue;
+               const contentType = resp.headers.get('content-type') || '';
+               if (contentType.includes('text/html') || contentType.includes('application/json')) continue;
                arrayBuf = await resp.arrayBuffer();
             }
             if (!isMounted) return;
             const audioBuf = await new Promise<AudioBuffer>((resolve, reject) => {
                audioCtxRef.current!.decodeAudioData(arrayBuf, resolve, reject);
             });
-            if (isMounted) {
-              stemBuffersRef.current.set(stem.id, audioBuf);
-              if (stem.type === 'Guide') setGuideDuration(audioBuf.duration);
-            }
+            if (isMounted) stemBuffersRef.current.set(stem.id, audioBuf);
           } catch (e: any) { 
             if (e.name !== 'AbortError') console.warn(`Soft-fail decoding stem ${stem.id}:`, e); 
           }
@@ -497,14 +541,9 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- SURGICAL FIX: CHARACTER-WEIGHTED GOVERNOR MATH & BOUNCING BALL ---
+  // --- SURGICAL FIX: GRID TIME MASTER & CHARACTER-WEIGHTED BOUNCING BALL ---
   useEffect(() => {
     if (!generatedLyrics) return;
-    
-    const guideStem = vocalStems.find(s => s.type === 'Guide');
-    const hasGovernor = !!guideStem && guideDuration > 0;
-    
-    if (!guideStem && guideDuration !== 0) setGuideDuration(0);
 
     const lines = generatedLyrics.split('\n');
     
@@ -523,27 +562,11 @@ export default function Room04_Booth() {
       return { text, isHeader: false };
     }).filter(obj => obj.text.length > 0);
 
-    // STEP 2: Character-Weighted Governor Math
-    // Instead of raw word counts, we calculate "weight" based on syllables/characters and breath pauses.
-    let totalWeight = 0;
-    sanitizedLines.forEach(obj => {
-       if (!obj.isHeader) {
-         const words = obj.text.split(/\s+/).filter(w => w.length > 0);
-         words.forEach(w => {
-            totalWeight += w.length; // 1 weight per character
-         });
-         totalWeight += (words.length * 1.5); // Weight for the space/breath between words
-         totalWeight += 5; // Weight for the pause at the end of a line
-       }
-    });
-
-    const timePerWeight = hasGovernor && totalWeight > 0 ? guideDuration / totalWeight : 0;
-    let runningWordTime = hasGovernor ? (guideStem.offsetBars || 0) * secondsPerBar : 0;
-
     let currentBlockIndex = -1; 
     let barOffsetWithinBlock = 0; 
 
-    // STEP 3: Map the timeline using precise proportional weights
+    // STEP 2: Strict Grid Mapping
+    // Since the audio is now quantized to the Grid, the Teleprompter is eternally slaved to the Grid.
     const parsed = sanitizedLines.map((obj) => {
       if (obj.isHeader) { 
         currentBlockIndex++; 
@@ -552,63 +575,48 @@ export default function Room04_Booth() {
         if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
           blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
         }
-        const headerStart = hasGovernor ? runningWordTime : blockStartBar * secondsPerBar;
+        const headerStart = blockStartBar * secondsPerBar;
         return { text: obj.text, startTime: headerStart, isHeader: true, timestamp: "", words: [] }; 
       }
       
+      let blockStartBar = 0;
+      if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
+        blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
+      }
+      
+      const absoluteBar = blockStartBar + barOffsetWithinBlock;
+      const lineStartTime = absoluteBar * secondsPerBar;
+      
+      // Each line has exactly 2 bars of mathematical duration
+      const lineDuration = 2 * secondsPerBar;
+      barOffsetWithinBlock += 2; 
+
       const words = obj.text.split(/\s+/).filter(w => w.length > 0);
 
-      if (hasGovernor) {
-        // Governor Active: Allocate time based EXACTLY on word length (syllables)
-        const lineStartTime = runningWordTime;
-        
-        const mappedWords = words.map(w => {
-          const wordWeight = w.length;
-          const wordDuration = wordWeight * timePerWeight;
-          const wordStart = runningWordTime;
-          
-          // Advance the running clock by the word length PLUS the standard space gap
-          runningWordTime += wordDuration + (1.5 * timePerWeight);
-          
-          return { word: w, startTime: wordStart, duration: wordDuration };
-        });
+      // Distribute the 2-bar duration across the words based on character length (syllables)
+      let totalLineWeight = 0;
+      words.forEach(w => totalLineWeight += w.length + 1.5);
 
-        // Add the end-of-line breath pause to the running clock
-        runningWordTime += 5 * timePerWeight;
+      const timePerWeight = totalLineWeight > 0 ? lineDuration / totalLineWeight : 0;
+      let localWordTime = lineStartTime;
+      
+      const mappedWords = words.map(w => {
+        const wordWeight = w.length;
+        const wordDuration = wordWeight * timePerWeight;
+        const wordStart = localWordTime;
+        localWordTime += wordDuration + (1.5 * timePerWeight);
+        return { word: w, startTime: wordStart, duration: wordDuration };
+      });
 
-        return { 
-          text: obj.text, startTime: lineStartTime, isHeader: false, 
-          timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
-          words: mappedWords 
-        };
-      } else {
-        // Governor Off: Fall back to rigorous math grid
-        let blockStartBar = 0;
-        if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
-          blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
-        }
-        const absoluteBar = blockStartBar + barOffsetWithinBlock;
-        const lineStartTime = absoluteBar * secondsPerBar;
-        barOffsetWithinBlock += 2; 
-
-        const fallbackTimePerWord = (secondsPerBar * 2) / Math.max(1, words.length);
-        let localWordTime = lineStartTime;
-        const mappedWords = words.map(w => {
-          const wordStart = localWordTime;
-          localWordTime += fallbackTimePerWord;
-          return { word: w, startTime: wordStart, duration: fallbackTimePerWord };
-        });
-
-        return { 
-          text: obj.text, startTime: lineStartTime, isHeader: false, 
-          timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
-          words: mappedWords 
-        };
-      }
+      return { 
+        text: obj.text, startTime: lineStartTime, isHeader: false, 
+        timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
+        words: mappedWords 
+      };
     });
     
     setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar, vocalStems, guideDuration]);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar]);
 
   useEffect(() => {
     if (trimmingStem && trimWaveformRef.current) {
@@ -674,10 +682,13 @@ export default function Room04_Booth() {
                onClick={handleGenerateGuide}
                disabled={isGeneratingGuide || !generatedLyrics}
                className="bg-[#111] border border-[#333] text-[#E60000] hover:bg-white hover:text-black hover:border-white px-2.5 py-1 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
-               title="Generate AI Guide to govern teleprompter pace"
+               title="Quantize AI Vocals to Grid"
              >
-               {isGeneratingGuide ? <Loader2 size={10} className="animate-spin" /> : <Mic size={10} />}
-               Generate Guide
+               {isGeneratingGuide ? (
+                 <><Loader2 size={10} className="animate-spin" /> {guideProgress}%</>
+               ) : (
+                 <><Mic size={10} /> Generate Guide</>
+               )}
              </button>
            </div>
            {audioData?.bpm && <span className="text-[10px] text-[#E60000] font-mono absolute right-8 top-3">{preciseBpm.toFixed(3)} BPM</span>}
