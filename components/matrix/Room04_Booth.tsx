@@ -134,14 +134,12 @@ export default function Room04_Booth() {
   const [trimDuration, setTrimDuration] = useState(0);
   const [isProcessingTrim, setIsProcessingTrim] = useState(false);
 
-  // --- HYPER-PRECISE BPM MATH ENGINE ---
   const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
 
   const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
 
   const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
   const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
-  // -------------------------------------
 
   const trimWaveformRef = useRef<HTMLDivElement>(null);
   const trimWavesurferRef = useRef<WaveSurfer | null>(null);
@@ -197,6 +195,24 @@ export default function Room04_Booth() {
 
           const source = offlineCtx.createBufferSource();
           source.buffer = audioBuffer;
+
+          // --- SURGICAL PIVOT: DYNAMIC TIME-WARPING (ANTI-BLEED) ---
+          // Calculate exactly how much time this line has before the next line starts.
+          let timeAvailable = 2; // Fallback
+          if (i < parsedLines.length - 1) {
+            timeAvailable = parsedLines[i + 1].startTime - line.startTime;
+          } else {
+            timeAvailable = trackDuration > line.startTime ? (trackDuration - line.startTime) : 5;
+          }
+
+          // If the AI generated audio that is LONGER than the available pocket, 
+          // we physically time-warp (speed up) the audio slice so it fits perfectly without bleeding.
+          if (audioBuffer.duration > timeAvailable && timeAvailable > 0.1) {
+            // We subtract 0.05s to give it a microscopic natural breath before the next grid hit.
+            source.playbackRate.value = audioBuffer.duration / Math.max(0.1, (timeAvailable - 0.05));
+          }
+          // ---------------------------------------------------------
+
           source.connect(offlineCtx.destination);
           source.start(line.startTime);
         } catch (lineErr) {
@@ -218,7 +234,7 @@ export default function Room04_Booth() {
         offsetBars: 0 
       });
       
-      if (addToast) addToast("Vocal Chop Quantization complete. Locked to pocket.", "success");
+      if (addToast) addToast("Vocal Chop Quantization complete. Time-Warping enabled.", "success");
     } catch (err: any) {
       console.error(err);
       if (addToast) addToast("Guide Error: " + err.message, "error");
@@ -565,27 +581,21 @@ export default function Room04_Booth() {
     let runningBlockStartBar = 0;
 
     blueprint.forEach((bp, index) => {
-      // Look for a matching block from the AI. If none, generate an empty safety block.
       const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
 
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
       const blockDurationSecs = bp.bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
-      // Always insert the true Header
       parsed.push({ text: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, timestamp: "", words: [] });
 
-      // --- SURGICAL OVERRIDE: The Instrumental Lock ---
-      // If this block is an Instrumental, delete anything the AI wrote and force the metronome.
       if (bp.type === "INSTRUMENTAL") {
          const hums = Array(bp.bars).fill("Mmm. Mmm.").join(" ");
          blockData.lines = [{ text: hums, isHeader: false }];
       }
 
-      // --- SURGICAL FIX: Dynamic Anti-Bleed Math ---
       const numLines = blockData.lines.length;
       if (numLines > 0) {
-        // Divide the block's total time strictly by the number of lines. No bleeding allowed.
         const timePerLine = blockDurationSecs / numLines;
         let lineStartTime = blockStartTime;
 
@@ -613,7 +623,6 @@ export default function Room04_Booth() {
             words: mappedWords 
           });
 
-          // Step forward mathematically.
           lineStartTime += timePerLine;
         });
       }
