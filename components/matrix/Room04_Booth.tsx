@@ -9,7 +9,8 @@ import { supabase } from "../../lib/supabase";
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
 type WordMapping = { word: string; startTime: number; duration: number };
-type LyricLine = { text: string; startTime: number; isHeader: boolean; timestamp?: string; words?: WordMapping[] };
+// SURGICAL FIX: Added lineDuration so the audio can read the Bouncing Ball's exact timing
+type LyricLine = { text: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[] };
 
 // --- BULLETPROOF AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
@@ -196,22 +197,14 @@ export default function Room04_Booth() {
           const source = offlineCtx.createBufferSource();
           source.buffer = audioBuffer;
 
-          // --- SURGICAL PIVOT: THE CHIPMUNK KILLER (ANTI-BLEED) ---
-          let timeAvailable = 2; 
-          if (i < parsedLines.length - 1) {
-            timeAvailable = parsedLines[i + 1].startTime - line.startTime;
-          } else {
-            timeAvailable = trackDuration > line.startTime ? (trackDuration - line.startTime) : 5;
-          }
+          // --- SURGICAL PIVOT: THE "GLUE" ALGORITHM ---
+          // We extract the exact mathematical duration of the Bouncing Ball for this specific line.
+          const targetDuration = line.lineDuration || 2; 
 
-          if (audioBuffer.duration > timeAvailable && timeAvailable > 0.1) {
-            const targetSpeed = audioBuffer.duration / Math.max(0.1, (timeAvailable - 0.05));
-            // HARD CAP at 1.25x speed. 
-            // If the text is still too long, it naturally bleeds into the next line.
-            // This creates a modern rap "punch-in" effect rather than an Alvin and the Chipmunks squeak.
-            source.playbackRate.value = Math.min(1.25, targetSpeed);
-          }
-          // ---------------------------------------------------------
+          // We forcefully time-warp the audio buffer so its playback length matches the ball perfectly.
+          // This stretches it if the TTS read too fast, and compresses it if the TTS read too slow.
+          source.playbackRate.value = audioBuffer.duration / targetDuration;
+          // ---------------------------------------------
 
           source.connect(offlineCtx.destination);
           source.start(line.startTime);
@@ -234,7 +227,7 @@ export default function Room04_Booth() {
         offsetBars: 0 
       });
       
-      if (addToast) addToast("Vocal Chop Quantization complete. Punch-ins enabled.", "success");
+      if (addToast) addToast("Audio glued to visual metronome.", "success");
     } catch (err: any) {
       console.error(err);
       if (addToast) addToast("Guide Error: " + err.message, "error");
@@ -539,7 +532,7 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- THE MASTER FIX: BLOCK QUARANTINE ENGINE ---
+  // --- THE MASTER FIX: PROPORTIONAL POCKET MAPPING (SWING/SYNCOPATION) ---
   useEffect(() => {
     if (!generatedLyrics) return;
 
@@ -576,7 +569,7 @@ export default function Room04_Booth() {
       llmBlocks.push(currentLlmBlock);
     }
 
-    // 3. Map strictly to the Blueprint (The Ultimate Grid)
+    // 3. Map strictly to the Blueprint with Proportional Timing
     const parsed: LyricLine[] = [];
     let runningBlockStartBar = 0;
 
@@ -587,7 +580,7 @@ export default function Room04_Booth() {
       const blockDurationSecs = bp.bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
-      parsed.push({ text: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, timestamp: "", words: [] });
+      parsed.push({ text: `[${bp.type}]`, startTime: blockStartTime, lineDuration: 0, isHeader: true, timestamp: "", words: [] });
 
       if (bp.type === "INSTRUMENTAL") {
          const hums = Array(bp.bars).fill("Mmm. Mmm.").join(" ");
@@ -596,16 +589,29 @@ export default function Room04_Booth() {
 
       const numLines = blockData.lines.length;
       if (numLines > 0) {
-        const timePerLine = blockDurationSecs / numLines;
-        let lineStartTime = blockStartTime;
+        
+        // Step A: Calculate the total grammatical weight of this verse to find our ratio
+        let totalBlockWeight = 0;
+        blockData.lines.forEach(lineObj => {
+          const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
+          words.forEach(w => totalBlockWeight += w.length + 1.5);
+          totalBlockWeight += 4; // Add a natural breath penalty for the end of a line
+        });
 
+        let currentFlowTime = blockStartTime;
+
+        // Step B: Allocate time to each line proportionally based on its length
         blockData.lines.forEach((lineObj) => {
           const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
-          let totalLineWeight = 0;
-          words.forEach(w => totalLineWeight += w.length + 1.5);
+          
+          let lineWeight = 0;
+          words.forEach(w => lineWeight += w.length + 1.5);
+          lineWeight += 4; // The breath
 
-          const timePerWeight = totalLineWeight > 0 ? timePerLine / totalLineWeight : 0;
-          let localWordTime = lineStartTime;
+          const timeForThisLine = totalBlockWeight > 0 ? (lineWeight / totalBlockWeight) * blockDurationSecs : 0;
+          const timePerWeight = totalBlockWeight > 0 ? blockDurationSecs / totalBlockWeight : 0;
+
+          let localWordTime = currentFlowTime;
 
           const mappedWords = words.map(w => {
             const wordWeight = w.length;
@@ -615,15 +621,20 @@ export default function Room04_Booth() {
             return { word: w, startTime: wordStart, duration: wordDuration };
           });
 
+          // SURGICAL FIX: We save the lineDuration directly into the LyricLine object so handleGenerateGuide can read it
           parsed.push({ 
             text: lineObj.text, 
-            startTime: lineStartTime, 
+            startTime: currentFlowTime, 
+            lineDuration: timeForThisLine,
             isHeader: false, 
-            timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
+            timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
 
-          lineStartTime += timePerLine;
+          // Step C: The Syncopation Shift
+          // Instead of waiting for the next hard grid point, we immediately step forward 
+          // by the exact duration of the line, guaranteeing the next line starts off-beat.
+          currentFlowTime += timeForThisLine;
         });
       }
 

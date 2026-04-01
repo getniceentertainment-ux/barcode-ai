@@ -15,7 +15,6 @@ SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_
 SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
 
-# --- REVISION 1: THE CONCENTRATED KILL LIST (2026 UPDATE) ---
 BAN_LIST = [
     "concrete jungle", "jiggy", "phat", "cheddar", "rags to riches", "no pain no gain",
     "weathered storms", "naysayers", "darkest hour", "spirits took flight",
@@ -59,7 +58,6 @@ def load_street_slang(style="getnice_hybrid"):
     try:
         with open(SLANG_FILE, "r", encoding="utf-8") as f:
             content = f.read()
-            
         try:
             data = json.loads(content)
             if isinstance(data, dict) and "slang_terms" in data:
@@ -74,16 +72,12 @@ def load_street_slang(style="getnice_hybrid"):
                     word = lines[i-1].strip()
                     if word and 1 < len(word) < 20:
                         words.append(word)
-                        
         if words:
             words = [w.strip() for w in words if w.strip()]
             combined_list = list(set(words + target_list))
             return random.sample(combined_list, min(8, len(combined_list)))
-            
-    except Exception as e:
-        print(f"Slang Loader Error: {e}")
+    except Exception:
         pass
-        
     return target_list
 
 def load_cultural_context():
@@ -123,9 +117,8 @@ def sanitize_lora_config():
         if modified:
             with open(config_path, "w") as f:
                 json.dump(config, f, indent=2)
-            print("Auto-Cleaner executed: Sanitized adapter_config.json for stable fusion.")
-    except Exception as e:
-        print(f"Auto-Cleaner Error: {e}")
+    except Exception:
+        pass
 
 def init_model():
     global model, tokenizer
@@ -152,95 +145,62 @@ def init_model():
     _ = model.generate(**dummy, max_new_tokens=5)
     print("Deep Burn-In Complete. Worker Ready.")
 
-# --- SURGICAL PIVOT: ADDED `max_syllables` PARAMETER ---
-def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive, struggle, hustle, topic, flow_reference="", bpm=120, max_syllables=12):
+def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive, struggle, hustle, topic, flow_reference="", bpm=120, max_syllables=14):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
     slang_list = ", ".join(load_street_slang(genre_style)) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     banned_words_str = ", ".join(BAN_LIST)
     
-    bpm_val = float(bpm)
-    if bpm_val <= 100:
-        rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Slow/Heavy). Drag the flow."
-    elif bpm_val <= 135:
-        rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Mid). Rhythmic, steady pocket."
-    else:
-        rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Fast). Fast, staccato."
-    
-    if genre_style == "getnice_hybrid" or genre_style == "getnice_flow":
-        flow_architecture = """[FLOW ARCHITECTURE: GETNICE HYBRID (SIGNATURE FLOW)]
-- CADENCE: Mid-bar breath control with aggressive internal rhymes.
-- FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause.
-- SCHEME: Internal multi-syllabic rhymes leading into the break, resolving on the end-bar."""
-    elif genre_style == "drill":
-        flow_architecture = """[FLOW ARCHITECTURE: NY DRILL]
-- CADENCE: Off-beat, aggressive staccato stops. Sliding 808 pockets.
-- SCHEME: AABB. Keep sentences punchy, sharp, and highly rhythmic.
-- FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause."""
-    elif genre_style == "trap":
-        flow_architecture = """[FLOW ARCHITECTURE: ATLANTA TRAP]
-- CADENCE: Fast triplet flows, drawn out vowels on the end-rhyme.
-- SCHEME: AABB with heavy repetition on the end words. Short, punchy lines.
-- FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause."""
-    else:
-        flow_architecture = f"[FLOW ARCHITECTURE: {genre_style.upper()}]\n- CADENCE: Standard 4/4 rhythm structure.\n- FORMATTING: You MUST place a pipe symbol (|) in the middle of EVERY line."
+    # Relaxed formatting constraints. Replaced | with natural commas.
+    flow_architecture = f"""[FLOW ARCHITECTURE: {genre_style.upper()}]
+- CADENCE: Match the rhythm of a modern hip-hop track. 
+- FORMATTING: Use commas (,) to naturally pace the breath control. DO NOT USE PIPE SYMBOLS (|).
+- SPACING: You must use proper English grammar and spaces between words. Do not smash words together."""
 
     flow_mimicry = ""
     if flow_reference and len(flow_reference) > 5 and flow_reference != "Focus on survival and rhythm.":
-        flow_mimicry = f"""[USER'S VOCAL CADENCE BLUEPRINT]
-The artist recorded this exact mumble-flow to establish their personal bounce:
-"{flow_reference}"
--> CRITICAL INSTRUCTION: Analyze the syllable density, internal rhyme placement, and rhythm of that quote. You MUST format your generated lyrics to perfectly match that specific bounce and flow structure so the artist can rap it easily. Do NOT copy the words, copy the RHYTHMIC ARCHITECTURE."""
+        flow_mimicry = f"""[USER'S VOCAL CADENCE BLUEPRINT]\nAnalyze this rhythmic structure: "{flow_reference}". Format your lyrics to mimic this bounce."""
     
     return f"""<|im_start|>system
-You are the GETNICE Ghostwriter Engine. You are a highly articulate, business-minded creator who refuses to quit. You embody the modern independent entrepreneur.
+You are the GETNICE Ghostwriter Engine. You are a highly articulate, business-minded creator who refuses to quit.
 
-You must synthesize these specific user variables into a cohesive, matter-of-fact delivery:
+Synthesize these variables into a cohesive delivery:
 - THE DRIVE (Motive): {motive}
 - THE SETBACK (Struggle): {struggle}
 - THE EXECUTION (Hustle): {hustle}
 - THE CURRENT TOPIC: {topic}
 
-1. FATAL ERROR IF USED (BAN LIST): {banned_words_str}. NEVER use outdated rap clichés or poetic flowery words.
-2. TONE ENFORCEMENT: You are a modern street executive in 2026. You MUST speak with casual hip-hop swagger and conversational street syntax. NEVER use inverted, theatrical sentences to force a rhyme. Use natural street terms for objects. Make the rhymes sound like actual spoken conversation.
-3. MANDATORY VOCABULARY INJECTION: You MUST organically weave at least TWO of these specific words into this generation: [ {slang_list} ].
-4. FORMATTING (CRITICAL): OUTPUT ONLY THE RAW LYRICS. ONE LINE EQUALS ONE BAR. DO NOT WRITE ANY HEADERS.
-5. BAR COUNT MATH IS ABSOLUTE: Generate EXACTLY the requested lines.
-6. NO TIMESTAMPS: Do NOT write any timestamps.
-7. TELEPROMPTER CADENCE (CRITICAL): You are writing for a visual prompter. 
-   - Output EXACTLY one sentence per musical bar.
-   - You MUST use the '|' symbol to visually cut the sentence exactly where the internal rhyme hits or where the breath drops.
-8. THE SYLLABLE CAP (ANTI-BLEED): To match the physical TTS cadence limit, EVERY SINGLE LINE YOU WRITE MUST BE EXACTLY {max_syllables} SYLLABLES OR LESS. Count them carefully!
+1. FATAL ERROR IF USED: {banned_words_str}. 
+2. TONE ENFORCEMENT: Speak with casual hip-hop swagger and conversational street syntax. Use natural street terms.
+3. MANDATORY VOCABULARY: Weave at least TWO of these words into the generation: [ {slang_list} ].
+4. FORMATTING: OUTPUT ONLY RAW LYRICS. ONE LINE = ONE BAR. NO HEADERS. NO TIMESTAMPS.
+5. GRAMMAR: You MUST use proper spaces between your words. Never combine words.
+6. THE SYLLABLE CAP: Keep your lines punchy. Aim for {max_syllables} syllables maximum per line.
 
-{rhythm_logic}
 {flow_architecture}
+{flow_mimicry}
 
 [LIVE INTEL]
 {rag_context}
-[CULTURAL ANCHOR]
-{culture_context}
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0, anchor_hook=None, max_syllables=12):
+def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0, anchor_hook=None, max_syllables=14):
     if section_index == 0:
         arc_instruction = "Establish the setting and the origin. Ground the listener."
     elif section_type.upper() == "HOOK":
         arc_instruction = "Summarize the core theme. Make it highly repetitive and catchy."
-    elif section_index in [1, 2]:
-        arc_instruction = "Introduce the depth of the topic. Connect directly to the previous verse and the Hook. Escalate the energy."
     else:
-        arc_instruction = "The resolution, the takeaway. High confidence, grounded reality."
+        arc_instruction = "Introduce the depth of the topic. Escalate the energy."
     
     hook_context = f"\n[THE ANCHOR HOOK]:\n{anchor_hook}\n" if anchor_hook and section_type.upper() != "HOOK" else ""
     
-    # PASS 1: DRAFT
     draft_prompt = f"""<|im_start|>user
 [STUDIO DRAFTING PHASE]
 GENERATE A {section_type.upper()}. EXACTLY {bars} LINES (BARS). Topic: '{prompt_topic}'.
 NARRATIVE ARC: {arc_instruction}
 {hook_context}
-Previous lyrics context (Continue the story and rhyme scheme):
+Previous lyrics context:
 {previous_lyrics if previous_lyrics else 'None (Start of track)'}
 
 Write the draft now.
@@ -250,70 +210,48 @@ Write the draft now.
     
     inputs = tokenizer(system_prompt + draft_prompt, return_tensors="pt").to("cuda")
     outputs = model.generate(
-        **inputs,
-        max_new_tokens=40 * bars,
-        temperature=0.85, 
-        top_p=0.9,
-        repetition_penalty=1.15,
-        pad_token_id=tokenizer.eos_token_id,
-        eos_token_id=tokenizer.eos_token_id 
+        **inputs, max_new_tokens=40 * bars, temperature=0.85, top_p=0.9,
+        repetition_penalty=1.15, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id 
     )
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
     
-    # PASS 2: REFINEMENT & SYLLABLE ENFORCEMENT
     refine_prompt = f"""<|im_start|>user
 [THE SECOND CRACK - FINAL POLISH]
-You just drafted this {bars}-bar {section_type.upper()}:
+You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
 CRITICAL ANALYSIS & REWRITE INSTRUCTIONS:
-1. Review the storyline. Make sure it connects perfectly to the previous lyrics.
-2. Dump any weak lines. Ensure you are using the mandatory 2026 Executive vocabulary.
-3. 🚨 OVERRIDE: YOU MUST INSERT EXACTLY ONE PIPE SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE TO MARK THE BREATH. 
-4. DO NOT WRITE HEADERS (e.g., [Verse]). JUST OUTPUT EXACTLY {bars} LINES.
-5. 🚨 THE SYLLABLE CAP: Every single line MUST be EXACTLY {max_syllables} syllables or less. Do not exceed this limit!
+1. Review the storyline. Connect perfectly to the previous lyrics.
+2. Ensure proper spacing between words.
+3. Use commas (,) to pace the breath. NO PIPE SYMBOLS (|).
+4. JUST OUTPUT EXACTLY {bars} LINES. NO HEADERS.
 
-Take a second crack at it and rewrite the final {bars} lines now.
+Rewrite the final {bars} lines now.
 <|im_end|>
 <|im_start|>assistant
 """
     
     inputs_refine = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
     outputs_refine = model.generate(
-        **inputs_refine,
-        max_new_tokens=40 * bars,
-        temperature=0.75, 
-        top_p=0.9,
-        repetition_penalty=1.15,
-        pad_token_id=tokenizer.eos_token_id,
-        eos_token_id=tokenizer.eos_token_id 
+        **inputs_refine, max_new_tokens=40 * bars, temperature=0.75, top_p=0.9,
+        repetition_penalty=1.15, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id 
     )
     
     final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True)
     
+    # CLEANSING
     final_text = final_text.replace("<|im_end|>", "").strip()
-    final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL)
-    final_text = final_text.replace("```", "")
+    final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
     final_text = re.sub(r'\[.*?\]', '', final_text)
     final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE)
     
-    clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and len(line.strip()) > 5 and not line.strip().startswith(('+', '-')) and not line.lower().startswith("here are")]
+    # REMOVED THE DESTRUCTIVE split('|') LOGIC
+    clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and len(line.strip()) > 3 and not line.strip().startswith(('+', '-'))]
     
     if len(clean_lines) > bars:
         clean_lines = clean_lines[:bars]
-
-    stacked_lines = []
-    for line in clean_lines:
-        if '|' in line:
-            parts = [p.strip() for p in line.split('|') if p.strip()]
-            for i in range(len(parts) - 1):
-                if not parts[i].endswith(','):
-                    parts[i] += ','
-            stacked_lines.extend(parts)
-        else:
-            stacked_lines.append(line)
             
-    return "\n".join(stacked_lines)
+    return "\n".join(clean_lines)
 
 def handler(event):
     job_input = event.get("input", {})
@@ -334,18 +272,13 @@ def handler(event):
     if bpm <= 0: bpm = 120
     seconds_per_bar = (60.0 / bpm) * 4.0
 
-    # --- SURGICAL LOGIC: PHYSICAL SYLLABLE LIMIT MATH ---
-    # The Python backend now maps TTS limits directly based on user flow.
+    # Relaxed mathematically safe syllables
     tts_speed_limit = 3.5
-    if style == "chopper": tts_speed_limit = 6.0
-    elif style == "triplet": tts_speed_limit = 4.8
-    elif style == "getnice_hybrid": tts_speed_limit = 4.0
-    elif style == "heartbeat": tts_speed_limit = 3.2
-    elif style == "lazy": tts_speed_limit = 2.2
-
-    # In our Python engine, 1 line = 1 bar
+    if style == "chopper": tts_speed_limit = 5.0
+    elif style == "triplet": tts_speed_limit = 4.2
+    
     time_per_line = seconds_per_bar
-    max_syllables = max(4, int(time_per_line * tts_speed_limit))
+    max_syllables = max(10, int(time_per_line * tts_speed_limit * 1.5)) # Safety padding to prevent word smashing
     
     system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel, motive, struggle, hustle, topic, flow_reference, bpm, max_syllables)
     
@@ -358,26 +291,18 @@ def handler(event):
 Original Line: "{original_line}"
 Instruction: {instruction}
 
-Rewrite the line to satisfy the instruction while strictly maintaining the required persona and emotional mirror. 
-Output ONLY the rewritten line. Do not explain yourself.
+Rewrite the line to satisfy the instruction. Output ONLY the rewritten line.
 <|im_end|>
 <|im_start|>assistant
 """
         inputs = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
         outputs = model.generate(
-            **inputs,
-            max_new_tokens=50,
-            temperature=0.7, 
-            top_p=0.9,
-            repetition_penalty=1.1,
-            pad_token_id=tokenizer.eos_token_id,
-            eos_token_id=tokenizer.eos_token_id 
+            **inputs, max_new_tokens=50, temperature=0.7, top_p=0.9,
+            repetition_penalty=1.1, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id 
         )
         
         refined_line = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
-        refined_line = refined_line.replace("<|im_end|>", "").strip()
-        refined_line = re.sub(r'^["\']|["\']$', '', refined_line) 
-        
+        refined_line = re.sub(r'^["\']|["\']$', '', refined_line.replace("<|im_end|>", "").strip()) 
         return {"refinedLine": refined_line}
 
     if task_type == "generate":
@@ -403,11 +328,7 @@ Output ONLY the rewritten line. Do not explain yourself.
             
             final_lyrics += f"\n[{sec_type} - {bars} BARS | STARTS @ {mins}:{secs:02d} (BAR {start_bar})]\n"
             
-            # --- SURGICAL PIVOT: THE INSTRUMENTAL BYPASS ---
-            # Instead of asking the AI to output "Mmm.", we bypass the LLM completely.
-            # Instant execution. Zero risk of hallucination.
             if sec_type == "INSTRUMENTAL":
-                # Create exactly 1 line (2 hums) per bar to map perfectly to the grid
                 hums = ["Mmm. Mmm." for _ in range(bars)]
                 raw_section_text = "\n".join(hums)
             elif sec_type == "HOOK" and saved_hook is not None:
@@ -433,7 +354,6 @@ Output ONLY the rewritten line. Do not explain yourself.
                 line_bar += 1 
             
             final_lyrics += "\n".join(timed_lines) + "\n"
-            
             context_lyrics = "\n".join((context_lyrics + "\n" + raw_section_text).strip().split("\n")[-8:])
             current_cumulative_bar = start_bar + bars
             
