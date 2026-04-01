@@ -117,7 +117,7 @@ export default function Room04_Booth() {
   const [isUploading, setIsUploading] = useState(false);
   
   const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
-  const [guideProgress, setGuideProgress] = useState(0); // SURGICAL ADDITION: Quantizer Progress
+  const [guideProgress, setGuideProgress] = useState(0); 
   
   const [autoScroll, setAutoScroll] = useState(true);
   const [activeLineIndex, setActiveLineIndex] = useState(-1);
@@ -137,12 +137,10 @@ export default function Room04_Booth() {
   // --- HYPER-PRECISE BPM MATH ENGINE ---
   const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
 
-  const totalBars = blueprint.length > 0 
-    ? ((blueprint[blueprint.length - 1] as any).startBar || 0) + ((blueprint[blueprint.length - 1] as any).bars || 16)
-    : 87;
+  const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
 
-  const preciseBpm = trackDuration > 0 ? ((totalBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
-  const secondsPerBar = trackDuration > 0 ? (trackDuration / totalBars) : (60 / preciseBpm) * 4;
+  const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
+  const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
   // -------------------------------------
 
   const trimWaveformRef = useRef<HTMLDivElement>(null);
@@ -162,7 +160,6 @@ export default function Room04_Booth() {
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
-  // --- SURGICAL PIVOT: THE VOCAL CHOP QUANTIZER ---
   const handleGenerateGuide = async () => {
     if (!lyricLines || lyricLines.length === 0) {
       if (addToast) addToast("No valid lyrics found to generate guide.", "error");
@@ -176,11 +173,9 @@ export default function Room04_Booth() {
       const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
       if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
-      // Calculate total needed duration for the master buffer (adding 10 seconds of padding)
       const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
       const sampleRate = 44100;
       
-      // The OfflineAudioContext acts as an invisible DAW timeline
       const OfflineCtxClass = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
       const offlineCtx = new OfflineCtxClass(1, Math.ceil(sampleRate * renderDuration), sampleRate);
 
@@ -200,18 +195,15 @@ export default function Room04_Booth() {
           const arrayBuffer = await res.arrayBuffer();
           const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
 
-          // Drop the audio slice exactly onto its absolute mathematical grid point
           const source = offlineCtx.createBufferSource();
           source.buffer = audioBuffer;
           source.connect(offlineCtx.destination);
           source.start(line.startTime);
         } catch (lineErr) {
           console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
-          // We continue so a single network hiccup doesn't destroy the whole song
         }
       }
 
-      // Render the stitched master track
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);
       const url = URL.createObjectURL(blob);
@@ -223,7 +215,7 @@ export default function Room04_Booth() {
         url: url, 
         blob: blob, 
         volume: 0.3, 
-        offsetBars: 0 // Offset is 0 because the silence padding is baked into the buffer!
+        offsetBars: 0 
       });
       
       if (addToast) addToast("Vocal Chop Quantization complete. Locked to pocket.", "success");
@@ -473,18 +465,6 @@ export default function Room04_Booth() {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('engineering_unlocked') === 'true') {
-        window.history.replaceState({}, document.title, window.location.pathname);
-        useMatrixStore.setState((state) => ({ userSession: state.userSession ? { ...state.userSession, has_engineering_token: true } as any : null }));
-        if (addToast) addToast("Engineering Token Secured. Suite Unlocked.", "success");
-        setActiveRoom("05");
-      }
-    }
-  }, [userSession, setActiveRoom, addToast]);
-
-  useEffect(() => {
     let isMounted = true;
     const loadBuffers = async () => {
       if (!audioCtxRef.current) return;
@@ -507,7 +487,9 @@ export default function Room04_Booth() {
             const audioBuf = await new Promise<AudioBuffer>((resolve, reject) => {
                audioCtxRef.current!.decodeAudioData(arrayBuf, resolve, reject);
             });
-            if (isMounted) stemBuffersRef.current.set(stem.id, audioBuf);
+            if (isMounted) {
+              stemBuffersRef.current.set(stem.id, audioBuf);
+            }
           } catch (e: any) { 
             if (e.name !== 'AbortError') console.warn(`Soft-fail decoding stem ${stem.id}:`, e); 
           }
@@ -541,78 +523,102 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- SURGICAL FIX: GRID TIME MASTER & CHARACTER-WEIGHTED BOUNCING BALL ---
+  // --- THE MASTER FIX: BLOCK QUARANTINE ENGINE ---
   useEffect(() => {
     if (!generatedLyrics) return;
 
     const lines = generatedLyrics.split('\n');
     
-    // STEP 1: The Ultimate Sanitizer Pipeline
+    // 1. Clean the text
     const sanitizedLines = lines.map(l => {
       let text = l.trim();
       if (text.startsWith('[')) return { text, isHeader: true }; 
-      
       text = text
         .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
         .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
         .replace(/pipe\s*symbol/gi, '') 
         .replace(/\|/g, '') 
         .trim();
-        
       return { text, isHeader: false };
     }).filter(obj => obj.text.length > 0);
 
-    let currentBlockIndex = -1; 
-    let barOffsetWithinBlock = 0; 
+    // 2. Group the hallucinated text into blocks
+    const llmBlocks: { header: string, lines: typeof sanitizedLines }[] = [];
+    let currentLlmBlock = { header: "", lines: [] as typeof sanitizedLines };
 
-    // STEP 2: Strict Grid Mapping
-    // Since the audio is now quantized to the Grid, the Teleprompter is eternally slaved to the Grid.
-    const parsed = sanitizedLines.map((obj) => {
-      if (obj.isHeader) { 
-        currentBlockIndex++; 
-        barOffsetWithinBlock = 0; 
-        let blockStartBar = 0;
-        if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
-          blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
+    sanitizedLines.forEach(obj => {
+      if (obj.isHeader) {
+        if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) {
+          llmBlocks.push(currentLlmBlock);
         }
-        const headerStart = blockStartBar * secondsPerBar;
-        return { text: obj.text, startTime: headerStart, isHeader: true, timestamp: "", words: [] }; 
+        currentLlmBlock = { header: obj.text, lines: [] };
+      } else {
+        currentLlmBlock.lines.push(obj);
       }
-      
-      let blockStartBar = 0;
-      if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
-        blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
+    });
+    if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) {
+      llmBlocks.push(currentLlmBlock);
+    }
+
+    // 3. Map strictly to the Blueprint (The Ultimate Grid)
+    const parsed: LyricLine[] = [];
+    let runningBlockStartBar = 0;
+
+    blueprint.forEach((bp, index) => {
+      // Look for a matching block from the AI. If none, generate an empty safety block.
+      const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
+
+      const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
+      const blockDurationSecs = bp.bars * secondsPerBar;
+      const blockStartTime = blockStartBar * secondsPerBar;
+
+      // Always insert the true Header
+      parsed.push({ text: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, timestamp: "", words: [] });
+
+      // --- SURGICAL OVERRIDE: The Instrumental Lock ---
+      // If this block is an Instrumental, delete anything the AI wrote and force the metronome.
+      if (bp.type === "INSTRUMENTAL") {
+         const hums = Array(bp.bars).fill("Mmm. Mmm.").join(" ");
+         blockData.lines = [{ text: hums, isHeader: false }];
       }
-      
-      const absoluteBar = blockStartBar + barOffsetWithinBlock;
-      const lineStartTime = absoluteBar * secondsPerBar;
-      
-      // Each line has exactly 2 bars of mathematical duration
-      const lineDuration = 2 * secondsPerBar;
-      barOffsetWithinBlock += 2; 
 
-      const words = obj.text.split(/\s+/).filter(w => w.length > 0);
+      // --- SURGICAL FIX: Dynamic Anti-Bleed Math ---
+      const numLines = blockData.lines.length;
+      if (numLines > 0) {
+        // Divide the block's total time strictly by the number of lines. No bleeding allowed.
+        const timePerLine = blockDurationSecs / numLines;
+        let lineStartTime = blockStartTime;
 
-      // Distribute the 2-bar duration across the words based on character length (syllables)
-      let totalLineWeight = 0;
-      words.forEach(w => totalLineWeight += w.length + 1.5);
+        blockData.lines.forEach((lineObj) => {
+          const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
+          let totalLineWeight = 0;
+          words.forEach(w => totalLineWeight += w.length + 1.5);
 
-      const timePerWeight = totalLineWeight > 0 ? lineDuration / totalLineWeight : 0;
-      let localWordTime = lineStartTime;
-      
-      const mappedWords = words.map(w => {
-        const wordWeight = w.length;
-        const wordDuration = wordWeight * timePerWeight;
-        const wordStart = localWordTime;
-        localWordTime += wordDuration + (1.5 * timePerWeight);
-        return { word: w, startTime: wordStart, duration: wordDuration };
-      });
+          const timePerWeight = totalLineWeight > 0 ? timePerLine / totalLineWeight : 0;
+          let localWordTime = lineStartTime;
 
-      return { 
-        text: obj.text, startTime: lineStartTime, isHeader: false, 
-        timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
-        words: mappedWords 
-      };
+          const mappedWords = words.map(w => {
+            const wordWeight = w.length;
+            const wordDuration = wordWeight * timePerWeight;
+            const wordStart = localWordTime;
+            localWordTime += wordDuration + (1.5 * timePerWeight);
+            return { word: w, startTime: wordStart, duration: wordDuration };
+          });
+
+          parsed.push({ 
+            text: lineObj.text, 
+            startTime: lineStartTime, 
+            isHeader: false, 
+            timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
+            words: mappedWords 
+          });
+
+          // Step forward mathematically.
+          lineStartTime += timePerLine;
+        });
+      }
+
+      runningBlockStartBar = blockStartBar + bp.bars;
     });
     
     setLyricLines(parsed);
@@ -709,13 +715,11 @@ export default function Room04_Booth() {
                 
                 <span className="flex-1 leading-loose">
                   {line.isHeader ? line.text : line.words?.map((wObj, wIdx) => {
-                    // THE KARAOKE / BOUNCING BALL RENDERER
                     const isPast = currentTime >= wObj.startTime + wObj.duration;
                     const isActiveWord = isActiveLine && currentTime >= wObj.startTime && currentTime < wObj.startTime + wObj.duration;
 
                     return (
                       <span key={wIdx} className="relative inline-block mr-2">
-                        {/* THE BOUNCING BALL VISUAL */}
                         {isActiveWord && (
                           <span className="absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#E60000] rounded-full animate-bounce shadow-[0_0_5px_#E60000]"></span>
                         )}
