@@ -40,7 +40,6 @@ export default function Room01_Lab() {
   const { audioData, setAudioData, setActiveRoom, addToast, userSession } = useMatrixStore();
   
   // --- PERSISTENCE INITIALIZATION ---
-  // We initialize status based on existing store data to prevent UI "flicker" or loss of state on refresh
   const [status, setStatus] = useState<"idle" | "uploading" | "analyzing" | "success">(
     audioData?.bpm ? "success" : "idle"
   );
@@ -98,7 +97,7 @@ export default function Room01_Lab() {
         wavesurferRef.current = null;
       }
     };
-  }, [audioData?.url]); // Only re-init if the URL changes
+  }, [audioData?.url]);
 
   // --- FETCH MARKETPLACE BEATS ---
   useEffect(() => {
@@ -232,7 +231,7 @@ export default function Room01_Lab() {
       const currentCloudUrl = publicUrlData.publicUrl;
 
       setAudioData({ url: currentCloudUrl, fileName: selectedFile.name, bpm: 0, totalBars: 0 });
-      setStatus("idle"); // Ready to analyze
+      setStatus("idle");
     } catch (err: any) {
       if (addToast) addToast(err.message, "error");
       setStatus("idle");
@@ -365,7 +364,8 @@ export default function Room01_Lab() {
                      <Music className="text-[#E60000]" size={18} />
                      <span className="font-mono text-[10px] text-white uppercase tracking-widest truncate max-w-[200px]">{audioData.fileName}</span>
                    </div>
-                   <button onClick={() => { setAudioData(null); setStatus("idle"); setAnalysisComplete(false); }} className="text-[#555] hover:text-[#E60000] transition-colors font-mono text-[10px] uppercase flex items-center gap-1">
+                   {/* SURGICAL FIX: Cast null to any to satisfy strict TypeScript store definitions */}
+                   <button onClick={() => { setAudioData(null as any); setStatus("idle"); setAnalysisComplete(false); }} className="text-[#555] hover:text-[#E60000] transition-colors font-mono text-[10px] uppercase flex items-center gap-1">
                      <Trash2 size={12} /> Eject
                    </button>
                 </div>
