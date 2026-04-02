@@ -8,8 +8,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing lyrics." }, { status: 400 });
     }
 
-    // The vocal direction tag [cheerful] or [energetic] helps steer the Orpheus model
-    const steerableLyrics = `[energetic] ${lyrics}`;
+    // --- SURGICAL FIX: AGGRESSIVE ORPHEUS STEERING ---
+    // High-fidelity models need explicit emotional and pacing tags to avoid robotic delivery.
+    // We dynamically adjust the steering based on the BPM passed from Room04.
+    let pacingTag = "[steady]";
+    if (bpm && bpm > 130) pacingTag = "[fast]";
+    else if (bpm && bpm < 90) pacingTag = "[slow]";
+
+    const steerableLyrics = `[rap] [energetic] ${pacingTag} ${lyrics}`;
 
     // Hitting Groq's blazing-fast OpenAI-compatible speech endpoint
     const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
@@ -21,23 +27,24 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         model: 'canopylabs/orpheus-v1-english',
         input: steerableLyrics,
-        voice: 'troy', // Options: 'troy', 'austin', 'hannah'
-        response_format: 'wav'
+        voice: 'troy', // 'troy' has the best cadence for rap/hip-hop
+        response_format: 'wav', 
+        speed: 1.0 // Keep base speed at 1.0; Room04 will handle the time-warping via the Glue algorithm
       })
     });
 
     if (!response.ok) {
       const errText = await response.text();
       console.error("Groq TTS Error:", errText);
-      return NextResponse.json({ error: "Failed to generate audio from Groq." }, { status: 500 });
+      return NextResponse.json({ error: "Failed to generate high-fidelity audio from Groq." }, { status: 500 });
     }
 
-    // Convert the fast response into an array buffer to send back to Room 04
     const audioBuffer = await response.arrayBuffer();
     
     return new NextResponse(audioBuffer, {
       headers: {
         'Content-Type': 'audio/wav',
+        'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400', // Cache responses to save Groq API calls on identical lines
       }
     });
 
