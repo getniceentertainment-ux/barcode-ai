@@ -148,6 +148,7 @@ export async function POST(req: Request) {
     5. THE INSTRUMENTAL METRONOME: If the blueprint specifies an "INSTRUMENTAL" block, DO NOT write lyrics for it. Instead, output the header [Instrumental] followed by the exact word "Mmm." repeated once for every bar of that section.
     6. THE DYNAMIC SYLLABLE CAP: You are writing for an AI Voice Engine. To match the exact physical cadence of the requested flow style, EVERY single line you write MUST be exactly ${maxSyllables} syllables or less. Count your syllables carefully. Do not exceed this limit or the audio pipeline will fail.
     7. POCKET PLACEMENT: ${pocketInstruction}
+    8. PHONETIC SYLLABLE PIPES: You MUST output a pipe symbol (|) between EVERY SINGLE SYLLABLE to act as a metronome marker. Example: I| DROP| THE| KEYS| TO| THE| CO|CAINE| WHITE.
     `;
 
     const thematicPrompt = `SONG TITLE: "${title || 'UNTITLED'}".

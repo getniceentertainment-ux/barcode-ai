@@ -585,7 +585,7 @@ const handleGenerateGuide = async () => {
         .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
         .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
         .replace(/pipe\s*symbol/gi, '') 
-        .replace(/\|/g, '') 
+        // SURGICAL FIX: We REMOVED the line that strips pipes (|). The engine now uses them!
         .trim();
       return { text, isHeader: false };
     }).filter(obj => obj.text.length > 0);
@@ -633,12 +633,16 @@ const handleGenerateGuide = async () => {
         let totalBlockWeight = 0;
         blockData.lines.forEach(lineObj => {
           const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
-          words.forEach(w => totalBlockWeight += w.length + 1.5);
+          words.forEach(w => {
+            // SYLLABLE EXTRACTION MATH: Count phonetic pipes for actual syllable weight
+            const syllableCount = (w.match(/\|/g) || []).length + 1;
+            totalBlockWeight += syllableCount * 3.0; // Structural weight per syllable
+          });
           
-          const textEnd = lineObj.text.trim().slice(-1);
-          if (textEnd === ',' || textEnd === '-') {
+          const cleanTextEnd = lineObj.text.replace(/\|/g, '').trim().slice(-1);
+          if (cleanTextEnd === ',' || cleanTextEnd === '-') {
             totalBlockWeight += 1.0; // Chain-Link: Spillover (Almost zero pause)
-          } else if (lineObj.text.trim().startsWith('...')) {
+          } else if (lineObj.text.replace(/\|/g, '').trim().startsWith('...')) {
             totalBlockWeight += 6.0; // The Drag: Leaves massive space at the front (Pickup note)
           } else {
             totalBlockWeight += 4.0; // Standard Stop: Hard landing on the 1
@@ -652,34 +656,39 @@ const handleGenerateGuide = async () => {
           const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           
           let lineWeight = 0;
-          words.forEach(w => lineWeight += w.length + 1.5);
+          words.forEach(w => {
+            const syllableCount = (w.match(/\|/g) || []).length + 1;
+            lineWeight += syllableCount * 3.0;
+          });
           
-          const textEnd = lineObj.text.trim().slice(-1);
-          if (textEnd === ',' || textEnd === '-') {
-            lineWeight += 1.0; // Chain-link
-          } else if (lineObj.text.trim().startsWith('...')) {
-            lineWeight += 6.0; // The Drag
+          const cleanTextEnd = lineObj.text.replace(/\|/g, '').trim().slice(-1);
+          if (cleanTextEnd === ',' || cleanTextEnd === '-') {
+            lineWeight += 1.0; 
+          } else if (lineObj.text.replace(/\|/g, '').trim().startsWith('...')) {
+            lineWeight += 6.0; 
           } else {
-            lineWeight += 4.0; // Standard Stop
+            lineWeight += 4.0; 
           }
 
-          // Calculate duration based on the total block's weight
           const timeForThisLine = totalBlockWeight > 0 ? (lineWeight / totalBlockWeight) * blockDurationSecs : 0;
           const timePerWeight = totalBlockWeight > 0 ? blockDurationSecs / totalBlockWeight : 0;
 
           let localWordTime = currentFlowTime;
 
           const mappedWords = words.map(w => {
-            const wordWeight = w.length;
-            const wordDuration = wordWeight * timePerWeight;
+            const syllableCount = (w.match(/\|/g) || []).length + 1;
+            const wordDuration = (syllableCount * 3.0) * timePerWeight;
             const wordStart = localWordTime;
             
-            localWordTime += wordDuration + (1.5 * timePerWeight);
-            return { word: w, startTime: wordStart, duration: wordDuration };
+            localWordTime += wordDuration;
+            
+            // Clean the pipe out for the Teleprompter visual
+            const cleanWord = w.replace(/\|/g, '');
+            return { word: cleanWord, startTime: wordStart, duration: wordDuration };
           });
 
           parsed.push({ 
-            text: lineObj.text, 
+            text: lineObj.text.replace(/\|/g, ''), // Strip pipes from the full line text
             startTime: currentFlowTime, 
             lineDuration: timeForThisLine,
             isHeader: false, 
