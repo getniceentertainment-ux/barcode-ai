@@ -159,7 +159,7 @@ export default function Room04_Booth() {
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
-  const handleGenerateGuide = async () => {
+const handleGenerateGuide = async () => {
     if (!lyricLines || lyricLines.length === 0) {
       if (addToast) addToast("No valid lyrics found to generate guide.", "error");
       return;
@@ -172,6 +172,7 @@ export default function Room04_Booth() {
       const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
       if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
+      // Creates a blank, silent canvas the exact length of the track
       const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
       const sampleRate = 44100;
       
@@ -194,20 +195,45 @@ export default function Room04_Booth() {
           const arrayBuffer = await res.arrayBuffer();
           const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
 
-          const source = offlineCtx.createBufferSource();
-          source.buffer = audioBuffer;
+          // --- SURGICAL PIVOT: THE MICRO-CHUNK QUANTIZER ---
+          const ttsDuration = audioBuffer.duration;
+          const mathLineDuration = line.lineDuration || 2;
 
-          // --- SURGICAL PIVOT: THE "GLUE" ALGORITHM ---
-          // We extract the exact mathematical duration of the Bouncing Ball for this specific line.
-          const targetDuration = line.lineDuration || 2; 
+          if (line.words && line.words.length > 0) {
+            line.words.forEach((wObj) => {
+              // 1. Calculate where this specific word exists proportionally inside the AI's audio file
+              const relativeWordStart = wObj.startTime - line.startTime;
+              const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
+              const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
 
-          // We forcefully time-warp the audio buffer so its playback length matches the ball perfectly.
-          // This stretches it if the TTS read too fast, and compresses it if the TTS read too slow.
-          source.playbackRate.value = audioBuffer.duration / targetDuration;
+              const source = offlineCtx.createBufferSource();
+              source.buffer = audioBuffer;
+              source.playbackRate.value = 1.0; // High-fidelity preservation, zero chipmunk effect
+
+              // 2. Create a micro-envelope to prevent "clicking" from sliced audio waves
+              const gainNode = offlineCtx.createGain();
+              gainNode.gain.setValueAtTime(0, wObj.startTime);
+              gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); // 10ms micro-fade in
+              
+              const fadeOutStart = Math.max(wObj.startTime + 0.01, wObj.startTime + wObj.duration - 0.01);
+              gainNode.gain.setValueAtTime(1, fadeOutStart);
+              gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration); // 10ms micro-fade out
+
+              source.connect(gainNode);
+              gainNode.connect(offlineCtx.destination);
+
+              // 3. Drop the specific audio slice exactly on the red ball's timestamp
+              source.start(wObj.startTime, ttsOffset, ttsWordDuration);
+            });
+          } else {
+            // Fallback for lines without word mappings
+            const source = offlineCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(offlineCtx.destination);
+            source.start(line.startTime);
+          }
           // ---------------------------------------------
 
-          source.connect(offlineCtx.destination);
-          source.start(line.startTime);
         } catch (lineErr) {
           console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
         }
@@ -227,7 +253,7 @@ export default function Room04_Booth() {
         offsetBars: 0 
       });
       
-      if (addToast) addToast("Audio glued to visual metronome.", "success");
+      if (addToast) addToast("High-fidelity audio glued to visual metronome.", "success");
     } catch (err: any) {
       console.error(err);
       if (addToast) addToast("Guide Error: " + err.message, "error");
