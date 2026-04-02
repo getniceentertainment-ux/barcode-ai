@@ -628,45 +628,48 @@ const handleGenerateGuide = async () => {
 
       const numLines = blockData.lines.length;
       if (numLines > 0) {
+        // --- SURGICAL PIVOT: THE GRID-SNAP QUANTIZER ---
         
-        // Step A: Calculate the total grammatical weight of this verse to find our ratio
-        let totalBlockWeight = 0;
-        blockData.lines.forEach(lineObj => {
-          const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
-          words.forEach(w => totalBlockWeight += w.length + 1.5);
-          totalBlockWeight += 4; // Add a natural breath penalty for the end of a line
-        });
+        // 1. Calculate exactly how much musical time is allocated to each line mathematically.
+        // If there are 16 lines in a 16-bar verse, each line gets exactly 1 bar.
+        // If there are 32 lines in a 16-bar verse (double-time), each line gets exactly 0.5 bars.
+        const timeAllocatedPerLine = blockDurationSecs / numLines;
 
-        let currentFlowTime = blockStartTime;
-
-        // Step B: Allocate time to each line proportionally based on its length
-        blockData.lines.forEach((lineObj) => {
+        blockData.lines.forEach((lineObj, lineIndex) => {
           const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           
+          // 2. THE DOWNBEAT ANCHOR: We force the line to start exactly on its designated grid point.
+          // It no longer cares if the previous line was long or short. It hits exactly on the beat.
+          const lineStartTime = blockStartTime + (lineIndex * timeAllocatedPerLine);
+
+          // 3. THE RAPPER'S BREATH: We only allow the words to consume 85% of the allocated time.
+          // This naturally leaves a 15% pocket of silence (the breath) before the next downbeat hits.
+          const actualLineDuration = timeAllocatedPerLine * 0.85;
+
+          // 4. Distribute the words inside that 85% window based on syllable weight
           let lineWeight = 0;
-          words.forEach(w => lineWeight += w.length + 1.5);
-          lineWeight += 4; // The breath
+          words.forEach(w => lineWeight += w.length + 1); // +1 for the space
+          const timePerWeight = actualLineDuration / lineWeight;
 
-          const timeForThisLine = totalBlockWeight > 0 ? (lineWeight / totalBlockWeight) * blockDurationSecs : 0;
-          const timePerWeight = totalBlockWeight > 0 ? blockDurationSecs / totalBlockWeight : 0;
-
-          let localWordTime = currentFlowTime;
+          let localWordTime = lineStartTime;
 
           const mappedWords = words.map(w => {
             const wordWeight = w.length;
             const wordDuration = wordWeight * timePerWeight;
             const wordStart = localWordTime;
-            localWordTime += wordDuration + (1.5 * timePerWeight);
+            
+            // Advance the local timeline for the next word
+            localWordTime += wordDuration + (1 * timePerWeight);
+            
             return { word: w, startTime: wordStart, duration: wordDuration };
           });
 
-          // SURGICAL FIX: We save the lineDuration directly into the LyricLine object so handleGenerateGuide can read it
           parsed.push({ 
             text: lineObj.text, 
-            startTime: currentFlowTime, 
-            lineDuration: timeForThisLine,
+            startTime: lineStartTime, 
+            lineDuration: actualLineDuration, // Pass the 85% duration to the guide vocal engine
             isHeader: false, 
-            timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
+            timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
 
