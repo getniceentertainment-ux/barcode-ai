@@ -450,6 +450,7 @@ export const useMatrixStore = create<MatrixState>()(
         gwStyle: state.gwStyle,
         
         // --- PERSIST THEMATIC STATE LOCALLY ON REFRESH ---
+        audioData: state.audioData, // <-- SURGICAL ADDITION: Prevent cloud wipe                 
         gwMotive: state.gwMotive,
         gwStruggle: state.gwStruggle,
         gwHustle: state.gwHustle,
