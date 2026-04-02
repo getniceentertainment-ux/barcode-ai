@@ -110,7 +110,6 @@ export default function Room01_Lab() {
         
         if (beatUrl) {
           // --- SUPABASE URL EXTRACTOR ---
-          // Since your test link didn't have the name, this slices it perfectly from the end of the .mp3 URL
           if (!beatName) {
             try {
               const urlParts = beatUrl.split('/');
@@ -129,7 +128,6 @@ export default function Room01_Lab() {
           if (addToast) addToast(`License Acquired: ${beatName}. Booting DSP...`, "info");
           
           // 3. SURGICAL FIX: The Delay-Fire 
-          // We wait exactly 500ms to guarantee React has checked the box BEFORE the function runs!
           setTimeout(() => {
             if (handlePurchasedBeatDSP) {
                handlePurchasedBeatDSP(beatUrl, beatName || "GetNice_Marketplace_Beat.mp3");
@@ -141,15 +139,12 @@ export default function Room01_Lab() {
   }, []);
 
   // --- SURGICAL FIXER: The Hydration Catcher ---
-  // Listens for the audioData to arrive from the hard drive after a refresh
   useEffect(() => {
     if (audioData) {
-      // If the beat arrives, but the UI is stuck on idle, flip it to success
       if (status === "idle") {
         setStatus("success");
       }
     } else {
-      // If the matrix gets cleared (e.g., user hits trash can), reset the room
       if (status === "success") {
         setStatus("idle");
       }
@@ -234,11 +229,31 @@ export default function Room01_Lab() {
             totalBars: statusData.output.total_bars || 64,
             key: statusData.output.key || "Unknown",
             grid: statusData.output.grid || [],
-            duration: exactDuration > 0 ? exactDuration : undefined // Secretly injected
+            duration: exactDuration > 0 ? exactDuration : undefined
           });
 
           setStatus("success");
-          if (addToast) addToast("Smart Analysis Complete. Blueprint Primed.", "success");
+          
+          // --- SURGICAL INJECTION: CLOUD STATE BACKUP ---
+          // Wait 500ms for Zustand to process the state update, then aggressively push 
+          // the entire session to the Supabase ledger so it survives logouts.
+          setTimeout(async () => {
+            const currentState = useMatrixStore.getState();
+            if (userSession?.id) {
+              try {
+                await supabase.from('matrix_sessions').upsert({
+                  user_id: userSession.id,
+                  session_state: currentState,
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id' });
+              } catch (err) {
+                console.error("Failed to sync DSP extraction to cloud ledger:", err);
+              }
+            }
+          }, 500);
+          // ----------------------------------------------
+
+          if (addToast) addToast("Smart Analysis Complete. Blueprint Primed & Ledger Saved.", "success");
 
         } else if (statusData.status === 'FAILED') {
           if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
