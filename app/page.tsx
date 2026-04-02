@@ -16,6 +16,7 @@ import EntryGateway from "../components/matrix/EntryGateway";
 import GlobalSyncIndicator from "../components/matrix/GlobalSyncIndicator";
 import HelpOverlay from "../components/matrix/HelpOverlay";
 import RoomDirectives from "../components/matrix/RoomDirectives"; // FIXED IMPORT PATH
+import MatrixAutoSave from "../components/matrix/MatrixAutoSave"; // <-- SURGICAL ADDITION
 
 // The 11 Matrix Rooms
 import Room01_Lab from "../components/matrix/Room01_Lab";
@@ -584,6 +585,7 @@ export default function MatrixController() {
       </main>
 
       <GlobalSyncIndicator />
+      <MatrixAutoSave /> {/* <-- SURGICAL ADDITION */}
 
       {/* --- LANDSCAPE LOCK (MOBILE PORTRAIT OVERLAY) --- */}
       <div className="fixed inset-0 z-[9999] bg-[#050505] flex-col items-center justify-center text-center px-8 hidden portrait:flex lg:!hidden">

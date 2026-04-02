@@ -331,6 +331,7 @@ export const useMatrixStore = create<MatrixState>()(
         set({ syncStatus: "saving" });
         
         const draftSnapshot = {
+           audioData: state.audioData, // <-- SURGICAL ADDITION: Prevent cloud wipe                     
            flowDNA: state.flowDNA,
            blueprint: state.blueprint, 
            generatedLyrics: state.generatedLyrics,

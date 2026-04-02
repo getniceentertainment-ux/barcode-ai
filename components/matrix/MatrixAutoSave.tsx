@@ -28,6 +28,7 @@ export default function MatrixAutoSave() {
         state.setSyncStatus("saving");
 
         const payload = {
+          audioData: state.audioData, // <-- SURGICAL ADDITION: Prevent silent wipe
           blueprint: state.blueprint,
           flowDNA: state.flowDNA,
           activeRoom: state.activeRoom,
