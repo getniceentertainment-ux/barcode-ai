@@ -7,7 +7,7 @@ import runpod
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
 
-# --- THE HOLY GRAIL FIX ---
+# --- GETNICE ARCHITECTURE CONSTANTS ---
 BASE_MODEL_NAME = "NousResearch/Hermes-2-Pro-Llama-3-8B"
 LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
 
@@ -15,15 +15,20 @@ SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_
 SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
 
+# --- THE 2026 CONCENTRATED KILL LIST ---
 BAN_LIST = [
+    # The 90s/Corny Rap Ban
     "concrete jungle", "jiggy", "phat", "cheddar", "rags to riches", "no pain no gain",
     "weathered storms", "naysayers", "darkest hour", "spirits took flight",
     "dreams dare to breathe", "rise from our knees", "time's arrow", "chatter",
+    # AI Corporate Slop
     "tapestry", "delve", "testament", "beacon", "journey", "myriad", "landscape", 
     "navigate", "resonate", "foster", "catalyst", "paradigm", "synergy", "unleash",
+    # Melodrama & Poetry
     "plight", "fright", "ignite", "divine", "sublime", "mindstream", "whispers", 
     "shadows", "dancing", "embrace", "souls", "abyss", "void", "chaos", "destiny", 
     "fate", "tears", "sorrow", "melody", "symphony", "ashes", "strife", "yearning",
+    # Epic/Medieval Fantasy
     "kingdom", "throne", "crown", "realm", "legacy", "quest", "vanquish", "fortress", 
     "prophecy", "omen", "crusade", "vanguard", "sovereign", "dominion", "forsaken",
     "weave", "forge", "craft", "sculpt", "flutter", "plunge", "unfurl", "awaken", 
@@ -35,11 +40,12 @@ tokenizer = None
 
 def load_rag_intel():
     if os.path.exists(SHARED_VOLUME_PATH):
-        with open(SHARED_VOLUME_PATH, "r") as f:
+        with open(SHARED_VOLUME_PATH, "r", encoding="utf-8") as f:
             return f.read()
     return "No live intel available."
 
 def load_street_slang(style="getnice_hybrid"):
+    # Core fallback architecture
     drill_slang = ["opp", "spin", "motion", "clear the board", "tactical", "steppin'"]
     trap_slang = ["bag", "margins", "overhead", "frontend", "clearance", "motion"]
     executive_slang = ["equity", "leverage", "routing", "offshore", "dividend", "infrastructure", "bandwidth", "allocation", "vault", "code"]
@@ -54,10 +60,12 @@ def load_street_slang(style="getnice_hybrid"):
     if not os.path.exists(SLANG_FILE):
         return target_list 
 
+    # Advanced JSON ingestion
     words = []
     try:
         with open(SLANG_FILE, "r", encoding="utf-8") as f:
             content = f.read()
+            
         try:
             data = json.loads(content)
             if isinstance(data, dict) and "slang_terms" in data:
@@ -65,6 +73,7 @@ def load_street_slang(style="getnice_hybrid"):
             elif isinstance(data, list):
                 words = [item.get("word", "") for item in data if "word" in item]
         except json.JSONDecodeError:
+            # Fallback flat file parser
             lines = content.split('\n')
             for i, line in enumerate(lines):
                 clean_line = line.strip().lower()
@@ -72,12 +81,16 @@ def load_street_slang(style="getnice_hybrid"):
                     word = lines[i-1].strip()
                     if word and 1 < len(word) < 20:
                         words.append(word)
+                        
         if words:
             words = [w.strip() for w in words if w.strip()]
             combined_list = list(set(words + target_list))
             return random.sample(combined_list, min(8, len(combined_list)))
-    except Exception:
+            
+    except Exception as e:
+        print(f"Slang Loader Error: {e}")
         pass
+        
     return target_list
 
 def load_cultural_context():
@@ -100,7 +113,7 @@ def sanitize_lora_config():
     if not os.path.exists(config_path):
         return
     try:
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
         keys_to_remove = [
             "alora_invocation_tokens", "arrow_config", "corda_config", 
@@ -115,25 +128,29 @@ def sanitize_lora_config():
                 del config[key]
                 modified = True
         if modified:
-            with open(config_path, "w") as f:
+            with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2)
-    except Exception:
-        pass
+            print("Auto-Cleaner executed: Sanitized adapter_config.json for stable fusion.")
+    except Exception as e:
+        print(f"Auto-Cleaner Error: {e}")
 
 def init_model():
     global model, tokenizer
     print("Initiating GETNICE Engine Deep Burn-In...")
     sanitize_lora_config()
+    
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_compute_dtype=torch.float16,
         bnb_4bit_use_double_quant=True,
         bnb_4bit_quant_type="nf4"
     )
+    
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
     base_model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL_NAME, quantization_config=bnb_config, device_map="auto", torch_dtype=torch.float16
     )
+    
     try:
         model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
         print("✅ GetNice Adapter fused successfully.")
@@ -151,10 +168,10 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive,
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     banned_words_str = ", ".join(BAN_LIST)
     
-    # Relaxed formatting constraints. Replaced | with natural commas.
+    # Mathematical bounds purely relying on punctuation. Zero Pipe (|) corruption.
     flow_architecture = f"""[FLOW ARCHITECTURE: {genre_style.upper()}]
 - CADENCE: Match the rhythm of a modern hip-hop track. 
-- FORMATTING: Use commas (,) to naturally pace the breath control. DO NOT USE PIPE SYMBOLS (|).
+- FORMATTING: Use punctuation (commas, periods) to naturally pace the breath control.
 - SPACING: You must use proper English grammar and spaces between words. Do not smash words together."""
 
     flow_mimicry = ""
@@ -162,7 +179,7 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive,
         flow_mimicry = f"""[USER'S VOCAL CADENCE BLUEPRINT]\nAnalyze this rhythmic structure: "{flow_reference}". Format your lyrics to mimic this bounce."""
     
     return f"""<|im_start|>system
-You are the GETNICE Ghostwriter Engine. You are a highly articulate, business-minded creator who refuses to quit.
+You are the GETNICE Ghostwriter Engine. You are a highly articulate, business-minded Hustler who refuses to quit.
 
 Synthesize these variables into a cohesive delivery:
 - THE DRIVE (Motive): {motive}
@@ -223,8 +240,7 @@ You drafted this {bars}-bar {section_type.upper()}:
 CRITICAL ANALYSIS & REWRITE INSTRUCTIONS:
 1. Review the storyline. Connect perfectly to the previous lyrics.
 2. Ensure proper spacing between words.
-3. Use commas (,) to pace the breath. NO PIPE SYMBOLS (|).
-4. JUST OUTPUT EXACTLY {bars} LINES. NO HEADERS.
+3. JUST OUTPUT EXACTLY {bars} LINES. NO HEADERS. NO TIMESTAMPS.
 
 Rewrite the final {bars} lines now.
 <|im_end|>
@@ -239,13 +255,15 @@ Rewrite the final {bars} lines now.
     
     final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True)
     
-    # CLEANSING
+    # --- CLEANSING PIPELINE ---
     final_text = final_text.replace("<|im_end|>", "").strip()
     final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
     final_text = re.sub(r'\[.*?\]', '', final_text)
+    
+    # Ghost-Timestamp Killer (purges anything like (0:15) the LLM tries to sneak in)
     final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE)
     
-    # REMOVED THE DESTRUCTIVE split('|') LOGIC
+    # Safe Extraction
     clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and len(line.strip()) > 3 and not line.strip().startswith(('+', '-'))]
     
     if len(clean_lines) > bars:
@@ -272,13 +290,13 @@ def handler(event):
     if bpm <= 0: bpm = 120
     seconds_per_bar = (60.0 / bpm) * 4.0
 
-    # Relaxed mathematically safe syllables
+    # Dynamic Syllable Boundaries
     tts_speed_limit = 3.5
     if style == "chopper": tts_speed_limit = 5.0
     elif style == "triplet": tts_speed_limit = 4.2
     
     time_per_line = seconds_per_bar
-    max_syllables = max(10, int(time_per_line * tts_speed_limit * 1.5)) # Safety padding to prevent word smashing
+    max_syllables = max(10, int(time_per_line * tts_speed_limit * 1.5))
     
     system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel, motive, struggle, hustle, topic, flow_reference, bpm, max_syllables)
     
@@ -346,6 +364,7 @@ Rewrite the line to satisfy the instruction. Output ONLY the rewritten line.
                 if not line.strip(): 
                     continue
                 
+                # Backend calculates timestamps structurally here, overriding anything the LLM tries to sneak in.
                 line_time = line_bar * seconds_per_bar
                 l_mins = int(line_time // 60)
                 l_secs = int(line_time % 60)

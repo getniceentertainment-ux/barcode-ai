@@ -12,6 +12,17 @@ type WordMapping = { word: string; startTime: number; duration: number };
 // SURGICAL FIX: Added lineDuration so the audio can read the Bouncing Ball's exact timing
 type LyricLine = { text: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[] };
 
+// --- GETNICE FRONTEND SYLLABLE ESTIMATOR ---
+function estimateSyllables(word: string): number {
+  const w = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (!w) return 1;
+  if (w.length <= 3) return 1;
+  let count = (w.match(/[aeiouy]+/g) || []).length;
+  // Handle silent 'e' at the end of words (like "white", "bone")
+  if (w.endsWith('e') && !w.endsWith('le')) count--;
+  return Math.max(1, count);
+}
+
 // --- BULLETPROOF AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const numChannels = buffer.numberOfChannels;
@@ -634,15 +645,15 @@ const handleGenerateGuide = async () => {
         blockData.lines.forEach(lineObj => {
           const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           words.forEach(w => {
-            // SYLLABLE EXTRACTION MATH: Count phonetic pipes for actual syllable weight
-            const syllableCount = (w.match(/\|/g) || []).length + 1;
+            // NEW: Use the AI Syllable Estimator instead of raw character length
+            const syllableCount = estimateSyllables(w);
             totalBlockWeight += syllableCount * 3.0; // Structural weight per syllable
           });
           
-          const cleanTextEnd = lineObj.text.replace(/\|/g, '').trim().slice(-1);
+          const cleanTextEnd = lineObj.text.trim().slice(-1);
           if (cleanTextEnd === ',' || cleanTextEnd === '-') {
             totalBlockWeight += 1.0; // Chain-Link: Spillover (Almost zero pause)
-          } else if (lineObj.text.replace(/\|/g, '').trim().startsWith('...')) {
+          } else if (lineObj.text.trim().startsWith('...')) {
             totalBlockWeight += 6.0; // The Drag: Leaves massive space at the front (Pickup note)
           } else {
             totalBlockWeight += 4.0; // Standard Stop: Hard landing on the 1
@@ -657,14 +668,14 @@ const handleGenerateGuide = async () => {
           
           let lineWeight = 0;
           words.forEach(w => {
-            const syllableCount = (w.match(/\|/g) || []).length + 1;
+            const syllableCount = estimateSyllables(w);
             lineWeight += syllableCount * 3.0;
           });
           
-          const cleanTextEnd = lineObj.text.replace(/\|/g, '').trim().slice(-1);
+          const cleanTextEnd = lineObj.text.trim().slice(-1);
           if (cleanTextEnd === ',' || cleanTextEnd === '-') {
             lineWeight += 1.0; 
-          } else if (lineObj.text.replace(/\|/g, '').trim().startsWith('...')) {
+          } else if (lineObj.text.trim().startsWith('...')) {
             lineWeight += 6.0; 
           } else {
             lineWeight += 4.0; 
@@ -676,19 +687,17 @@ const handleGenerateGuide = async () => {
           let localWordTime = currentFlowTime;
 
           const mappedWords = words.map(w => {
-            const syllableCount = (w.match(/\|/g) || []).length + 1;
+            const syllableCount = estimateSyllables(w);
             const wordDuration = (syllableCount * 3.0) * timePerWeight;
             const wordStart = localWordTime;
             
-            localWordTime += wordDuration;
-            
-            // Clean the pipe out for the Teleprompter visual
-            const cleanWord = w.replace(/\|/g, '');
-            return { word: cleanWord, startTime: wordStart, duration: wordDuration };
+            // Add a slight micro-gap based on weight
+            localWordTime += wordDuration + (1.5 * timePerWeight);
+            return { word: w, startTime: wordStart, duration: wordDuration };
           });
 
           parsed.push({ 
-            text: lineObj.text.replace(/\|/g, ''), // Strip pipes from the full line text
+            text: lineObj.text, 
             startTime: currentFlowTime, 
             lineDuration: timeForThisLine,
             isHeader: false, 
