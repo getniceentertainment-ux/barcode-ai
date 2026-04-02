@@ -137,7 +137,8 @@ export default function AdminNode() {
   // --- ACTIONS ---
   
   // A&R Approval/Rejection Logic[cite: 14]
-  const handleStatusUpdate = async (id: string, newStatus: 'approved' | 'rejected') => {
+  const handleStatusUpdate = async (id: string, newStatus: 'approved' | 'rejected' | 'pending') => {
+
     try {
       const { error } = await supabase.from('submissions').update({ status: newStatus }).eq('id', id);
       if (error) throw error;
