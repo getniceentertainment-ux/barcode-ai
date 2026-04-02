@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { 
   ShieldAlert, Activity, DollarSign, Users, Radio, 
   Ban, CheckCircle2, AlertTriangle, Terminal, Database, Server,
@@ -36,6 +37,12 @@ interface Submission {
 }
 
 export default function AdminNode() {
+  const router = useRouter();
+  const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID;
+
+  // NEW: Authorization State Guard
+  const [isAuthorized, setIsAuthorized] = useState(false);
+
   const [activeTab, setActiveTab] = useState<"telemetry" | "anr" | "users">("telemetry");
   
   const [submissions, setSubmissions] = useState<Submission[]>([]);
@@ -51,9 +58,23 @@ export default function AdminNode() {
   const [isInjecting, setIsInjecting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // THE BOUNCER LOGIC
   useEffect(() => {
-    fetchSubmissions();
-  }, []);
+    const verifyGodMode = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session || session.user.id !== CREATOR_ID) {
+        console.warn("UNAUTHORIZED ACCESS ATTEMPT DETECTED. EJECTING NODE.");
+        router.replace('/'); 
+        return;
+      }
+      
+      setIsAuthorized(true);
+      fetchSubmissions();
+    };
+
+    verifyGodMode();
+  }, [router, CREATOR_ID]);
 
   const fetchSubmissions = async () => {
     setIsLoading(true);
@@ -150,6 +171,15 @@ export default function AdminNode() {
   const handleBanUser = (userId: string) => {
     setUsers(users.map(u => u.id === userId ? { ...u, status: "banned", balance: 0 } : u));
   };
+
+  // THE FIREWALL RENDER
+  if (!isAuthorized) {
+    return (
+      <div className="min-h-screen bg-[#050505] flex items-center justify-center selection:bg-[#E60000]">
+        <Loader2 className="animate-spin text-[#E60000]" size={48} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#020202] text-white flex flex-col font-mono selection:bg-[#E60000]">
