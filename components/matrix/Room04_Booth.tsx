@@ -199,31 +199,44 @@ const handleGenerateGuide = async () => {
           const ttsDuration = audioBuffer.duration;
           const mathLineDuration = line.lineDuration || 2;
 
-          if (line.words && line.words.length > 0) {
+	  if (line.words && line.words.length > 0) {
             line.words.forEach((wObj) => {
-              // 1. Calculate where this specific word exists proportionally inside the AI's audio file
+              // 1. Calculate where this specific word exists proportionally
               const relativeWordStart = wObj.startTime - line.startTime;
               const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
               const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
 
+              // --- THE OVERLAP CROSSFADE FIX ---
+              // Add a "tail" so the word finishes sounding out naturally.
+              // 0.35 seconds is enough to catch the end of a syllable without dragging.
+              const tailBleed = 0.35; 
+              
+              // Ensure we don't try to extract audio past the end of the TTS file
+              const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
+
               const source = offlineCtx.createBufferSource();
               source.buffer = audioBuffer;
-              source.playbackRate.value = 1.0; // High-fidelity preservation, zero chipmunk effect
+              source.playbackRate.value = 1.0; // High-fidelity preservation
 
-              // 2. Create a micro-envelope to prevent "clicking" from sliced audio waves
+              // 2. Create the Crossfade Envelope
               const gainNode = offlineCtx.createGain();
-              gainNode.gain.setValueAtTime(0, wObj.startTime);
-              gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); // 10ms micro-fade in
               
-              const fadeOutStart = Math.max(wObj.startTime + 0.01, wObj.startTime + wObj.duration - 0.01);
-              gainNode.gain.setValueAtTime(1, fadeOutStart);
-              gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration); // 10ms micro-fade out
+              // 10ms micro-fade IN (prevents sharp pops)
+              gainNode.gain.setValueAtTime(0, wObj.startTime);
+              gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
+              
+              // Hold at full volume for the exact visual duration of the red ball
+              gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
+              
+              // Slowly fade out into the next word over the 350ms tail (The Crossfade)
+              gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
 
               source.connect(gainNode);
               gainNode.connect(offlineCtx.destination);
 
-              // 3. Drop the specific audio slice exactly on the red ball's timestamp
-              source.start(wObj.startTime, ttsOffset, ttsWordDuration);
+              // 3. Drop the audio slice with the extended overlapping tail
+              // Syntax: start(when, offset_in_audio_file, duration_to_play)
+              source.start(wObj.startTime, ttsOffset, safeExtractDuration);
             });
           } else {
             // Fallback for lines without word mappings
