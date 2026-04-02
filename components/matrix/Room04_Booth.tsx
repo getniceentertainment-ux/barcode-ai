@@ -683,7 +683,6 @@ const handleGenerateGuide = async () => {
           currentFlowTime += timeForThisLine;
         });
       }
-      }
 
       runningBlockStartBar = blockStartBar + bp.bars;
     });
