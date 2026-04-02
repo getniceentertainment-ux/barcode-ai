@@ -54,6 +54,7 @@ export default function AdminNode() {
     const verifyGodMode = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       
+      // Strict Security Check[cite: 14]
       if (!session || session.user.id !== CREATOR_ID) {
         console.warn("UNAUTHORIZED ACCESS ATTEMPT DETECTED. EJECTING NODE.");
         router.replace('/'); 
@@ -71,6 +72,7 @@ export default function AdminNode() {
   const fetchAllData = async () => {
     setIsLoading(true);
     try {
+      // Execute all queries concurrently. Using allSettled prevents a failure in one table from crashing the entire dashboard.
       const results = await Promise.allSettled([
         supabase.from('profiles').select('*').order('created_at', { ascending: false }),
         supabase.from('submissions').select('*').order('created_at', { ascending: false }),
@@ -81,44 +83,44 @@ export default function AdminNode() {
 
       const [usersRes, subsRes, contractsRes, transRes, msgsRes] = results;
 
-      // 1. Process Users
+      // 1. Process Users (profiles)
       let activeNodesCount = 0;
       if (usersRes.status === 'fulfilled' && !usersRes.value.error) {
         setUsers(usersRes.value.data || []);
         activeNodesCount = usersRes.value.data?.length || 0;
       }
 
-      // 2. Process Submissions (A&R + Vault Tracks)
+      // 2. Process Submissions (submissions)
       let vaultTracksCount = 0;
       if (subsRes.status === 'fulfilled' && !subsRes.value.error) {
         setSubmissions(subsRes.value.data || []);
         vaultTracksCount = subsRes.value.data?.length || 0;
       }
 
-      // 3. Process Contracts (Room 11 / escrow_contracts)
+      // 3. Process Contracts (escrow_contracts)
       if (contractsRes.status === 'fulfilled' && !contractsRes.value.error) {
         setContracts(contractsRes.value.data || []);
       }
 
-      // 4. Process Transactions (Room 08)
+      // 4. Process Transactions (transactions)
       let totalRev = 0;
       if (transRes.status === 'fulfilled' && !transRes.value.error) {
         const tData = transRes.value.data || [];
         setTransactions(tData);
-        // Safely aggregate amounts for the ledger
+        // Calculate Revenue: Only aggregate deposits and purchases
         totalRev = tData.filter(t => t.type === 'deposit' || t.type === 'purchase')
                         .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
       }
 
-      // 5. Process Messages (Room 09/10 / global_messages)
+      // 5. Process Messages (global_messages)
       if (msgsRes.status === 'fulfilled' && !msgsRes.value.error) {
         setMessages(msgsRes.value.data || []);
       }
 
-      // 6. Update Telemetry
+      // 6. Update Telemetry aggregations
       setTelemetry({
         totalRevenue: totalRev,
-        computeCosts: totalRev * 0.15, // Mock estimate: 15% of revenue to GPU compute
+        computeCosts: totalRev * 0.15, // Approximate 15% compute cost overhead
         activeNodes: activeNodesCount,
         vaultTracks: vaultTracksCount,
         gpuStatus: "OPTIMAL",
@@ -133,10 +135,13 @@ export default function AdminNode() {
   };
 
   // --- ACTIONS ---
+  
+  // A&R Approval/Rejection Logic[cite: 14]
   const handleStatusUpdate = async (id: string, newStatus: 'approved' | 'rejected') => {
     try {
       const { error } = await supabase.from('submissions').update({ status: newStatus }).eq('id', id);
       if (error) throw error;
+      // Optimistic UI update
       setSubmissions(prev => prev.map(sub => sub.id === id ? { ...sub, status: newStatus } : sub));
     } catch (err) {
       console.error(`Status update error:`, err);
@@ -144,17 +149,23 @@ export default function AdminNode() {
     }
   };
 
+  // Threat Mitigation / Ban Logic[cite: 14]
   const handleBanUser = async (userId: string) => {
+    if (!window.confirm("Are you sure you want to permanently freeze this node's wallet and revoke access?")) return;
     try {
+      // Optimistic UI Update: Set status to banned and zero the balance
       setUsers(users.map(u => u.id === userId ? { ...u, status: "banned", wallet_balance: 0 } : u));
+      
       const { error } = await supabase.from('profiles').update({ status: 'banned', wallet_balance: 0 }).eq('id', userId);
       if (error) throw error;
     } catch (err) {
       console.error("Ban execution failed:", err);
-      fetchAllData(); 
+      alert("Failed to execute ban protocol.");
+      fetchAllData(); // Revert UI on failure
     }
   };
 
+  // CEO Tool: Direct Radio Injection[cite: 14]
   const handleInjectExternal = async () => {
     if (!extFile || !extTitle) return alert("Missing title or file.");
     setIsInjecting(true);
@@ -164,6 +175,8 @@ export default function AdminNode() {
       if (uploadError) throw uploadError;
 
       const { data: publicUrlData } = supabase.storage.from('public_audio').getPublicUrl(fileName);
+      
+      // Insert directly into submissions with 'approved' status
       const { error: dbError } = await supabase.from('submissions').insert([{
         user_id: CREATOR_ID,
         title: extTitle.toUpperCase(),
@@ -174,8 +187,14 @@ export default function AdminNode() {
 
       if (dbError) throw dbError;
       alert("External Asset Injected!");
-      setExtTitle(""); setExtFile(null); if (fileInputRef.current) fileInputRef.current.value = "";
-      fetchAllData(); // Refresh UI
+      
+      // Reset Form
+      setExtTitle(""); 
+      setExtFile(null); 
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      
+      // Refresh UI
+      fetchAllData(); 
     } catch (err: any) {
       alert(`Injection failed: ${err.message}`);
     } finally {
@@ -183,6 +202,7 @@ export default function AdminNode() {
     }
   };
 
+  // Audio Playback Handler for A&R Queue[cite: 14]
   const togglePlay = (id: string) => {
     const currentAudio = document.getElementById(`audio-${playingId}`) as HTMLAudioElement;
     const newAudio = document.getElementById(`audio-${id}`) as HTMLAudioElement;
@@ -200,7 +220,9 @@ export default function AdminNode() {
     }
   };
 
-  // THE FIREWALL RENDER
+  // --- RENDER ---
+
+  // THE FIREWALL RENDER[cite: 14]
   if (!isAuthorized) {
     return (
       <div className="min-h-screen bg-[#050505] flex items-center justify-center selection:bg-[#E60000]">
@@ -238,6 +260,9 @@ export default function AdminNode() {
               {tab.icon} {tab.label}
             </button>
           ))}
+          <button onClick={fetchAllData} className="ml-4 p-2 text-[#555] hover:text-white transition-colors" title="Refresh Data">
+            <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
+          </button>
           <Link href="/" className="flex items-center gap-2 bg-[#111] border border-[#333] px-6 py-2 font-oswald uppercase text-[10px] tracking-widest hover:bg-white hover:text-black transition-colors ml-auto">
             Exit
           </Link>
@@ -298,7 +323,7 @@ export default function AdminNode() {
                       </div>
                       <div className="flex justify-between items-center border-b border-[#222] pb-4">
                         <span className="text-xs text-[#555] uppercase tracking-widest">Active B2B Escrows</span>
-                        <span className="text-lg font-oswald text-yellow-500">{contracts.filter(c => c.status === 'pending').length} Escrows</span>
+                        <span className="text-lg font-oswald text-yellow-500">{contracts.filter(c => c.status === 'funded').length} Escrows</span>
                       </div>
                     </div>
                   </div>
@@ -309,11 +334,14 @@ export default function AdminNode() {
             {/* TAB 2: A&R OVERRIDE (SUBMISSIONS) */}
             {activeTab === "anr" && (
               <div className="animate-in fade-in slide-in-from-bottom-4 space-y-8">
+                
+                {/* INJECTION TOOL */}
                 <div className="bg-[#110000] border border-[#E60000]/50 p-6 flex flex-col relative overflow-hidden shadow-lg">
                   <div className="absolute top-0 right-0 bg-[#E60000] text-white text-[8px] font-bold uppercase tracking-widest px-2 py-1">CEO Tool</div>
                   <h3 className="font-oswald text-xl uppercase tracking-widest text-[#E60000] mb-2 flex items-center gap-2">
                     <UploadCloud size={20} /> Direct Radio Injection
                   </h3>
+                  
                   <div className="flex flex-col md:flex-row gap-4 items-end mt-4">
                     <div className="flex-1 w-full">
                       <label className="text-[10px] text-[#888] font-bold uppercase tracking-widest mb-1 block">Track Title</label>
@@ -339,12 +367,13 @@ export default function AdminNode() {
                   <h3 className="font-oswald text-2xl uppercase tracking-widest text-white mb-6 border-b border-[#222] pb-4 flex items-center gap-3">
                     <Radio size={24} className="text-[#E60000]"/> Submissions Ledger
                   </h3>
+
                   {submissions.length === 0 ? (
                     <div className="text-center p-12 border border-dashed border-[#222]"><p className="text-[#555] text-xs font-mono uppercase tracking-widest">No artifacts found.</p></div>
                   ) : (
                     <div className="space-y-4">
                       {submissions.map(sub => (
-                        <div key={sub.id} className="bg-[#050505] border border-[#111] p-4 flex flex-col md:flex-row items-center justify-between gap-6 hover:border-[#333] transition-colors">
+                        <div key={sub.id} className={`bg-[#050505] border ${sub.status === 'pending' ? 'border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.1)]' : 'border-[#111]'} p-4 flex flex-col md:flex-row items-center justify-between gap-6 hover:border-[#333] transition-colors`}>
                           <audio id={`audio-${sub.id}`} src={sub.audio_url} onEnded={() => setPlayingId(null)} className="hidden" />
                           <div className="flex items-center gap-4 w-full md:w-auto">
                             <button onClick={() => togglePlay(sub.id)} className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center transition-all ${playingId === sub.id ? 'bg-[#E60000] text-white' : 'bg-[#111] text-[#E60000] hover:bg-white hover:text-black'}`}>
@@ -357,10 +386,15 @@ export default function AdminNode() {
                           </div>
                           <div className="flex items-center gap-4">
                             <span className="text-[10px] font-mono text-[#888] uppercase tracking-widest">Score: <span className="text-white font-bold text-lg ml-1">{sub.hit_score}</span></span>
-                            {sub.status === 'pending' && (
+                            {sub.status === 'pending' ? (
                               <div className="flex gap-2">
                                 <button onClick={() => handleStatusUpdate(sub.id, 'approved')} className="bg-green-500/10 text-green-500 px-3 py-2 text-[9px] font-bold uppercase hover:bg-green-500 hover:text-black transition-colors border border-green-500/30">Approve</button>
                                 <button onClick={() => handleStatusUpdate(sub.id, 'rejected')} className="bg-[#110000] text-[#E60000] px-3 py-2 text-[9px] font-bold uppercase hover:bg-[#E60000] hover:text-white transition-colors border border-[#E60000]/30">Reject</button>
+                              </div>
+                            ) : (
+                              <div className="flex gap-2">
+                                {/* Allows reverting an approval/rejection */}
+                                <button onClick={() => handleStatusUpdate(sub.id, 'pending')} className="bg-[#111] text-[#888] px-3 py-2 text-[9px] font-bold uppercase hover:text-white transition-colors border border-[#333]">Revert Status</button>
                               </div>
                             )}
                           </div>
@@ -386,12 +420,12 @@ export default function AdminNode() {
                       <div key={user.id} className={`bg-[#050505] border p-4 flex items-center justify-between ${user.status === 'banned' ? 'border-[#330000] opacity-50' : 'border-[#111]'}`}>
                         <div>
                           <p className="font-oswald text-lg text-white tracking-widest uppercase">{user.stage_name || 'UNKNOWN NODE'}</p>
-                          <p className="text-[9px] font-mono text-[#555] uppercase mt-1">ID: {user.id} | TIER: {user.tier || 'FREE LOADER'}</p>
+                          <p className="text-[9px] font-mono text-[#555] uppercase mt-1">ID: {user.id.substring(0,8)} | TIER: {user.tier || 'FREE LOADER'}</p>
                         </div>
                         <div className="flex items-center gap-6">
                           <p className="font-mono text-xs text-green-500">${Number(user.wallet_balance || 0).toFixed(2)}</p>
                           {user.status !== "banned" ? (
-                            <button onClick={() => handleBanUser(user.id)} className="bg-black border border-[#333] text-[#E60000] px-4 py-2 text-[9px] font-bold uppercase hover:bg-[#E60000] hover:text-white transition-colors"><Ban size={12} className="inline mr-1"/> Ban</button>
+                            <button onClick={() => handleBanUser(user.id)} className="bg-black border border-[#333] text-[#E60000] px-4 py-2 text-[9px] font-bold uppercase hover:bg-[#E60000] hover:text-white transition-colors"><Ban size={12} className="inline mr-1"/> Freeze</button>
                           ) : (
                             <span className="text-[9px] text-[#E60000] font-bold uppercase px-4 py-2 border border-[#330000] bg-[#110000]">Banned</span>
                           )}
@@ -403,7 +437,7 @@ export default function AdminNode() {
               </div>
             )}
 
-            {/* TAB 4: CONTRACTS */}
+            {/* TAB 4: CONTRACTS (escrow_contracts) */}
             {activeTab === "contracts" && (
               <div className="animate-in fade-in slide-in-from-bottom-4 bg-black border border-[#222] p-8 shadow-lg">
                 <h3 className="font-oswald text-2xl uppercase tracking-widest text-white mb-6 border-b border-[#222] pb-4 flex items-center gap-3">
@@ -417,7 +451,12 @@ export default function AdminNode() {
                       <div key={contract.id} className="bg-[#050505] border border-[#111] p-4 flex justify-between items-center">
                         <div>
                           <p className="font-mono text-[10px] text-[#888] uppercase tracking-widest">Contract ID: {contract.id.substring(0,12)}</p>
-                          <p className="font-oswald text-sm text-white uppercase tracking-widest mt-1">{contract.title || "Syndicate Booking"}</p>
+                          <p className="font-oswald text-sm text-white uppercase tracking-widest mt-1">
+                            Type: {contract.interaction_type || "Booking"}
+                          </p>
+                          <p className="font-mono text-[8px] text-[#555] uppercase mt-1">
+                            Buyer: {contract.user_id.substring(0,8)} | Artist: {contract.artist_id.substring(0,8)}
+                          </p>
                         </div>
                         <div className="text-right">
                           <p className="font-mono text-sm text-yellow-500 font-bold">${Number(contract.amount || 0).toFixed(2)}</p>
@@ -446,6 +485,7 @@ export default function AdminNode() {
                           <th className="pb-3 font-normal">Date</th>
                           <th className="pb-3 font-normal">Node ID</th>
                           <th className="pb-3 font-normal">Type</th>
+                          <th className="pb-3 font-normal">Description</th>
                           <th className="pb-3 text-right font-normal">Amount</th>
                         </tr>
                       </thead>
@@ -454,8 +494,19 @@ export default function AdminNode() {
                           <tr key={t.id} className="border-b border-[#111] hover:bg-[#050505] transition-colors">
                             <td className="py-4 text-[#888]">{new Date(t.created_at).toLocaleDateString()}</td>
                             <td className="py-4 text-[#888]">{t.user_id.substring(0,8)}</td>
-                            <td className="py-4"><span className={`px-2 py-1 border ${t.type === 'deposit' ? 'text-green-500 border-green-500/30' : 'text-[#E60000] border-[#E60000]/30'}`}>{t.type || 'transfer'}</span></td>
-                            <td className={`py-4 text-right font-bold text-sm ${t.type === 'deposit' ? 'text-green-500' : 'text-white'}`}>${Number(t.amount || 0).toFixed(2)}</td>
+                            <td className="py-4">
+                              <span className={`px-2 py-1 border ${
+                                t.type === 'deposit' || t.type === 'purchase' ? 'text-green-500 border-green-500/30' : 
+                                t.type === 'withdrawal' ? 'text-[#E60000] border-[#E60000]/30' : 
+                                'text-blue-400 border-blue-400/30'
+                              }`}>
+                                {t.type || 'transfer'}
+                              </span>
+                            </td>
+                            <td className="py-4 text-[#aaa] truncate max-w-[200px]">{t.description || '-'}</td>
+                            <td className={`py-4 text-right font-bold text-sm ${Number(t.amount) > 0 ? 'text-green-500' : 'text-white'}`}>
+                              ${Math.abs(Number(t.amount || 0)).toFixed(2)}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -465,7 +516,7 @@ export default function AdminNode() {
               </div>
             )}
 
-            {/* TAB 6: MESSAGES */}
+            {/* TAB 6: MESSAGES (global_messages) */}
             {activeTab === "messages" && (
               <div className="animate-in fade-in slide-in-from-bottom-4 bg-black border border-[#222] p-8 shadow-lg">
                 <h3 className="font-oswald text-2xl uppercase tracking-widest text-white mb-6 border-b border-[#222] pb-4 flex items-center gap-3">
@@ -478,10 +529,12 @@ export default function AdminNode() {
                     {messages.map(msg => (
                       <div key={msg.id} className="bg-[#050505] border-l-2 border-[#E60000] p-4">
                         <div className="flex justify-between items-center mb-2">
-                          <p className="font-mono text-[9px] text-[#888] uppercase tracking-widest">NODE: {msg.user_id?.substring(0,8) || 'SYSTEM'}</p>
+                          <p className="font-mono text-[9px] text-[#888] uppercase tracking-widest">
+                            NODE: {msg.stage_name || msg.user_id?.substring(0,8) || 'SYSTEM'}
+                          </p>
                           <p className="font-mono text-[8px] text-[#444] uppercase">{new Date(msg.created_at).toLocaleString()}</p>
                         </div>
-                        <p className="font-mono text-xs text-white leading-relaxed">{msg.content || msg.message}</p>
+                        <p className="font-mono text-xs text-white leading-relaxed">{msg.content}</p>
                       </div>
                     ))}
                   </div>
