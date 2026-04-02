@@ -7,7 +7,7 @@ import {
   ShieldAlert, Activity, DollarSign, Users, Radio, 
   Ban, CheckCircle2, AlertTriangle, Terminal, Database, Server,
   Play, Pause, XCircle, BarChart, Clock, Music, UploadCloud, Loader2,
-  FileText, MessageSquare, CreditCard
+  FileText, MessageSquare, CreditCard, RefreshCw 
 } from "lucide-react";
 
 import { supabase } from "../../lib/supabase";
