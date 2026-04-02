@@ -628,56 +628,61 @@ const handleGenerateGuide = async () => {
 
       const numLines = blockData.lines.length;
       if (numLines > 0) {
-        // --- SURGICAL PIVOT: THE GRID-SNAP QUANTIZER ---
-        
-        // 1. Calculate exactly how much musical time is allocated to each line mathematically.
-        // If there are 16 lines in a 16-bar verse, each line gets exactly 1 bar.
-        // If there are 32 lines in a 16-bar verse (double-time), each line gets exactly 0.5 bars.
-        const timeAllocatedPerLine = blockDurationSecs / numLines;
+        // Step A: Calculate the total grammatical weight to maintain your specific ratio
+        let totalBlockWeight = 0;
+        blockData.lines.forEach(lineObj => {
+          const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
+          // Syllable weight + space weight
+          words.forEach(w => totalBlockWeight += w.length + 1.5);
+          // The "Breath Penalty" you defined
+          totalBlockWeight += 4; 
+        });
 
-        blockData.lines.forEach((lineObj, lineIndex) => {
+        // Use your currentFlowTime to allow lines to start "off-grid" or as pickups
+        let currentFlowTime = blockStartTime;
+
+        // Step B: Allocate time proportionally
+        blockData.lines.forEach((lineObj) => {
           const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           
-          // 2. THE DOWNBEAT ANCHOR: We force the line to start exactly on its designated grid point.
-          // It no longer cares if the previous line was long or short. It hits exactly on the beat.
-          const lineStartTime = blockStartTime + (lineIndex * timeAllocatedPerLine);
-
-          // 3. THE RAPPER'S BREATH: We only allow the words to consume 85% of the allocated time.
-          // This naturally leaves a 15% pocket of silence (the breath) before the next downbeat hits.
-          const actualLineDuration = timeAllocatedPerLine * 0.85;
-
-          // 4. Distribute the words inside that 85% window based on syllable weight
           let lineWeight = 0;
-          words.forEach(w => lineWeight += w.length + 1); // +1 for the space
-          const timePerWeight = actualLineDuration / lineWeight;
+          words.forEach(w => lineWeight += w.length + 1.5);
+          lineWeight += 4; 
 
-          let localWordTime = lineStartTime;
+          // Calculate duration based on the total block's weight
+          const timeForThisLine = totalBlockWeight > 0 ? (lineWeight / totalBlockWeight) * blockDurationSecs : 0;
+          const timePerWeight = totalBlockWeight > 0 ? blockDurationSecs / totalBlockWeight : 0;
+
+          let localWordTime = currentFlowTime;
 
           const mappedWords = words.map(w => {
             const wordWeight = w.length;
             const wordDuration = wordWeight * timePerWeight;
             const wordStart = localWordTime;
             
-            // Advance the local timeline for the next word
-            localWordTime += wordDuration + (1 * timePerWeight);
+            // Increment local time for the word + the space
+            localWordTime += wordDuration + (1.5 * timePerWeight);
             
             return { word: w, startTime: wordStart, duration: wordDuration };
           });
 
+          // Pushing to the LyricLine object
           parsed.push({ 
             text: lineObj.text, 
-            startTime: lineStartTime, 
-            lineDuration: actualLineDuration, // Pass the 85% duration to the guide vocal engine
+            startTime: currentFlowTime, 
+            lineDuration: timeForThisLine,
             isHeader: false, 
-            timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
+            timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
 
-          // Step C: The Syncopation Shift
-          // Instead of waiting for the next hard grid point, we immediately step forward 
-          // by the exact duration of the line, guaranteeing the next line starts off-beat.
+          // --- THE SYNC FIX ---
+          // Instead of letting currentFlowTime drift infinitely, we ensure 
+          // that if the line duration is extremely short, it still maintains 
+          // a rhythmic relationship to the project's BPM.
           currentFlowTime += timeForThisLine;
         });
+      }
       }
 
       runningBlockStartBar = blockStartBar + bp.bars;
