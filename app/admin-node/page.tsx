@@ -67,17 +67,16 @@ export default function AdminNode() {
     verifyGodMode();
   }, [router, CREATOR_ID]);
 
-  // --- OMNI-FETCHER: PULLS EVERYTHING AT ONCE SAFELY ---
+  // --- OMNI-FETCHER: EXACT TABLE MAPPING ---
   const fetchAllData = async () => {
     setIsLoading(true);
     try {
-      // Use Promise.allSettled so if one table is missing/errors, the rest still load
       const results = await Promise.allSettled([
         supabase.from('profiles').select('*').order('created_at', { ascending: false }),
         supabase.from('submissions').select('*').order('created_at', { ascending: false }),
-        supabase.from('smart_contracts').select('*').order('created_at', { ascending: false }),
+        supabase.from('escrow_contracts').select('*').order('created_at', { ascending: false }),
         supabase.from('transactions').select('*').order('created_at', { ascending: false }),
-        supabase.from('syndicate_messages').select('*').order('created_at', { ascending: false })
+        supabase.from('global_messages').select('*').order('created_at', { ascending: false })
       ]);
 
       const [usersRes, subsRes, contractsRes, transRes, msgsRes] = results;
@@ -96,7 +95,7 @@ export default function AdminNode() {
         vaultTracksCount = subsRes.value.data?.length || 0;
       }
 
-      // 3. Process Contracts (Room 11)
+      // 3. Process Contracts (Room 11 / escrow_contracts)
       if (contractsRes.status === 'fulfilled' && !contractsRes.value.error) {
         setContracts(contractsRes.value.data || []);
       }
@@ -106,12 +105,12 @@ export default function AdminNode() {
       if (transRes.status === 'fulfilled' && !transRes.value.error) {
         const tData = transRes.value.data || [];
         setTransactions(tData);
-        // Calculate Revenue (Assuming a 'amount' and 'type' column)
+        // Safely aggregate amounts for the ledger
         totalRev = tData.filter(t => t.type === 'deposit' || t.type === 'purchase')
                         .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
       }
 
-      // 5. Process Messages (Room 09/10)
+      // 5. Process Messages (Room 09/10 / global_messages)
       if (msgsRes.status === 'fulfilled' && !msgsRes.value.error) {
         setMessages(msgsRes.value.data || []);
       }
@@ -119,7 +118,7 @@ export default function AdminNode() {
       // 6. Update Telemetry
       setTelemetry({
         totalRevenue: totalRev,
-        computeCosts: totalRev * 0.15, // Mock estimate: 15% of revenue goes to RunPod/Compute
+        computeCosts: totalRev * 0.15, // Mock estimate: 15% of revenue to GPU compute
         activeNodes: activeNodesCount,
         vaultTracks: vaultTracksCount,
         gpuStatus: "OPTIMAL",
@@ -227,7 +226,6 @@ export default function AdminNode() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          {/* TAB NAVIGATION */}
           {[
             { id: "telemetry", icon: <Activity size={14}/>, label: "Telemetry" },
             { id: "anr", icon: <Radio size={14}/>, label: "A&R Queue" },
@@ -311,14 +309,11 @@ export default function AdminNode() {
             {/* TAB 2: A&R OVERRIDE (SUBMISSIONS) */}
             {activeTab === "anr" && (
               <div className="animate-in fade-in slide-in-from-bottom-4 space-y-8">
-                
-                {/* INJECTION TOOL */}
                 <div className="bg-[#110000] border border-[#E60000]/50 p-6 flex flex-col relative overflow-hidden shadow-lg">
                   <div className="absolute top-0 right-0 bg-[#E60000] text-white text-[8px] font-bold uppercase tracking-widest px-2 py-1">CEO Tool</div>
                   <h3 className="font-oswald text-xl uppercase tracking-widest text-[#E60000] mb-2 flex items-center gap-2">
                     <UploadCloud size={20} /> Direct Radio Injection
                   </h3>
-                  
                   <div className="flex flex-col md:flex-row gap-4 items-end mt-4">
                     <div className="flex-1 w-full">
                       <label className="text-[10px] text-[#888] font-bold uppercase tracking-widest mb-1 block">Track Title</label>
@@ -344,7 +339,6 @@ export default function AdminNode() {
                   <h3 className="font-oswald text-2xl uppercase tracking-widest text-white mb-6 border-b border-[#222] pb-4 flex items-center gap-3">
                     <Radio size={24} className="text-[#E60000]"/> Submissions Ledger
                   </h3>
-
                   {submissions.length === 0 ? (
                     <div className="text-center p-12 border border-dashed border-[#222]"><p className="text-[#555] text-xs font-mono uppercase tracking-widest">No artifacts found.</p></div>
                   ) : (
@@ -494,7 +488,6 @@ export default function AdminNode() {
                 )}
               </div>
             )}
-
           </>
         )}
       </div>
