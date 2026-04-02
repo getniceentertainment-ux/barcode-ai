@@ -87,7 +87,7 @@ export async function POST(req: Request) {
     const { 
       prompt, title, bpm, key, stageName, tag, style, blueprint, 
       motive, struggle, hustle, useSlang, useIntel, flowReference,
-      systemConstraint, pocket // --- NEW POCKET EXTRACTION ---
+      systemConstraint 
     } = body;
 
     let profileTier = 'Free Loader';
@@ -106,38 +106,32 @@ export async function POST(req: Request) {
       profileTier = profile.tier;
     }
 
+    // --- SURGICAL PIVOT: REAL-WORLD FLOW MATHEMATICS ---
+    // Map physical syllables-per-second (SPS) limits to exact frontend flow architecture IDs
     let ttsSpeedLimit = 3.5; 
 
     switch (style) {
       case "chopper":
-        ttsSpeedLimit = 6.0; 
+        ttsSpeedLimit = 6.0; // The absolute redline for AI TTS. Simulates rapid 16th/32nd notes.
         break;
       case "triplet":
-        ttsSpeedLimit = 4.8; 
+        ttsSpeedLimit = 4.8; // 8th note triplets mapped to standard Trap BPMs.
         break;
       case "getnice_hybrid":
-        ttsSpeedLimit = 4.0; 
+        ttsSpeedLimit = 4.0; // Signature versatile pocket. Mixes melodic holds with burst-flows.
         break;
       case "heartbeat": 
-        ttsSpeedLimit = 3.2; 
+        ttsSpeedLimit = 3.2; // Boom-bap. Laid back, behind the pocket, swinging 8ths.
         break;
       case "lazy":
-        ttsSpeedLimit = 2.2; 
+        ttsSpeedLimit = 2.2; // Wavy, drawn out, forces massive gaps and breathing room.
         break;
     }
 
     const activeBpm = bpm || 120;
     const secondsPerBar = (60 / activeBpm) * 4;
-    const timePerLine = secondsPerBar * 2; 
+    const timePerLine = secondsPerBar * 2; // Engine maps 2 bars per line by default
     const maxSyllables = Math.floor(timePerLine * ttsSpeedLimit);
-
-    // --- NEW: THE POCKET PLACEMENT INJECTION ---
-    let pocketInstruction = "FORMATTING: End every line with a period (.) to signify a standard hard stop exactly on the beat.";
-    if (pocket === "chainlink") {
-      pocketInstruction = "SYNCOPATION OVERRIDE (CHAIN-LINK): Do not wait for the end of the bar to rhyme. Bleed across the bar lines. You MUST end lines with a comma (,) to signal no breath, spilling directly into the next bar.";
-    } else if (pocket === "pickup") {
-      pocketInstruction = "SYNCOPATION OVERRIDE (THE DRAG/PICKUP): Start your phrases late or early. You MUST start lines with an ellipsis (...) to signal a delay or pickup note off the 1-count.";
-    }
 
     const getNiceOverride = `
     CRITICAL OVERRIDE - THE "GETNICE" DIRECTIVE:
@@ -147,7 +141,6 @@ export async function POST(req: Request) {
     4. STRUCTURAL ARCHITECTURE: Rigidly structure the output with timestamps and exact bar counts.
     5. THE INSTRUMENTAL METRONOME: If the blueprint specifies an "INSTRUMENTAL" block, DO NOT write lyrics for it. Instead, output the header [Instrumental] followed by the exact word "Mmm." repeated once for every bar of that section.
     6. THE DYNAMIC SYLLABLE CAP: You are writing for an AI Voice Engine. To match the exact physical cadence of the requested flow style, EVERY single line you write MUST be exactly ${maxSyllables} syllables or less. Count your syllables carefully. Do not exceed this limit or the audio pipeline will fail.
-    7. POCKET PLACEMENT: ${pocketInstruction}
     `;
 
     const thematicPrompt = `SONG TITLE: "${title || 'UNTITLED'}".

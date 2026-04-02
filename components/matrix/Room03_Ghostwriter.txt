@@ -28,9 +28,6 @@ export default function Room03_Ghostwriter() {
   const [isRefining, setIsRefining] = useState(false);
   const [refineInstruction, setRefineInstruction] = useState("");
   const [selectedLine, setSelectedLine] = useState("");
-  
-  // --- NEW: Syncopation / Pocket State ---
-  const [gwPocket, setGwPocket] = useState("standard");
 
   const styles = [
     { id: "getnice_hybrid", name: "GetNice Hybrid [Melodic Trap]" },
@@ -76,6 +73,7 @@ export default function Room03_Ghostwriter() {
     syncTimeline(newBp);
   };
 
+  // --- SURGICAL FIX: Allow INSTRUMENTAL block generation ---
   const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE" | "INSTRUMENTAL", bars: number) => {
     const isFreeLoader = (userSession?.tier as string) === "Free Loader";
     const currentSectionCount = blueprint.length;
@@ -119,6 +117,7 @@ export default function Room03_Ghostwriter() {
     setIsGenerating(true);
     setUxState("Synthesizing Bars via GETNICE Engine...");
 
+    // --- THE GAG ORDER & METRONOME DIRECTIVE ---
     const systemConstraint = `ABSOLUTE RULE: You are a structural lyrics API. You must ONLY output raw lyrics and section headers (e.g. [Verse 1], [Instrumental]). NEVER output instructions, bar counts (e.g. 'Bars 1-8'), timestamps (e.g. '(0:15)'), or phonetic spellings of symbols like 'Pipe Symbol'. Do not explain your output.`;
 
     try {
@@ -146,7 +145,6 @@ export default function Room03_Ghostwriter() {
           tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
-          pocket: gwPocket, // --- NEW: Pass the pocket state to the API ---
           systemConstraint: systemConstraint, 
           blueprint: blueprint.map(b => ({ 
             type: b.type, 
@@ -320,20 +318,6 @@ export default function Room03_Ghostwriter() {
             </div>
           </div>
 
-          {/* --- NEW: POCKET PLACEMENT DROPDOWN --- */}
-          <div>
-            <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Pocket Placement (Syncopation)</label>
-            <select 
-              value={gwPocket}
-              onChange={(e) => setGwPocket(e.target.value)}
-              className="w-full bg-black border border-[#333] p-3 text-xs text-[#E60000] font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest font-bold"
-            >
-              <option value="standard">Standard (Dead on the 1-Count)</option>
-              <option value="chainlink">Chain-Link (Interwoven / Spillover)</option>
-              <option value="pickup">The Drag (Pickup Notes & Delay)</option>
-            </select>
-          </div>
-
           <div className="space-y-3 pt-4 border-t border-[#222]">
             <label className="flex items-center gap-3 cursor-pointer group">
               <input type="checkbox" checked={gwUseSlang} onChange={(e) => setGwUseSlang(e.target.checked)} className="accent-[#E60000] w-4 h-4" />
@@ -434,6 +418,7 @@ export default function Room03_Ghostwriter() {
               >
                 Verse
               </button>
+              {/* SURGICAL ADDITION: The Instrumental Button */}
               <button 
                 onClick={() => addSection("INSTRUMENTAL", 8)} 
                 disabled={(userSession?.tier as string) === "Free Loader" && blueprint.length >= 2}

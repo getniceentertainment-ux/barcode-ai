@@ -571,7 +571,7 @@ const handleGenerateGuide = async () => {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- THE MASTER FIX: DYNAMIC SYNCOPATION MATH ---
+  // --- THE MASTER FIX: PROPORTIONAL POCKET MAPPING (SWING/SYNCOPATION) ---
   useEffect(() => {
     if (!generatedLyrics) return;
 
@@ -628,40 +628,26 @@ const handleGenerateGuide = async () => {
 
       const numLines = blockData.lines.length;
       if (numLines > 0) {
-        
-        // --- STEP A: DYNAMIC PUNCTUATION MATH (The Syncopation Fix) ---
+        // Step A: Calculate the total grammatical weight to maintain your specific ratio
         let totalBlockWeight = 0;
         blockData.lines.forEach(lineObj => {
           const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
+          // Syllable weight + space weight
           words.forEach(w => totalBlockWeight += w.length + 1.5);
-          
-          const textEnd = lineObj.text.trim().slice(-1);
-          if (textEnd === ',' || textEnd === '-') {
-            totalBlockWeight += 1.0; // Chain-Link: Spillover (Almost zero pause)
-          } else if (lineObj.text.trim().startsWith('...')) {
-            totalBlockWeight += 6.0; // The Drag: Leaves massive space at the front (Pickup note)
-          } else {
-            totalBlockWeight += 4.0; // Standard Stop: Hard landing on the 1
-          }
+          // The "Breath Penalty" you defined
+          totalBlockWeight += 4; 
         });
 
+        // Use your currentFlowTime to allow lines to start "off-grid" or as pickups
         let currentFlowTime = blockStartTime;
 
-        // --- STEP B: DYNAMIC ALLOCATION ---
+        // Step B: Allocate time proportionally
         blockData.lines.forEach((lineObj) => {
           const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           
           let lineWeight = 0;
           words.forEach(w => lineWeight += w.length + 1.5);
-          
-          const textEnd = lineObj.text.trim().slice(-1);
-          if (textEnd === ',' || textEnd === '-') {
-            lineWeight += 1.0; // Chain-link
-          } else if (lineObj.text.trim().startsWith('...')) {
-            lineWeight += 6.0; // The Drag
-          } else {
-            lineWeight += 4.0; // Standard Stop
-          }
+          lineWeight += 4; 
 
           // Calculate duration based on the total block's weight
           const timeForThisLine = totalBlockWeight > 0 ? (lineWeight / totalBlockWeight) * blockDurationSecs : 0;
@@ -674,10 +660,13 @@ const handleGenerateGuide = async () => {
             const wordDuration = wordWeight * timePerWeight;
             const wordStart = localWordTime;
             
+            // Increment local time for the word + the space
             localWordTime += wordDuration + (1.5 * timePerWeight);
+            
             return { word: w, startTime: wordStart, duration: wordDuration };
           });
 
+          // Pushing to the LyricLine object
           parsed.push({ 
             text: lineObj.text, 
             startTime: currentFlowTime, 
@@ -687,7 +676,10 @@ const handleGenerateGuide = async () => {
             words: mappedWords 
           });
 
-          // Move the global cursor forward based on the punctuation mathematics
+          // --- THE SYNC FIX ---
+          // Instead of letting currentFlowTime drift infinitely, we ensure 
+          // that if the line duration is extremely short, it still maintains 
+          // a rhythmic relationship to the project's BPM.
           currentFlowTime += timeForThisLine;
         });
       }
