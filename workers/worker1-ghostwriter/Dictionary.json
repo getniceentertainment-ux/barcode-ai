@@ -482,11 +482,6 @@
       ],
       "example": "One for the playas at the crib, dank and dranks/And two is for the sound, Hootie Hoo that I make"
     },
-    "jiggy": {
-      "type": "adjective",
-      "definitions": ["fly; dapper; exceptionally well-dressed and put together"],
-      "example": "Let’s get the dough and stay real jiggy, uh huh/And sip the Cris and get pissy-pissy"
-    },
     "keepin’ it real": {
       "type": "verb",
       "definitions": ["the act of staying true to one’s self or upbringing"],
@@ -525,20 +520,10 @@
       "definitions": ["tennis shoes; kicks; gym shoes"],
       "example": "Freaks be movin' in fly sneaks/Two finger rings and gold teeth and ain't afraid to hold heat"
     },
-    "phat": {
-      "type": "adjective",
-      "definitions": [
-        "thickness or girth, usually a part of the female anatomy",
-        "particularly fulfilling; robust; can refer to one’s wealth.",
-        "acronym for pretty hot and tempting."
-      ],
-      "notes": "Not to be confused with “fat.”",
-      "example": "Long as my mutherfuckin’ pockets was phat/I didn’t give a fuck where the bitch was at"
-    },
     "word up": {
       "type": "adjective/interjection",
       "definitions": ["interjectional statement of the affirmative; shows enthusiastic agreement"],
       "example": "Thug changes, and love changes/and best friends become strangers, word up"    
-    },
+    }
   }
 }
