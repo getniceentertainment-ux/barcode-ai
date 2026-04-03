@@ -76,31 +76,53 @@ export default function Room03_Ghostwriter() {
   const hasEnoughCredits = isCreator || isMogul || 
     (userSession?.creditsRemaining && (userSession.creditsRemaining === "UNLIMITED" || userSession.creditsRemaining >= currentCost));
 
-  useEffect(() => {
+// --- NEW: Sync Blueprint Patterns with Strict Hook Anchoring ---
+useEffect(() => {
     if (blueprint.length > 0) {
       const variations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-      const updated = blueprint.map((block, index) => {
-         const selected = variations[index % variations.length];
+      const hookVariation = variations[0]; // Pattern 0 is strictly for Hooks
+      const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
+      let verseCounter = 0;
+
+      const updated = blueprint.map((block) => {
+         let selected;
+         if (block.type === 'HOOK') {
+             selected = hookVariation;
+         } else {
+             selected = verseVariations[verseCounter % verseVariations.length];
+             if (block.type !== 'INSTRUMENTAL') verseCounter++;
+         }
          return { ...block, patternArray: selected.array, patternName: selected.name, patternDesc: selected.desc };
       });
       setBlueprint(updated);
     }
-  }, [gwStyle, blueprint.length, setBlueprint]);
+  }, [gwStyle]); // Intentionally omitting blueprint dependencies to prevent render loops
 
+  // --- SURGICAL FIX: Hook Anchor Syncing ---
   const syncTimeline = (newBlueprint: any[]) => {
     let cursor = 0;
     const variations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
+    const hookVariation = variations[0];
+    const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
+    let verseCounter = 0;
     
-    const synced = newBlueprint.map((block, index) => {
+    const synced = newBlueprint.map((block) => {
       const start = Math.max(cursor, block.startBar ?? cursor);
-      const selected = variations[index % variations.length];
+      
+      let selected;
+      if (block.type === 'HOOK') {
+          selected = hookVariation;
+      } else {
+          selected = verseVariations[verseCounter % verseVariations.length];
+          if (block.type !== 'INSTRUMENTAL') verseCounter++;
+      }
       
       const updated = { 
         ...block, 
         startBar: start,
-        patternArray: block.patternArray || selected.array,
-        patternName: block.patternName || selected.name,
-        patternDesc: block.patternDesc || selected.desc
+        patternArray: selected.array, // Force the math overwrite
+        patternName: selected.name,
+        patternDesc: selected.desc
       };
       cursor = start + block.bars;
       return updated;
