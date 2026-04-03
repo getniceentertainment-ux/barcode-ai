@@ -11,6 +11,31 @@ type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 type WordMapping = { word: string; startTime: number; duration: number; isWordEnd?: boolean };
 type LyricLine = { text: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[] };
 
+// --- THE MACRO-RHYTHMIC FLOW VAULT ---
+const FLOW_VAULT: Record<string, number[][]> = {
+  "getnice_hybrid": [
+    [4, 2, 2,  3, 1, 4,  2, 2, 2, 2,  4, 4], 
+    [3, 1, 2, 2],
+    [6, 2, 4, 2, 2] 
+  ],
+  "chopper": [
+    [1, 1, 1, 1], 
+    [2, 1, 1, 1, 1, 2] 
+  ],
+  "heartbeat": [
+    [2, 2, 2, 2], 
+    [4, 2, 2, 4, 4] 
+  ],
+  "triplet": [
+    [3, 3, 2], 
+    [2, 2, 2, 3, 3, 4] 
+  ],
+  "lazy": [
+    [4, 2, 2], 
+    [6, 2, 8] 
+  ]
+};
+
 // --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR ---
 function estimateSyllables(word: string): number {
   const w = word.toLowerCase().replace(/[^a-z]/g, '');
@@ -286,6 +311,8 @@ export default function Room04_Booth() {
 
           const source = offlineCtx.createBufferSource();
           source.buffer = trimmedBuffer;
+          
+          // 🚨 THE STRETCH: The TTS perfectly scales its read speed to fit the exact DAW pocket boundary
           source.playbackRate.value = ttsDuration / mathLineDuration; 
 
           const gainNode = offlineCtx.createGain();
@@ -622,7 +649,7 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- THE MASTER SCORE CARD ALGORITHM ---
+  // --- THE MASTER SCORE CARD ALGORITHM (PROPORTIONAL SYNC FIX) ---
   useEffect(() => {
     if (!generatedLyrics) return;
 
@@ -661,6 +688,7 @@ export default function Room04_Booth() {
       const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
 
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
+      const blockDurationSecs = bp.bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
       parsed.push({ text: `[${bp.type}]`, startTime: blockStartTime, lineDuration: 0, isHeader: true, timestamp: "", words: [] });
@@ -673,23 +701,47 @@ export default function Room04_Booth() {
       const numLines = blockData.lines.length;
       if (numLines > 0) {
         
-        // --- SCORE CARD ENGINE DEPLOYMENT (READS DIRECTLY FROM ROOM 03) ---
-        const activePattern = (bp as any).patternArray || [3, 1, 2, 2];
-        const stepSecs = secondsPerBar / 16; // The exact millisecond length of a 16th note
+        const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
+        const activePattern = (bp as any).patternArray || activeVariations[index % activeVariations.length];
 
+        // 🚨 THE FIX: To completely prevent timeline drift, we strictly force the lines to 
+        // fit equally within the block's absolute duration. The Score Card now provides 
+        // the *swing ratio* inside that boundary, not the absolute time length.
+        const timeForThisLine = blockDurationSecs / numLines; 
+        
         let currentFlowTime = blockStartTime;
-        let patternIndex = 0; // Initialize pattern once per block, NOT per line!
+        let patternIndex = 0;
 
         blockData.lines.forEach((lineObj) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: WordMapping[] = [];
 
-          // Punctuation Drag: Did the LLM command a pickup note? 
-          if (lineObj.text.trim().startsWith('...')) {
-             currentFlowTime += (4 * stepSecs); // Wait 1 full beat (4 sixteenths)
-          }
+          // --- PASS 1: Calculate the total rhythmic weight of this specific line ---
+          let totalLineSteps = 0;
+          let tempPatternIndex = patternIndex; // Temporary simulation index
 
-          let lineStartTime = currentFlowTime;
+          if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
+
+          rawWords.forEach((w) => {
+            const wordChunks = chunkWordForVisuals(w);
+            wordChunks.forEach(() => {
+              totalLineSteps += activePattern[tempPatternIndex % activePattern.length];
+              tempPatternIndex++;
+            });
+          });
+
+          const cleanTextEnd = lineObj.text.trim().slice(-1);
+          if (cleanTextEnd === '.') totalLineSteps += 4;
+          else if (cleanTextEnd === ',') totalLineSteps += 1;
+
+          // --- PASS 2: Assign real milliseconds proportionally to lock to the DAW grid ---
+          const timePerStep = totalLineSteps > 0 ? timeForThisLine / totalLineSteps : 0;
+          let localWordTime = currentFlowTime;
+          const lineStartTime = currentFlowTime;
+
+          if (lineObj.text.trim().startsWith('...')) {
+             localWordTime += (4 * timePerStep);
+          }
 
           rawWords.forEach((w) => {
             const wordChunks = chunkWordForVisuals(w);
@@ -697,43 +749,35 @@ export default function Room04_Booth() {
             wordChunks.forEach((chunk, cIdx) => {
               const isWordEnd = (cIdx === wordChunks.length - 1);
               
-              // Map the chunk exactly to the active Score Card grid array
               const stepsRequired = activePattern[patternIndex % activePattern.length];
-              patternIndex++; // Push the metronome forward continuously across lines
+              patternIndex++; 
 
-              const chunkDuration = stepsRequired * stepSecs;
+              const chunkDuration = stepsRequired * timePerStep;
 
               mappedWords.push({
                 word: chunk,
-                startTime: currentFlowTime,
-                // Shrink the highlight slightly to give visual "breathing room" articulation
-                duration: chunkDuration * 0.85, 
+                startTime: localWordTime,
+                duration: chunkDuration * 0.85, // Visual margin
                 isWordEnd: isWordEnd
               });
 
-              currentFlowTime += chunkDuration;
+              localWordTime += chunkDuration;
             });
           });
 
-          // End-of-line punctuation rests (forces the bar math back in line)
-          const cleanTextEnd = lineObj.text.trim().slice(-1);
-          if (cleanTextEnd === '.') currentFlowTime += (4 * stepSecs); // Quarter note rest
-          else if (cleanTextEnd === ',') currentFlowTime += (1 * stepSecs); // 16th note spillover gap
-
-          // 🚨 THE SAFEGUARD: If the line finishes early, pad the rest of the bar with silence.
-          const nextBarStart = lineStartTime + secondsPerBar;
-          if (currentFlowTime < nextBarStart) {
-              currentFlowTime = nextBarStart; 
-          }
+          if (cleanTextEnd === '.') localWordTime += (4 * timePerStep);
+          else if (cleanTextEnd === ',') localWordTime += (1 * timePerStep);
 
           parsed.push({ 
             text: lineObj.text, 
             startTime: lineStartTime, 
-            lineDuration: currentFlowTime - lineStartTime,
+            lineDuration: timeForThisLine, // Strict mathematical boundary lock
             isHeader: false, 
             timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
+
+          currentFlowTime += timeForThisLine; // Advance global clock by exactly the line limit
         });
       }
 

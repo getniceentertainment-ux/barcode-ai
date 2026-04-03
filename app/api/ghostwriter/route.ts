@@ -106,23 +106,25 @@ export async function POST(req: Request) {
       profileTier = profile.tier;
     }
 
-    let ttsSpeedLimit = 3.5; 
+    // --- SURGICAL PIVOT: EMPIRICAL FLOW MATHEMATICS ---
+    // Map physical syllables-per-second (SPS) limits based on Billboard hit data (4.5 median)
+    let ttsSpeedLimit = 4.5; // Billboard hit baseline
 
     switch (style) {
       case "chopper":
-        ttsSpeedLimit = 6.0; 
+        ttsSpeedLimit = 6.0; // The absolute redline for AI TTS. Simulates rapid 16th/32nd notes.
         break;
       case "triplet":
-        ttsSpeedLimit = 4.8; 
+        ttsSpeedLimit = 5.0; // 8th note triplets mapped to standard Trap BPMs.
         break;
       case "getnice_hybrid":
-        ttsSpeedLimit = 4.0; 
+        ttsSpeedLimit = 4.5; // Signature versatile pocket. Matches the academic hitmaker median.
         break;
       case "heartbeat": 
-        ttsSpeedLimit = 3.2; 
+        ttsSpeedLimit = 4.0; // Boom-bap. Laid back, behind the pocket, swinging 8ths.
         break;
       case "lazy":
-        ttsSpeedLimit = 2.2; 
+        ttsSpeedLimit = 3.0; // Wavy, drawn out, forces massive gaps and breathing room.
         break;
     }
 
@@ -148,6 +150,8 @@ export async function POST(req: Request) {
     5. THE INSTRUMENTAL METRONOME: If the blueprint specifies an "INSTRUMENTAL" block, DO NOT write lyrics for it. Instead, output the header [Instrumental] followed by the exact word "Mmm." repeated once for every bar of that section.
     6. THE DYNAMIC SYLLABLE CAP: You are writing for an AI Voice Engine. To match the exact physical cadence of the requested flow style, EVERY single line you write MUST be exactly ${maxSyllables} syllables or less. Count your syllables carefully. Do not exceed this limit or the audio pipeline will fail.
     7. POCKET PLACEMENT: ${pocketInstruction}
+    8. THE BEAT 4 ANCHOR: Structure the syntax so the primary rhyming syllable inherently falls at the end of the phrase (simulating Beat 4 of the measure).
+    9. THE 25% STRESS RATIO: Do not over-rhyme. Only about 25% of stressed syllables should rhyme. Use internal rhymes sparingly to maintain authentic street flow and avoid sounding like a nursery rhyme.
     `;
 
     const thematicPrompt = `SONG TITLE: "${title || 'UNTITLED'}".

@@ -168,11 +168,13 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive,
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     banned_words_str = ", ".join(BAN_LIST)
     
-    # Mathematical bounds purely relying on punctuation. Zero Pipe (|) corruption.
+    # Mathematical bounds relying on punctuation + Empirical Billboard Syncopation Rules
     flow_architecture = f"""[FLOW ARCHITECTURE: {genre_style.upper()}]
 - CADENCE: Match the rhythm of a modern hip-hop track. 
 - FORMATTING: Use punctuation (commas, periods) to naturally pace the breath control.
-- SPACING: You must use proper English grammar and spaces between words. Do not smash words together."""
+- SPACING: You must use proper English grammar and spaces between words. Do not smash words together.
+- THE BEAT 4 ANCHOR: Structure the syntax so the primary rhyming syllable inherently falls at the end of the phrase (simulating Beat 4 of the measure).
+- THE 25% STRESS RATIO: Do not over-rhyme. Only about 25% of stressed syllables should rhyme. Use internal rhymes sparingly to maintain authentic street flow and avoid sounding like a nursery rhyme."""
 
     flow_mimicry = ""
     if flow_reference and len(flow_reference) > 5 and flow_reference != "Focus on survival and rhythm.":
@@ -294,10 +296,11 @@ def handler(event):
     if bpm <= 0: bpm = 120
     seconds_per_bar = (60.0 / bpm) * 4.0
 
-    # Dynamic Syllable Boundaries
-    tts_speed_limit = 3.5
-    if style == "chopper": tts_speed_limit = 5.0
-    elif style == "triplet": tts_speed_limit = 4.2
+    # Dynamic Syllable Boundaries (Empirically tuned to Condit-Schultz / Komaniecki data)
+    tts_speed_limit = 4.5  # Billboard hit baseline: 4.5 syllables per second
+    if style == "chopper": tts_speed_limit = 6.0
+    elif style == "triplet": tts_speed_limit = 5.0
+    elif style == "lazy": tts_speed_limit = 3.0
     
     time_per_line = seconds_per_bar
     max_syllables = max(10, int(time_per_line * tts_speed_limit * 1.5))
