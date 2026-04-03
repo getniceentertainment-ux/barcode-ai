@@ -38,6 +38,7 @@ export default function Room03_Ghostwriter() {
   const { 
     audioData, flowDNA, blueprint, setBlueprint, generatedLyrics, setGeneratedLyrics, setActiveRoom, addToast,
     gwTitle, setGwTitle, gwPrompt, setGwPrompt, gwStyle, setGwStyle, gwGender, setGwGender, 
+    gwPocket, setGwPocket, // <-- PULLING FROM GLOBAL STATE
     gwUseSlang, setGwUseSlang, gwUseIntel, setGwUseIntel, userSession,
     
     gwMotive = "", setGwMotive = () => {},
@@ -53,9 +54,6 @@ export default function Room03_Ghostwriter() {
   const [isRefining, setIsRefining] = useState(false);
   const [refineInstruction, setRefineInstruction] = useState("");
   const [selectedLine, setSelectedLine] = useState("");
-  
-  // --- NEW: Syncopation / Pocket State ---
-  const [gwPocket, setGwPocket] = useState("standard");
 
   const styles = [
     { id: "getnice_hybrid", name: "GetNice Hybrid [Melodic Trap]" },
@@ -88,7 +86,7 @@ export default function Room03_Ghostwriter() {
       });
       setBlueprint(updated);
     }
-  }, [gwStyle]);
+  }, [gwStyle, blueprint.length, setBlueprint]);
 
   const syncTimeline = (newBlueprint: any[]) => {
     let cursor = 0;
