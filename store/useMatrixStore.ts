@@ -60,6 +60,7 @@ interface MatrixState {
   gwTitle: string;
   gwPrompt: string;
   gwStyle: string;
+  gwPocket: string; // <-- ADDED
   gwGender: string;
   gwUseSlang: boolean;
   gwUseIntel: boolean;
@@ -72,6 +73,7 @@ interface MatrixState {
   setGwTitle: (t: string) => void;
   setGwPrompt: (p: string) => void;
   setGwStyle: (s: string) => void;
+  setGwPocket: (p: string) => void; // <-- ADDED
   setGwGender: (g: string) => void;
   setGwUseSlang: (b: boolean) => void;
   setGwUseIntel: (b: boolean) => void;
@@ -129,6 +131,7 @@ export const useMatrixStore = create<MatrixState>()(
       gwTitle: "",
       gwPrompt: "",
       gwStyle: "getnice_hybrid",
+      gwPocket: "standard", // <-- ADDED
       gwGender: "male",
       gwUseSlang: true,
       gwUseIntel: true,
@@ -180,6 +183,7 @@ export const useMatrixStore = create<MatrixState>()(
       setGwTitle: (t) => set({ gwTitle: t }),
       setGwPrompt: (p) => set({ gwPrompt: p }),
       setGwStyle: (s) => set({ gwStyle: s }),
+      setGwPocket: (p) => set({ gwPocket: p }), // <-- ADDED
       setGwGender: (g) => set({ gwGender: g }),
       setGwUseSlang: (b) => set({ gwUseSlang: b }),
       setGwUseIntel: (b) => set({ gwUseIntel: b }),
@@ -255,7 +259,7 @@ export const useMatrixStore = create<MatrixState>()(
         return {
           audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
           engineeredVocal: null, // <-- RESET IT
-          gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
+          gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", gwPocket: "standard", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
           mdxJobId: null, mdxStatus: "idle", syncStatus: "idle",
           
           // --- CLEAR THEMATIC STATE ON NEW PROJECT ---
@@ -338,6 +342,7 @@ export const useMatrixStore = create<MatrixState>()(
            gwTitle: state.gwTitle,
            gwPrompt: state.gwPrompt,
            gwStyle: state.gwStyle,
+           gwPocket: state.gwPocket, // <-- ADDED
            
            // --- BACKUP THEMATIC STATE TO CLOUD ---
            gwMotive: state.gwMotive,
@@ -448,6 +453,7 @@ export const useMatrixStore = create<MatrixState>()(
         gwTitle: state.gwTitle,
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
+        gwPocket: state.gwPocket, // <-- SURGICAL ADDITION: Persists dropdown selection across reloads
         
         // --- PERSIST THEMATIC STATE LOCALLY ON REFRESH ---
         audioData: state.audioData, // <-- SURGICAL ADDITION: Prevent cloud wipe                 
