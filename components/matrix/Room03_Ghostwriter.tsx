@@ -183,7 +183,12 @@ export default function Room03_Ghostwriter() {
     setIsGenerating(true);
     setUxState("Synthesizing Bars via GETNICE Engine...");
 
-    const systemConstraint = `ABSOLUTE RULE: You are a structural lyrics API. You must ONLY output raw lyrics and section headers (e.g. [Verse 1], [Instrumental]). NEVER output instructions, bar counts (e.g. 'Bars 1-8'), timestamps (e.g. '(0:15)'). You MUST use pipe symbols (|) to separate syllables. Do not explain your output.`;
+    // --- SURGICAL FIX: PROMPT ARMOR ---
+    const systemConstraint = `ABSOLUTE ENGINE RULES:
+1. RAW LYRICS ONLY: You must ONLY output the lyrics.
+2. NO PREFIXES: NEVER output labels like "1st Line:", "Hook:", or "Verse:" before the lyrics.
+3. NO PADDING: NEVER pad lines with empty pipe symbols (e.g., "words. | | |" is FORBIDDEN). Use pipes ONLY between syllables (e.g., "CHIL|LAX|IN").
+4. NO META-COMMENTARY: Do not explain your output or write "(pipe symbol required)".`;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -240,8 +245,19 @@ export default function Room03_Ghostwriter() {
           if (statusData.status === 'COMPLETED') {
             clearInterval(pollInterval);
             setIsGenerating(false);
-            setLyrics(statusData.output.lyrics);
-            setGeneratedLyrics(statusData.output.lyrics);
+            
+            // --- SURGICAL FIX: FRONTEND SANITIZATION (KILL HALLUCINATIONS) ---
+            let rawLyrics = statusData.output.lyrics || "";
+            let cleanedLyrics = rawLyrics
+              .replace(/\(pipe symbol.*?\)/gi, '') // 1. Kill meta-commentary in parentheses
+              .replace(/\|(?:\s*\|)+/g, '') // 2. Kill consecutive empty pipe padding ( | | | )
+              .replace(/(\(\d+:\d{2}\)\s*)\|\s*/gm, '$1') // 3. Kill leading pipes right after timestamps
+              .replace(/\|\s*$/gm, '') // 4. Kill trailing pipes at the very end of a line
+              .replace(/(\(\d+:\d{2}\)\s*)(?:\d+(?:st|nd|rd|th)? Line:|Line \d+:|Hook:|Verse:|Chorus:|Intro:|Outro:)\s*/gmi, '$1') // 5. Kill LLM prefixes (e.g. "1st Line:")
+              .trim();
+
+            setLyrics(cleanedLyrics);
+            setGeneratedLyrics(cleanedLyrics);
             if(addToast) addToast(`Lyrics Synthesized.`, "success");
           } else if (statusData.status === 'FAILED') {
             clearInterval(pollInterval);
