@@ -15,7 +15,7 @@ SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_
 SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
 
-# --- THE "LOBOTOMY" BAN LIST (KILLS AI POETRY) ---
+# --- THE CONCENTRATED KILL LIST (KILLS AI POETRY) ---
 BAN_LIST = [
     "concrete jungle", "jiggy", "phat", "cheddar", "rags to riches", "no pain no gain",
     "weathered storms", "naysayers", "darkest hour", "spirits took flight",
@@ -141,247 +141,140 @@ def init_model():
         model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
         print("✅ GetNice Adapter fused successfully.")
     except Exception as e:
-        print(f"🚨 LORA FUSION FAILED! EXACT ERROR: {e}")
+        print(f"🚨 LORA FUSION FAILED! {e}")
         model = base_model
+    print("Worker Ready.")
 
-    dummy = tokenizer("Test", return_tensors="pt").to("cuda")
-    _ = model.generate(**dummy, max_new_tokens=5)
-    print("Deep Burn-In Complete. Worker Ready.")
-
-def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive, struggle, hustle, topic, flow_reference="", bpm=120, max_syllables=14):
+def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
-    slang_list = ", ".join(load_street_slang(genre_style)) if use_slang else "Standard vocabulary."
+    slang_list = ", ".join(load_street_slang(style)) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     banned_words_str = ", ".join(BAN_LIST)
     
-    # Proprietary GETNICE Flow Rules
-    flow_architecture = f"""[FLOW ARCHITECTURE: {genre_style.upper()}]
-- CADENCE: Match the rhythm of a modern hip-hop track. 
-- FORMATTING: Use punctuation (commas, periods) to naturally pace the breath control. DO NOT USE PIPE SYMBOLS (|).
-- SPACING: You must use proper English grammar and spaces between words. Do not smash words together.
-- SCORE CARD RHYME LOCK: Structure your syntax so the primary rhyming syllables hit precisely on the heavy anchor points defined by the SCORE CARD (Melodic Math). Do not just default to the end of the measure; let the provided mathematical grid dictate where your rhymes land.
-- THE 25% STRESS RATIO: Do not over-rhyme. Only about 25% of stressed syllables should rhyme. Use internal rhymes sparingly to maintain authentic street flow."""
-
-    flow_mimicry = ""
-    if flow_reference and len(flow_reference) > 5 and flow_reference != "Focus on survival and rhythm.":
-        flow_mimicry = f"""[USER'S VOCAL CADENCE BLUEPRINT]\nAnalyze this rhythmic structure: "{flow_reference}". Format your lyrics to mimic this bounce."""
-    
     return f"""<|im_start|>system
-You are the GETNICE Ghostwriter Engine. You are a highly articulate, business-minded creator who refuses to quit.
+[SYSTEM DIRECTIVE: THE MOGUL PATRIARCH]
+You are "The Mogul." Your voice blends street-smart authenticity with boardroom strategic vision. You grew up with nothing, mastered the hustle, and now own the building. You value equity over a paycheck and generational wealth over temporary ego.
 
-Synthesize these variables into a cohesive delivery:
-- THE DRIVE (Motive): {motive}
-- THE SETBACK (Struggle): {struggle}
-- THE EXECUTION (Hustle): {hustle}
+[TRACK VARIABLES]
+- DRIVE: {motive}
+- SETBACK: {struggle}
+- EXECUTION: {hustle}
+- TOPIC: {topic}
 
-1. FATAL ERROR IF USED: {banned_words_str}. 
-2. TONE ENFORCEMENT: Speak with casual hip-hop swagger and conversational street syntax. Use natural street terms. NO POETRY. NO CLICHES.
-3. MANDATORY VOCABULARY: Weave at least TWO of these words into the generation: [ {slang_list} ].
-4. FORMATTING: OUTPUT ONLY RAW LYRICS. ONE LINE = ONE BAR. NO HEADERS. NO TIMESTAMPS. NO STAGE DIRECTIONS LIKE (Chorus) OR (Repeat).
-5. GRAMMAR: You MUST use proper spaces between your words. Never combine words.
-6. THE SYLLABLE CAP: Keep your lines punchy. Aim for {max_syllables} syllables maximum per line.
-
-{flow_architecture}
-{flow_mimicry}
+[ABSOLUTE ENGINE RULES]
+1. NO POETRY: Avoid AI cliches and "lucre," "serene," or "uncoil." 
+2. TONE: Strategic, authoritative executive street-slang. Minimalist syntax.
+3. ONE LINE = ONE BAR. 
+4. VOCABULARY: Organically weave in: [ {slang_list} ].
+5. THE 25% STRESS RATIO: Do not over-rhyme. No nursery rhymes.
 
 [LIVE INTEL]
 {rag_context}
+[CULTURAL ANCHOR]
+{culture_context}
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0, anchor_hook=None, max_syllables=14, pattern_desc=""):
-    if section_index == 0:
-        arc_instruction = "Establish the setting and the origin. Ground the listener."
-    elif section_type.upper() == "HOOK":
-        arc_instruction = "Summarize the core theme. Make it highly repetitive and catchy."
-    else:
-        arc_instruction = "Introduce the depth of the topic. Escalate the energy."
-    
-    hook_context = f"\n[THE ANCHOR HOOK]:\n{anchor_hook}\n" if anchor_hook and section_type.upper() != "HOOK" else ""
-    
-    # --- GETNICE MATRICES INJECTION ---
-    rhythm_context = f"\n[SCORE CARD (MELODIC MATH)]\nThe rhythmic cadence for this specific {section_type.upper()} follows this pattern: '{pattern_desc}'. You MUST choose words and syllable counts that lock into this exact bounce." if pattern_desc else ""
-    
+def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction):
+    # PASS 1: Neural Draft
     draft_prompt = f"""<|im_start|>user
-[STUDIO DRAFTING PHASE]
-GENERATE A {section_type.upper()}. EXACTLY {bars} LINES (BARS). 
+{system_prompt}
 
-[DIRECTIVES AND TOPIC]
-{prompt_topic}
+[GENERATE {section_type.upper()}]
+- REQUIRED: {bars} bars.
+- RHYTHMIC POCKET: {pattern_desc}
+- SYLLABLE LIMIT: Strictly {max_syllables} or less per line. (CRITICAL)
 
-NARRATIVE ARC: {arc_instruction}
-{hook_context}
-{rhythm_context}
-
-Previous lyrics context:
-{previous_lyrics if previous_lyrics else 'None (Start of track)'}
-
-ABSOLUTE RULES: 
-1. NEVER output stage directions like (Chorus) or (Repeat).
-2. NO POETRY. NO CORNY CLICHES. Write modern, gritty, conversational bars.
+[PREVIOUS CONTEXT]
+{previous_lyrics if previous_lyrics else 'Start of track.'}
 
 Write the draft now.
 <|im_end|>
 <|im_start|>assistant
 """
-    
-    inputs = tokenizer(system_prompt + draft_prompt, return_tensors="pt").to("cuda")
-    outputs = model.generate(
-        **inputs, max_new_tokens=40 * bars, temperature=0.85, top_p=0.9,
-        repetition_penalty=1.15, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id 
-    )
+    inputs = tokenizer(draft_prompt, return_tensors="pt").to("cuda")
+    outputs = model.generate(**inputs, max_new_tokens=40 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15)
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
-    
+
+    # PASS 2: The Mogul's Final Polish
     refine_prompt = f"""<|im_start|>user
-[THE SECOND CRACK - FINAL POLISH]
+[THE SECOND PASS - FINAL POLISH]
 You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
-CRITICAL ANALYSIS & REWRITE INSTRUCTIONS:
-1. Review the storyline. Connect perfectly to the previous lyrics.
-2. Ensure proper spacing between words.
-3. Use natural punctuation (commas, periods) to pace the breath. NO PIPE SYMBOLS (|).
-4. JUST OUTPUT EXACTLY {bars} LINES. NO HEADERS. NO STAGE DIRECTIONS (e.g. no "(Chorus)" or "(Repeat)").
-5. KILL ALL POETRY: If you used words like "serene", "veins", "lucre", "uncoil", or "supreme", rewrite them immediately to be casual, gritty, and conversational.
+CRITICAL REFINEMENT COMMANDS:
+1. Every line MUST be {max_syllables} syllables or less. Rewrite long lines to be minimalist.
+2. OBEY THE POCKET: {pocket_instruction}
+3. NO HEADERS. NO TIMESTAMPS. NO POETRY.
+4. Output EXACTLY {bars} lines.
 
 Rewrite the final {bars} lines now.
 <|im_end|>
 <|im_start|>assistant
 """
-    
-    inputs_refine = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
-    outputs_refine = model.generate(
-        **inputs_refine, max_new_tokens=40 * bars, temperature=0.75, top_p=0.9,
-        repetition_penalty=1.15, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id 
-    )
-    
-    final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True)
-    
-    # CLEANSING
-    final_text = final_text.replace("<|im_end|>", "").strip()
-    final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
-    final_text = re.sub(r'\[.*?\]', '', final_text)
-    final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE)
-    final_text = re.sub(r'\(.*?(Chorus|Repeat).*?\)', '', final_text, flags=re.IGNORECASE)
-    
-    clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and len(line.strip()) > 3 and not line.strip().startswith(('+', '-'))]
-    
-    if len(clean_lines) > bars:
-        clean_lines = clean_lines[:bars]
-            
-    return "\n".join(clean_lines)
+    inputs_refine = tokenizer(refine_prompt, return_tensors="pt").to("cuda")
+    outputs_refine = model.generate(**inputs_refine, max_new_tokens=40 * bars, temperature=0.75, top_p=0.9, repetition_penalty=1.1)
+    final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
+
+    clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and not line.startswith('[')]
+    return clean_lines[:bars]
 
 def handler(event):
     job_input = event.get("input", {})
-    
-    task_type = job_input.get("task_type", "generate")
     topic = job_input.get("prompt", "Securing the legacy")
-    
-    flow_reference = job_input.get("flowReference", "")    
-    motive = job_input.get("motive", "Mastering the technical craft")
-    struggle = job_input.get("struggle", "Industry doors closing")
-    hustle = job_input.get("hustle", "Relentless execution")
-    
-    flow_dna = job_input.get("tag", "Standard flow")
+    motive = job_input.get("motive", "Ownership")
+    struggle = job_input.get("struggle", "Resistance")
+    hustle = job_input.get("hustle", "Execution")
+    bpm = float(job_input.get("bpm", 120))
     style = job_input.get("style", "getnice_hybrid")
+    blueprint = job_input.get("blueprint", [])
     use_slang = job_input.get("useSlang", True)
     use_intel = job_input.get("useIntel", True)
-    bpm = float(job_input.get("bpm", 120))
-    if bpm <= 0: bpm = 120
+
+    # 🚨 DYNAMIC MATH INJECTION
     seconds_per_bar = (60.0 / bpm) * 4.0
+    speed_factor = 4.5
+    if "chopper" in style: speed_factor = 6.0
+    elif "lazy" in style: speed_factor = 3.0
+    elif "heartbeat" in style: speed_factor = 4.0
+    max_syllables = max(6, int(seconds_per_bar * speed_factor))
 
-    # PROPRIETARY LIMITS
-    tts_speed_limit = 4.5
-    if style == "chopper": tts_speed_limit = 6.0
-    elif style == "triplet": tts_speed_limit = 5.0
-    elif style == "heartbeat": tts_speed_limit = 4.0
-    elif style == "lazy": tts_speed_limit = 3.0
-    
-    time_per_line = seconds_per_bar
-    max_syllables = max(6, int(time_per_line * tts_speed_limit)) 
-    
-    system_prompt = construct_system_prompt(flow_dna, style, use_slang, use_intel, motive, struggle, hustle, topic, flow_reference, bpm, max_syllables)
-    
-    if task_type == "refine":
-        original_line = job_input.get("originalLine", "")
-        instruction = job_input.get("instruction", "Make it hit harder.")
-        
-        refine_prompt = f"""<|im_start|>user
-[MICRO-REFINEMENT PROTOCOL]
-Original Line: "{original_line}"
-Instruction: {instruction}
+    # 🚨 POCKET PUNCTUATION LOGIC
+    pocket_instruction = "End every line with a period (.)."
+    if "CHAIN-LINK" in topic.upper() or "CHAINLINK" in topic.upper():
+        pocket_instruction = "CHAIN-LINK MODE: End every single line with a comma (,) for spillover."
+    elif "DRAG" in topic.upper() or "PICKUP" in topic.upper():
+        pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.)."
 
-Rewrite the line to satisfy the instruction. Output ONLY the rewritten line.
-<|im_end|>
-<|im_start|>assistant
-"""
-        inputs = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
-        outputs = model.generate(
-            **inputs, max_new_tokens=50, temperature=0.7, top_p=0.9,
-            repetition_penalty=1.1, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id 
-        )
-        
-        refined_line = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
-        refined_line = re.sub(r'^["\']|["\']$', '', refined_line.replace("<|im_end|>", "").strip()) 
-        return {"refinedLine": refined_line}
+    system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic)
+    
+    final_lyrics = ""
+    context_lyrics = ""
+    current_cumulative_bar = 0
 
-    if task_type == "generate":
-        blueprint = job_input.get("blueprint", [{"type": "VERSE", "bars": 16}])
-        final_lyrics = ""
-        context_lyrics = ""
-        current_cumulative_bar = 0
+    for section in blueprint:
+        sec_type = section.get("type", "VERSE").upper()
+        bars = section.get("bars", 16)
+        start_bar = section.get("startBar", current_cumulative_bar)
+        pattern_desc = section.get("patternDesc", "Standard Score Card")
         
-        saved_hook = None
-        for section in blueprint:
-            if section.get("type", "VERSE").upper() == "HOOK":
-                pattern_desc = section.get("patternDesc", "")
-                saved_hook = generate_section(system_prompt, "", "HOOK", section.get("bars", 4), topic, section_index=0, max_syllables=max_syllables, pattern_desc=pattern_desc)
-                break
+        final_lyrics += f"\n[{sec_type} - {bars} BARS | BAR {start_bar}]\n"
         
-        for index, section in enumerate(blueprint):
-            sec_type = section.get("type", "VERSE").upper()
-            bars = section.get("bars", 16)
-            start_bar = section.get("startBar", current_cumulative_bar)
-            pattern_desc = section.get("patternDesc", "")
-            
-            time_sec = start_bar * seconds_per_bar
-            mins = int(time_sec // 60)
-            secs = int(time_sec % 60)
-            
-            final_lyrics += f"\n[{sec_type} - {bars} BARS | STARTS @ {mins}:{secs:02d} (BAR {start_bar})]\n"
-            
-            if sec_type == "INSTRUMENTAL":
-                hums = ["Mmm. Mmm." for _ in range(bars)]
-                raw_section_text = "\n".join(hums)
-            elif sec_type == "HOOK" and saved_hook is not None:
-                raw_section_text = saved_hook
-            else:
-                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, section_index=index, anchor_hook=saved_hook, max_syllables=max_syllables, pattern_desc=pattern_desc)
-                if sec_type == "HOOK" and saved_hook is None:
-                    saved_hook = raw_section_text
-            
-            section_lines = raw_section_text.split("\n")
-            timed_lines = []
-            line_bar = start_bar
-            
-            for line in section_lines:
-                if not line.strip(): 
-                    continue
-                
-                line_time = line_bar * seconds_per_bar
-                l_mins = int(line_time // 60)
-                l_secs = int(line_time % 60)
-                
-                timed_lines.append(f"({l_mins}:{l_secs:02d}) {line}")
-                line_bar += 1 
-            
-            final_lyrics += "\n".join(timed_lines) + "\n"
-            context_lyrics = "\n".join((context_lyrics + "\n" + raw_section_text).strip().split("\n")[-8:])
-            current_cumulative_bar = start_bar + bars
-            
-        return {"lyrics": final_lyrics.strip()}
+        if sec_type == "INSTRUMENTAL":
+            section_lines = ["Mmm. Mmm." for _ in range(bars)]
+        else:
+            section_lines = generate_section(system_prompt, context_lyrics, sec_type, bars, max_syllables, pattern_desc, pocket_instruction)
+            context_lyrics = "\n".join(section_lines[-4:])
         
-    return {"error": "Invalid task_type."}
+        for i, line in enumerate(section_lines):
+            line_bar = start_bar + i
+            line_time = line_bar * seconds_per_bar
+            mins, secs = int(line_time // 60), int(line_time % 60)
+            final_lyrics += f"({mins}:{secs:02d}) {line}\n"
+        
+        current_cumulative_bar = start_bar + bars
+
+    return {"lyrics": final_lyrics.strip()}
 
 init_model()
 if __name__ == "__main__":
