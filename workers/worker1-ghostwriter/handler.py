@@ -205,7 +205,7 @@ Synthesize these variables into your delivery:
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0, anchor_hook=None, max_syllables=14, pattern_desc=""):
+def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0, anchor_hook=None, max_syllables=14, pattern_desc="", pocket_instruction=""):
     if section_index == 0:
         arc_instruction = "Establish the setting and the origin. Ground the listener."
     elif section_type.upper() == "HOOK":
@@ -232,9 +232,11 @@ NARRATIVE ARC: {arc_instruction}
 Previous lyrics context:
 {previous_lyrics if previous_lyrics else 'None (Start of track)'}
 
-ABSOLUTE RULES: 
+ABSOLUTE RULES (OBEY OR FAIL): 
 1. NEVER output stage directions like (Chorus) or (Repeat).
 2. NO POETRY. NO CORNY CLICHES. Write modern, gritty, conversational bars.
+3. PUNCTUATION & POCKET: {pocket_instruction}
+4. SYLLABLE CAP: You MUST write {max_syllables} syllables OR LESS per line.
 
 Write the draft now.
 <|im_end|>
@@ -253,12 +255,13 @@ Write the draft now.
 You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
-CRITICAL ANALYSIS & REWRITE INSTRUCTIONS:
+CRITICAL ANALYSIS & REWRITE INSTRUCTIONS (OBEY OR FAIL):
 1. Review the storyline. Connect perfectly to the previous lyrics.
 2. Ensure proper spacing between words.
-3. Use natural punctuation (commas, periods) to pace the breath. NO PIPE SYMBOLS (|).
-4. JUST OUTPUT EXACTLY {bars} LINES. NO HEADERS. NO STAGE DIRECTIONS (e.g. no "(Chorus)" or "(Repeat)").
-5. KILL ALL POETRY: If you used words like "serene", "veins", "lucre", "uncoil", or "supreme", rewrite them immediately to be casual, gritty, and conversational.
+3. PUNCTUATION & POCKET: {pocket_instruction}
+4. SYLLABLE CAP: Every single line MUST be {max_syllables} syllables or less. Check your math.
+5. JUST OUTPUT EXACTLY {bars} LINES. NO HEADERS. NO STAGE DIRECTIONS.
+6. KILL ALL POETRY: If you used words like "serene", "veins", "lucre", "uncoil", or "supreme", rewrite them immediately to be casual, gritty, and conversational.
 
 Rewrite the final {bars} lines now.
 <|im_end|>
@@ -293,6 +296,14 @@ def handler(event):
     task_type = job_input.get("task_type", "generate")
     topic = job_input.get("prompt", "Securing the legacy")
     
+    # --- POCKET INSTRUCTION EXTRACTION (THE SURGICAL FIX) ---
+    # We dynamically extract the exact Syncopation rule passed by route.ts
+    pocket_instruction = "PUNCTUATION: End every line with a period (.) to signify a hard stop exactly on the beat."
+    if "CHAIN-LINK" in topic:
+        pocket_instruction = "SYNCOPATION OVERRIDE (CHAIN-LINK): Do not wait for the end of the bar to rhyme. Bleed across the bar lines. You MUST end every single line with a comma (,) to signal no breath, spilling directly into the next bar."
+    elif "THE DRAG" in topic or "PICKUP" in topic:
+        pocket_instruction = "SYNCOPATION OVERRIDE (THE DRAG/PICKUP): Start your phrases late or early. You MUST start every single line with an ellipsis (...) to signal a delay or pickup note off the 1-count."
+
     flow_reference = job_input.get("flowReference", "")    
     motive = job_input.get("motive", "Mastering the technical craft")
     struggle = job_input.get("struggle", "Industry doors closing")
@@ -327,6 +338,10 @@ def handler(event):
 Original Line: "{original_line}"
 Instruction: {instruction}
 
+CRITICAL RULES:
+1. {pocket_instruction}
+2. SYLLABLE CAP: Maximum {max_syllables} syllables per line.
+
 Rewrite the line to satisfy the instruction. Output ONLY the rewritten line.
 <|im_end|>
 <|im_start|>assistant
@@ -351,7 +366,7 @@ Rewrite the line to satisfy the instruction. Output ONLY the rewritten line.
         for section in blueprint:
             if section.get("type", "VERSE").upper() == "HOOK":
                 pattern_desc = section.get("patternDesc", "")
-                saved_hook = generate_section(system_prompt, "", "HOOK", section.get("bars", 4), topic, section_index=0, max_syllables=max_syllables, pattern_desc=pattern_desc)
+                saved_hook = generate_section(system_prompt, "", "HOOK", section.get("bars", 4), topic, section_index=0, max_syllables=max_syllables, pattern_desc=pattern_desc, pocket_instruction=pocket_instruction)
                 break
         
         for index, section in enumerate(blueprint):
@@ -372,7 +387,7 @@ Rewrite the line to satisfy the instruction. Output ONLY the rewritten line.
             elif sec_type == "HOOK" and saved_hook is not None:
                 raw_section_text = saved_hook
             else:
-                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, section_index=index, anchor_hook=saved_hook, max_syllables=max_syllables, pattern_desc=pattern_desc)
+                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, section_index=index, anchor_hook=saved_hook, max_syllables=max_syllables, pattern_desc=pattern_desc, pocket_instruction=pocket_instruction)
                 if sec_type == "HOOK" and saved_hook is None:
                     saved_hook = raw_section_text
             
