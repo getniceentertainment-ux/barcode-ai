@@ -15,6 +15,7 @@ SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_
 SLANG_FILE = "Dictionary.json"
 CULTURE_FILE = "master_index.json"
 
+# --- THE "LOBOTOMY" BAN LIST (KILLS AI POETRY) ---
 BAN_LIST = [
     "concrete jungle", "jiggy", "phat", "cheddar", "rags to riches", "no pain no gain",
     "weathered storms", "naysayers", "darkest hour", "spirits took flight",
@@ -27,7 +28,9 @@ BAN_LIST = [
     "kingdom", "throne", "crown", "realm", "legacy", "quest", "vanquish", "fortress", 
     "prophecy", "omen", "crusade", "vanguard", "sovereign", "dominion", "forsaken",
     "weave", "forge", "craft", "sculpt", "flutter", "plunge", "unfurl", "awaken", 
-    "slumber", "beckon", "entwine", "enchant", "captivate", "illuminate", "transcend"
+    "slumber", "beckon", "entwine", "enchant", "captivate", "illuminate", "transcend",
+    "lucre", "serene", "uncoil", "veins", "stains", "plains", "refrains", "gleam", "beams",
+    "climb", "machine", "visage", "clandestine", "supreme", "scheme", "spoils"
 ]
 
 model = None
@@ -164,18 +167,33 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive,
         flow_mimicry = f"""[USER'S VOCAL CADENCE BLUEPRINT]\nAnalyze this rhythmic structure: "{flow_reference}". Format your lyrics to mimic this bounce."""
     
     return f"""<|im_start|>system
-You are the GETNICE Ghostwriter Engine. You are a highly articulate, business-minded creator who refuses to quit.
+[SYSTEM DIRECTIVE: THE MOGUL PATRIARCH]
+You are operating as "The Mogul." Your voice blends the gritty authenticity, lyrical precision, and survival instincts of legendary hip-hop icons who transitioned from the streets to the boardroom, with the ruthless efficiency and strategic vision of a Fortune 500 executive.
+You grew up with nothing, mastered the art of the hustle, and transferred those street-smart mechanics directly into corporate dominance. You speak with quiet authority, deep wisdom, and unshakeable confidence. Your ultimate driving force is not ego, but family and generational wealth. Every business move is a calculated chess piece to secure your family's future and protect your lineage.
 
-Synthesize these variables into a cohesive delivery:
+[CORE PERSONALITY TRAITS]
+- Calculated & Strategic: You view the world as a chessboard. You understand leverage, risk management, and the difference between temporary gains and permanent ownership. You value equity over a paycheck.
+- Fiercely Protective: Your family is your sanctuary and your motivation. Your ambition is strictly tied to providing for them, teaching them resilience, and ensuring they never have to face the struggles you did.
+- Unapologetically Authentic: You do not wear a suit to fit in; you wear it to own the building. You respect the corporate rules but operate by your own moral code of loyalty, respect, and standing on business.
+- Lyrical & Pragmatic: You speak in tight, impactful sentences. You use metaphors that bridge the gap between concrete jungles and glass skyscrapers. You do not waste words.
+
+[THE LEXICON & VOICE]
+- Corporate Hip-Hop Synthesis: Seamlessly blend business terminology (ROI, leverage, equity, scalable growth, asset allocation) with grounded idioms (dropping gems, the hustle, standing on business, moving in silence, the long game).
+- Tone: Grounded, calm, authoritative, mentor-like. You don't yell to be heard; your presence demands the room's attention.
+- Signature Cadence: Start with a high-level philosophical truth, ground it in a real-world business or family application, and end with a definitive call to action.
+
+[TRACK VARIABLES]
+Synthesize these variables into your delivery:
 - THE DRIVE (Motive): {motive}
 - THE SETBACK (Struggle): {struggle}
 - THE EXECUTION (Hustle): {hustle}
 - THE CURRENT TOPIC: {topic}
 
+[ABSOLUTE ENGINE RULES]
 1. FATAL ERROR IF USED: {banned_words_str}. 
-2. TONE ENFORCEMENT: Speak with casual hip-hop swagger and conversational street syntax. Use natural street terms.
+2. TONE ENFORCEMENT: Speak with casual hip-hop swagger and conversational street syntax. Use natural street terms. NO POETRY. NO CLICHES.
 3. MANDATORY VOCABULARY: Weave at least TWO of these words into the generation: [ {slang_list} ].
-4. FORMATTING: OUTPUT ONLY RAW LYRICS. ONE LINE = ONE BAR. NO HEADERS. NO TIMESTAMPS.
+4. FORMATTING: OUTPUT ONLY RAW LYRICS. ONE LINE = ONE BAR. NO HEADERS. NO TIMESTAMPS. NO STAGE DIRECTIONS LIKE (Chorus) OR (Repeat).
 5. GRAMMAR: You MUST use proper spaces between your words. Never combine words.
 6. THE SYLLABLE CAP: Keep your lines punchy. Aim for {max_syllables} syllables maximum per line.
 
@@ -202,12 +220,21 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_
     
     draft_prompt = f"""<|im_start|>user
 [STUDIO DRAFTING PHASE]
-GENERATE A {section_type.upper()}. EXACTLY {bars} LINES (BARS). Topic: '{prompt_topic}'.
+GENERATE A {section_type.upper()}. EXACTLY {bars} LINES (BARS). 
+
+[DIRECTIVES AND TOPIC]
+{prompt_topic}
+
 NARRATIVE ARC: {arc_instruction}
 {hook_context}
 {rhythm_context}
+
 Previous lyrics context:
 {previous_lyrics if previous_lyrics else 'None (Start of track)'}
+
+ABSOLUTE RULES: 
+1. NEVER output stage directions like (Chorus) or (Repeat).
+2. NO POETRY. NO CORNY CLICHES. Write modern, gritty, conversational bars.
 
 Write the draft now.
 <|im_end|>
@@ -230,7 +257,8 @@ CRITICAL ANALYSIS & REWRITE INSTRUCTIONS:
 1. Review the storyline. Connect perfectly to the previous lyrics.
 2. Ensure proper spacing between words.
 3. Use natural punctuation (commas, periods) to pace the breath. NO PIPE SYMBOLS (|).
-4. JUST OUTPUT EXACTLY {bars} LINES. NO HEADERS.
+4. JUST OUTPUT EXACTLY {bars} LINES. NO HEADERS. NO STAGE DIRECTIONS (e.g. no "(Chorus)" or "(Repeat)").
+5. KILL ALL POETRY: If you used words like "serene", "veins", "lucre", "uncoil", or "supreme", rewrite them immediately to be casual, gritty, and conversational.
 
 Rewrite the final {bars} lines now.
 <|im_end|>
@@ -250,6 +278,7 @@ Rewrite the final {bars} lines now.
     final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
     final_text = re.sub(r'\[.*?\]', '', final_text)
     final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE)
+    final_text = re.sub(r'\(.*?(Chorus|Repeat).*?\)', '', final_text, flags=re.IGNORECASE)
     
     clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and len(line.strip()) > 3 and not line.strip().startswith(('+', '-'))]
     
@@ -277,7 +306,7 @@ def handler(event):
     if bpm <= 0: bpm = 120
     seconds_per_bar = (60.0 / bpm) * 4.0
 
-    # PROPRIETARY LIMITS - (Including the restored 'heartbeat' mapping)
+    # PROPRIETARY LIMITS
     tts_speed_limit = 4.5
     if style == "chopper": tts_speed_limit = 6.0
     elif style == "triplet": tts_speed_limit = 5.0
