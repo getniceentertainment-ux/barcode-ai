@@ -31,11 +31,11 @@ export default function Room02_BrainTrain() {
   const hasCredits = isCreator || (userSession?.creditsRemaining && (userSession.creditsRemaining === "UNLIMITED" || userSession.creditsRemaining > 0));
 
   const STYLES = {
-    getnice_hybrid: "GetNice Hybrid Triplet",
-    drill: "NY Drill",
-    boom_bap: "Boom Bap",
-    melodic_trap: "Melodic Trap",
-    chopper: "Chopper (Fast)",
+    getnice_hybrid: "GetNice Hybrid [Melodic Trap]",
+    heartbeat: "Heartbeat (Boom-Bap)",
+    lazy: "Lazy (Wavy/Delayed)",
+    triplet: "Triplet (Trap)",
+    chopper: "Chopper (Fast/Tech)",
   };
 
   const isMounted = useRef(true);
@@ -229,14 +229,15 @@ export default function Room02_BrainTrain() {
             let finalStyleId = detectedStyle?.id || "getnice_hybrid";
             let finalStyleName = detectedStyle?.name || STYLES.getnice_hybrid;
 
-            if (micStatus !== "recorded" && textInput.trim()) {
+if (micStatus !== "recorded" && textInput.trim()) {
               const lines = textInput.split("\n").filter((l) => l.trim().length > 0);
               if (lines.length > 0) {
                 const avgWords = lines.reduce((acc, l) => acc + l.trim().split(/\s+/).length, 0) / lines.length;
                 if (avgWords >= 12) finalStyleId = "chopper";
-                else if (avgWords <= 6) finalStyleId = "melodic_trap";
-                else if (audioData?.bpm && audioData.bpm >= 138) finalStyleId = "drill";
-                else finalStyleId = "boom_bap";
+                else if (avgWords <= 6) finalStyleId = "lazy";
+                else if (audioData?.bpm && audioData.bpm >= 138) finalStyleId = "triplet";
+                else finalStyleId = "heartbeat";
+                
                 finalStyleName = STYLES[finalStyleId as keyof typeof STYLES];
                 setGwStyle(finalStyleId);
                 setDetectedStyle({ id: finalStyleId, name: finalStyleName });
@@ -244,36 +245,49 @@ export default function Room02_BrainTrain() {
             }
 
             setFlowDNA({
-              tag: `GetNice Hybrid [${finalStyleName}]`,
+              tag: finalStyleName, // Keep it clean, drop the forced "Hybrid" phrasing
               referenceText: textInput.trim() || "Focus on survival and rhythm.",
-              syllableDensity: finalStyleId === "chopper" ? 5.5 : finalStyleId === "drill" ? 4.0 : 3.5,
+              syllableDensity: finalStyleId === "chopper" ? 5.5 : finalStyleId === "lazy" ? 3.0 : 4.5,
             });
 
             if (audioData?.totalBars) {
               let remaining = audioData.totalBars;
+              let currentStartBar = 0; // --- TIMELINE FIX: Tracking the anchor point
               const calc: any[] = [];
               
-              // --- INCENTIVE UPGRADE LOGIC ---
-              // The Mogul & The Artist get full song structure mappings. 
-              // Free Loaders only get 2 blocks.
               if (userSession?.tier === "The Mogul" || userSession?.tier === "The Artist") {
-                if (remaining >= 4) { calc.push({ id: "intro", type: "INTRO", bars: 4 }); remaining -= 4; }
+                if (remaining >= 4) { 
+                  calc.push({ id: "intro", type: "INTRO", bars: 4, startBar: currentStartBar }); 
+                  remaining -= 4; 
+                  currentStartBar += 4; 
+                }
                 let idCounter = 1;
                 while (remaining >= 24) {
-                  calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8 }); remaining -= 8;
-                  calc.push({ id: `verse_${idCounter}`, type: "VERSE", bars: 16 }); remaining -= 16;
+                  calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8, startBar: currentStartBar }); 
+                  remaining -= 8; 
+                  currentStartBar += 8;
+                  
+                  calc.push({ id: `verse_${idCounter}`, type: "VERSE", bars: 16, startBar: currentStartBar }); 
+                  remaining -= 16; 
+                  currentStartBar += 16;
+                  
                   idCounter++;
                 }
-                if (remaining >= 8) { calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8 }); remaining -= 8; }
-                calc.push({ id: "outro", type: "OUTRO", bars: remaining });
+                if (remaining >= 8) { 
+                  calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8, startBar: currentStartBar }); 
+                  remaining -= 8; 
+                  currentStartBar += 8; 
+                }
+                calc.push({ id: "outro", type: "OUTRO", bars: remaining, startBar: currentStartBar });
               } else {
-                // Tier Limiting: Free Loader strictly limited
-                calc.push({ id: "hook_1", type: "HOOK", bars: 8 });
-                calc.push({ id: "verse_1", type: "VERSE", bars: 16 });
+                calc.push({ id: "hook_1", type: "HOOK", bars: 8, startBar: currentStartBar });
+                currentStartBar += 8;
+                calc.push({ id: "verse_1", type: "VERSE", bars: 16, startBar: currentStartBar });
               }
               
               setBlueprint(calc);
             }
+            
 
             setStatus("success");
             setIsProcessing(false);
@@ -297,13 +311,21 @@ export default function Room02_BrainTrain() {
 
   const updateBlueprintBar = (index: number, delta: number) => {
     const newBp = [...blueprint];
-    // STRICT CAP FIX: Limit ALL users to a maximum of 16 bars per block.
-    // Standard hip-hop structure prevents massive payloads while securing the credit economy.
     const maxBars = 16;
     newBp[index].bars = Math.min(maxBars, Math.max(1, newBp[index].bars + delta));
-    setBlueprint(newBp);
+    syncTimeline(newBp); // Force timeline recalculation
   };
-
+  
+  const syncTimeline = (newBlueprint: any[]) => {
+    let cursor = 0;
+    const synced = newBlueprint.map((block) => {
+      const updated = { ...block, startBar: cursor };
+      cursor += block.bars;
+      return updated;
+    });
+    setBlueprint(synced);
+  };
+  
   const updateBlueprintType = (index: number, newType: any) => {
     const newBp = [...blueprint];
     newBp[index].type = newType;
