@@ -8,19 +8,59 @@ import { supabase } from "../../lib/supabase";
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
-type WordMapping = { word: string; startTime: number; duration: number };
-// SURGICAL FIX: Added lineDuration so the audio can read the Bouncing Ball's exact timing
+// SURGICAL FIX: Added isWordEnd flag to control the spacing between chunks
+type WordMapping = { word: string; startTime: number; duration: number; isWordEnd?: boolean };
 type LyricLine = { text: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[] };
 
-// --- GETNICE FRONTEND SYLLABLE ESTIMATOR ---
+// --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR ---
 function estimateSyllables(word: string): number {
   const w = word.toLowerCase().replace(/[^a-z]/g, '');
   if (!w) return 1;
   if (w.length <= 3) return 1;
   let count = (w.match(/[aeiouy]+/g) || []).length;
-  // Handle silent 'e' at the end of words (like "white", "bone")
   if (w.endsWith('e') && !w.endsWith('le')) count--;
   return Math.max(1, count);
+}
+
+// --- NEW: THE VISUAL SYLLABLE CHUNKER (Restores the "Hop") ---
+function chunkWordForVisuals(word: string): string[] {
+  const match = word.match(/^([^a-zA-Z]*)([a-zA-Z\']+)([^a-zA-Z]*)$/);
+  if (!match || match[2].length <= 3) return [word];
+  
+  const pre = match[1];
+  const alpha = match[2];
+  const post = match[3];
+  
+  const vowelClusters = alpha.match(/[aeiouy]+/gi);
+  if (!vowelClusters || vowelClusters.length <= 1) return [word];
+  
+  const chunks = [];
+  let currentChunk = "";
+  
+  for (let i = 0; i < alpha.length; i++) {
+    currentChunk += alpha[i];
+    const isVowel = /[aeiouy]/i.test(alpha[i]);
+    const nextIsVowel = i + 1 < alpha.length ? /[aeiouy]/i.test(alpha[i+1]) : false;
+    
+    // Split pseudo-syllables around consonant-vowel transitions
+    if (isVowel && !nextIsVowel && i + 2 < alpha.length) {
+      const remaining = alpha.slice(i + 1);
+      if (/[aeiouy]/i.test(remaining)) {
+        currentChunk += alpha[i+1];
+        chunks.push(currentChunk);
+        currentChunk = "";
+        i++; 
+      }
+    }
+  }
+  if (currentChunk) chunks.push(currentChunk);
+  
+  if (chunks.length > 0) {
+    chunks[0] = pre + chunks[0];
+    chunks[chunks.length - 1] = chunks[chunks.length - 1] + post;
+  }
+  
+  return chunks.filter(c => c.length > 0);
 }
 
 // --- BULLETPROOF AUDIO TRIMMING UTILITIES ---
@@ -149,7 +189,6 @@ export default function Room04_Booth() {
   const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
 
   const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
-
   const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
   const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
 
@@ -170,7 +209,7 @@ export default function Room04_Booth() {
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
-const handleGenerateGuide = async () => {
+  const handleGenerateGuide = async () => {
     if (!lyricLines || lyricLines.length === 0) {
       if (addToast) addToast("No valid lyrics found to generate guide.", "error");
       return;
@@ -183,7 +222,6 @@ const handleGenerateGuide = async () => {
       const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
       if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
-      // Creates a blank, silent canvas the exact length of the track
       const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
       const sampleRate = 44100;
       
@@ -206,57 +244,38 @@ const handleGenerateGuide = async () => {
           const arrayBuffer = await res.arrayBuffer();
           const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
 
-          // --- SURGICAL PIVOT: THE MICRO-CHUNK QUANTIZER ---
           const ttsDuration = audioBuffer.duration;
           const mathLineDuration = line.lineDuration || 2;
 
-	  if (line.words && line.words.length > 0) {
+          if (line.words && line.words.length > 0) {
             line.words.forEach((wObj) => {
-              // 1. Calculate where this specific word exists proportionally
               const relativeWordStart = wObj.startTime - line.startTime;
               const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
               const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
 
-              // --- THE OVERLAP CROSSFADE FIX ---
-              // Add a "tail" so the word finishes sounding out naturally.
-              // 0.35 seconds is enough to catch the end of a syllable without dragging.
               const tailBleed = 0.35; 
-              
-              // Ensure we don't try to extract audio past the end of the TTS file
               const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
 
               const source = offlineCtx.createBufferSource();
               source.buffer = audioBuffer;
-              source.playbackRate.value = 1.0; // High-fidelity preservation
+              source.playbackRate.value = 1.0; 
 
-              // 2. Create the Crossfade Envelope
               const gainNode = offlineCtx.createGain();
-              
-              // 10ms micro-fade IN (prevents sharp pops)
               gainNode.gain.setValueAtTime(0, wObj.startTime);
               gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
-              
-              // Hold at full volume for the exact visual duration of the red ball
               gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-              
-              // Slowly fade out into the next word over the 350ms tail (The Crossfade)
               gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
 
               source.connect(gainNode);
               gainNode.connect(offlineCtx.destination);
-
-              // 3. Drop the audio slice with the extended overlapping tail
-              // Syntax: start(when, offset_in_audio_file, duration_to_play)
               source.start(wObj.startTime, ttsOffset, safeExtractDuration);
             });
           } else {
-            // Fallback for lines without word mappings
             const source = offlineCtx.createBufferSource();
             source.buffer = audioBuffer;
             source.connect(offlineCtx.destination);
             source.start(line.startTime);
           }
-          // ---------------------------------------------
 
         } catch (lineErr) {
           console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
@@ -588,23 +607,15 @@ const handleGenerateGuide = async () => {
 
     const lines = generatedLyrics.split('\n');
     
-    // --- SURGICAL FIX:Preserve Spacing & Syllable Tokenization ---
+    // 1. Clean the text
     const sanitizedLines = lines.map(l => {
-      // 1. DEEP NORMALIZATION: Force all "invisible" space variants to standard ASCII spaces
-      // This kills non-breaking spaces, zero-width joiners, and tab variants
-      let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
-
+      let text = l.trim();
       if (text.startsWith('[')) return { text, isHeader: true }; 
-      
-      // 2. Standard Clean-up
       text = text
         .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
         .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
         .replace(/pipe\s*symbol/gi, '') 
-        .replace(/\|/g, ' ') // Convert pipes to landings for the ball
-        .replace(/\s+/g, ' ') // Collapse multiple spaces into one standard space
         .trim();
-
       return { text, isHeader: false };
     }).filter(obj => obj.text.length > 0);
 
@@ -647,60 +658,67 @@ const handleGenerateGuide = async () => {
       const numLines = blockData.lines.length;
       if (numLines > 0) {
         
-        // --- STEP A: DYNAMIC PUNCTUATION MATH (The Syncopation Fix) ---
+        // --- STEP A: Calculate exact duration capacity needed ---
         let totalBlockWeight = 0;
         blockData.lines.forEach(lineObj => {
-          const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
-          words.forEach(w => {
-            // NEW: Use the AI Syllable Estimator instead of raw character length
+          const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
+          rawWords.forEach(w => {
             const syllableCount = estimateSyllables(w);
-            totalBlockWeight += syllableCount * 3.0; // Structural weight per syllable
+            // 🚨 FIX 1: INCLUDE THE GAP (1.5) IN THE TOTAL CAPACITY ALGORITHM
+            totalBlockWeight += (syllableCount * 3.0) + 1.5; 
           });
           
           const cleanTextEnd = lineObj.text.trim().slice(-1);
-          if (cleanTextEnd === ',' || cleanTextEnd === '-') {
-            totalBlockWeight += 1.0; // Chain-Link: Spillover (Almost zero pause)
-          } else if (lineObj.text.trim().startsWith('...')) {
-            totalBlockWeight += 6.0; // The Drag: Leaves massive space at the front (Pickup note)
-          } else {
-            totalBlockWeight += 4.0; // Standard Stop: Hard landing on the 1
-          }
+          if (cleanTextEnd === ',' || cleanTextEnd === '-') totalBlockWeight += 1.0;
+          else if (lineObj.text.trim().startsWith('...')) totalBlockWeight += 6.0;
+          else totalBlockWeight += 4.0;
         });
 
         let currentFlowTime = blockStartTime;
 
-        // --- STEP B: DYNAMIC ALLOCATION ---
+        // --- STEP B: Map to Timeline & Visual Syllable Chunker ---
         blockData.lines.forEach((lineObj) => {
-          const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
+          const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           
           let lineWeight = 0;
-          words.forEach(w => {
+          rawWords.forEach(w => {
             const syllableCount = estimateSyllables(w);
-            lineWeight += syllableCount * 3.0;
+            // 🚨 FIX 1: INCLUDE THE GAP IN THE LINE CALCULATION
+            lineWeight += (syllableCount * 3.0) + 1.5; 
           });
           
           const cleanTextEnd = lineObj.text.trim().slice(-1);
-          if (cleanTextEnd === ',' || cleanTextEnd === '-') {
-            lineWeight += 1.0; 
-          } else if (lineObj.text.trim().startsWith('...')) {
-            lineWeight += 6.0; 
-          } else {
-            lineWeight += 4.0; 
-          }
+          if (cleanTextEnd === ',' || cleanTextEnd === '-') lineWeight += 1.0;
+          else if (lineObj.text.trim().startsWith('...')) lineWeight += 6.0;
+          else lineWeight += 4.0;
 
           const timeForThisLine = totalBlockWeight > 0 ? (lineWeight / totalBlockWeight) * blockDurationSecs : 0;
           const timePerWeight = totalBlockWeight > 0 ? blockDurationSecs / totalBlockWeight : 0;
 
           let localWordTime = currentFlowTime;
+          const mappedWords: WordMapping[] = [];
 
-          const mappedWords = words.map(w => {
+          rawWords.forEach((w) => {
+            // 🚨 FIX 2: THE VISUAL CHUNKER (Restores the Syllable Hop)
+            const wordChunks = chunkWordForVisuals(w);
             const syllableCount = estimateSyllables(w);
-            const wordDuration = (syllableCount * 3.0) * timePerWeight;
-            const wordStart = localWordTime;
             
-            // Add a slight micro-gap based on weight
-            localWordTime += wordDuration + (1.5 * timePerWeight);
-            return { word: w, startTime: wordStart, duration: wordDuration };
+            const totalWordDuration = (syllableCount * 3.0) * timePerWeight;
+            const chunkDuration = totalWordDuration / wordChunks.length;
+            
+            wordChunks.forEach((chunk, cIdx) => {
+              const isWordEnd = (cIdx === wordChunks.length - 1);
+              mappedWords.push({
+                word: chunk,
+                startTime: localWordTime,
+                duration: chunkDuration,
+                isWordEnd: isWordEnd // Flag for the UI to know when to add spaces
+              });
+              localWordTime += chunkDuration;
+            });
+            
+            // Add the 1.5 spacing gap AFTER the full word is completely sung
+            localWordTime += (1.5 * timePerWeight);
           });
 
           parsed.push({ 
@@ -712,7 +730,6 @@ const handleGenerateGuide = async () => {
             words: mappedWords 
           });
 
-          // Move the global cursor forward based on the punctuation mathematics
           currentFlowTime += timeForThisLine;
         });
       }
@@ -817,8 +834,9 @@ const handleGenerateGuide = async () => {
                     const isPast = currentTime >= wObj.startTime + wObj.duration;
                     const isActiveWord = isActiveLine && currentTime >= wObj.startTime && currentTime < wObj.startTime + wObj.duration;
 
+                    // 🚨 FIX 2 UI: The spacing logic. We only add a margin space (mr-2) if it's the actual END of the original word.
                     return (
-                      <span key={wIdx} className="relative inline-block mr-2">
+                      <span key={wIdx} className={`relative inline-block ${wObj.isWordEnd ? 'mr-2' : ''}`}>
                         {isActiveWord && (
                           <span className="absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#E60000] rounded-full animate-bounce shadow-[0_0_5px_#E60000]"></span>
                         )}
