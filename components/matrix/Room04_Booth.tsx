@@ -589,23 +589,24 @@ const handleGenerateGuide = async () => {
     const lines = generatedLyrics.split('\n');
     
     // --- SURGICAL FIX:Preserve Spacing & Syllable Tokenization ---
-const sanitizedLines = lines.map(l => {
-  let text = l.trim();
-  if (text.startsWith('[')) return { text, isHeader: true }; 
+    const sanitizedLines = lines.map(l => {
+      // 1. DEEP NORMALIZATION: Force all "invisible" space variants to standard ASCII spaces
+      // This kills non-breaking spaces, zero-width joiners, and tab variants
+      let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
 
-  text = text
-    .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') // Remove timestamps
-    .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') // Remove bar counts
-    .replace(/pipe\s*symbol/gi, '') 
-    .replace(/\|/g, ' ') // IMPORTANT: Turn pipes into spaces so the Ball can "land" on syllables
-    .trim();
+      if (text.startsWith('[')) return { text, isHeader: true }; 
+      
+      // 2. Standard Clean-up
+      text = text
+        .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
+        .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
+        .replace(/pipe\s*symbol/gi, '') 
+        .replace(/\|/g, ' ') // Convert pipes to landings for the ball
+        .replace(/\s+/g, ' ') // Collapse multiple spaces into one standard space
+        .trim();
 
-  // If the LLM smashed words together (Figure A), we force-insert spaces after commas
-  // to ensure the split(/\s+/) logic finds the individual tokens.
-  text = text.replace(/,/g, ', '); 
-
-  return { text, isHeader: false };
-}).filter(obj => obj.text.length > 0);
+      return { text, isHeader: false };
+    }).filter(obj => obj.text.length > 0);
 
     // 2. Group the hallucinated text into blocks
     const llmBlocks: { header: string, lines: typeof sanitizedLines }[] = [];
