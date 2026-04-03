@@ -87,7 +87,7 @@ export async function POST(req: Request) {
     const { 
       prompt, title, bpm, key, stageName, tag, style, blueprint, 
       motive, struggle, hustle, useSlang, useIntel, flowReference,
-      systemConstraint, pocket // --- NEW POCKET EXTRACTION ---
+      systemConstraint, pocket 
     } = body;
 
     let profileTier = 'Free Loader';
@@ -106,46 +106,52 @@ export async function POST(req: Request) {
       profileTier = profile.tier;
     }
 
-    // --- SURGICAL PIVOT: EMPIRICAL FLOW MATHEMATICS ---
-    // Map physical syllables-per-second (SPS) limits based on Billboard hit data (4.5 median)
-    let ttsSpeedLimit = 4.5; // Billboard hit baseline
+    let ttsSpeedLimit = 4.5; 
 
     switch (style) {
       case "chopper":
-        ttsSpeedLimit = 6.0; // The absolute redline for AI TTS. Simulates rapid 16th/32nd notes.
+        ttsSpeedLimit = 6.0; 
         break;
       case "triplet":
-        ttsSpeedLimit = 5.0; // 8th note triplets mapped to standard Trap BPMs.
+        ttsSpeedLimit = 5.0; 
         break;
       case "getnice_hybrid":
-        ttsSpeedLimit = 4.5; // Signature versatile pocket. Matches the academic hitmaker median.
+        ttsSpeedLimit = 4.5; 
         break;
       case "heartbeat": 
-        ttsSpeedLimit = 4.0; // Boom-bap. Laid back, behind the pocket, swinging 8ths.
+        ttsSpeedLimit = 4.0; 
         break;
       case "lazy":
-        ttsSpeedLimit = 3.0; // Wavy, drawn out, forces massive gaps and breathing room.
+        ttsSpeedLimit = 3.0; 
         break;
     }
 
     const activeBpm = bpm || 120;
     const secondsPerBar = (60 / activeBpm) * 4;
-    
-    // --- SURGICAL PIVOT: THE 1-TO-1 TIMELINE FIX ---
-    // We previously mapped a 2-bar syllable budget to a 1-bar line, causing hyper-speed delivery at high BPMs.
-    // By locking timePerLine strictly to 1 bar, a 160 BPM track (1.5 sec/bar) maxes out at ~6-7 syllables.
-    // This forces the lyrics to naturally stretch and "drag" across the 16-step Score Card grid.
     const timePerLine = secondsPerBar; 
-    
-    // Fallback: Ensure the LLM always gets at least 6 syllables even at extreme 200+ BPMs to prevent syntax breaking
     const maxSyllables = Math.max(6, Math.floor(timePerLine * ttsSpeedLimit));
 
-    // --- POCKET PLACEMENT INJECTION ---
     let pocketInstruction = "FORMATTING: End every line with a period (.) to signify a standard hard stop exactly on the beat.";
     if (pocket === "chainlink") {
       pocketInstruction = "SYNCOPATION OVERRIDE (CHAIN-LINK): Do not wait for the end of the bar to rhyme. Bleed across the bar lines. You MUST end lines with a comma (,) to signal no breath, spilling directly into the next bar.";
     } else if (pocket === "pickup") {
       pocketInstruction = "SYNCOPATION OVERRIDE (THE DRAG/PICKUP): Start your phrases late or early. You MUST start lines with an ellipsis (...) to signal a delay or pickup note off the 1-count.";
+    }
+
+    // --- NEW: DSP-DRIVEN VOCAL ARTICULATION LOGIC ---
+    // Reads Room 01's Key and BPM to inject the correct type of human swagger.
+    let dspVocalInstruction = "";
+    const isMinor = (key || "").toLowerCase().includes('m');
+    const isFast = activeBpm > 135;
+
+    if (isMinor && isFast) {
+      dspVocalInstruction = `DSP MATCH: MINOR KEY, FAST TEMPO. Inject aggressive, rapid-fire stutters (e.g., "g-g-g-get it", "m-m-move") and sharp, dark vocal drops.`;
+    } else if (isMinor && !isFast) {
+      dspVocalInstruction = `DSP MATCH: MINOR KEY, SLOW TEMPO. Inject heavy, isolated 1-word pauses (e.g., "WAIT, ...") and dragged-out sinister spelling (e.g., "R-I-P").`;
+    } else if (!isMinor && isFast) {
+      dspVocalInstruction = `DSP MATCH: MAJOR KEY, FAST TEMPO. Inject high-energy repeated chants (e.g., "go go go go") and triumphant rhythmic bouncing.`;
+    } else {
+      dspVocalInstruction = `DSP MATCH: MAJOR KEY, SLOW TEMPO. Inject massive, anthemic spelled-out words (e.g., "T to the A") and huge group-style pauses.`;
     }
 
     const getNiceOverride = `
@@ -159,6 +165,11 @@ export async function POST(req: Request) {
     7. POCKET PLACEMENT: ${pocketInstruction}
     8. THE BEAT 4 ANCHOR: Structure the syntax so the primary rhyming syllable inherently falls at the end of the phrase (simulating Beat 4 of the measure).
     9. THE 25% STRESS RATIO: Do not over-rhyme. Only about 25% of stressed syllables should rhyme. Use internal rhymes sparingly to maintain authentic street flow and avoid sounding like a nursery rhyme.
+    10. DYNAMIC ARTICULATION (THE HUMAN ELEMENT): Break the robotic grid occasionally. Based on the instrumental's DSP analysis, you MUST inject structural anomalies:
+        - Rhythmic stutters on consonants (e.g., "g-g-go", "b-b-bag").
+        - Spelled-out words or acronyms for bounce (e.g., "T to the A", "S-T-A-R").
+        - Isolated 1-word chants followed by commas to simulate vocal drops/pauses (e.g., "WAIT, I took the...", "YEAH, we running...").
+        - ${dspVocalInstruction}
     `;
 
     const thematicPrompt = `SONG TITLE: "${title || 'UNTITLED'}".
