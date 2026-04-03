@@ -588,18 +588,24 @@ const handleGenerateGuide = async () => {
 
     const lines = generatedLyrics.split('\n');
     
-    // 1. Clean the text
-    const sanitizedLines = lines.map(l => {
-      let text = l.trim();
-      if (text.startsWith('[')) return { text, isHeader: true }; 
-      text = text
-        .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
-        .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
-        .replace(/pipe\s*symbol/gi, '') 
-        // SURGICAL FIX: We REMOVED the line that strips pipes (|). The engine now uses them!
-        .trim();
-      return { text, isHeader: false };
-    }).filter(obj => obj.text.length > 0);
+    // --- SURGICAL FIX:Preserve Spacing & Syllable Tokenization ---
+const sanitizedLines = lines.map(l => {
+  let text = l.trim();
+  if (text.startsWith('[')) return { text, isHeader: true }; 
+
+  text = text
+    .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') // Remove timestamps
+    .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') // Remove bar counts
+    .replace(/pipe\s*symbol/gi, '') 
+    .replace(/\|/g, ' ') // IMPORTANT: Turn pipes into spaces so the Ball can "land" on syllables
+    .trim();
+
+  // If the LLM smashed words together (Figure A), we force-insert spaces after commas
+  // to ensure the split(/\s+/) logic finds the individual tokens.
+  text = text.replace(/,/g, ', '); 
+
+  return { text, isHeader: false };
+}).filter(obj => obj.text.length > 0);
 
     // 2. Group the hallucinated text into blocks
     const llmBlocks: { header: string, lines: typeof sanitizedLines }[] = [];
