@@ -8,9 +8,23 @@ import { supabase } from "../../lib/supabase";
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
-// SURGICAL FIX: Added isWordEnd flag to control the spacing between chunks
 type WordMapping = { word: string; startTime: number; duration: number; isWordEnd?: boolean };
 type LyricLine = { text: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[] };
+
+// --- THE NEW SCORE CARD MATRICES (Hit-Maker Blueprint) ---
+// 1 Bar = 16 steps (16th notes). We map the syllables to these exact step durations.
+const SCORE_CARDS: Record<string, number[]> = {
+  // The ultimate modern bounce (Dotted 8th, 16th, 8th, 8th). Creates the push-pull syncopation.
+  "getnice_hybrid": [3, 1, 2, 2], 
+  // Fast, aggressive machine-gun rhythm (16th notes).
+  "chopper": [1, 1, 1, 1], 
+  // Heavy, methodical Boom-Bap hits (Straight 8th notes).
+  "heartbeat": [2, 2, 2, 2], 
+  // The Migos "Versace" Trap Bounce (Dotted 8th, Dotted 8th, 8th).
+  "triplet": [3, 3, 2], 
+  // Delayed, lazy drawl (Quarter note, 8th, 8th).
+  "lazy": [4, 2, 2] 
+};
 
 // --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR ---
 function estimateSyllables(word: string): number {
@@ -22,7 +36,7 @@ function estimateSyllables(word: string): number {
   return Math.max(1, count);
 }
 
-// --- NEW: THE VISUAL SYLLABLE CHUNKER (Restores the "Hop") ---
+// --- THE VISUAL SYLLABLE CHUNKER ---
 function chunkWordForVisuals(word: string): string[] {
   const match = word.match(/^([^a-zA-Z]*)([a-zA-Z\']+)([^a-zA-Z]*)$/);
   if (!match || match[2].length <= 3) return [word];
@@ -42,7 +56,6 @@ function chunkWordForVisuals(word: string): string[] {
     const isVowel = /[aeiouy]/i.test(alpha[i]);
     const nextIsVowel = i + 1 < alpha.length ? /[aeiouy]/i.test(alpha[i+1]) : false;
     
-    // Split pseudo-syllables around consonant-vowel transitions
     if (isVowel && !nextIsVowel && i + 2 < alpha.length) {
       const remaining = alpha.slice(i + 1);
       if (/[aeiouy]/i.test(remaining)) {
@@ -63,11 +76,11 @@ function chunkWordForVisuals(word: string): string[] {
   return chunks.filter(c => c.length > 0);
 }
 
-// --- NEW: TTS SILENCE TRIMMER (Kills Dead Air) ---
+// --- TTS SILENCE TRIMMER (Kills Dead Air) ---
 function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
   let startOffset = 0;
   let endOffset = buffer.length;
-  const threshold = 0.03; // 3% amplitude threshold to detect actual human speech
+  const threshold = 0.03; 
   
   for (let c = 0; c < buffer.numberOfChannels; c++) {
     const data = buffer.getChannelData(c);
@@ -81,7 +94,7 @@ function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
       if (Math.abs(data[i]) > threshold) { lastSignal = i; break; }
     }
     
-    const pad = Math.floor(buffer.sampleRate * 0.08); // 80ms padding to protect sharp consonants (T, P, K)
+    const pad = Math.floor(buffer.sampleRate * 0.08); 
     if (c === 0) {
       startOffset = Math.max(0, firstSignal - pad);
       endOffset = Math.min(data.length, lastSignal + pad);
@@ -91,7 +104,7 @@ function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
     }
   }
   
-  if (startOffset >= endOffset) return buffer; // Fallback if silent
+  if (startOffset >= endOffset) return buffer; 
   
   const frameCount = endOffset - startOffset;
   const trimmed = audioCtx.createBuffer(buffer.numberOfChannels, frameCount, buffer.sampleRate);
@@ -200,7 +213,7 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
 }
 
 export default function Room04_Booth() {
-  const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, addToast } = useMatrixStore();
+  const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, addToast, gwStyle } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -282,18 +295,14 @@ export default function Room04_Booth() {
           const arrayBuffer = await res.arrayBuffer();
           const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
 
-          // --- SURGICAL PIVOT: TRIM & STRETCH SYNTHESIS ---
-          // 1. Strip the dead air so the vocal hits exactly on the visual cue
           const trimmedBuffer = trimTTSBuffer(offlineCtx, audioBuffer);
           const ttsDuration = trimmedBuffer.duration;
           const mathLineDuration = line.lineDuration || 2;
 
-          // 2. Play the whole line seamlessly to preserve consonants, stretched to perfectly fit the pocket
           const source = offlineCtx.createBufferSource();
           source.buffer = trimmedBuffer;
           source.playbackRate.value = ttsDuration / mathLineDuration; 
 
-          // Soft 10ms crossfade to prevent digital clicks at the boundaries (No mid-word chopping!)
           const gainNode = offlineCtx.createGain();
           gainNode.gain.setValueAtTime(0, line.startTime);
           gainNode.gain.linearRampToValueAtTime(1, line.startTime + 0.01); 
@@ -628,13 +637,12 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- THE MASTER FIX: DYNAMIC SYNCOPATION MATH ---
+  // --- THE MASTER SCORE CARD ALGORITHM ---
   useEffect(() => {
     if (!generatedLyrics) return;
 
     const lines = generatedLyrics.split('\n');
     
-    // 1. Clean the text
     const sanitizedLines = lines.map(l => {
       let text = l.trim();
       if (text.startsWith('[')) return { text, isHeader: true }; 
@@ -646,7 +654,6 @@ export default function Room04_Booth() {
       return { text, isHeader: false };
     }).filter(obj => obj.text.length > 0);
 
-    // 2. Group the hallucinated text into blocks
     const llmBlocks: { header: string, lines: typeof sanitizedLines }[] = [];
     let currentLlmBlock = { header: "", lines: [] as typeof sanitizedLines };
 
@@ -660,11 +667,8 @@ export default function Room04_Booth() {
         currentLlmBlock.lines.push(obj);
       }
     });
-    if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) {
-      llmBlocks.push(currentLlmBlock);
-    }
+    if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) llmBlocks.push(currentLlmBlock);
 
-    // 3. Map strictly to the Blueprint with Proportional Timing
     const parsed: LyricLine[] = [];
     let runningBlockStartBar = 0;
 
@@ -672,7 +676,6 @@ export default function Room04_Booth() {
       const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
 
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
-      const blockDurationSecs = bp.bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
       parsed.push({ text: `[${bp.type}]`, startTime: blockStartTime, lineDuration: 0, isHeader: true, timestamp: "", words: [] });
@@ -685,79 +688,67 @@ export default function Room04_Booth() {
       const numLines = blockData.lines.length;
       if (numLines > 0) {
         
-        // --- STEP A: Calculate exact duration capacity needed ---
-        let totalBlockWeight = 0;
-        blockData.lines.forEach(lineObj => {
-          const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
-          rawWords.forEach(w => {
-            const syllableCount = estimateSyllables(w);
-            // 🚨 FIX 1: INCLUDE THE GAP (1.5) IN THE TOTAL CAPACITY ALGORITHM
-            totalBlockWeight += (syllableCount * 3.0) + 1.5; 
-          });
-          
-          const cleanTextEnd = lineObj.text.trim().slice(-1);
-          if (cleanTextEnd === ',' || cleanTextEnd === '-') totalBlockWeight += 1.0;
-          else if (lineObj.text.trim().startsWith('...')) totalBlockWeight += 6.0;
-          else totalBlockWeight += 4.0;
-        });
+        // --- SCORE CARD ENGINE DEPLOYMENT ---
+        const activePattern = SCORE_CARDS[gwStyle as string] || SCORE_CARDS["getnice_hybrid"];
+        const stepSecs = secondsPerBar / 16; // The exact millisecond length of a 16th note
 
         let currentFlowTime = blockStartTime;
 
-        // --- STEP B: Map to Timeline & Visual Syllable Chunker ---
         blockData.lines.forEach((lineObj) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
-          
-          let lineWeight = 0;
-          rawWords.forEach(w => {
-            const syllableCount = estimateSyllables(w);
-            // 🚨 FIX 1: INCLUDE THE GAP IN THE LINE CALCULATION
-            lineWeight += (syllableCount * 3.0) + 1.5; 
-          });
-          
-          const cleanTextEnd = lineObj.text.trim().slice(-1);
-          if (cleanTextEnd === ',' || cleanTextEnd === '-') lineWeight += 1.0;
-          else if (lineObj.text.trim().startsWith('...')) lineWeight += 6.0;
-          else lineWeight += 4.0;
-
-          const timeForThisLine = totalBlockWeight > 0 ? (lineWeight / totalBlockWeight) * blockDurationSecs : 0;
-          const timePerWeight = totalBlockWeight > 0 ? blockDurationSecs / totalBlockWeight : 0;
-
-          let localWordTime = currentFlowTime;
           const mappedWords: WordMapping[] = [];
 
+          // Punctuation Drag: Did the LLM command a pickup note? 
+          if (lineObj.text.trim().startsWith('...')) {
+             currentFlowTime += (4 * stepSecs); // Wait 1 full beat (4 sixteenths)
+          }
+
+          let lineStartTime = currentFlowTime;
+          let patternIndex = 0; // Reset pattern per line to enforce MAX MARTIN "Melodic Math"
+
           rawWords.forEach((w) => {
-            // 🚨 FIX 2: THE VISUAL CHUNKER (Restores the Syllable Hop)
             const wordChunks = chunkWordForVisuals(w);
-            const syllableCount = estimateSyllables(w);
-            
-            const totalWordDuration = (syllableCount * 3.0) * timePerWeight;
-            const chunkDuration = totalWordDuration / wordChunks.length;
             
             wordChunks.forEach((chunk, cIdx) => {
               const isWordEnd = (cIdx === wordChunks.length - 1);
+              
+              // Map the chunk exactly to the active Score Card grid array
+              const stepsRequired = activePattern[patternIndex % activePattern.length];
+              patternIndex++;
+
+              const chunkDuration = stepsRequired * stepSecs;
+
               mappedWords.push({
                 word: chunk,
-                startTime: localWordTime,
-                duration: chunkDuration,
-                isWordEnd: isWordEnd // Flag for the UI to know when to add spaces
+                startTime: currentFlowTime,
+                // Shrink the highlight slightly to give visual "breathing room" articulation
+                duration: chunkDuration * 0.85, 
+                isWordEnd: isWordEnd
               });
-              localWordTime += chunkDuration;
+
+              currentFlowTime += chunkDuration;
             });
-            
-            // Add the 1.5 spacing gap AFTER the full word is completely sung
-            localWordTime += (1.5 * timePerWeight);
           });
+
+          // End-of-line punctuation rests (forces the bar math back in line)
+          const cleanTextEnd = lineObj.text.trim().slice(-1);
+          if (cleanTextEnd === '.') currentFlowTime += (4 * stepSecs); // Quarter note rest
+          else if (cleanTextEnd === ',') currentFlowTime += (1 * stepSecs); // 16th note spillover gap
+
+          // 🚨 THE SAFEGUARD: If the line finishes early, pad the rest of the bar with silence.
+          const nextBarStart = lineStartTime + secondsPerBar;
+          if (currentFlowTime < nextBarStart) {
+              currentFlowTime = nextBarStart; 
+          }
 
           parsed.push({ 
             text: lineObj.text, 
-            startTime: currentFlowTime, 
-            lineDuration: timeForThisLine,
+            startTime: lineStartTime, 
+            lineDuration: currentFlowTime - lineStartTime,
             isHeader: false, 
-            timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
+            timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
-
-          currentFlowTime += timeForThisLine;
         });
       }
 
@@ -765,7 +756,7 @@ export default function Room04_Booth() {
     });
     
     setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar]);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle]);
 
   useEffect(() => {
     if (trimmingStem && trimWaveformRef.current) {
@@ -861,7 +852,6 @@ export default function Room04_Booth() {
                     const isPast = currentTime >= wObj.startTime + wObj.duration;
                     const isActiveWord = isActiveLine && currentTime >= wObj.startTime && currentTime < wObj.startTime + wObj.duration;
 
-                    // 🚨 FIX 2 UI: The spacing logic. We only add a margin space (mr-2) if it's the actual END of the original word.
                     return (
                       <span key={wIdx} className={`relative inline-block ${wObj.isWordEnd ? 'mr-2' : ''}`}>
                         {isActiveWord && (
