@@ -196,9 +196,9 @@ Write the draft now.
     outputs = model.generate(**inputs, max_new_tokens=40 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15)
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    # PASS 2: The Mogul's Final Polish
+    # PASS 2: The Mogul's Final Polish & Engineer Pass
     refine_prompt = f"""<|im_start|>user
-[THE SECOND PASS - FINAL POLISH]
+[THE SECOND PASS - FINAL POLISH & ENGINEER FORMATTING]
 You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
@@ -207,8 +207,9 @@ CRITICAL REFINEMENT COMMANDS:
 2. OBEY THE POCKET: {pocket_instruction}
 3. NO HEADERS. NO TIMESTAMPS. NO POETRY.
 4. Output EXACTLY {bars} lines.
+5. THE ENGINEER PASS: You MUST place a pipe symbol (|) between every single syllable to map the rhythm. (e.g., instead of "GETTING NICE", write "GET|TING NICE"). 
 
-Rewrite the final {bars} lines now.
+Rewrite the final {bars} lines and map the syllables now.
 <|im_end|>
 <|im_start|>assistant
 """
@@ -231,7 +232,6 @@ def handler(event):
     use_slang = job_input.get("useSlang", True)
     use_intel = job_input.get("useIntel", True)
 
-    # 🚨 DYNAMIC MATH INJECTION
     seconds_per_bar = (60.0 / bpm) * 4.0
     speed_factor = 4.5
     if "chopper" in style: speed_factor = 6.0
@@ -239,7 +239,6 @@ def handler(event):
     elif "heartbeat" in style: speed_factor = 4.0
     max_syllables = max(6, int(seconds_per_bar * speed_factor))
 
-    # 🚨 POCKET PUNCTUATION LOGIC
     pocket_instruction = "End every line with a period (.)."
     if "CHAIN-LINK" in topic.upper() or "CHAINLINK" in topic.upper():
         pocket_instruction = "CHAIN-LINK MODE: End every single line with a comma (,) for spillover."

@@ -38,7 +38,7 @@ export default function Room03_Ghostwriter() {
   const { 
     audioData, flowDNA, blueprint, setBlueprint, generatedLyrics, setGeneratedLyrics, setActiveRoom, addToast,
     gwTitle, setGwTitle, gwPrompt, setGwPrompt, gwStyle, setGwStyle, gwGender, setGwGender, 
-    gwPocket, setGwPocket, // <-- PULLING FROM GLOBAL STATE
+    gwPocket, setGwPocket,
     gwUseSlang, setGwUseSlang, gwUseIntel, setGwUseIntel, userSession,
     
     gwMotive = "", setGwMotive = () => {},
@@ -76,7 +76,6 @@ export default function Room03_Ghostwriter() {
   const hasEnoughCredits = isCreator || isMogul || 
     (userSession?.creditsRemaining && (userSession.creditsRemaining === "UNLIMITED" || userSession.creditsRemaining >= currentCost));
 
-  // --- NEW: Sync Blueprint Patterns automatically when Flow Style changes ---
   useEffect(() => {
     if (blueprint.length > 0) {
       const variations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
@@ -164,7 +163,7 @@ export default function Room03_Ghostwriter() {
     setIsGenerating(true);
     setUxState("Synthesizing Bars via GETNICE Engine...");
 
-    const systemConstraint = `ABSOLUTE RULE: You are a structural lyrics API. You must ONLY output raw lyrics and section headers (e.g. [Verse 1], [Instrumental]). NEVER output instructions, bar counts (e.g. 'Bars 1-8'), timestamps (e.g. '(0:15)'), or phonetic spellings of symbols like 'Pipe Symbol'. Do not explain your output.`;
+    const systemConstraint = `ABSOLUTE RULE: You are a structural lyrics API. You must ONLY output raw lyrics and section headers (e.g. [Verse 1], [Instrumental]). NEVER output instructions, bar counts (e.g. 'Bars 1-8'), timestamps (e.g. '(0:15)'). You MUST use pipe symbols (|) to separate syllables. Do not explain your output.`;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -193,7 +192,6 @@ export default function Room03_Ghostwriter() {
           useIntel: gwUseIntel,
           pocket: gwPocket,
           systemConstraint: systemConstraint, 
-          // --- NEW: Pass the Score Card directly to the API ---
           blueprint: blueprint.map(b => ({ 
             type: b.type, 
             bars: b.bars, 
@@ -367,7 +365,6 @@ export default function Room03_Ghostwriter() {
             </div>
           </div>
 
-          {/* --- NEW: POCKET PLACEMENT DROPDOWN --- */}
           <div>
             <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Pocket Placement (Syncopation)</label>
             <select 

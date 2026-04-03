@@ -649,20 +649,34 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- THE MASTER SCORE CARD ALGORITHM (PROPORTIONAL SYNC FIX) ---
+  // --- THE MASTER SCORE CARD ALGORITHM (PROPORTIONAL SYNC FIX & DEEP NORMALIZATION) ---
   useEffect(() => {
     if (!generatedLyrics) return;
 
     const lines = generatedLyrics.split('\n');
     
+    // --- SURGICAL FIX: DEEP NORMALIZATION & PHONETIC PIPE MAPPING ---
     const sanitizedLines = lines.map(l => {
-      let text = l.trim();
+      // 1. DEEP NORMALIZATION: Kill all invisible/ghost characters instantly
+      let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
+
       if (text.startsWith('[')) return { text, isHeader: true }; 
+      
+      // 2. Standard Clean-up
       text = text
-        .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
-        .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
+        .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') // Remove timestamps
+        .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') // Remove bar counts
         .replace(/pipe\s*symbol/gi, '') 
+        // 3. Convert Syllable Pipes into explicit spaces (landings for the Red Ball)
+        .replace(/\|/g, ' ') 
+        // 4. Collapse multiple spaces into one standard ASCII space
+        .replace(/\s+/g, ' ') 
         .trim();
+
+      // Force-insert spaces after commas if the LLM mashed them
+      text = text.replace(/,/g, ', ');
+      text = text.replace(/\s+/g, ' ').trim();
+
       return { text, isHeader: false };
     }).filter(obj => obj.text.length > 0);
 
@@ -704,21 +718,18 @@ export default function Room04_Booth() {
         const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
         const activePattern = (bp as any).patternArray || activeVariations[index % activeVariations.length];
 
-        // 🚨 THE FIX: To completely prevent timeline drift, we strictly force the lines to 
-        // fit equally within the block's absolute duration. The Score Card now provides 
-        // the *swing ratio* inside that boundary, not the absolute time length.
         const timeForThisLine = blockDurationSecs / numLines; 
         
         let currentFlowTime = blockStartTime;
         let patternIndex = 0;
 
         blockData.lines.forEach((lineObj) => {
+          // Now split by space, taking advantage of the normalized text and explicit pipe substitutions
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: WordMapping[] = [];
 
-          // --- PASS 1: Calculate the total rhythmic weight of this specific line ---
           let totalLineSteps = 0;
-          let tempPatternIndex = patternIndex; // Temporary simulation index
+          let tempPatternIndex = patternIndex; 
 
           if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
 
@@ -734,7 +745,6 @@ export default function Room04_Booth() {
           if (cleanTextEnd === '.') totalLineSteps += 4;
           else if (cleanTextEnd === ',') totalLineSteps += 1;
 
-          // --- PASS 2: Assign real milliseconds proportionally to lock to the DAW grid ---
           const timePerStep = totalLineSteps > 0 ? timeForThisLine / totalLineSteps : 0;
           let localWordTime = currentFlowTime;
           const lineStartTime = currentFlowTime;
@@ -757,7 +767,7 @@ export default function Room04_Booth() {
               mappedWords.push({
                 word: chunk,
                 startTime: localWordTime,
-                duration: chunkDuration * 0.85, // Visual margin
+                duration: chunkDuration * 0.85, 
                 isWordEnd: isWordEnd
               });
 
@@ -771,13 +781,14 @@ export default function Room04_Booth() {
           parsed.push({ 
             text: lineObj.text, 
             startTime: lineStartTime, 
-            lineDuration: timeForThisLine, // Strict mathematical boundary lock
+            lineDuration: timeForThisLine, 
             isHeader: false, 
             timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
 
-          currentFlowTime += timeForThisLine; // Advance global clock by exactly the line limit
+          // Prevent chain-linked drift beyond the block limit by advancing exactly one line
+          currentFlowTime += timeForThisLine; 
         });
       }
 
