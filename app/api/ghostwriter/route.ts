@@ -130,8 +130,15 @@ export async function POST(req: Request) {
 
     const activeBpm = bpm || 120;
     const secondsPerBar = (60 / activeBpm) * 4;
-    const timePerLine = secondsPerBar * 2; // Engine maps 2 bars per line by default
-    const maxSyllables = Math.floor(timePerLine * ttsSpeedLimit);
+    
+    // --- SURGICAL PIVOT: THE 1-TO-1 TIMELINE FIX ---
+    // We previously mapped a 2-bar syllable budget to a 1-bar line, causing hyper-speed delivery at high BPMs.
+    // By locking timePerLine strictly to 1 bar, a 160 BPM track (1.5 sec/bar) maxes out at ~6-7 syllables.
+    // This forces the lyrics to naturally stretch and "drag" across the 16-step Score Card grid.
+    const timePerLine = secondsPerBar; 
+    
+    // Fallback: Ensure the LLM always gets at least 6 syllables even at extreme 200+ BPMs to prevent syntax breaking
+    const maxSyllables = Math.max(6, Math.floor(timePerLine * ttsSpeedLimit));
 
     // --- POCKET PLACEMENT INJECTION ---
     let pocketInstruction = "FORMATTING: End every line with a period (.) to signify a standard hard stop exactly on the beat.";
