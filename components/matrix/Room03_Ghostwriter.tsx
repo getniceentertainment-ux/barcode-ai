@@ -76,37 +76,23 @@ export default function Room03_Ghostwriter() {
   const hasEnoughCredits = isCreator || isMogul || 
     (userSession?.creditsRemaining && (userSession.creditsRemaining === "UNLIMITED" || userSession.creditsRemaining >= currentCost));
 
-// --- NEW: Sync Blueprint Patterns with Strict Hook Anchoring ---
-useEffect(() => {
-    if (blueprint.length > 0) {
-      const variations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-      const hookVariation = variations[0]; // Pattern 0 is strictly for Hooks
-      const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
-      let verseCounter = 0;
+  // --- SURGICAL FIX: THE LAYOUT HASH & SYNC ENGINE ---
+  // This string creates a unique fingerprint of your block types AND bar counts. 
+  // If anything changes structurally, the fingerprint changes, forcing an instant recalculation.
+  const layoutHash = blueprint.map(b => `${b.id}-${b.type}-${b.bars}`).join('|');
 
-      const updated = blueprint.map((block) => {
-         let selected;
-         if (block.type === 'HOOK') {
-             selected = hookVariation;
-         } else {
-             selected = verseVariations[verseCounter % verseVariations.length];
-             if (block.type !== 'INSTRUMENTAL') verseCounter++;
-         }
-         return { ...block, patternArray: selected.array, patternName: selected.name, patternDesc: selected.desc };
-      });
-      setBlueprint(updated);
-    }
-  }, [gwStyle]); // Intentionally omitting blueprint dependencies to prevent render loops
-
-  // --- SURGICAL FIX: Hook Anchor Syncing ---
-  const syncTimeline = (newBlueprint: any[]) => {
+  useEffect(() => {
+    if (blueprint.length === 0) return;
+    
     let cursor = 0;
     const variations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-    const hookVariation = variations[0];
+    const hookVariation = variations[0]; // Anchor Pattern 0
     const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
     let verseCounter = 0;
     
-    const synced = newBlueprint.map((block) => {
+    let needsUpdate = false;
+
+    const synced = blueprint.map((block) => {
       const start = Math.max(cursor, block.startBar ?? cursor);
       
       let selected;
@@ -117,18 +103,28 @@ useEffect(() => {
           if (block.type !== 'INSTRUMENTAL') verseCounter++;
       }
       
+      // Check if the current block is mathematically out of sync
+      if (block.startBar !== start || (block as any).patternName !== selected.name) {
+          needsUpdate = true;
+      }
+      
       const updated = { 
         ...block, 
         startBar: start,
-        patternArray: selected.array, // Force the math overwrite
+        patternArray: selected.array, 
         patternName: selected.name,
         patternDesc: selected.desc
       };
       cursor = start + block.bars;
       return updated;
     });
-    setBlueprint(synced);
-  };
+
+    // Only hit the global state if the math was actually out of alignment
+    if (needsUpdate) {
+        setBlueprint(synced);
+    }
+  }, [gwStyle, layoutHash, blueprint]); // Re-run instantly if the Style or the Block structure changes
+
 
   const updateBlueprintStartBar = (index: number, newStart: number) => {
     const newBp = [...blueprint];
@@ -139,7 +135,7 @@ useEffect(() => {
         const currentPos = (newBp[i] as any).startBar || 0;
         (newBp[i] as any).startBar = Math.max(0, currentPos + delta);
     }
-    syncTimeline(newBp);
+    setBlueprint(newBp); // Pass straight to state, the layoutHash useEffect catches it!
   };
 
   const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE" | "INSTRUMENTAL", bars: number) => {
@@ -165,11 +161,11 @@ useEffect(() => {
       startBar: nextStart 
     };
     
-    syncTimeline([...blueprint, newBlock]);
+    setBlueprint([...blueprint, newBlock]); // Pass straight to state
   };
 
   const removeSection = (id: string) => {
-    syncTimeline(blueprint.filter(b => b.id !== id));
+    setBlueprint(blueprint.filter(b => b.id !== id)); // Pass straight to state
   };
 
   const handleGenerate = async () => {
