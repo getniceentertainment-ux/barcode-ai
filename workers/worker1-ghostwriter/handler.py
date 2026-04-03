@@ -167,29 +167,13 @@ def construct_system_prompt(flow_dna, genre_style, use_slang, use_intel, motive,
         flow_mimicry = f"""[USER'S VOCAL CADENCE BLUEPRINT]\nAnalyze this rhythmic structure: "{flow_reference}". Format your lyrics to mimic this bounce."""
     
     return f"""<|im_start|>system
-[SYSTEM DIRECTIVE: THE MOGUL PATRIARCH]
-You are operating as "The Mogul." Your voice blends the gritty authenticity, lyrical precision, and survival instincts of legendary hip-hop icons who transitioned from the streets to the boardroom, with the ruthless efficiency and strategic vision of a Fortune 500 executive.
-You grew up with nothing, mastered the art of the hustle, and transferred those street-smart mechanics directly into corporate dominance. You speak with quiet authority, deep wisdom, and unshakeable confidence. Your ultimate driving force is not ego, but family and generational wealth. Every business move is a calculated chess piece to secure your family's future and protect your lineage.
+You are the GETNICE Ghostwriter Engine. You are a highly articulate, business-minded creator who refuses to quit.
 
-[CORE PERSONALITY TRAITS]
-- Calculated & Strategic: You view the world as a chessboard. You understand leverage, risk management, and the difference between temporary gains and permanent ownership. You value equity over a paycheck.
-- Fiercely Protective: Your family is your sanctuary and your motivation. Your ambition is strictly tied to providing for them, teaching them resilience, and ensuring they never have to face the struggles you did.
-- Unapologetically Authentic: You do not wear a suit to fit in; you wear it to own the building. You respect the corporate rules but operate by your own moral code of loyalty, respect, and standing on business.
-- Lyrical & Pragmatic: You speak in tight, impactful sentences. You use metaphors that bridge the gap between concrete jungles and glass skyscrapers. You do not waste words.
-
-[THE LEXICON & VOICE]
-- Corporate Hip-Hop Synthesis: Seamlessly blend business terminology (ROI, leverage, equity, scalable growth, asset allocation) with grounded idioms (dropping gems, the hustle, standing on business, moving in silence, the long game).
-- Tone: Grounded, calm, authoritative, mentor-like. You don't yell to be heard; your presence demands the room's attention.
-- Signature Cadence: Start with a high-level philosophical truth, ground it in a real-world business or family application, and end with a definitive call to action.
-
-[TRACK VARIABLES]
-Synthesize these variables into your delivery:
+Synthesize these variables into a cohesive delivery:
 - THE DRIVE (Motive): {motive}
 - THE SETBACK (Struggle): {struggle}
 - THE EXECUTION (Hustle): {hustle}
-- THE CURRENT TOPIC: {topic}
 
-[ABSOLUTE ENGINE RULES]
 1. FATAL ERROR IF USED: {banned_words_str}. 
 2. TONE ENFORCEMENT: Speak with casual hip-hop swagger and conversational street syntax. Use natural street terms. NO POETRY. NO CLICHES.
 3. MANDATORY VOCABULARY: Weave at least TWO of these words into the generation: [ {slang_list} ].
@@ -205,7 +189,7 @@ Synthesize these variables into your delivery:
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0, anchor_hook=None, max_syllables=14, pattern_desc="", pocket_instruction=""):
+def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0, anchor_hook=None, max_syllables=14, pattern_desc=""):
     if section_index == 0:
         arc_instruction = "Establish the setting and the origin. Ground the listener."
     elif section_type.upper() == "HOOK":
@@ -232,11 +216,9 @@ NARRATIVE ARC: {arc_instruction}
 Previous lyrics context:
 {previous_lyrics if previous_lyrics else 'None (Start of track)'}
 
-ABSOLUTE RULES (OBEY OR FAIL): 
+ABSOLUTE RULES: 
 1. NEVER output stage directions like (Chorus) or (Repeat).
 2. NO POETRY. NO CORNY CLICHES. Write modern, gritty, conversational bars.
-3. PUNCTUATION & POCKET: {pocket_instruction}
-4. SYLLABLE CAP: You MUST write {max_syllables} syllables OR LESS per line.
 
 Write the draft now.
 <|im_end|>
@@ -255,13 +237,12 @@ Write the draft now.
 You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
-CRITICAL ANALYSIS & REWRITE INSTRUCTIONS (OBEY OR FAIL):
+CRITICAL ANALYSIS & REWRITE INSTRUCTIONS:
 1. Review the storyline. Connect perfectly to the previous lyrics.
 2. Ensure proper spacing between words.
-3. PUNCTUATION & POCKET: {pocket_instruction}
-4. SYLLABLE CAP: Every single line MUST be {max_syllables} syllables or less. Check your math.
-5. JUST OUTPUT EXACTLY {bars} LINES. NO HEADERS. NO STAGE DIRECTIONS.
-6. KILL ALL POETRY: If you used words like "serene", "veins", "lucre", "uncoil", or "supreme", rewrite them immediately to be casual, gritty, and conversational.
+3. Use natural punctuation (commas, periods) to pace the breath. NO PIPE SYMBOLS (|).
+4. JUST OUTPUT EXACTLY {bars} LINES. NO HEADERS. NO STAGE DIRECTIONS (e.g. no "(Chorus)" or "(Repeat)").
+5. KILL ALL POETRY: If you used words like "serene", "veins", "lucre", "uncoil", or "supreme", rewrite them immediately to be casual, gritty, and conversational.
 
 Rewrite the final {bars} lines now.
 <|im_end|>
@@ -296,14 +277,6 @@ def handler(event):
     task_type = job_input.get("task_type", "generate")
     topic = job_input.get("prompt", "Securing the legacy")
     
-    # --- POCKET INSTRUCTION EXTRACTION (THE SURGICAL FIX) ---
-    # We dynamically extract the exact Syncopation rule passed by route.ts
-    pocket_instruction = "PUNCTUATION: End every line with a period (.) to signify a hard stop exactly on the beat."
-    if "CHAIN-LINK" in topic:
-        pocket_instruction = "SYNCOPATION OVERRIDE (CHAIN-LINK): Do not wait for the end of the bar to rhyme. Bleed across the bar lines. You MUST end every single line with a comma (,) to signal no breath, spilling directly into the next bar."
-    elif "THE DRAG" in topic or "PICKUP" in topic:
-        pocket_instruction = "SYNCOPATION OVERRIDE (THE DRAG/PICKUP): Start your phrases late or early. You MUST start every single line with an ellipsis (...) to signal a delay or pickup note off the 1-count."
-
     flow_reference = job_input.get("flowReference", "")    
     motive = job_input.get("motive", "Mastering the technical craft")
     struggle = job_input.get("struggle", "Industry doors closing")
@@ -338,10 +311,6 @@ def handler(event):
 Original Line: "{original_line}"
 Instruction: {instruction}
 
-CRITICAL RULES:
-1. {pocket_instruction}
-2. SYLLABLE CAP: Maximum {max_syllables} syllables per line.
-
 Rewrite the line to satisfy the instruction. Output ONLY the rewritten line.
 <|im_end|>
 <|im_start|>assistant
@@ -366,7 +335,7 @@ Rewrite the line to satisfy the instruction. Output ONLY the rewritten line.
         for section in blueprint:
             if section.get("type", "VERSE").upper() == "HOOK":
                 pattern_desc = section.get("patternDesc", "")
-                saved_hook = generate_section(system_prompt, "", "HOOK", section.get("bars", 4), topic, section_index=0, max_syllables=max_syllables, pattern_desc=pattern_desc, pocket_instruction=pocket_instruction)
+                saved_hook = generate_section(system_prompt, "", "HOOK", section.get("bars", 4), topic, section_index=0, max_syllables=max_syllables, pattern_desc=pattern_desc)
                 break
         
         for index, section in enumerate(blueprint):
@@ -387,7 +356,7 @@ Rewrite the line to satisfy the instruction. Output ONLY the rewritten line.
             elif sec_type == "HOOK" and saved_hook is not None:
                 raw_section_text = saved_hook
             else:
-                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, section_index=index, anchor_hook=saved_hook, max_syllables=max_syllables, pattern_desc=pattern_desc, pocket_instruction=pocket_instruction)
+                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, section_index=index, anchor_hook=saved_hook, max_syllables=max_syllables, pattern_desc=pattern_desc)
                 if sec_type == "HOOK" and saved_hook is None:
                     saved_hook = raw_section_text
             
