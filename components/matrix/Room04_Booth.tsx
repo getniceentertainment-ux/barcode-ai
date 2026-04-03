@@ -11,21 +11,6 @@ type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 type WordMapping = { word: string; startTime: number; duration: number; isWordEnd?: boolean };
 type LyricLine = { text: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[] };
 
-// --- THE NEW SCORE CARD MATRICES (Hit-Maker Blueprint) ---
-// 1 Bar = 16 steps (16th notes). We map the syllables to these exact step durations.
-const SCORE_CARDS: Record<string, number[]> = {
-  // The ultimate modern bounce (Dotted 8th, 16th, 8th, 8th). Creates the push-pull syncopation.
-  "getnice_hybrid": [3, 1, 2, 2], 
-  // Fast, aggressive machine-gun rhythm (16th notes).
-  "chopper": [1, 1, 1, 1], 
-  // Heavy, methodical Boom-Bap hits (Straight 8th notes).
-  "heartbeat": [2, 2, 2, 2], 
-  // The Migos "Versace" Trap Bounce (Dotted 8th, Dotted 8th, 8th).
-  "triplet": [3, 3, 2], 
-  // Delayed, lazy drawl (Quarter note, 8th, 8th).
-  "lazy": [4, 2, 2] 
-};
-
 // --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR ---
 function estimateSyllables(word: string): number {
   const w = word.toLowerCase().replace(/[^a-z]/g, '');
@@ -688,11 +673,12 @@ export default function Room04_Booth() {
       const numLines = blockData.lines.length;
       if (numLines > 0) {
         
-        // --- SCORE CARD ENGINE DEPLOYMENT ---
-        const activePattern = SCORE_CARDS[gwStyle as string] || SCORE_CARDS["getnice_hybrid"];
+        // --- SCORE CARD ENGINE DEPLOYMENT (READS DIRECTLY FROM ROOM 03) ---
+        const activePattern = (bp as any).patternArray || [3, 1, 2, 2];
         const stepSecs = secondsPerBar / 16; // The exact millisecond length of a 16th note
 
         let currentFlowTime = blockStartTime;
+        let patternIndex = 0; // Initialize pattern once per block, NOT per line!
 
         blockData.lines.forEach((lineObj) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
@@ -704,7 +690,6 @@ export default function Room04_Booth() {
           }
 
           let lineStartTime = currentFlowTime;
-          let patternIndex = 0; // Reset pattern per line to enforce MAX MARTIN "Melodic Math"
 
           rawWords.forEach((w) => {
             const wordChunks = chunkWordForVisuals(w);
@@ -714,7 +699,7 @@ export default function Room04_Booth() {
               
               // Map the chunk exactly to the active Score Card grid array
               const stepsRequired = activePattern[patternIndex % activePattern.length];
-              patternIndex++;
+              patternIndex++; // Push the metronome forward continuously across lines
 
               const chunkDuration = stepsRequired * stepSecs;
 

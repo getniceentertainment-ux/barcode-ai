@@ -9,6 +9,31 @@ import {
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
+// --- THE 100% PROPRIETARY GETNICE MACRO-RHYTHMIC VAULT ---
+const FLOW_VAULT: Record<string, {array: number[], name: string, desc: string}[]> = {
+  "getnice_hybrid": [
+    { array: [4, 2, 2, 3, 1, 4, 2, 2, 2, 2, 4, 4], name: "Chain-Link Pivot", desc: "Long massive hold on the 1-count, followed by 2 standard syllables, then a long stretch, a rapid snap, and another massive hold. Very dynamic push-and-pull." },
+    { array: [3, 1, 2, 2], name: "Platinum Bounce", desc: "1 long stretched syllable, 1 very fast rapid syllable, and 2 standard medium syllables. Repeat this bounce." },
+    { array: [6, 2, 4, 2, 2], name: "Late Drop", desc: "Leave the 1-count totally empty (a pickup/rest), then drop a massive hold on the 2-count followed by standard syllables." }
+  ],
+  "chopper": [
+    { array: [1, 1, 1, 1], name: "Machine Gun", desc: "All rapid-fire, ultra-fast 16th-note syllables. No long stretches. Relentless." },
+    { array: [2, 1, 1, 1, 1, 2], name: "Stutter Step", desc: "A standard syllable, followed by four ultra-fast rapid syllables, ending on a standard syllable." }
+  ],
+  "heartbeat": [
+    { array: [2, 2, 2, 2], name: "Steady Anchor", desc: "All standard, steady 8th-note syllables. Methodical, calm, and heavy." },
+    { array: [4, 2, 2, 4, 4], name: "Delayed Pocket", desc: "A massive hold, two standard syllables, then two more massive holds. Very lazy and behind the beat." }
+  ],
+  "triplet": [
+    { array: [3, 3, 2], name: "Standard Triplet", desc: "Two long stretched syllables followed by a standard syllable. The classic triplet trap flow." },
+    { array: [2, 2, 2, 3, 3, 4], name: "Atmospheric Stagger", desc: "Three standard syllables, two long stretches, and a massive hold. A wavy, staggered rhythm." }
+  ],
+  "lazy": [
+    { array: [4, 2, 2], name: "Standard Drawl", desc: "A massive lazy hold followed by two standard syllables. Slow and dragged out." },
+    { array: [6, 2, 8], name: "Extreme Drag", desc: "An extreme delayed hold, a standard syllable, and an enormously long stretched finish." }
+  ]
+};
+
 export default function Room03_Ghostwriter() {
   const { 
     audioData, flowDNA, blueprint, setBlueprint, generatedLyrics, setGeneratedLyrics, setActiveRoom, addToast,
@@ -53,11 +78,33 @@ export default function Room03_Ghostwriter() {
   const hasEnoughCredits = isCreator || isMogul || 
     (userSession?.creditsRemaining && (userSession.creditsRemaining === "UNLIMITED" || userSession.creditsRemaining >= currentCost));
 
+  // --- NEW: Sync Blueprint Patterns automatically when Flow Style changes ---
+  useEffect(() => {
+    if (blueprint.length > 0) {
+      const variations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
+      const updated = blueprint.map((block, index) => {
+         const selected = variations[index % variations.length];
+         return { ...block, patternArray: selected.array, patternName: selected.name, patternDesc: selected.desc };
+      });
+      setBlueprint(updated);
+    }
+  }, [gwStyle]);
+
   const syncTimeline = (newBlueprint: any[]) => {
     let cursor = 0;
-    const synced = newBlueprint.map((block) => {
+    const variations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
+    
+    const synced = newBlueprint.map((block, index) => {
       const start = Math.max(cursor, block.startBar ?? cursor);
-      const updated = { ...block, startBar: start };
+      const selected = variations[index % variations.length];
+      
+      const updated = { 
+        ...block, 
+        startBar: start,
+        patternArray: block.patternArray || selected.array,
+        patternName: block.patternName || selected.name,
+        patternDesc: block.patternDesc || selected.desc
+      };
       cursor = start + block.bars;
       return updated;
     });
@@ -146,12 +193,14 @@ export default function Room03_Ghostwriter() {
           tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
-          pocket: gwPocket, // --- NEW: Pass the pocket state to the API ---
+          pocket: gwPocket,
           systemConstraint: systemConstraint, 
+          // --- NEW: Pass the Score Card directly to the API ---
           blueprint: blueprint.map(b => ({ 
             type: b.type, 
             bars: b.bars, 
-            startBar: (b as any).startBar 
+            startBar: (b as any).startBar,
+            patternDesc: (b as any).patternDesc
           }))
         })
       });
@@ -393,6 +442,12 @@ export default function Room03_Ghostwriter() {
               <div>
                 <h4 className={`font-oswald text-lg uppercase tracking-widest ${block.type === 'INSTRUMENTAL' ? 'text-blue-500' : 'text-white'}`}>{block.type}</h4>
                 <p className="font-mono text-[10px] text-[#E60000] font-bold">{block.bars} BARS</p>
+                {/* --- NEW: VISUALIZE THE ATTACHED SCORE CARD --- */}
+                {(block as any).patternName && block.type !== 'INSTRUMENTAL' && (
+                  <p className="font-mono text-[8px] text-yellow-500 uppercase mt-1 truncate" title={(block as any).patternDesc}>
+                    {(block as any).patternName} [{(block as any).patternArray?.join(',')}]
+                  </p>
+                )}
               </div>
 
               <div className="flex justify-between items-center mt-2 border-t border-[#333] pt-2">

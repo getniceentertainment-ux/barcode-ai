@@ -202,7 +202,7 @@ Synthesize these variables into a cohesive delivery:
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0, anchor_hook=None, max_syllables=14):
+def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_topic, section_index=0, anchor_hook=None, max_syllables=14, pattern_desc=""):
     if section_index == 0:
         arc_instruction = "Establish the setting and the origin. Ground the listener."
     elif section_type.upper() == "HOOK":
@@ -212,11 +212,15 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, prompt_
     
     hook_context = f"\n[THE ANCHOR HOOK]:\n{anchor_hook}\n" if anchor_hook and section_type.upper() != "HOOK" else ""
     
+    # --- THE MELODIC MATH INJECTION ---
+    rhythm_context = f"\n[SCORE CARD (MELODIC MATH)]\nThe rhythmic cadence for this specific {section_type.upper()} follows this pattern: '{pattern_desc}'. You MUST choose words and syllable counts that lock into this exact bounce." if pattern_desc else ""
+    
     draft_prompt = f"""<|im_start|>user
 [STUDIO DRAFTING PHASE]
 GENERATE A {section_type.upper()}. EXACTLY {bars} LINES (BARS). Topic: '{prompt_topic}'.
 NARRATIVE ARC: {arc_instruction}
 {hook_context}
+{rhythm_context}
 Previous lyrics context:
 {previous_lyrics if previous_lyrics else 'None (Start of track)'}
 
@@ -332,13 +336,15 @@ Rewrite the line to satisfy the instruction. Output ONLY the rewritten line.
         saved_hook = None
         for section in blueprint:
             if section.get("type", "VERSE").upper() == "HOOK":
-                saved_hook = generate_section(system_prompt, "", "HOOK", section.get("bars", 4), topic, section_index=0, max_syllables=max_syllables)
+                pattern_desc = section.get("patternDesc", "")
+                saved_hook = generate_section(system_prompt, "", "HOOK", section.get("bars", 4), topic, section_index=0, max_syllables=max_syllables, pattern_desc=pattern_desc)
                 break
         
         for index, section in enumerate(blueprint):
             sec_type = section.get("type", "VERSE").upper()
             bars = section.get("bars", 16)
             start_bar = section.get("startBar", current_cumulative_bar)
+            pattern_desc = section.get("patternDesc", "")
             
             time_sec = start_bar * seconds_per_bar
             mins = int(time_sec // 60)
@@ -352,7 +358,7 @@ Rewrite the line to satisfy the instruction. Output ONLY the rewritten line.
             elif sec_type == "HOOK" and saved_hook is not None:
                 raw_section_text = saved_hook
             else:
-                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, section_index=index, anchor_hook=saved_hook, max_syllables=max_syllables)
+                raw_section_text = generate_section(system_prompt, context_lyrics, sec_type, bars, topic, section_index=index, anchor_hook=saved_hook, max_syllables=max_syllables, pattern_desc=pattern_desc)
                 if sec_type == "HOOK" and saved_hook is None:
                     saved_hook = raw_section_text
             
