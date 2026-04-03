@@ -63,6 +63,44 @@ function chunkWordForVisuals(word: string): string[] {
   return chunks.filter(c => c.length > 0);
 }
 
+// --- NEW: TTS SILENCE TRIMMER (Kills Dead Air) ---
+function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
+  let startOffset = 0;
+  let endOffset = buffer.length;
+  const threshold = 0.03; // 3% amplitude threshold to detect actual human speech
+  
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const data = buffer.getChannelData(c);
+    let firstSignal = 0;
+    let lastSignal = data.length;
+    
+    for (let i = 0; i < data.length; i++) {
+      if (Math.abs(data[i]) > threshold) { firstSignal = i; break; }
+    }
+    for (let i = data.length - 1; i >= 0; i--) {
+      if (Math.abs(data[i]) > threshold) { lastSignal = i; break; }
+    }
+    
+    const pad = Math.floor(buffer.sampleRate * 0.08); // 80ms padding to protect sharp consonants (T, P, K)
+    if (c === 0) {
+      startOffset = Math.max(0, firstSignal - pad);
+      endOffset = Math.min(data.length, lastSignal + pad);
+    } else {
+      startOffset = Math.min(startOffset, Math.max(0, firstSignal - pad));
+      endOffset = Math.max(endOffset, Math.min(data.length, lastSignal + pad));
+    }
+  }
+  
+  if (startOffset >= endOffset) return buffer; // Fallback if silent
+  
+  const frameCount = endOffset - startOffset;
+  const trimmed = audioCtx.createBuffer(buffer.numberOfChannels, frameCount, buffer.sampleRate);
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    trimmed.copyToChannel(buffer.getChannelData(c).subarray(startOffset, endOffset), c);
+  }
+  return trimmed;
+}
+
 // --- BULLETPROOF AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const numChannels = buffer.numberOfChannels;
@@ -244,38 +282,27 @@ export default function Room04_Booth() {
           const arrayBuffer = await res.arrayBuffer();
           const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
 
-          const ttsDuration = audioBuffer.duration;
+          // --- SURGICAL PIVOT: TRIM & STRETCH SYNTHESIS ---
+          // 1. Strip the dead air so the vocal hits exactly on the visual cue
+          const trimmedBuffer = trimTTSBuffer(offlineCtx, audioBuffer);
+          const ttsDuration = trimmedBuffer.duration;
           const mathLineDuration = line.lineDuration || 2;
 
-          if (line.words && line.words.length > 0) {
-            line.words.forEach((wObj) => {
-              const relativeWordStart = wObj.startTime - line.startTime;
-              const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
-              const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
+          // 2. Play the whole line seamlessly to preserve consonants, stretched to perfectly fit the pocket
+          const source = offlineCtx.createBufferSource();
+          source.buffer = trimmedBuffer;
+          source.playbackRate.value = ttsDuration / mathLineDuration; 
 
-              const tailBleed = 0.35; 
-              const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
+          // Soft 10ms crossfade to prevent digital clicks at the boundaries (No mid-word chopping!)
+          const gainNode = offlineCtx.createGain();
+          gainNode.gain.setValueAtTime(0, line.startTime);
+          gainNode.gain.linearRampToValueAtTime(1, line.startTime + 0.01); 
+          gainNode.gain.setValueAtTime(1, line.startTime + mathLineDuration - 0.01);
+          gainNode.gain.linearRampToValueAtTime(0, line.startTime + mathLineDuration); 
 
-              const source = offlineCtx.createBufferSource();
-              source.buffer = audioBuffer;
-              source.playbackRate.value = 1.0; 
-
-              const gainNode = offlineCtx.createGain();
-              gainNode.gain.setValueAtTime(0, wObj.startTime);
-              gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
-              gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-              gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
-
-              source.connect(gainNode);
-              gainNode.connect(offlineCtx.destination);
-              source.start(wObj.startTime, ttsOffset, safeExtractDuration);
-            });
-          } else {
-            const source = offlineCtx.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(offlineCtx.destination);
-            source.start(line.startTime);
-          }
+          source.connect(gainNode);
+          gainNode.connect(offlineCtx.destination);
+          source.start(line.startTime);
 
         } catch (lineErr) {
           console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
