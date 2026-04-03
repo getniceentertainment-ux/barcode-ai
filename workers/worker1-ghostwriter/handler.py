@@ -134,6 +134,10 @@ def init_model():
         bnb_4bit_quant_type="nf4"
     )
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
+    
+    # Silence the padding token warnings in RunPod logs
+    tokenizer.pad_token_id = tokenizer.eos_token_id 
+    
     base_model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL_NAME, quantization_config=bnb_config, device_map="auto", torch_dtype=torch.float16
     )
@@ -175,15 +179,47 @@ You are "The Mogul." Your voice blends street-smart authenticity with boardroom 
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction):
-    # PASS 1: Neural Draft
+def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None):
+    
+    # --- NARRATIVE ARC ---
+    if section_index == 0:
+        arc_instruction = "Establish the setting and the origin. Ground the listener."
+    elif section_type.upper() == "HOOK":
+        arc_instruction = "Summarize the core theme. Make it highly repetitive and catchy."
+    elif section_index in [1, 2]:
+        arc_instruction = "Introduce the depth of the topic. Connect directly to the previous verse and the Hook. Escalate the energy."
+    else:
+        arc_instruction = "The resolution, the takeaway. High confidence, grounded reality."
+    
+    hook_context = f"\n[THE ANCHOR HOOK]:\n{anchor_hook}\n" if anchor_hook and section_type.upper() != "HOOK" else ""
+
+    # --- THE SPACIOUS HOOK OVERRIDE ---
+    current_max_syllables = max_syllables
+    melodic_rules = ""
+    
+    if "HOOK" in section_type.upper():
+        current_max_syllables = max(4, int(max_syllables * 0.6))
+        melodic_rules = f"""
+[MELODIC CHORUS OVERRIDE]
+1. INSTRUMENTAL ANCHOR: Ride the melody of the beat (pianos, strings, synths).
+2. SPACIOUS & CATCHY: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse.
+3. SIMPLICITY: Highly memorable and spaced out.
+"""
+
+    # ==========================================
+    # PASS 1: THE DRAFT
+    # ==========================================
     draft_prompt = f"""<|im_start|>user
 {system_prompt}
 
 [GENERATE {section_type.upper()}]
 - REQUIRED: {bars} bars.
+- TOPIC: '{prompt_topic}'
+- NARRATIVE ARC: {arc_instruction}
 - RHYTHMIC POCKET: {pattern_desc}
-- SYLLABLE LIMIT: Strictly {max_syllables} or less per line. (CRITICAL)
+- SYLLABLE LIMIT: Strictly {current_max_syllables} or less per line. (CRITICAL)
+{hook_context}
+{melodic_rules}
 
 [PREVIOUS CONTEXT]
 {previous_lyrics if previous_lyrics else 'Start of track.'}
@@ -196,18 +232,21 @@ Write the draft now.
     outputs = model.generate(**inputs, max_new_tokens=40 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15)
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    # PASS 2: The Mogul's Final Polish & Engineer Pass
+    # ==========================================
+    # PASS 2: THE MOGUL POLISH & ENGINEER PASS
+    # ==========================================
     refine_prompt = f"""<|im_start|>user
 [THE SECOND PASS - FINAL POLISH & ENGINEER FORMATTING]
 You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
 CRITICAL REFINEMENT COMMANDS:
-1. Every line MUST be {max_syllables} syllables or less. Rewrite long lines to be minimalist.
+1. Every line MUST be {current_max_syllables} syllables or less. Rewrite long lines to be minimalist.
 2. OBEY THE POCKET: {pocket_instruction}
 3. NO HEADERS. NO TIMESTAMPS. NO POETRY.
 4. Output EXACTLY {bars} lines.
 5. THE ENGINEER PASS: You MUST place a pipe symbol (|) between every single syllable to map the rhythm. (e.g., instead of "GETTING NICE", write "GET|TING NICE"). 
+{melodic_rules}
 
 Rewrite the final {bars} lines and map the syllables now.
 <|im_end|>
@@ -250,8 +289,11 @@ def handler(event):
     final_lyrics = ""
     context_lyrics = ""
     current_cumulative_bar = 0
+    
+    saved_hook_lines = None 
+    anchor_hook_text = None
 
-    for section in blueprint:
+    for index, section in enumerate(blueprint):
         sec_type = section.get("type", "VERSE").upper()
         bars = section.get("bars", 16)
         start_bar = section.get("startBar", current_cumulative_bar)
@@ -261,8 +303,34 @@ def handler(event):
         
         if sec_type == "INSTRUMENTAL":
             section_lines = ["Mmm. Mmm." for _ in range(bars)]
+            
+        elif "HOOK" in sec_type and saved_hook_lines is not None:
+            # COPY-PASTE THE EXACT HOOK FROM MEMORY
+            section_lines = []
+            while len(section_lines) < bars:
+                section_lines.extend(saved_hook_lines)
+            section_lines = section_lines[:bars]
+            
         else:
-            section_lines = generate_section(system_prompt, context_lyrics, sec_type, bars, max_syllables, pattern_desc, pocket_instruction)
+            # NORMAL GENERATION
+            section_lines = generate_section(
+                system_prompt=system_prompt, 
+                previous_lyrics=context_lyrics, 
+                section_type=sec_type, 
+                bars=bars, 
+                max_syllables=max_syllables, 
+                pattern_desc=pattern_desc, 
+                pocket_instruction=pocket_instruction,
+                prompt_topic=topic,
+                section_index=index,
+                anchor_hook=anchor_hook_text
+            )
+            
+            # If this was the first hook, save it to memory AND set it as the Anchor Hook for verses
+            if "HOOK" in sec_type:
+                saved_hook_lines = section_lines
+                anchor_hook_text = "\n".join(section_lines)
+                
             context_lyrics = "\n".join(section_lines[-4:])
         
         for i, line in enumerate(section_lines):
