@@ -229,6 +229,10 @@ export default function Room01_Lab() {
             totalBars: statusData.output.total_bars || 64,
             key: statusData.output.key || "Unknown",
             grid: statusData.output.grid || [],
+            // --- SURGICAL ADDITION: Capture the Sentient Rhythm Matrix Payloads ---
+            dynamic_array: statusData.output.dynamic_array,
+            contour: statusData.output.contour,
+            // ----------------------------------------------------------------------
             duration: exactDuration > 0 ? exactDuration : undefined
           });
 

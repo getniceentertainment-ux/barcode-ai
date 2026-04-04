@@ -4,6 +4,7 @@ import random
 import re
 import torch
 import runpod
+import urllib.request # <-- Needed for Supabase fetching
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
 
@@ -12,8 +13,11 @@ BASE_MODEL_NAME = "NousResearch/Hermes-2-Pro-Llama-3-8B"
 LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
 
 SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_briefing.txt")
-SLANG_FILE = "Dictionary.json"
-CULTURE_FILE = "master_index.json"
+
+# --- SUPABASE INTEL ENDPOINTS ---
+SLANG_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/Dictionary.json"
+# Assuming master_index is in the same public bucket path:
+CULTURE_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/master_index.json"
 
 # --- THE CONCENTRATED KILL LIST (KILLS AI POETRY) ---
 BAN_LIST = [
@@ -54,13 +58,13 @@ def load_street_slang(style="getnice_hybrid"):
     else:
         target_list = executive_slang
 
-    if not os.path.exists(SLANG_FILE):
-        return target_list 
-
     words = []
     try:
-        with open(SLANG_FILE, "r", encoding="utf-8") as f:
-            content = f.read()
+        # --- SURGICAL FIX: FETCH DYNAMICALLY FROM SUPABASE ---
+        req = urllib.request.Request(SLANG_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            content = response.read().decode('utf-8')
+            
         try:
             data = json.loads(content)
             if isinstance(data, dict) and "slang_terms" in data:
@@ -75,27 +79,34 @@ def load_street_slang(style="getnice_hybrid"):
                     word = lines[i-1].strip()
                     if word and 1 < len(word) < 20:
                         words.append(word)
+                        
         if words:
             words = [w.strip() for w in words if w.strip()]
             combined_list = list(set(words + target_list))
             return random.sample(combined_list, min(8, len(combined_list)))
-    except Exception:
-        pass
+            
+    except Exception as e:
+        print(f"🚨 Failed to load slang from Supabase: {e}")
+        
     return target_list
 
 def load_cultural_context():
-    if not os.path.exists(CULTURE_FILE):
-        return "Focus on the struggle, the hustle, and survival."
     try:
-        with open(CULTURE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(data, list) and len(data) > 0:
-                item = random.choice(data)
-                title = item.get("title", "STREET POLITICS")
-                content = item.get("content", "")[:400] 
-                return f"[CULTURAL ANCHOR: {title}] - {content}..."
-    except Exception:
-        pass
+        # --- SURGICAL FIX: FETCH DYNAMICALLY FROM SUPABASE ---
+        req = urllib.request.Request(CULTURE_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            content = response.read().decode('utf-8')
+            
+        data = json.loads(content)
+        if isinstance(data, list) and len(data) > 0:
+            item = random.choice(data)
+            title = item.get("title", "STREET POLITICS")
+            context = item.get("content", "")[:400] 
+            return f"[CULTURAL ANCHOR: {title}] - {context}..."
+            
+    except Exception as e:
+        print(f"🚨 Failed to load cultural context from Supabase: {e}")
+        
     return "Focus on the struggle, the hustle, and survival."
 
 def sanitize_lora_config():
@@ -135,7 +146,6 @@ def init_model():
     )
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
     
-    # Silence the padding token warnings in RunPod logs
     tokenizer.pad_token_id = tokenizer.eos_token_id 
     
     base_model = AutoModelForCausalLM.from_pretrained(
@@ -149,7 +159,8 @@ def init_model():
         model = base_model
     print("Worker Ready.")
 
-def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic):
+# --- SURGICAL UPGRADE: INJECT DSP TRUTH INTO THE SYSTEM PROMPT ---
+def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
     slang_list = ", ".join(load_street_slang(style)) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
@@ -165,8 +176,13 @@ You are "The Mogul." Your voice blends street-smart authenticity with boardroom 
 - EXECUTION: {hustle}
 - TOPIC: {topic}
 
+[VOCAL INTONATION & PITCH LAWS]
+- HARMONIC ROOT: {root_note} {scale}.
+- CONTOUR DIRECTION: The beat {contour}.
+- DICTION: Align your vowel choices to resonate with this pitch direction. If it drops, end lines with hard, grounded consonants. If it rises, end with open, elongated vowels.
+
 [ABSOLUTE ENGINE RULES]
-1. NO POETRY: Avoid AI cliches and "lucre," "serene," or "uncoil." 
+1. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
 2. TONE: Strategic, authoritative executive street-slang. Minimalist syntax.
 3. ONE LINE = ONE BAR. 
 4. VOCABULARY: Organically weave in: [ {slang_list} ].
@@ -181,7 +197,6 @@ You are "The Mogul." Your voice blends street-smart authenticity with boardroom 
 
 def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None):
     
-    # --- NARRATIVE ARC ---
     if section_index == 0:
         arc_instruction = "Establish the setting and the origin. Ground the listener."
     elif section_type.upper() == "HOOK":
@@ -193,7 +208,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     
     hook_context = f"\n[THE ANCHOR HOOK]:\n{anchor_hook}\n" if anchor_hook and section_type.upper() != "HOOK" else ""
 
-    # --- THE SPACIOUS HOOK OVERRIDE ---
     current_max_syllables = max_syllables
     melodic_rules = ""
     
@@ -271,6 +285,11 @@ def handler(event):
     use_slang = job_input.get("useSlang", True)
     use_intel = job_input.get("useIntel", True)
 
+    # --- SURGICAL UPGRADE: CATCH THE DSP TRUTH FROM ROOM 03 ---
+    root_note = job_input.get("root_note", "C")
+    scale = job_input.get("scale", "minor")
+    contour = job_input.get("contour", "drops into a lower, cadential register")
+
     seconds_per_bar = (60.0 / bpm) * 4.0
     speed_factor = 4.5
     if "chopper" in style: speed_factor = 6.0
@@ -284,7 +303,8 @@ def handler(event):
     elif "DRAG" in topic.upper() or "PICKUP" in topic.upper():
         pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.)."
 
-    system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic)
+    # Pass the Pitch contour into the system prompt!
+    system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour)
     
     final_lyrics = ""
     context_lyrics = ""

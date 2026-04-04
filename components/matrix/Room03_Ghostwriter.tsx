@@ -10,6 +10,7 @@ import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
 // --- THE 100% PROPRIETARY GETNICE MACRO-RHYTHMIC VAULT ---
+// This now acts as a fallback if DSP extraction fails or is skipped
 const FLOW_VAULT: Record<string, {array: number[], name: string, desc: string}[]> = {
   "getnice_hybrid": [
     { array: [4, 2, 2, 3, 1, 4, 2, 2, 2, 2, 4, 4], name: "Chain-Link Pivot", desc: "Long massive hold on the 1-count, followed by 2 standard syllables, then a long stretch, a rapid snap, and another massive hold. Very dynamic push-and-pull." },
@@ -104,18 +105,24 @@ export default function Room03_Ghostwriter() {
           if (block.type !== 'INSTRUMENTAL') verseCounter++;
       }
       
-      // SURGICAL FIX: Cast block to 'any' here as well
+      // --- SURGICAL FIX: INJECT SENTIENT DSP TRUTH OVER STATIC VAULT ---
+      const activeArray = (audioData as any)?.dynamic_array || selected.array;
+      const activeName = (audioData as any)?.dynamic_array ? "Sentient Matrix" : selected.name;
+      const activeDesc = (audioData as any)?.dynamic_array 
+        ? `[DSP GRID] Force syllables to match this exact array: [${(audioData as any)?.dynamic_array.join(',')}]. Pitch contour: ${(audioData as any)?.contour || 'Dynamic'}` 
+        : selected.desc;
+      
       // Check if the current block is mathematically out of sync
-      if ((block as any).startBar !== start || (block as any).patternName !== selected.name) {
+      if ((block as any).startBar !== start || (block as any).patternName !== activeName) {
           needsUpdate = true;
       }
       
       const updated = { 
         ...block, 
         startBar: start,
-        patternArray: selected.array, 
-        patternName: selected.name,
-        patternDesc: selected.desc
+        patternArray: activeArray, 
+        patternName: activeName,
+        patternDesc: activeDesc
       };
       cursor = start + block.bars;
       return updated;
@@ -125,7 +132,7 @@ export default function Room03_Ghostwriter() {
     if (needsUpdate) {
         setBlueprint(synced);
     }
-  }, [gwStyle, layoutHash, blueprint]); // Re-run instantly if the Style or the Block structure changes
+  }, [gwStyle, layoutHash, blueprint, audioData]); // Re-run instantly if the Style, Block structure, or DSP data changes
 
 
   const updateBlueprintStartBar = (index: number, newStart: number) => {
@@ -183,12 +190,19 @@ export default function Room03_Ghostwriter() {
     setIsGenerating(true);
     setUxState("Synthesizing Bars via GETNICE Engine...");
 
-    // --- SURGICAL FIX: PROMPT ARMOR ---
+    // --- SURGICAL FIX: PROMPT ARMOR ENHANCED WITH DSP LAWS ---
     const systemConstraint = `ABSOLUTE ENGINE RULES:
 1. RAW LYRICS ONLY: You must ONLY output the lyrics.
 2. NO PREFIXES: NEVER output labels like "1st Line:", "Hook:", or "Verse:" before the lyrics.
 3. NO PADDING: NEVER pad lines with empty pipe symbols (e.g., "words. | | |" is FORBIDDEN). Use pipes ONLY between syllables (e.g., "CHIL|LAX|IN").
-4. NO META-COMMENTARY: Do not explain your output or write "(pipe symbol required)".`;
+4. NO META-COMMENTARY: Do not explain your output or write "(pipe symbol required)".
+5. COMPOUND RHYMING: Use 2- or 3-syllable compound rhymes on the structural accents.
+6. PITCH INTONATION: Align your vowel choices to the pitch contour of the beat. Use closed/heavy vowels for pitch drops, and open/elongated vowels for tension rises.`;
+
+    // Extract exact root note and scale (e.g., "C# minor" -> root: "C#", scale: "minor")
+    const keyParts = audioData?.key ? audioData.key.split(" ") : ["C", "minor"];
+    const rootNote = keyParts[0];
+    const scale = keyParts.slice(1).join(" ");
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -216,12 +230,21 @@ export default function Room03_Ghostwriter() {
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
           pocket: gwPocket,
+          
+          // --- SURGICAL FIX: SEND THE SENTIENT MATRIX PAYLOAD ---
+          root_note: rootNote,
+          scale: scale,
+          contour: (audioData as any)?.contour || "drops into a lower, cadential register",
+          dynamic_array: (audioData as any)?.dynamic_array,
+          // ------------------------------------------------------
+          
           systemConstraint: systemConstraint, 
           blueprint: blueprint.map(b => ({ 
             type: b.type, 
             bars: b.bars, 
             startBar: (b as any).startBar,
-            patternDesc: (b as any).patternDesc
+            patternDesc: (b as any).patternDesc,
+            patternArray: (b as any).patternArray // Send the active array to guide the LLM's pipes
           }))
         })
       });

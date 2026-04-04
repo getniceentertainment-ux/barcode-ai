@@ -138,13 +138,13 @@ export default function Room02_BrainTrain() {
 
         const { data: { session } } = await supabase.auth.getSession();
 
-	const res = await fetch('/api/dsp/cadence', {
-        method: 'POST',
-  	headers: {
-  	  'Authorization': `Bearer ${session?.access_token}`
-	},
-  	body: formData // Note: Do NOT add 'Content-Type': 'multipart/form-data', the browser handles the boundary automatically for FormData
-      });
+        const res = await fetch('/api/dsp/cadence', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session?.access_token}`
+          },
+          body: formData 
+        });
 
         const analysisData = await res.json();
         
@@ -199,108 +199,77 @@ export default function Room02_BrainTrain() {
     setStatus("analyzing");
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      // --- SURGICAL FIX: REMOVED REDUNDANT DSP CALL ---
+      // Room 01 already extracted the BPM, Key, Contour, and totalBars.
+      // We simulate a tiny delay for UX so the UI transition feels deliberate.
+      await delay(800); 
       
-      const res = await fetch('/api/dsp', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
-        },
-        body: JSON.stringify({ 
-          task_type: "analyze",
-          file_url: audioData.url
-        })
+      let finalStyleId = detectedStyle?.id || "getnice_hybrid";
+      let finalStyleName = detectedStyle?.name || STYLES.getnice_hybrid;
+
+      if (micStatus !== "recorded" && textInput.trim()) {
+        const lines = textInput.split("\n").filter((l) => l.trim().length > 0);
+        if (lines.length > 0) {
+          const avgWords = lines.reduce((acc, l) => acc + l.trim().split(/\s+/).length, 0) / lines.length;
+          if (avgWords >= 12) finalStyleId = "chopper";
+          else if (avgWords <= 6) finalStyleId = "lazy";
+          else if (audioData?.bpm && audioData.bpm >= 138) finalStyleId = "triplet";
+          else finalStyleId = "heartbeat";
+          
+          finalStyleName = STYLES[finalStyleId as keyof typeof STYLES];
+          setGwStyle(finalStyleId);
+          setDetectedStyle({ id: finalStyleId, name: finalStyleName });
+        }
+      }
+
+      setFlowDNA({
+        tag: finalStyleName, 
+        referenceText: textInput.trim() || "Focus on survival and rhythm.",
+        syllableDensity: finalStyleId === "chopper" ? 5.5 : finalStyleId === "lazy" ? 3.0 : 4.5,
       });
 
-      const initData = await res.json();
-      if (!res.ok) throw new Error(initData.error || "Synthesis Failed");
-
-      const jobId = initData.jobId;
-      
-      const pollInterval = setInterval(async () => {
-        try {
-          const statusRes = await fetch(`/api/dsp?jobId=${jobId}&t=${Date.now()}`);
-          const statusData = await statusRes.json();
-
-          if (statusData.status === 'COMPLETED') {
-            clearInterval(pollInterval);
-            
-            let finalStyleId = detectedStyle?.id || "getnice_hybrid";
-            let finalStyleName = detectedStyle?.name || STYLES.getnice_hybrid;
-
-if (micStatus !== "recorded" && textInput.trim()) {
-              const lines = textInput.split("\n").filter((l) => l.trim().length > 0);
-              if (lines.length > 0) {
-                const avgWords = lines.reduce((acc, l) => acc + l.trim().split(/\s+/).length, 0) / lines.length;
-                if (avgWords >= 12) finalStyleId = "chopper";
-                else if (avgWords <= 6) finalStyleId = "lazy";
-                else if (audioData?.bpm && audioData.bpm >= 138) finalStyleId = "triplet";
-                else finalStyleId = "heartbeat";
-                
-                finalStyleName = STYLES[finalStyleId as keyof typeof STYLES];
-                setGwStyle(finalStyleId);
-                setDetectedStyle({ id: finalStyleId, name: finalStyleName });
-              }
-            }
-
-            setFlowDNA({
-              tag: finalStyleName, // Keep it clean, drop the forced "Hybrid" phrasing
-              referenceText: textInput.trim() || "Focus on survival and rhythm.",
-              syllableDensity: finalStyleId === "chopper" ? 5.5 : finalStyleId === "lazy" ? 3.0 : 4.5,
-            });
-
-            if (audioData?.totalBars) {
-              let remaining = audioData.totalBars;
-              let currentStartBar = 0; // --- TIMELINE FIX: Tracking the anchor point
-              const calc: any[] = [];
-              
-              if (userSession?.tier === "The Mogul" || userSession?.tier === "The Artist") {
-                if (remaining >= 4) { 
-                  calc.push({ id: "intro", type: "INTRO", bars: 4, startBar: currentStartBar }); 
-                  remaining -= 4; 
-                  currentStartBar += 4; 
-                }
-                let idCounter = 1;
-                while (remaining >= 24) {
-                  calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8, startBar: currentStartBar }); 
-                  remaining -= 8; 
-                  currentStartBar += 8;
-                  
-                  calc.push({ id: `verse_${idCounter}`, type: "VERSE", bars: 16, startBar: currentStartBar }); 
-                  remaining -= 16; 
-                  currentStartBar += 16;
-                  
-                  idCounter++;
-                }
-                if (remaining >= 8) { 
-                  calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8, startBar: currentStartBar }); 
-                  remaining -= 8; 
-                  currentStartBar += 8; 
-                }
-                calc.push({ id: "outro", type: "OUTRO", bars: remaining, startBar: currentStartBar });
-              } else {
-                calc.push({ id: "hook_1", type: "HOOK", bars: 8, startBar: currentStartBar });
-                currentStartBar += 8;
-                calc.push({ id: "verse_1", type: "VERSE", bars: 16, startBar: currentStartBar });
-              }
-              
-              setBlueprint(calc);
-            }
-            
-
-            setStatus("success");
-            setIsProcessing(false);
-          } else if (statusData.status === 'FAILED') {
-            clearInterval(pollInterval);
-            if(addToast) addToast("RunPod Execution Failed.", "error");
-            setStatus("idle");
-            setIsProcessing(false);
+      // Use the totalBars already extracted by Room 01
+      if (audioData?.totalBars) {
+        let remaining = audioData.totalBars;
+        let currentStartBar = 0; 
+        const calc: any[] = [];
+        
+        if (userSession?.tier === "The Mogul" || userSession?.tier === "The Artist") {
+          if (remaining >= 4) { 
+            calc.push({ id: "intro", type: "INTRO", bars: 4, startBar: currentStartBar }); 
+            remaining -= 4; 
+            currentStartBar += 4; 
           }
-        } catch (pollErr) {
-          console.error("Polling error", pollErr);
+          let idCounter = 1;
+          while (remaining >= 24) {
+            calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8, startBar: currentStartBar }); 
+            remaining -= 8; 
+            currentStartBar += 8;
+            
+            calc.push({ id: `verse_${idCounter}`, type: "VERSE", bars: 16, startBar: currentStartBar }); 
+            remaining -= 16; 
+            currentStartBar += 16;
+            
+            idCounter++;
+          }
+          if (remaining >= 8) { 
+            calc.push({ id: `hook_${idCounter}`, type: "HOOK", bars: 8, startBar: currentStartBar }); 
+            remaining -= 8; 
+            currentStartBar += 8; 
+          }
+          calc.push({ id: "outro", type: "OUTRO", bars: remaining, startBar: currentStartBar });
+        } else {
+          calc.push({ id: "hook_1", type: "HOOK", bars: 8, startBar: currentStartBar });
+          currentStartBar += 8;
+          calc.push({ id: "verse_1", type: "VERSE", bars: 16, startBar: currentStartBar });
         }
-      }, 3000);
+        
+        setBlueprint(calc);
+      }
+
+      setStatus("success");
+      setIsProcessing(false);
+      if(addToast) addToast("Blueprint Synthesized Successfully.", "success");
 
     } catch (err: any) {
       if(addToast) addToast(err.message, "error");

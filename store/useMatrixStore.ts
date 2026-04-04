@@ -4,6 +4,13 @@ import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession, Final
 import { saveAudioToDisk, loadAudioFromDisk } from '../lib/dawStorage';
 import { supabase } from '../lib/supabase';
 
+// --- SURGICAL ADDITION: EXTENDED DSP TRUTH ---
+// We extend the baseline AudioAnalysis type to safely catch the new Essentia payload
+export type ExtendedAudioAnalysis = AudioAnalysis & {
+  dynamic_array?: number[];
+  contour?: string;
+};
+
 interface ToastMessage {
   id: string;
   message: string;
@@ -52,8 +59,10 @@ interface MatrixState {
   setActiveRoom: (roomId: string) => void;
   setActiveProject: (id: string | null, isFinalized: boolean) => void;
 
-  audioData: AudioAnalysis | null;
-  setAudioData: (data: AudioAnalysis) => void;
+  // --- SURGICAL FIX: USE EXTENDED DSP TYPE ---
+  audioData: ExtendedAudioAnalysis | null;
+  setAudioData: (data: ExtendedAudioAnalysis) => void;
+  
   flowDNA: FlowDNA | null;
   setFlowDNA: (dna: FlowDNA) => void;
 
@@ -416,7 +425,8 @@ export const useMatrixStore = create<MatrixState>()(
           if (savedBeat && (savedBeat as any).blob) {
             set({ audioData: { ...(savedBeat as any), url: URL.createObjectURL((savedBeat as any).blob) } });
           } else if (savedBeat) {
-             set({ audioData: savedBeat as AudioAnalysis });
+             // --- SURGICAL FIX: Cast back to ExtendedAudioAnalysis on hydration ---
+             set({ audioData: savedBeat as ExtendedAudioAnalysis });
           }
 
           if (savedStems && Array.isArray(savedStems)) {

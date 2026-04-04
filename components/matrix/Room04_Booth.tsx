@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, ToggleLeft, ToggleRight } from "lucide-react";
+import { 
+  Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, ToggleLeft, ToggleRight 
+} from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase"; 
@@ -11,32 +13,7 @@ type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 type WordMapping = { word: string; startTime: number; duration: number; isWordEnd?: boolean };
 type LyricLine = { text: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[] };
 
-// --- THE MACRO-RHYTHMIC FLOW VAULT ---
-const FLOW_VAULT: Record<string, number[][]> = {
-  "getnice_hybrid": [
-    [4, 2, 2,  3, 1, 4,  2, 2, 2, 2,  4, 4], 
-    [3, 1, 2, 2],
-    [6, 2, 4, 2, 2] 
-  ],
-  "chopper": [
-    [1, 1, 1, 1], 
-    [2, 1, 1, 1, 1, 2] 
-  ],
-  "heartbeat": [
-    [2, 2, 2, 2], 
-    [4, 2, 2, 4, 4] 
-  ],
-  "triplet": [
-    [3, 3, 2], 
-    [2, 2, 2, 3, 3, 4] 
-  ],
-  "lazy": [
-    [4, 2, 2], 
-    [6, 2, 8] 
-  ]
-};
-
-// --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR ---
+// --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR (FALLBACK ONLY) ---
 function estimateSyllables(word: string): number {
   const w = word.toLowerCase().replace(/[^a-z]/g, '');
   if (!w) return 1;
@@ -46,7 +23,7 @@ function estimateSyllables(word: string): number {
   return Math.max(1, count);
 }
 
-// --- THE VISUAL SYLLABLE CHUNKER ---
+// --- THE VISUAL SYLLABLE CHUNKER (FALLBACK ONLY) ---
 function chunkWordForVisuals(word: string): string[] {
   const match = word.match(/^([^a-zA-Z]*)([a-zA-Z\']+)([^a-zA-Z]*)$/);
   if (!match || match[2].length <= 3) return [word];
@@ -565,7 +542,7 @@ export default function Room04_Booth() {
       }
       
       const workletNode = new AudioWorkletNode(audioCtxRef.current, 'recorder-worklet');
-      workletNodeRef.current = workletNode;
+        workletNodeRef.current = workletNode;
       workletNode.port.onmessage = (e) => recordedChunksRef.current.push(new Float32Array(e.data));
       
       if (mediaSourceRef.current) mediaSourceRef.current.connect(workletNode);
@@ -649,27 +626,25 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- THE MASTER SCORE CARD ALGORITHM (PROPORTIONAL SYNC FIX & DEEP NORMALIZATION) ---
+  // --- THE MASTER SCORE CARD ALGORITHM (LOBOTOMIZED: STRICT LLM PIPE OBEDIENCE) ---
   useEffect(() => {
     if (!generatedLyrics) return;
 
     const lines = generatedLyrics.split('\n');
     
-    // --- SURGICAL FIX: DEEP NORMALIZATION & PHONETIC PIPE MAPPING ---
+    // --- SURGICAL FIX: PRESERVE THE PIPES ---
     const sanitizedLines = lines.map(l => {
       // 1. DEEP NORMALIZATION: Kill all invisible/ghost characters instantly
       let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
 
       if (text.startsWith('[')) return { text, isHeader: true }; 
       
-      // 2. Standard Clean-up
+      // 2. Standard Clean-up WITHOUT killing the LLM's pipe symbols
       text = text
         .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') // Remove timestamps
         .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') // Remove bar counts
         .replace(/pipe\s*symbol/gi, '') 
-        // 3. Convert Syllable Pipes into explicit spaces (landings for the Red Ball)
-        .replace(/\|/g, ' ') 
-        // 4. Collapse multiple spaces into one standard ASCII space
+        // Notice we REMOVED the `.replace(/\|/g, ' ')` that was stripping the truth!
         .replace(/\s+/g, ' ') 
         .trim();
 
@@ -715,30 +690,21 @@ export default function Room04_Booth() {
       const numLines = blockData.lines.length;
       if (numLines > 0) {
         
-        const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-        const activePattern = (bp as any).patternArray || activeVariations[index % activeVariations.length];
-
         const timeForThisLine = blockDurationSecs / numLines; 
-        
         let currentFlowTime = blockStartTime;
-        let patternIndex = 0;
 
         blockData.lines.forEach((lineObj) => {
-          // Now split by space, taking advantage of the normalized text and explicit pipe substitutions
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: WordMapping[] = [];
 
           let totalLineSteps = 0;
-          let tempPatternIndex = patternIndex; 
-
           if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
 
-          rawWords.forEach((w) => {
-            const wordChunks = chunkWordForVisuals(w);
-            wordChunks.forEach(() => {
-              totalLineSteps += activePattern[tempPatternIndex % activePattern.length];
-              tempPatternIndex++;
-            });
+          // --- SURGICAL FIX: EXTRACT EXACT CHUNKS FROM LLM PIPES ---
+          const wordChunksArray = rawWords.map(w => {
+            const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
+            totalLineSteps += chunks.length;
+            return chunks;
           });
 
           const cleanTextEnd = lineObj.text.trim().slice(-1);
@@ -753,19 +719,13 @@ export default function Room04_Booth() {
              localWordTime += (4 * timePerStep);
           }
 
-          rawWords.forEach((w) => {
-            const wordChunks = chunkWordForVisuals(w);
-            
-            wordChunks.forEach((chunk, cIdx) => {
-              const isWordEnd = (cIdx === wordChunks.length - 1);
-              
-              const stepsRequired = activePattern[patternIndex % activePattern.length];
-              patternIndex++; 
-
-              const chunkDuration = stepsRequired * timePerStep;
+          wordChunksArray.forEach((chunks) => {
+            chunks.forEach((chunk, cIdx) => {
+              const isWordEnd = (cIdx === chunks.length - 1);
+              const chunkDuration = timePerStep;
 
               mappedWords.push({
-                word: chunk,
+                word: chunk.replace(/\|/g, ''), // Strip pipes purely for the visual rendering layer
                 startTime: localWordTime,
                 duration: chunkDuration * 0.85, 
                 isWordEnd: isWordEnd
@@ -779,7 +739,7 @@ export default function Room04_Booth() {
           else if (cleanTextEnd === ',') localWordTime += (1 * timePerStep);
 
           parsed.push({ 
-            text: lineObj.text, 
+            text: lineObj.text.replace(/\|/g, ''), // Strip pipes from the full sentence string
             startTime: lineStartTime, 
             lineDuration: timeForThisLine, 
             isHeader: false, 
@@ -787,7 +747,7 @@ export default function Room04_Booth() {
             words: mappedWords 
           });
 
-          // Prevent chain-linked drift beyond the block limit by advancing exactly one line
+          // Prevent chain-linked drift
           currentFlowTime += timeForThisLine; 
         });
       }
