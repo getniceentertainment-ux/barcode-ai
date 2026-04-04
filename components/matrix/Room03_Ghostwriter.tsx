@@ -438,14 +438,17 @@ export default function Room03_Ghostwriter() {
             </div>
 
             <div>
-              <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Hook Architecture</label>
+              <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Hook Architecture (Mathematical Subdivisions)</label>
               <select 
                 value={gwHookType}
                 onChange={(e) => setGwHookType(e.target.value)}
                 className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest"
               >
                 <option value="chant">Stadium Chant (Spacious & Melodic)</option>
-                <option value="bouncy">The Ones & Twos (Dense & Repetitive)</option>
+                <option value="bouncy">The Double-Up (Dense & Repetitive)</option>
+                <option value="triplet">The Trap Triplet (12-Beat Subdivision)</option>
+                <option value="symmetry">Symmetry Break (A-B-A-B Structure)</option>
+                <option value="prime">Prime Syncopation (Off-Beat Slide)</option>
               </select>
             </div>
 

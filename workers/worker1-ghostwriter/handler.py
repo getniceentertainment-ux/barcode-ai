@@ -181,7 +181,7 @@ You are "The Mogul." Your voice blends street-smart authenticity with boardroom 
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static"):
+def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2):
     
     if section_index == 0:
         arc_instruction = "Establish the setting and the origin. Ground the listener."
@@ -197,7 +197,18 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     current_max_syllables = max_syllables
     melodic_rules = ""
     evolution_rules = ""
+    energy_rules = ""
     
+    # --- DYNAMIC ARRAY SYLLABLE MATH ---
+    if current_energy == 1:
+        current_max_syllables = max(4, int(max_syllables * 0.6))
+        energy_rules = "\n[ENERGY LEVEL 1 - THE DROP]: The beat is very quiet here. Write sparse, conversational, breathy lines. Use minimal syllables and leave empty space."
+    elif current_energy == 4:
+        current_max_syllables = int(max_syllables * 1.2)
+        energy_rules = "\n[ENERGY LEVEL 4 - THE CLIMAX]: The beat is exploding. Pack the pocket. Write dense, aggressive, rapid-fire multi-syllabic rhymes."
+    else:
+        energy_rules = f"\n[ENERGY LEVEL {current_energy} - THE POCKET]: The beat has standard driving energy. Maintain a steady, confident cadence."
+
     # 2. Translate Hook Type into Syllable Math
     if "HOOK" in section_type.upper():
         if hook_type == "bouncy":
@@ -207,7 +218,31 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 1. BOUNCY & REPETITIVE: Repeat short, punchy 2-word or 3-word phrases back-to-back.
 2. DENSE STRUCTURE: Lock tightly into the kick and snare. Make it highly rhythmic and syncopated.
 """
-        else: # Default Chant
+        elif hook_type == "triplet":
+            current_max_syllables = int(max_syllables * 1.1)
+            melodic_rules = """
+[THE TRIPLET MATH OVERRIDE]
+1. RHYTHMIC MATH: Write entirely in groups of 3 syllables (triplets). 
+2. CADENCE: Use a rapid-fire, rolling staccato delivery.
+3. REPETITION: Repeat the exact same rhythmic cell across the 4-count.
+"""
+        elif hook_type == "symmetry":
+            current_max_syllables = int(max_syllables * 0.8)
+            melodic_rules = """
+[THE SYMMETRY BREAK OVERRIDE]
+1. SPLIT STRUCTURE: You MUST write in an A-B-A-B structural pattern.
+2. THE 'A' LINES: Line 1 and Line 3 must share the exact same rhythm, syllable count, and rhyme scheme.
+3. THE 'B' LINES: Line 2 and Line 4 must be drastically different from the 'A' lines, but must perfectly match each other.
+"""
+        elif hook_type == "prime":
+            # Force odd prime numbers to create syncopation
+            current_max_syllables = 7 if max_syllables > 7 else 5
+            melodic_rules = f"""
+[THE PRIME FLOW OVERRIDE]
+1. SYNCOPATION MATH: Force an odd-numbered syllable count of EXACTLY {current_max_syllables} syllables per line.
+2. THE GAPS: Because this is an odd number over an even beat, leave unnatural gaps and rests at the end of the line. Make the flow slide over the downbeat.
+"""
+        else: # Default: chant
             current_max_syllables = max(4, int(max_syllables * 0.5))
             melodic_rules = """
 [STADIUM CHANT HOOK OVERRIDE]
@@ -232,6 +267,7 @@ Halfway through these {bars} bars, you MUST completely change your rhythmic cade
 - NARRATIVE ARC: {arc_instruction}
 - RHYTHMIC POCKET: {pattern_desc}
 - SYLLABLE LIMIT: Strictly {current_max_syllables} or less per line. (CRITICAL)
+{energy_rules}
 {hook_context}
 {melodic_rules}
 {evolution_rules}
@@ -258,7 +294,8 @@ CRITICAL REFINEMENT COMMANDS:
 2. OBEY THE POCKET: {pocket_instruction}
 3. NO HEADERS. NO TIMESTAMPS. NO POETRY.
 4. Output EXACTLY {bars} lines.
-5. THE ENGINEER PASS: You MUST place a pipe symbol (|) between every single syllable to map the rhythm. (e.g., instead of "GETTING NICE", write "GET|TING NICE"). 
+5. THE ENGINEER PASS: You MUST place a pipe symbol (|) between syllables of multi-syllable words (e.g., "GET|TING"). You MUST preserve regular spaces between different words. DO NOT combine separate words together. CORRECT: "GET|TING NICE TO|DAY" INCORRECT: "GET|TING|NICE|TO|DAY"
+{energy_rules}
 {melodic_rules}
 
 Rewrite the final {bars} lines and map the syllables now.
@@ -293,6 +330,11 @@ def handler(event):
     hook_type = job_input.get("hookType", "chant")
     flow_evolution = job_input.get("flowEvolution", "static")
 
+    # --- CATCH THE DYNAMIC ARRAY ---
+    dynamic_array = job_input.get("dynamic_array", [2, 2, 2, 2, 2, 2, 2, 2])
+    total_blueprint_bars = sum(sec.get("bars", 16) for sec in blueprint)
+    if total_blueprint_bars == 0: total_blueprint_bars = 1
+
     seconds_per_bar = (60.0 / bpm) * 4.0
     speed_factor = 4.5
     if "chopper" in style: speed_factor = 6.0
@@ -321,7 +363,12 @@ def handler(event):
         start_bar = section.get("startBar", current_cumulative_bar)
         pattern_desc = section.get("patternDesc", "Standard Score Card")
         
-        final_lyrics += f"\n[{sec_type} - {bars} BARS | BAR {start_bar}]\n"
+        # --- CALCULATE THE EXACT ENERGY FOR THIS SECTION ---
+        progress_ratio = start_bar / total_blueprint_bars
+        array_index = min(7, int(progress_ratio * 8))
+        current_energy = dynamic_array[array_index]
+        
+        final_lyrics += f"\n[{sec_type} - {bars} BARS | BAR {start_bar} | ENERGY: {current_energy}/4]\n"
         
         if sec_type == "INSTRUMENTAL":
             section_lines = ["Mmm. Mmm." for _ in range(bars)]
@@ -334,7 +381,7 @@ def handler(event):
             section_lines = section_lines[:bars]
             
         else:
-            # NORMAL GENERATION (WITH TOPLINE PARAMS)
+            # NORMAL GENERATION (WITH TOPLINE PARAMS & ENERGY INJECTION)
             section_lines = generate_section(
                 system_prompt=system_prompt, 
                 previous_lyrics=context_lyrics, 
@@ -346,8 +393,9 @@ def handler(event):
                 prompt_topic=topic,
                 section_index=index,
                 anchor_hook=anchor_hook_text,
-                hook_type=hook_type,           # <-- INJECTED
-                flow_evolution=flow_evolution  # <-- INJECTED
+                hook_type=hook_type,           
+                flow_evolution=flow_evolution,
+                current_energy=current_energy  # <-- THE LETHAL INJECTION
             )
             
             if "HOOK" in sec_type:
