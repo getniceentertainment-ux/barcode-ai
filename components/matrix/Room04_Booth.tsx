@@ -2,16 +2,13 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { 
-  Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, ToggleLeft, ToggleRight 
+  Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, ToggleLeft, ToggleRight, Crosshair, ListVideo
 } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
-import { useMatrixStore } from "../../store/useMatrixStore";
+import { useMatrixStore, QuantizedLine, QuantizedSyllable } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase"; 
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
-
-type WordMapping = { word: string; startTime: number; duration: number; isWordEnd?: boolean };
-type LyricLine = { text: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[] };
 
 // --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR (FALLBACK ONLY) ---
 function estimateSyllables(word: string): number {
@@ -200,11 +197,16 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
 }
 
 export default function Room04_Booth() {
-  const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, addToast, gwStyle } = useMatrixStore();
+  const { 
+    generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
+    updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, 
+    addToast, gwStyle, quantizedLines, setQuantizedLines 
+  } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isReviewMode, setIsReviewMode] = useState(false); 
   
   const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
   const [guideProgress, setGuideProgress] = useState(0); 
@@ -214,7 +216,6 @@ export default function Room04_Booth() {
   const [teleprompterEnabled, setTeleprompterEnabled] = useState(true);
 
   const [currentTime, setCurrentTime] = useState(0);
-  const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
 
@@ -229,6 +230,7 @@ export default function Room04_Booth() {
   const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
   const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
   const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
+  const secondsPerSlot = secondsPerBar / 16; 
 
   const trimWaveformRef = useRef<HTMLDivElement>(null);
   const trimWavesurferRef = useRef<WaveSurfer | null>(null);
@@ -247,8 +249,50 @@ export default function Room04_Booth() {
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
+  // --- 1. THE SNAKING DRAG & DROP LOGIC ---
+  const handleDragStart = (e: React.DragEvent, lineId: string, syllableId: string, originalSlot: number) => {
+    e.dataTransfer.setData("application/json", JSON.stringify({ lineId, syllableId, originalSlot }));
+  };
+
+  const handleDrop = (e: React.DragEvent, targetLineId: string, targetSlot: number) => {
+    e.preventDefault();
+    const dataString = e.dataTransfer.getData("application/json");
+    if (!dataString) return;
+    
+    const { lineId, syllableId, originalSlot } = JSON.parse(dataString);
+    if (lineId !== targetLineId) return; 
+
+    const delta = targetSlot - originalSlot;
+    if (delta === 0) return;
+
+    setQuantizedLines(quantizedLines.map(line => {
+      if (line.id === targetLineId && !line.isHeader && line.words) {
+        const targetIndex = line.words.findIndex(w => w.id === syllableId);
+        if (targetIndex === -1) return line;
+
+        const newWords = [...line.words];
+
+        // DYNAMIC SNAKING: Move the targeted word AND all subsequent words by the exact delta
+        for (let i = targetIndex; i < newWords.length; i++) {
+           let newSlot = newWords[i].slot + delta;
+           newSlot = Math.max(0, Math.min(15, newSlot)); 
+           
+           newWords[i] = {
+             ...newWords[i],
+             slot: newSlot,
+             // RE-CALCULATE AUDIO SYNC TIME
+             startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot)
+           };
+        }
+
+        return { ...line, words: newWords };
+      }
+      return line;
+    }));
+  };
+
   const handleGenerateGuide = async () => {
-    if (!lyricLines || lyricLines.length === 0) {
+    if (!quantizedLines || quantizedLines.length === 0) {
       if (addToast) addToast("No valid lyrics found to generate guide.", "error");
       return;
     }
@@ -257,7 +301,7 @@ export default function Room04_Booth() {
     setGuideProgress(0);
     
     try {
-      const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
+      const parsedLines = quantizedLines.filter(l => !l.isHeader && l.text.trim().length > 0);
       if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
       const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
@@ -274,7 +318,7 @@ export default function Room04_Booth() {
           const res = await fetch('/api/audio/generate-guide', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lyrics: line.text, bpm: preciseBpm })
+            body: JSON.stringify({ lyrics: line.originalText, bpm: preciseBpm })
           });
           
           if (!res.ok) throw new Error("Groq API rate limit or disconnect.");
@@ -288,8 +332,6 @@ export default function Room04_Booth() {
 
           const source = offlineCtx.createBufferSource();
           source.buffer = trimmedBuffer;
-          
-          // 🚨 THE STRETCH: The TTS perfectly scales its read speed to fit the exact DAW pocket boundary
           source.playbackRate.value = ttsDuration / mathLineDuration; 
 
           const gainNode = offlineCtx.createGain();
@@ -312,15 +354,7 @@ export default function Room04_Booth() {
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
 
-      addVocalStem({ 
-        id: takeId, 
-        type: "Guide" as TrackType, 
-        url: url, 
-        blob: blob, 
-        volume: 0.3, 
-        offsetBars: 0 
-      });
-      
+      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.3, offsetBars: 0 });
       if (addToast) addToast("High-fidelity audio glued to visual metronome.", "success");
     } catch (err: any) {
       console.error(err);
@@ -340,9 +374,7 @@ export default function Room04_Booth() {
     if (!userSession?.id) return;
     if(addToast) addToast("Routing to Secure Checkout...", "info");
     try {
-      const res = await fetch('/api/stripe/engineering-token', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: userSession.id })
-      });
+      const res = await fetch('/api/stripe/engineering-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: userSession.id }) });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
       else throw new Error(data.error || "Failed to route to checkout.");
@@ -399,9 +431,7 @@ export default function Room04_Booth() {
     } catch (err: any) {
       console.error("Trim math failed:", err);
       if (addToast) addToast(err.message || "Failed to slice audio.", "error");
-    } finally {
-      setIsProcessingTrim(false);
-    }
+    } finally { setIsProcessingTrim(false); }
   };
 
   const togglePlayback = async () => {
@@ -467,27 +497,21 @@ export default function Room04_Booth() {
       for (let chunk of recordedChunksRef.current) { merged.set(chunk, offset); offset += chunk.length; }
       const wavBlob = encodeWAV(merged, audioCtxRef.current.sampleRate);
       
-      setIsRecording(false);
-      setIsUploading(true);
+      setIsRecording(false); setIsUploading(true);
       
       try {
         const takeId = `TAKE_${Date.now()}`;
         const fileName = `${userSession?.id || 'anon'}/${takeId}.wav`;
-
         const { error } = await supabase.storage.from('raw-audio').upload(fileName, wavBlob, { contentType: 'audio/wav', upsert: true });
         if (error) throw error;
-
         const { data: publicData } = supabase.storage.from('raw-audio').getPublicUrl(fileName);
-
         addVocalStem({ id: takeId, type: activeTrack, url: publicData.publicUrl, blob: wavBlob, volume: 1, offsetBars: 0 });
         if (addToast) addToast("Vocal take secured in raw-audio ledger.", "success");
       } catch (err) {
         console.error("Upload error", err);
         if (addToast) addToast("Storage sync failed. Temporarily mapped to local blob.", "error");
         addVocalStem({ id: `TAKE_${Date.now()}`, type: activeTrack, url: URL.createObjectURL(wavBlob), blob: wavBlob, volume: 1, offsetBars: 0 });
-      } finally {
-        setIsUploading(false);
-      }
+      } finally { setIsUploading(false); }
     }
     
     setIsPlaying(false); setIsRecording(false); setCurrentTime(0);
@@ -590,9 +614,7 @@ export default function Room04_Booth() {
             const audioBuf = await new Promise<AudioBuffer>((resolve, reject) => {
                audioCtxRef.current!.decodeAudioData(arrayBuf, resolve, reject);
             });
-            if (isMounted) {
-              stemBuffersRef.current.set(stem.id, audioBuf);
-            }
+            if (isMounted) stemBuffersRef.current.set(stem.id, audioBuf);
           } catch (e: any) { 
             if (e.name !== 'AbortError') console.warn(`Soft-fail decoding stem ${stem.id}:`, e); 
           }
@@ -626,32 +648,18 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- THE MASTER SCORE CARD ALGORITHM (LOBOTOMIZED: STRICT LLM PIPE OBEDIENCE) ---
+  // --- THE MASTER SCORE CARD ALGORITHM ---
   useEffect(() => {
     if (!generatedLyrics) return;
+    if (quantizedLines.length > 0) return; // Prevent overwriting manual drag edits
 
     const lines = generatedLyrics.split('\n');
     
-    // --- SURGICAL FIX: PRESERVE THE PIPES ---
     const sanitizedLines = lines.map(l => {
-      // 1. DEEP NORMALIZATION: Kill all invisible/ghost characters instantly
       let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
-
       if (text.startsWith('[')) return { text, isHeader: true }; 
-      
-      // 2. Standard Clean-up WITHOUT killing the LLM's pipe symbols
-      text = text
-        .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') // Remove timestamps
-        .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') // Remove bar counts
-        .replace(/pipe\s*symbol/gi, '') 
-        // Notice we REMOVED the `.replace(/\|/g, ' ')` that was stripping the truth!
-        .replace(/\s+/g, ' ') 
-        .trim();
-
-      // Force-insert spaces after commas if the LLM mashed them
-      text = text.replace(/,/g, ', ');
-      text = text.replace(/\s+/g, ' ').trim();
-
+      text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '').replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
+      text = text.replace(/,/g, ', ').replace(/\s+/g, ' ').trim();
       return { text, isHeader: false };
     }).filter(obj => obj.text.length > 0);
 
@@ -660,27 +668,23 @@ export default function Room04_Booth() {
 
     sanitizedLines.forEach(obj => {
       if (obj.isHeader) {
-        if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) {
-          llmBlocks.push(currentLlmBlock);
-        }
+        if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) llmBlocks.push(currentLlmBlock);
         currentLlmBlock = { header: obj.text, lines: [] };
-      } else {
-        currentLlmBlock.lines.push(obj);
-      }
+      } else { currentLlmBlock.lines.push(obj); }
     });
     if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) llmBlocks.push(currentLlmBlock);
 
-    const parsed: LyricLine[] = [];
+    const parsed: QuantizedLine[] = [];
     let runningBlockStartBar = 0;
+    let lineIdCounter = 0;
 
     blueprint.forEach((bp, index) => {
       const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
-
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
       const blockDurationSecs = bp.bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
-      parsed.push({ text: `[${bp.type}]`, startTime: blockStartTime, lineDuration: 0, isHeader: true, timestamp: "", words: [] });
+      parsed.push({ id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] });
 
       if (bp.type === "INSTRUMENTAL") {
          const hums = Array(bp.bars).fill("Mmm. Mmm.").join(" ");
@@ -689,18 +693,16 @@ export default function Room04_Booth() {
 
       const numLines = blockData.lines.length;
       if (numLines > 0) {
-        
         const timeForThisLine = blockDurationSecs / numLines; 
         let currentFlowTime = blockStartTime;
 
         blockData.lines.forEach((lineObj) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
-          const mappedWords: WordMapping[] = [];
+          const mappedWords: QuantizedSyllable[] = [];
 
           let totalLineSteps = 0;
           if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
 
-          // --- SURGICAL FIX: EXTRACT EXACT CHUNKS FROM LLM PIPES ---
           const wordChunksArray = rawWords.map(w => {
             const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
             totalLineSteps += chunks.length;
@@ -715,31 +717,31 @@ export default function Room04_Booth() {
           let localWordTime = currentFlowTime;
           const lineStartTime = currentFlowTime;
 
-          if (lineObj.text.trim().startsWith('...')) {
-             localWordTime += (4 * timePerStep);
-          }
+          if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
 
           wordChunksArray.forEach((chunks) => {
             chunks.forEach((chunk, cIdx) => {
-              const isWordEnd = (cIdx === chunks.length - 1);
               const chunkDuration = timePerStep;
+              // Map initial time to grid slots (0-15)
+              const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForThisLine) * 16)));
 
               mappedWords.push({
-                word: chunk.replace(/\|/g, ''), // Strip pipes purely for the visual rendering layer
+                id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+                word: chunk.replace(/\|/g, ''),
+                slot: mappedSlot,
                 startTime: localWordTime,
                 duration: chunkDuration * 0.85, 
-                isWordEnd: isWordEnd
+                isWordEnd: (cIdx === chunks.length - 1)
               });
-
               localWordTime += chunkDuration;
             });
           });
 
-          if (cleanTextEnd === '.') localWordTime += (4 * timePerStep);
-          else if (cleanTextEnd === ',') localWordTime += (1 * timePerStep);
-
           parsed.push({ 
-            text: lineObj.text.replace(/\|/g, ''), // Strip pipes from the full sentence string
+            id: `line-${lineIdCounter++}`,
+            barIndex: Math.floor(lineStartTime / secondsPerBar),
+            text: lineObj.text.replace(/\|/g, ''), 
+            originalText: lineObj.text,
             startTime: lineStartTime, 
             lineDuration: timeForThisLine, 
             isHeader: false, 
@@ -747,16 +749,14 @@ export default function Room04_Booth() {
             words: mappedWords 
           });
 
-          // Prevent chain-linked drift
           currentFlowTime += timeForThisLine; 
         });
       }
-
       runningBlockStartBar = blockStartBar + bp.bars;
     });
     
-    setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle]);
+    setQuantizedLines(parsed);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, quantizedLines, setQuantizedLines]);
 
   useEffect(() => {
     if (trimmingStem && trimWaveformRef.current) {
@@ -776,8 +776,8 @@ export default function Room04_Booth() {
   useEffect(() => {
     if (!teleprompterEnabled) return; 
 
-    const currentLineIndex = lyricLines.findIndex((l, i) => {
-      const nextLine = lyricLines[i + 1];
+    const currentLineIndex = quantizedLines.findIndex((l, i) => {
+      const nextLine = quantizedLines[i + 1];
       return currentTime >= l.startTime && (!nextLine || currentTime < nextLine.startTime);
     });
 
@@ -789,7 +789,7 @@ export default function Room04_Booth() {
         if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
       }
     }
-  }, [currentTime, lyricLines, autoScroll, activeLineIndex, teleprompterEnabled]);
+  }, [currentTime, quantizedLines, autoScroll, activeLineIndex, teleprompterEnabled]);
 
   if (!audioData) {
     return (
@@ -802,187 +802,247 @@ export default function Room04_Booth() {
   }
 
   return (
-    <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500 relative">
+    <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500 relative flex-col">
       
-      {/* LEFT SIDEBAR: TELEPROMPTER */}
-      <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
-        <div className="p-8 pb-4 border-b border-[#111] flex justify-between items-center relative">
-           <div className="flex items-center gap-4">
-             <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
+      <div className="flex-1 flex overflow-hidden">
+        {/* LEFT SIDEBAR: HUD TOGGLE (PROMPTER VS QUANTIZER) */}
+        <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
+          <div className="p-8 pb-4 border-b border-[#111] flex justify-between items-center relative flex-wrap gap-4">
+             <div className="flex items-center gap-4">
+               <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555] flex items-center gap-2">
+                  <Mic size={20} /> BOOTH
+               </h2>
+               
+               <div className="flex border border-[#333] rounded overflow-hidden">
+                 <button 
+                   onClick={() => setIsReviewMode(false)}
+                   className={`px-3 py-1.5 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 ${!isReviewMode ? 'bg-[#E60000]/20 text-[#E60000]' : 'bg-black text-[#555] hover:text-white'}`}
+                 >
+                   <ListVideo size={12} /> Prompter
+                 </button>
+                 <button 
+                   onClick={() => setIsReviewMode(true)}
+                   className={`px-3 py-1.5 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 border-l border-[#333] ${isReviewMode ? 'bg-yellow-500/10 text-yellow-500' : 'bg-black text-[#555] hover:text-white'}`}
+                 >
+                   <Crosshair size={12} /> Quantize Grid
+                 </button>
+               </div>
+             </div>
              
-             <button 
-               onClick={() => setTeleprompterEnabled(!teleprompterEnabled)}
-               className={`px-3 py-1 text-[9px] uppercase font-mono font-bold transition-all border flex items-center gap-1.5 ${teleprompterEnabled ? 'bg-[#E60000]/20 text-[#E60000] border-[#E60000]/50' : 'bg-black text-[#555] border-[#333] hover:text-white'}`}
-             >
-               {teleprompterEnabled ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-               {teleprompterEnabled ? 'Active' : 'Muted'}
-             </button>
-
-             <button 
-               onClick={handleGenerateGuide}
-               disabled={isGeneratingGuide || !generatedLyrics}
-               className="bg-[#111] border border-[#333] text-[#E60000] hover:bg-white hover:text-black hover:border-white px-2.5 py-1 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
-               title="Quantize AI Vocals to Grid"
-             >
-               {isGeneratingGuide ? (
-                 <><Loader2 size={10} className="animate-spin" /> {guideProgress}%</>
-               ) : (
-                 <><Mic size={10} /> Generate Guide</>
-               )}
-             </button>
-           </div>
-           {audioData?.bpm && <span className="text-[10px] text-[#E60000] font-mono absolute right-8 top-3">{preciseBpm.toFixed(3)} BPM</span>}
-        </div>
-        
-        <div 
-          ref={teleprompterRef} 
-          onWheel={() => setAutoScroll(false)} 
-          onTouchMove={() => setAutoScroll(false)} 
-          className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative"
-        >
-          {lyricLines.map((line, i) => {
-            const isActiveLine = teleprompterEnabled && !line.isHeader && i === activeLineIndex;
-            
-            return (
-              <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActiveLine ? 'bg-[#E60000]/10 py-2 px-3 rounded border-l-2 border-[#E60000]' : 'py-2 px-3 border-l-2 border-transparent'}`}>
-                {!line.isHeader && line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
-                
-                <span className="flex-1 leading-loose">
-                  {line.isHeader ? line.text : line.words?.map((wObj, wIdx) => {
-                    const isPast = currentTime >= wObj.startTime + wObj.duration;
-                    const isActiveWord = isActiveLine && currentTime >= wObj.startTime && currentTime < wObj.startTime + wObj.duration;
-
-                    return (
-                      <span key={wIdx} className={`relative inline-block ${wObj.isWordEnd ? 'mr-2' : ''}`}>
-                        {isActiveWord && (
-                          <span className="absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#E60000] rounded-full animate-bounce shadow-[0_0_5px_#E60000]"></span>
-                        )}
-                        <span className={`transition-colors duration-100 ${isPast ? "text-[#888]" : isActiveWord ? "text-white font-bold drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" : "text-[#444]"}`}>
-                          {wObj.word}
-                        </span>
-                      </span>
-                    );
-                  })}
-                </span>
-              </div>
-            );
-          })}
+             {!isReviewMode && (
+               <button 
+                 onClick={handleGenerateGuide}
+                 disabled={isGeneratingGuide || !generatedLyrics}
+                 className="bg-[#111] border border-[#333] text-[#E60000] hover:bg-white hover:text-black hover:border-white px-2.5 py-1 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+               >
+                 {isGeneratingGuide ? <><Loader2 size={10} className="animate-spin" /> {guideProgress}%</> : <><Mic size={10} /> Sync Guide Audio</>}
+               </button>
+             )}
+          </div>
           
-          {teleprompterEnabled && !autoScroll && (
-            <div className="sticky bottom-4 w-full flex justify-center mt-8">
-              <button 
-                onClick={() => {
-                  setAutoScroll(true);
-                  if (activeLineIndex !== -1 && teleprompterRef.current) {
-                    const activeEl = teleprompterRef.current.children[activeLineIndex] as HTMLElement;
-                    if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
-                  }
-                }} 
-                className="bg-[#E60000] text-white text-[9px] px-4 py-2 font-mono uppercase tracking-widest shadow-[0_0_15px_rgba(230,0,0,0.5)] rounded-full flex items-center gap-2 transition-all hover:bg-red-700 hover:scale-105"
-              >
-                <Activity size={12} className="animate-pulse" /> Resume Sync
-              </button>
+          {/* CONTENT TOGGLE */}
+          {isReviewMode ? (
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-[#020202]">
+                <div className="mb-6 flex justify-between items-end border-b border-[#222] pb-4">
+                  <div>
+                    <h3 className="font-oswald text-sm uppercase tracking-widest text-white">MIDI Flow Engine</h3>
+                    <p className="font-mono text-[9px] text-[#888] mt-1">Snaking Drag enabled. Shifts subsequent text.</p>
+                  </div>
+                  <div className="flex gap-2 text-[8px] font-mono text-[#555] uppercase font-bold">
+                    <span>Kick (1)</span> | <span>Snare (2,4)</span>
+                  </div>
+                </div>
+
+                <div className="space-y-4 pb-20">
+                  {quantizedLines.filter(l => !l.isHeader).map((line) => (
+                    <div key={line.id} className="bg-black border border-[#222] rounded overflow-hidden">
+                      <div className="text-[8px] font-mono text-[#555] p-1 bg-[#0a0a0a] border-b border-[#111] truncate">{line.text}</div>
+                      <div className="flex h-10 relative bg-[#0a0a0a]">
+                        {Array.from({ length: 16 }).map((_, slotIndex) => {
+                          const mappedSyl = line.words?.find(s => s.slot === slotIndex);
+                          const isDownbeat = slotIndex % 4 === 0;
+                          const isSnare = slotIndex === 4 || slotIndex === 12;
+
+                          return (
+                            <div 
+                              key={slotIndex}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={(e) => handleDrop(e, line.id, slotIndex)}
+                              className={`flex-1 border-r border-[#111] relative flex items-center justify-center
+                                ${isDownbeat ? 'bg-[#151515]' : ''} 
+                                ${isSnare ? 'bg-[#2a0505]' : ''}
+                              `}
+                            >
+                              {mappedSyl && (
+                                <div 
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, line.id, mappedSyl.id, mappedSyl.slot)}
+                                  className="absolute z-10 w-[90%] py-1 bg-[#E60000] text-white text-[9px] font-mono font-bold text-center rounded cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(230,0,0,0.4)] hover:bg-red-500 overflow-hidden text-ellipsis whitespace-nowrap"
+                                  title={mappedSyl.word}
+                                >
+                                  {mappedSyl.word}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+            </div>
+          ) : (
+            <div 
+              ref={teleprompterRef} 
+              onWheel={() => setAutoScroll(false)} 
+              onTouchMove={() => setAutoScroll(false)} 
+              className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative"
+            >
+              {quantizedLines.map((line, i) => {
+                const isActiveLine = teleprompterEnabled && !line.isHeader && i === activeLineIndex;
+                
+                return (
+                  <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActiveLine ? 'bg-[#E60000]/10 py-2 px-3 rounded border-l-2 border-[#E60000]' : 'py-2 px-3 border-l-2 border-transparent'}`}>
+                    {!line.isHeader && line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
+                    
+                    <span className="flex-1 leading-loose">
+                      {line.isHeader ? line.text : line.words?.map((wObj, wIdx) => {
+                        const isPast = currentTime >= wObj.startTime + wObj.duration;
+                        const isActiveWord = isActiveLine && currentTime >= wObj.startTime && currentTime < wObj.startTime + wObj.duration;
+
+                        return (
+                          <span key={wIdx} className={`relative inline-block ${wObj.isWordEnd ? 'mr-2' : ''}`}>
+                            {isActiveWord && (
+                              <span className="absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#E60000] rounded-full animate-bounce shadow-[0_0_5px_#E60000]"></span>
+                            )}
+                            <span className={`transition-colors duration-100 ${isPast ? "text-[#888]" : isActiveWord ? "text-white font-bold drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" : "text-[#444]"}`}>
+                              {wObj.word}
+                            </span>
+                          </span>
+                        );
+                      })}
+                    </span>
+                  </div>
+                );
+              })}
+              
+              {teleprompterEnabled && !autoScroll && (
+                <div className="sticky bottom-4 w-full flex justify-center mt-8">
+                  <button 
+                    onClick={() => {
+                      setAutoScroll(true);
+                      if (activeLineIndex !== -1 && teleprompterRef.current) {
+                        const activeEl = teleprompterRef.current.children[activeLineIndex] as HTMLElement;
+                        if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
+                      }
+                    }} 
+                    className="bg-[#E60000] text-white text-[9px] px-4 py-2 font-mono uppercase tracking-widest shadow-[0_0_15px_rgba(230,0,0,0.5)] rounded-full flex items-center gap-2 transition-all hover:bg-red-700 hover:scale-105"
+                  >
+                    <Activity size={12} className="animate-pulse" /> Resume Sync
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
-      </div>
 
-      {/* RIGHT PANEL: MIXER & RECORDER */}
-      <div className="flex-1 flex flex-col relative bg-black">
-        <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10 relative">
-          <div className="flex items-center gap-4">
-            <button onClick={togglePlayback} disabled={isUploading} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all disabled:opacity-50">
-              {isPlaying && !isRecording ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
-            </button>
-            <button onClick={stopEverything} disabled={isUploading} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all text-[#888] disabled:opacity-50">
-              <Square size={20} />
-            </button>
-            <button onClick={isRecording ? stopEverything : startHardwareRecording} disabled={isUploading} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all disabled:opacity-50 ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse' : 'bg-[#111] border border-[#333] text-white hover:text-[#E60000]'}`}>
-              {isUploading ? <Loader2 size={24} className="animate-spin" /> : <Mic size={24} />}
-            </button>
-          </div>
-          
-          {isUploading && (
-             <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 text-[#E60000] bg-[#110000] px-4 py-1.5 border border-[#E60000]/30 rounded-full animate-pulse">
-               <Activity size={14} />
-               <span className="font-mono text-[9px] uppercase tracking-widest font-bold">Syncing storage node...</span>
-             </div>
-          )}
-          <div className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
-            {Math.floor(currentTime / 60).toString().padStart(2, '0')}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
-          </div>
-        </div>
-
-        <div className="p-6 border-b border-[#222] bg-[#050505]">
-          <div ref={waveformRef} className="w-full h-20 bg-black border border-[#111] rounded-lg"></div>
-        </div>
-
-        <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
-          <div className="flex border-b border-[#111] mb-6">
-            {(["Lead", "Adlib", "Double", "Guide"] as TrackType[]).map(t => (
-              <button key={t} onClick={() => setActiveTrack(t)} className={`flex-1 py-3 font-oswald text-[10px] uppercase tracking-[0.2em] font-bold transition-all ${activeTrack === t ? 'bg-[#E60000] text-white' : 'text-[#444] hover:text-white hover:bg-[#0a0a0a]'}`}>{t} Tracking</button>
-            ))}
+        {/* RIGHT PANEL: MIXER & RECORDER (UNTOUCHED) */}
+        <div className="flex-1 flex flex-col relative bg-black">
+          <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10 relative">
+            <div className="flex items-center gap-4">
+              <button onClick={togglePlayback} disabled={isUploading} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all disabled:opacity-50">
+                {isPlaying && !isRecording ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
+              </button>
+              <button onClick={stopEverything} disabled={isUploading} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all text-[#888] disabled:opacity-50">
+                <Square size={20} />
+              </button>
+              <button onClick={isRecording ? stopEverything : startHardwareRecording} disabled={isUploading} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all disabled:opacity-50 ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse' : 'bg-[#111] border border-[#333] text-white hover:text-[#E60000]'}`}>
+                {isUploading ? <Loader2 size={24} className="animate-spin" /> : <Mic size={24} />}
+              </button>
+            </div>
+            
+            {isUploading && (
+               <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 text-[#E60000] bg-[#110000] px-4 py-1.5 border border-[#E60000]/30 rounded-full animate-pulse">
+                 <Activity size={14} />
+                 <span className="font-mono text-[9px] uppercase tracking-widest font-bold">Syncing storage node...</span>
+               </div>
+            )}
+            <div className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
+              {Math.floor(currentTime / 60).toString().padStart(2, '0')}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
+            </div>
           </div>
 
-          <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Timeline Layers</h4>
-          <div className="space-y-3">
-            {vocalStems.map(s => {
-              const isMuted = mutedStems.has(s.id);
-              return (
-              <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
-                <div className="flex justify-between items-center mb-3">
-                  <div className="flex items-center gap-4">
-                    <select value={s.type || "Lead"} onChange={(e) => handleUpdateTakeType(s.id, e.target.value)} className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white">
-                      <option value="Lead">Lead</option><option value="Adlib">Adlib</option><option value="Double">Double</option><option value="Guide">Guide</option>
-                    </select>
-                    <span className="font-mono text-[10px] text-[#444]">{s.id.substring(5, 12)}</span>
-                    <span className={`font-mono text-[8px] px-1 border ${s.type === 'Guide' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-green-500/10 text-green-500 border-green-500/20'}`}>
-                      {s.type === 'Guide' ? 'NEURAL-AUDIO' : 'RAW-AUDIO'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 mr-4">
-                      <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors"><Scissors size={14} /></button>
-                      <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>{isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>
+          <div className="p-6 border-b border-[#222] bg-[#050505]">
+            <div ref={waveformRef} className="w-full h-20 bg-black border border-[#111] rounded-lg"></div>
+          </div>
+
+          <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+            <div className="flex border-b border-[#111] mb-6">
+              {(["Lead", "Adlib", "Double", "Guide"] as TrackType[]).map(t => (
+                <button key={t} onClick={() => setActiveTrack(t)} className={`flex-1 py-3 font-oswald text-[10px] uppercase tracking-[0.2em] font-bold transition-all ${activeTrack === t ? 'bg-[#E60000] text-white' : 'text-[#444] hover:text-white hover:bg-[#0a0a0a]'}`}>{t} Tracking</button>
+              ))}
+            </div>
+
+            <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Timeline Layers</h4>
+            <div className="space-y-3">
+              {vocalStems.map(s => {
+                const isMuted = mutedStems.has(s.id);
+                return (
+                <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="flex items-center gap-4">
+                      <select value={s.type || "Lead"} onChange={(e) => handleUpdateTakeType(s.id, e.target.value)} className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white">
+                        <option value="Lead">Lead</option><option value="Adlib">Adlib</option><option value="Double">Double</option><option value="Guide">Guide</option>
+                      </select>
+                      <span className="font-mono text-[10px] text-[#444]">{s.id.substring(5, 12)}</span>
+                      <span className={`font-mono text-[8px] px-1 border ${s.type === 'Guide' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-green-500/10 text-green-500 border-green-500/20'}`}>
+                        {s.type === 'Guide' ? 'NEURAL-AUDIO' : 'RAW-AUDIO'}
+                      </span>
                     </div>
-                    <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2 mr-4">
+                        <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors"><Scissors size={14} /></button>
+                        <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>{isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>
+                      </div>
+                      <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-4 mt-3 border-t border-[#111] pt-4">
+                    <div className="flex items-center gap-4">
+                      <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Start Bar</span>
+                      <div className="flex-1 flex items-center gap-3">
+                        <button onClick={() => updateStemOffset(s.id, Math.max(0, (s.offsetBars||0) - 1))} className="text-[#444] hover:text-white"><ChevronLeft size={16}/></button>
+                        <div className="flex-1 h-1 bg-[#111] rounded-full relative"><div className="absolute h-full bg-[#E60000] transition-all" style={{ width: `${((s.offsetBars||0) / 64) * 100}%` }}></div></div>
+                        <button onClick={() => updateStemOffset(s.id, (s.offsetBars||0) + 1)} className="text-[#444] hover:text-white"><ChevronRight size={16}/></button>
+                      </div>
+                      <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{s.offsetBars || 0}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Take Gain</span>
+                      <input type="range" min="0" max="2" step="0.05" value={s.volume ?? 1} onChange={(e) => updateStemVolume(s.id, parseFloat(e.target.value))} className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
+                      <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{Math.round((s.volume ?? 1) * 100)}%</span>
+                    </div>
                   </div>
                 </div>
-
-                <div className="flex flex-col gap-4 mt-3 border-t border-[#111] pt-4">
-                  <div className="flex items-center gap-4">
-                    <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Start Bar</span>
-                    <div className="flex-1 flex items-center gap-3">
-                      <button onClick={() => updateStemOffset(s.id, Math.max(0, (s.offsetBars||0) - 1))} className="text-[#444] hover:text-white"><ChevronLeft size={16}/></button>
-                      <div className="flex-1 h-1 bg-[#111] rounded-full relative"><div className="absolute h-full bg-[#E60000] transition-all" style={{ width: `${((s.offsetBars||0) / 64) * 100}%` }}></div></div>
-                      <button onClick={() => updateStemOffset(s.id, (s.offsetBars||0) + 1)} className="text-[#444] hover:text-white"><ChevronRight size={16}/></button>
-                    </div>
-                    <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{s.offsetBars || 0}</span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Take Gain</span>
-                    <input type="range" min="0" max="2" step="0.05" value={s.volume ?? 1} onChange={(e) => updateStemVolume(s.id, parseFloat(e.target.value))} className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
-                    <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{Math.round((s.volume ?? 1) * 100)}%</span>
-                  </div>
-                </div>
-              </div>
-            )})}
+              )})}
+            </div>
           </div>
-        </div>
 
-        <div className="h-16 bg-black border-t border-[#222] flex items-center justify-between px-10">
-          <div className="flex items-center gap-2 text-[10px] font-mono text-green-500 uppercase tracking-widest opacity-80">
-            {vocalStems.length > 0 && <><Save size={14} /> Storage Synchronized</>}
+          <div className="h-16 bg-black border-t border-[#222] flex items-center justify-between px-10">
+            <div className="flex items-center gap-2 text-[10px] font-mono text-green-500 uppercase tracking-widest opacity-80">
+              {vocalStems.length > 0 && <><Save size={14} /> Storage Synchronized</>}
+            </div>
+            {isFreeLoader && !hasEngToken ? (
+              <button onClick={handleProceedToEngineering} disabled={vocalStems.length === 0} className="flex items-center gap-3 bg-[#E60000] text-white px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-red-700 transition-all disabled:opacity-30">Unlock Engineering ($4.99) <Lock size={14} /></button>
+            ) : (
+              <button onClick={handleProceedToEngineering} disabled={vocalStems.length === 0 || isUploading} className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed">Engineering Suite <ArrowRight size={16} /></button>
+            )}
           </div>
-          {isFreeLoader && !hasEngToken ? (
-            <button onClick={handleProceedToEngineering} disabled={vocalStems.length === 0} className="flex items-center gap-3 bg-[#E60000] text-white px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-red-700 transition-all disabled:opacity-30">Unlock Engineering ($4.99) <Lock size={14} /></button>
-          ) : (
-            <button onClick={handleProceedToEngineering} disabled={vocalStems.length === 0 || isUploading} className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed">Engineering Suite <ArrowRight size={16} /></button>
-          )}
         </div>
       </div>
 
-      {/* OVERLAYS: TRIMMING STEM */}
+      {/* OVERLAYS: TRIMMING STEM (UNTOUCHED) */}
       {trimmingStem && (
         <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-8 animate-in zoom-in duration-300">
           <div className="bg-[#050505] border border-[#E60000] rounded-lg w-full max-w-2xl p-8 shadow-[0_0_50px_rgba(230,0,0,0.2)]">
