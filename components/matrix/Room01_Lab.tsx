@@ -222,6 +222,7 @@ export default function Room01_Lab() {
           // --- SURGICAL EXPLOIT: Capture exact duration before saving to store ---
           const exactDuration = await getExactAudioDuration(cloudUrl);
 
+          // SURGICAL FIX: Catch the dynamic_array and contour from the RunPod payload
           setAudioData({
             url: cloudUrl,
             fileName: fileName,
@@ -229,10 +230,8 @@ export default function Room01_Lab() {
             totalBars: statusData.output.total_bars || 64,
             key: statusData.output.key || "Unknown",
             grid: statusData.output.grid || [],
-            // --- SURGICAL ADDITION: Capture the Sentient Rhythm Matrix Payloads ---
-            dynamic_array: statusData.output.dynamic_array,
-            contour: statusData.output.contour,
-            // ----------------------------------------------------------------------
+            dynamic_array: statusData.output.dynamic_array, // <-- CATCH IT
+            contour: statusData.output.contour,             // <-- CATCH IT
             duration: exactDuration > 0 ? exactDuration : undefined
           });
 
