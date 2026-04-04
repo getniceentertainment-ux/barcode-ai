@@ -4,7 +4,7 @@ import random
 import re
 import torch
 import runpod
-import urllib.request # <-- Needed for Supabase fetching
+import urllib.request 
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
 
@@ -16,7 +16,6 @@ SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_
 
 # --- SUPABASE INTEL ENDPOINTS ---
 SLANG_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/Dictionary.json"
-# Assuming master_index is in the same public bucket path:
 CULTURE_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/master_index.json"
 
 # --- THE CONCENTRATED KILL LIST (KILLS AI POETRY) ---
@@ -60,7 +59,6 @@ def load_street_slang(style="getnice_hybrid"):
 
     words = []
     try:
-        # --- SURGICAL FIX: FETCH DYNAMICALLY FROM SUPABASE ---
         req = urllib.request.Request(SLANG_URL, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as response:
             content = response.read().decode('utf-8')
@@ -86,13 +84,12 @@ def load_street_slang(style="getnice_hybrid"):
             return random.sample(combined_list, min(8, len(combined_list)))
             
     except Exception as e:
-        print(f"🚨 Failed to load slang from Supabase: {e}")
+        print(f"🚨 Failed to load slang: {e}")
         
     return target_list
 
 def load_cultural_context():
     try:
-        # --- SURGICAL FIX: FETCH DYNAMICALLY FROM SUPABASE ---
         req = urllib.request.Request(CULTURE_URL, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as response:
             content = response.read().decode('utf-8')
@@ -105,52 +102,33 @@ def load_cultural_context():
             return f"[CULTURAL ANCHOR: {title}] - {context}..."
             
     except Exception as e:
-        print(f"🚨 Failed to load cultural context from Supabase: {e}")
+        print(f"🚨 Failed to load culture: {e}")
         
     return "Focus on the struggle, the hustle, and survival."
 
 def sanitize_lora_config():
     config_path = os.path.join(LORA_WEIGHTS_DIR, "adapter_config.json")
-    if not os.path.exists(config_path):
-        return
+    if not os.path.exists(config_path): return
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        keys_to_remove = [
-            "alora_invocation_tokens", "arrow_config", "corda_config", 
-            "ensure_weight_tying", "layer_replication", "megatron_config", 
-            "megatron_core", "use_rslora", "use_dora", "inject_mlps", "eva_config",
-            "exclude_modules", "lora_bias", "peft_version", "qalora_group_size",
-            "target_parameters", "trainable_token_indices", "use_qalora", "alora_alpha"
-        ]
+        with open(config_path, "r", encoding="utf-8") as f: config = json.load(f)
+        keys_to_remove = ["alora_invocation_tokens", "arrow_config", "corda_config", "ensure_weight_tying", "layer_replication", "megatron_config", "megatron_core", "use_rslora", "use_dora", "inject_mlps", "eva_config", "exclude_modules", "lora_bias", "peft_version", "qalora_group_size", "target_parameters", "trainable_token_indices", "use_qalora", "alora_alpha"]
         modified = False
         for key in keys_to_remove:
             if key in config:
                 del config[key]
                 modified = True
         if modified:
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2)
-    except Exception:
-        pass
+            with open(config_path, "w", encoding="utf-8") as f: json.dump(config, f, indent=2)
+    except Exception: pass
 
 def init_model():
     global model, tokenizer
     print("Initiating GETNICE Engine Deep Burn-In...")
     sanitize_lora_config()
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4"
-    )
+    bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4")
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
-    
     tokenizer.pad_token_id = tokenizer.eos_token_id 
-    
-    base_model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL_NAME, quantization_config=bnb_config, device_map="auto", torch_dtype=torch.float16
-    )
+    base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL_NAME, quantization_config=bnb_config, device_map="auto", torch_dtype=torch.float16)
     try:
         model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
         print("✅ GetNice Adapter fused successfully.")
@@ -159,13 +137,20 @@ def init_model():
         model = base_model
     print("Worker Ready.")
 
-# --- SURGICAL UPGRADE: INJECT DSP TRUTH INTO THE SYSTEM PROMPT ---
-def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour):
+# --- SURGICAL UPGRADE: INJECT TOPLINE DIRECTIVES ---
+def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
     slang_list = ", ".join(load_street_slang(style)) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     banned_words_str = ", ".join(BAN_LIST)
     
+    # 1. Translate the Strike Zone into a prompt rule
+    strike_rule = "Ensure your multi-syllabic rhyme endings land precisely on the 2-count and 4-count (the snare drum)."
+    if strike_zone == "downbeat":
+        strike_rule = "Force aggressive, heavy emphasis on the 1-count (the downbeat/kick drum). Hit the first beat hard."
+    elif strike_zone == "spillover":
+        strike_rule = "Delay the rhymes so they land on the 'and' of the 4. Create a lazy, dragging, off-beat spillover effect."
+
     return f"""<|im_start|>system
 [SYSTEM DIRECTIVE: THE MOGUL PATRIARCH]
 You are "The Mogul." Your voice blends street-smart authenticity with boardroom strategic vision. You grew up with nothing, mastered the hustle, and now own the building. You value equity over a paycheck and generational wealth over temporary ego.
@@ -179,7 +164,8 @@ You are "The Mogul." Your voice blends street-smart authenticity with boardroom 
 [VOCAL INTONATION & PITCH LAWS]
 - HARMONIC ROOT: {root_note} {scale}.
 - CONTOUR DIRECTION: The beat {contour}.
-- DICTION: Align your vowel choices to resonate with this pitch direction. If it drops, end lines with hard, grounded consonants. If it rises, end with open, elongated vowels.
+- DICTION: Align your vowel choices to resonate with this pitch direction.
+- THE STRIKE ZONE: {strike_rule}
 
 [ABSOLUTE ENGINE RULES]
 1. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
@@ -195,7 +181,7 @@ You are "The Mogul." Your voice blends street-smart authenticity with boardroom 
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None):
+def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static"):
     
     if section_index == 0:
         arc_instruction = "Establish the setting and the origin. Ground the listener."
@@ -210,19 +196,33 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 
     current_max_syllables = max_syllables
     melodic_rules = ""
+    evolution_rules = ""
     
+    # 2. Translate Hook Type into Syllable Math
     if "HOOK" in section_type.upper():
-        current_max_syllables = max(4, int(max_syllables * 0.6))
-        melodic_rules = f"""
-[MELODIC CHORUS OVERRIDE]
-1. INSTRUMENTAL ANCHOR: Ride the melody of the beat (pianos, strings, synths).
-2. SPACIOUS & CATCHY: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse.
-3. SIMPLICITY: Highly memorable and spaced out.
+        if hook_type == "bouncy":
+            current_max_syllables = max(6, int(max_syllables * 0.9))
+            melodic_rules = """
+[THE ONES & TWOS HOOK OVERRIDE]
+1. BOUNCY & REPETITIVE: Repeat short, punchy 2-word or 3-word phrases back-to-back.
+2. DENSE STRUCTURE: Lock tightly into the kick and snare. Make it highly rhythmic and syncopated.
+"""
+        else: # Default Chant
+            current_max_syllables = max(4, int(max_syllables * 0.5))
+            melodic_rules = """
+[STADIUM CHANT HOOK OVERRIDE]
+1. SPACIOUS & ANTHEMIC: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse.
+2. SIMPLICITY: Highly memorable, heavily spaced out. Let the instrumental breathe between words.
 """
 
-    # ==========================================
+    # 3. Translate Flow Evolution for Verses
+    if "VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 12:
+        evolution_rules = f"""
+[MID-VERSE SWITCH-UP ACTIVE]
+Halfway through these {bars} bars, you MUST completely change your rhythmic cadence. If you start fast, switch to a slow delayed pocket at Bar {bars//2}. If you start slow, switch to a rapid-fire triplet flow. Create a clear contrast.
+"""
+
     # PASS 1: THE DRAFT
-    # ==========================================
     draft_prompt = f"""<|im_start|>user
 {system_prompt}
 
@@ -234,6 +234,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 - SYLLABLE LIMIT: Strictly {current_max_syllables} or less per line. (CRITICAL)
 {hook_context}
 {melodic_rules}
+{evolution_rules}
 
 [PREVIOUS CONTEXT]
 {previous_lyrics if previous_lyrics else 'Start of track.'}
@@ -246,9 +247,7 @@ Write the draft now.
     outputs = model.generate(**inputs, max_new_tokens=40 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15)
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    # ==========================================
-    # PASS 2: THE MOGUL POLISH & ENGINEER PASS
-    # ==========================================
+    # PASS 2: THE MOGUL POLISH & ENGINEER FORMATTING
     refine_prompt = f"""<|im_start|>user
 [THE SECOND PASS - FINAL POLISH & ENGINEER FORMATTING]
 You drafted this {bars}-bar {section_type.upper()}:
@@ -285,10 +284,14 @@ def handler(event):
     use_slang = job_input.get("useSlang", True)
     use_intel = job_input.get("useIntel", True)
 
-    # --- SURGICAL UPGRADE: CATCH THE DSP TRUTH FROM ROOM 03 ---
     root_note = job_input.get("root_note", "C")
     scale = job_input.get("scale", "minor")
-    contour = job_input.get("contour", "drops into a lower, cadential register")
+    contour = job_input.get("contour", "drops into a lower register")
+    
+    # --- CATCH THE TOPLINE DIRECTIVES ---
+    strike_zone = job_input.get("strikeZone", "snare")
+    hook_type = job_input.get("hookType", "chant")
+    flow_evolution = job_input.get("flowEvolution", "static")
 
     seconds_per_bar = (60.0 / bpm) * 4.0
     speed_factor = 4.5
@@ -303,8 +306,7 @@ def handler(event):
     elif "DRAG" in topic.upper() or "PICKUP" in topic.upper():
         pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.)."
 
-    # Pass the Pitch contour into the system prompt!
-    system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour)
+    system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone)
     
     final_lyrics = ""
     context_lyrics = ""
@@ -332,7 +334,7 @@ def handler(event):
             section_lines = section_lines[:bars]
             
         else:
-            # NORMAL GENERATION
+            # NORMAL GENERATION (WITH TOPLINE PARAMS)
             section_lines = generate_section(
                 system_prompt=system_prompt, 
                 previous_lyrics=context_lyrics, 
@@ -343,10 +345,11 @@ def handler(event):
                 pocket_instruction=pocket_instruction,
                 prompt_topic=topic,
                 section_index=index,
-                anchor_hook=anchor_hook_text
+                anchor_hook=anchor_hook_text,
+                hook_type=hook_type,           # <-- INJECTED
+                flow_evolution=flow_evolution  # <-- INJECTED
             )
             
-            # If this was the first hook, save it to memory AND set it as the Anchor Hook for verses
             if "HOOK" in sec_type:
                 saved_hook_lines = section_lines
                 anchor_hook_text = "\n".join(section_lines)

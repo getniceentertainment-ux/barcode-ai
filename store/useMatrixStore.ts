@@ -69,7 +69,7 @@ interface MatrixState {
   gwTitle: string;
   gwPrompt: string;
   gwStyle: string;
-  gwPocket: string; // <-- ADDED
+  gwPocket: string; 
   gwGender: string;
   gwUseSlang: boolean;
   gwUseIntel: boolean;
@@ -78,11 +78,16 @@ interface MatrixState {
   gwMotive: string;
   gwStruggle: string;
   gwHustle: string;
+
+  // --- NEW: TOPLINE A&R DIRECTIVES ---
+  gwStrikeZone: string;
+  gwHookType: string;
+  gwFlowEvolution: string;
   
   setGwTitle: (t: string) => void;
   setGwPrompt: (p: string) => void;
   setGwStyle: (s: string) => void;
-  setGwPocket: (p: string) => void; // <-- ADDED
+  setGwPocket: (p: string) => void; 
   setGwGender: (g: string) => void;
   setGwUseSlang: (b: boolean) => void;
   setGwUseIntel: (b: boolean) => void;
@@ -91,6 +96,11 @@ interface MatrixState {
   setGwMotive: (m: string) => void;
   setGwStruggle: (s: string) => void;
   setGwHustle: (h: string) => void;
+
+  // --- NEW: TOPLINE A&R SETTERS ---
+  setGwStrikeZone: (val: string) => void;
+  setGwHookType: (val: string) => void;
+  setGwFlowEvolution: (val: string) => void;
 
   blueprint: BlueprintSection[];
   setBlueprint: (blueprint: BlueprintSection[]) => void;
@@ -140,7 +150,7 @@ export const useMatrixStore = create<MatrixState>()(
       gwTitle: "",
       gwPrompt: "",
       gwStyle: "getnice_hybrid",
-      gwPocket: "standard", // <-- ADDED
+      gwPocket: "standard", 
       gwGender: "male",
       gwUseSlang: true,
       gwUseIntel: true,
@@ -149,6 +159,11 @@ export const useMatrixStore = create<MatrixState>()(
       gwMotive: "",
       gwStruggle: "",
       gwHustle: "",
+
+      // --- NEW: INITIAL TOPLINE STATE ---
+      gwStrikeZone: "snare",
+      gwHookType: "chant",
+      gwFlowEvolution: "static",
       
       mixParams: {
         activeChain: "getnice_eq",
@@ -168,7 +183,7 @@ export const useMatrixStore = create<MatrixState>()(
       blueprint: [],
       generatedLyrics: null,
       vocalStems: [],
-      engineeredVocal: null, // <-- THE MIDDLEMAN
+      engineeredVocal: null, 
       finalMaster: null,
       toasts: [],
 
@@ -192,7 +207,7 @@ export const useMatrixStore = create<MatrixState>()(
       setGwTitle: (t) => set({ gwTitle: t }),
       setGwPrompt: (p) => set({ gwPrompt: p }),
       setGwStyle: (s) => set({ gwStyle: s }),
-      setGwPocket: (p) => set({ gwPocket: p }), // <-- ADDED
+      setGwPocket: (p) => set({ gwPocket: p }), 
       setGwGender: (g) => set({ gwGender: g }),
       setGwUseSlang: (b) => set({ gwUseSlang: b }),
       setGwUseIntel: (b) => set({ gwUseIntel: b }),
@@ -201,6 +216,11 @@ export const useMatrixStore = create<MatrixState>()(
       setGwMotive: (m) => set({ gwMotive: m }),
       setGwStruggle: (s) => set({ gwStruggle: s }),
       setGwHustle: (h) => set({ gwHustle: h }),
+
+      // --- NEW: TOPLINE MUTATORS ---
+      setGwStrikeZone: (val) => set({ gwStrikeZone: val }),
+      setGwHookType: (val) => set({ gwHookType: val }),
+      setGwFlowEvolution: (val) => set({ gwFlowEvolution: val }),
 
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
@@ -262,17 +282,20 @@ export const useMatrixStore = create<MatrixState>()(
       clearMatrix: () => set((state) => {
         saveAudioToDisk('matrix_audio_data', null);
         saveAudioToDisk('matrix_vocal_stems', []);
-        saveAudioToDisk('matrix_engineered_vocal', []); // <-- CLEAR IT
+        saveAudioToDisk('matrix_engineered_vocal', []); 
         saveAudioToDisk('matrix_final_master', null);
         
         return {
           audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
-          engineeredVocal: null, // <-- RESET IT
+          engineeredVocal: null, 
           gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", gwPocket: "standard", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
           mdxJobId: null, mdxStatus: "idle", syncStatus: "idle",
           
           // --- CLEAR THEMATIC STATE ON NEW PROJECT ---
           gwMotive: "", gwStruggle: "", gwHustle: "",
+
+          // --- NEW: CLEAR TOPLINE STATE ---
+          gwStrikeZone: "snare", gwHookType: "chant", gwFlowEvolution: "static",
 
           mixParams: {
             activeChain: "getnice_eq",
@@ -344,19 +367,24 @@ export const useMatrixStore = create<MatrixState>()(
         set({ syncStatus: "saving" });
         
         const draftSnapshot = {
-           audioData: state.audioData, // <-- SURGICAL ADDITION: Prevent cloud wipe                     
+           audioData: state.audioData,                     
            flowDNA: state.flowDNA,
            blueprint: state.blueprint, 
            generatedLyrics: state.generatedLyrics,
            gwTitle: state.gwTitle,
            gwPrompt: state.gwPrompt,
            gwStyle: state.gwStyle,
-           gwPocket: state.gwPocket, // <-- ADDED
+           gwPocket: state.gwPocket, 
            
            // --- BACKUP THEMATIC STATE TO CLOUD ---
            gwMotive: state.gwMotive,
            gwStruggle: state.gwStruggle,
            gwHustle: state.gwHustle,
+
+           // --- NEW: BACKUP TOPLINE STATE TO CLOUD ---
+           gwStrikeZone: state.gwStrikeZone,
+           gwHookType: state.gwHookType,
+           gwFlowEvolution: state.gwFlowEvolution,
            
            mixParams: state.mixParams,
            anrData: state.anrData,
@@ -419,13 +447,12 @@ export const useMatrixStore = create<MatrixState>()(
 
           const savedBeat = await loadAudioFromDisk('matrix_audio_data');
           const savedStems = await loadAudioFromDisk('matrix_vocal_stems');
-          const savedEngineered = await loadAudioFromDisk('matrix_engineered_vocal'); // <-- LOAD IT
+          const savedEngineered = await loadAudioFromDisk('matrix_engineered_vocal'); 
           const savedMaster = await loadAudioFromDisk('matrix_final_master'); 
 
           if (savedBeat && (savedBeat as any).blob) {
             set({ audioData: { ...(savedBeat as any), url: URL.createObjectURL((savedBeat as any).blob) } });
           } else if (savedBeat) {
-             // --- SURGICAL FIX: Cast back to ExtendedAudioAnalysis on hydration ---
              set({ audioData: savedBeat as ExtendedAudioAnalysis });
           }
 
@@ -463,13 +490,18 @@ export const useMatrixStore = create<MatrixState>()(
         gwTitle: state.gwTitle,
         gwPrompt: state.gwPrompt,
         gwStyle: state.gwStyle,
-        gwPocket: state.gwPocket, // <-- SURGICAL ADDITION: Persists dropdown selection across reloads
+        gwPocket: state.gwPocket, 
         
         // --- PERSIST THEMATIC STATE LOCALLY ON REFRESH ---
-        audioData: state.audioData, // <-- SURGICAL ADDITION: Prevent cloud wipe                 
+        audioData: state.audioData,                  
         gwMotive: state.gwMotive,
         gwStruggle: state.gwStruggle,
         gwHustle: state.gwHustle,
+
+        // --- NEW: PERSIST TOPLINE STATE LOCALLY ON REFRESH ---
+        gwStrikeZone: state.gwStrikeZone,
+        gwHookType: state.gwHookType,
+        gwFlowEvolution: state.gwFlowEvolution,
         
         mixParams: state.mixParams,
         anrData: state.anrData,

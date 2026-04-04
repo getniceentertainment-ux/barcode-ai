@@ -10,7 +10,6 @@ import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
 // --- THE 100% PROPRIETARY GETNICE MACRO-RHYTHMIC VAULT ---
-// This now acts as a fallback if DSP extraction fails or is skipped
 const FLOW_VAULT: Record<string, {array: number[], name: string, desc: string}[]> = {
   "getnice_hybrid": [
     { array: [4, 2, 2, 3, 1, 4, 2, 2, 2, 2, 4, 4], name: "Chain-Link Pivot", desc: "Long massive hold on the 1-count, followed by 2 standard syllables, then a long stretch, a rapid snap, and another massive hold. Very dynamic push-and-pull." },
@@ -44,7 +43,12 @@ export default function Room03_Ghostwriter() {
     
     gwMotive = "", setGwMotive = () => {},
     gwStruggle = "", setGwStruggle = () => {},
-    gwHustle = "", setGwHustle = () => {}
+    gwHustle = "", setGwHustle = () => {},
+
+    // NEW A&R DIRECTIVES
+    gwStrikeZone = "snare", setGwStrikeZone = () => {},
+    gwHookType = "chant", setGwHookType = () => {},
+    gwFlowEvolution = "static", setGwFlowEvolution = () => {}
   } = useMatrixStore();
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -77,9 +81,6 @@ export default function Room03_Ghostwriter() {
   const hasEnoughCredits = isCreator || isMogul || 
     (userSession?.creditsRemaining && (userSession.creditsRemaining === "UNLIMITED" || userSession.creditsRemaining >= currentCost));
 
-  // --- SURGICAL FIX: THE LAYOUT HASH & SYNC ENGINE ---
-  // This string creates a unique fingerprint of your block types AND bar counts. 
-  // If anything changes structurally, the fingerprint changes, forcing an instant recalculation.
   const layoutHash = blueprint.map(b => `${b.id}-${b.type}-${b.bars}`).join('|');
 
   useEffect(() => {
@@ -87,14 +88,13 @@ export default function Room03_Ghostwriter() {
     
     let cursor = 0;
     const variations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-    const hookVariation = variations[0]; // Anchor Pattern 0
+    const hookVariation = variations[0]; 
     const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
     let verseCounter = 0;
     
     let needsUpdate = false;
 
     const synced = blueprint.map((block) => {
-      // SURGICAL FIX: Cast block to 'any' to bypass strict TS type checking for startBar
       const start = Math.max(cursor, (block as any).startBar ?? cursor);
       
       let selected;
@@ -105,14 +105,12 @@ export default function Room03_Ghostwriter() {
           if (block.type !== 'INSTRUMENTAL') verseCounter++;
       }
       
-      // --- SURGICAL FIX: INJECT SENTIENT DSP TRUTH OVER STATIC VAULT ---
       const activeArray = (audioData as any)?.dynamic_array || selected.array;
       const activeName = (audioData as any)?.dynamic_array ? "Sentient Matrix" : selected.name;
       const activeDesc = (audioData as any)?.dynamic_array 
         ? `[DSP GRID] Force syllables to match this exact array: [${(audioData as any)?.dynamic_array.join(',')}]. Pitch contour: ${(audioData as any)?.contour || 'Dynamic'}` 
         : selected.desc;
       
-      // Check if the current block is mathematically out of sync
       if ((block as any).startBar !== start || (block as any).patternName !== activeName) {
           needsUpdate = true;
       }
@@ -128,12 +126,10 @@ export default function Room03_Ghostwriter() {
       return updated;
     });
 
-    // Only hit the global state if the math was actually out of alignment
     if (needsUpdate) {
         setBlueprint(synced);
     }
-  }, [gwStyle, layoutHash, blueprint, audioData]); // Re-run instantly if the Style, Block structure, or DSP data changes
-
+  }, [gwStyle, layoutHash, blueprint, audioData]); 
 
   const updateBlueprintStartBar = (index: number, newStart: number) => {
     const newBp = [...blueprint];
@@ -144,7 +140,7 @@ export default function Room03_Ghostwriter() {
         const currentPos = (newBp[i] as any).startBar || 0;
         (newBp[i] as any).startBar = Math.max(0, currentPos + delta);
     }
-    setBlueprint(newBp); // Pass straight to state, the layoutHash useEffect catches it!
+    setBlueprint(newBp); 
   };
 
   const addSection = (type: "VERSE" | "INTRO" | "HOOK" | "OUTRO" | "BRIDGE" | "INSTRUMENTAL", bars: number) => {
@@ -170,11 +166,11 @@ export default function Room03_Ghostwriter() {
       startBar: nextStart 
     };
     
-    setBlueprint([...blueprint, newBlock]); // Pass straight to state
+    setBlueprint([...blueprint, newBlock]);
   };
 
   const removeSection = (id: string) => {
-    setBlueprint(blueprint.filter(b => b.id !== id)); // Pass straight to state
+    setBlueprint(blueprint.filter(b => b.id !== id));
   };
 
   const handleGenerate = async () => {
@@ -190,7 +186,6 @@ export default function Room03_Ghostwriter() {
     setIsGenerating(true);
     setUxState("Synthesizing Bars via GETNICE Engine...");
 
-    // --- SURGICAL FIX: PROMPT ARMOR ENHANCED WITH DSP LAWS ---
     const systemConstraint = `ABSOLUTE ENGINE RULES:
 1. RAW LYRICS ONLY: You must ONLY output the lyrics.
 2. NO PREFIXES: NEVER output labels like "1st Line:", "Hook:", or "Verse:" before the lyrics.
@@ -199,7 +194,6 @@ export default function Room03_Ghostwriter() {
 5. COMPOUND RHYMING: Use 2- or 3-syllable compound rhymes on the structural accents.
 6. PITCH INTONATION: Align your vowel choices to the pitch contour of the beat. Use closed/heavy vowels for pitch drops, and open/elongated vowels for tension rises.`;
 
-    // Extract exact root note and scale (e.g., "C# minor" -> root: "C#", scale: "minor")
     const keyParts = audioData?.key ? audioData.key.split(" ") : ["C", "minor"];
     const rootNote = keyParts[0];
     const scale = keyParts.slice(1).join(" ");
@@ -229,14 +223,17 @@ export default function Room03_Ghostwriter() {
           tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
-          pocket: gwPocket,
           
-          // --- SURGICAL FIX: SEND THE SENTIENT MATRIX PAYLOAD ---
+          // INJECTING THE TOPLINE A&R DIRECTIVES
+          strikeZone: gwStrikeZone,
+          hookType: gwHookType,
+          flowEvolution: gwFlowEvolution,
+          pocket: gwPocket, // Fallback for safety
+          
           root_note: rootNote,
           scale: scale,
           contour: (audioData as any)?.contour || "drops into a lower, cadential register",
           dynamic_array: (audioData as any)?.dynamic_array,
-          // ------------------------------------------------------
           
           systemConstraint: systemConstraint, 
           blueprint: blueprint.map(b => ({ 
@@ -244,7 +241,7 @@ export default function Room03_Ghostwriter() {
             bars: b.bars, 
             startBar: (b as any).startBar,
             patternDesc: (b as any).patternDesc,
-            patternArray: (b as any).patternArray // Send the active array to guide the LLM's pipes
+            patternArray: (b as any).patternArray
           }))
         })
       });
@@ -269,14 +266,13 @@ export default function Room03_Ghostwriter() {
             clearInterval(pollInterval);
             setIsGenerating(false);
             
-            // --- SURGICAL FIX: FRONTEND SANITIZATION (KILL HALLUCINATIONS) ---
             let rawLyrics = statusData.output.lyrics || "";
             let cleanedLyrics = rawLyrics
-              .replace(/\(pipe symbol.*?\)/gi, '') // 1. Kill meta-commentary in parentheses
-              .replace(/\|(?:\s*\|)+/g, '') // 2. Kill consecutive empty pipe padding ( | | | )
-              .replace(/(\(\d+:\d{2}\)\s*)\|\s*/gm, '$1') // 3. Kill leading pipes right after timestamps
-              .replace(/\|\s*$/gm, '') // 4. Kill trailing pipes at the very end of a line
-              .replace(/(\(\d+:\d{2}\)\s*)(?:\d+(?:st|nd|rd|th)? Line:|Line \d+:|Hook:|Verse:|Chorus:|Intro:|Outro:)\s*/gmi, '$1') // 5. Kill LLM prefixes (e.g. "1st Line:")
+              .replace(/\(pipe symbol.*?\)/gi, '') 
+              .replace(/\|(?:\s*\|)+/g, '') 
+              .replace(/(\(\d+:\d{2}\)\s*)\|\s*/gm, '$1') 
+              .replace(/\|\s*$/gm, '') 
+              .replace(/(\(\d+:\d{2}\)\s*)(?:\d+(?:st|nd|rd|th)? Line:|Line \d+:|Hook:|Verse:|Chorus:|Intro:|Outro:)\s*/gmi, '$1')
               .trim();
 
             setLyrics(cleanedLyrics);
@@ -424,20 +420,49 @@ export default function Room03_Ghostwriter() {
             </div>
           </div>
 
-          <div>
-            <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Pocket Placement (Syncopation)</label>
-            <select 
-              value={gwPocket}
-              onChange={(e) => setGwPocket(e.target.value)}
-              className="w-full bg-black border border-[#333] p-3 text-xs text-[#E60000] font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest font-bold"
-            >
-              <option value="standard">Standard (Dead on the 1-Count)</option>
-              <option value="chainlink">Chain-Link (Interwoven / Spillover)</option>
-              <option value="pickup">The Drag (Pickup Notes & Delay)</option>
-            </select>
+          {/* TOPLINE DIRECTIVES (A&R CONTROL) */}
+          <div className="space-y-4 mt-6 pt-6 border-t border-[#222]">
+            <h3 className="font-oswald text-sm uppercase tracking-widest text-[#E60000] font-bold mb-4">Topline Directives</h3>
+            
+            <div>
+              <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">The Strike Zone (Rhyme Target)</label>
+              <select 
+                value={gwStrikeZone}
+                onChange={(e) => setGwStrikeZone(e.target.value)}
+                className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest"
+              >
+                <option value="snare">The 2 & 4 (Snare Snap)</option>
+                <option value="downbeat">The Downbeat (Heavy Kick / Drill)</option>
+                <option value="spillover">The Spillover (Delayed Drag)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Hook Architecture</label>
+              <select 
+                value={gwHookType}
+                onChange={(e) => setGwHookType(e.target.value)}
+                className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest"
+              >
+                <option value="chant">Stadium Chant (Spacious & Melodic)</option>
+                <option value="bouncy">The Ones & Twos (Dense & Repetitive)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Verse Dynamics</label>
+              <select 
+                value={gwFlowEvolution}
+                onChange={(e) => setGwFlowEvolution(e.target.value)}
+                className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest"
+              >
+                <option value="static">Locked In (Consistent Cadence)</option>
+                <option value="switch">The Switch-Up (Mid-Verse Flow Shift)</option>
+              </select>
+            </div>
           </div>
 
-          <div className="space-y-3 pt-4 border-t border-[#222]">
+          <div className="space-y-3 pt-6 border-t border-[#222]">
             <label className="flex items-center gap-3 cursor-pointer group">
               <input type="checkbox" checked={gwUseSlang} onChange={(e) => setGwUseSlang(e.target.checked)} className="accent-[#E60000] w-4 h-4" />
               <span className="text-xs font-mono text-[#888] uppercase tracking-widest group-hover:text-white transition-colors">Inject RAG Slang Dictionary</span>
@@ -496,7 +521,6 @@ export default function Room03_Ghostwriter() {
               <div>
                 <h4 className={`font-oswald text-lg uppercase tracking-widest ${block.type === 'INSTRUMENTAL' ? 'text-blue-500' : 'text-white'}`}>{block.type}</h4>
                 <p className="font-mono text-[10px] text-[#E60000] font-bold">{block.bars} BARS</p>
-                {/* --- NEW: VISUALIZE THE ATTACHED SCORE CARD --- */}
                 {(block as any).patternName && block.type !== 'INSTRUMENTAL' && (
                   <p className="font-mono text-[8px] text-yellow-500 uppercase mt-1 truncate" title={(block as any).patternDesc}>
                     {(block as any).patternName} [{(block as any).patternArray?.join(',')}]
