@@ -649,15 +649,26 @@ export default function Room04_Booth() {
   }, [audioData]);
 
   // --- THE MASTER SCORE CARD ALGORITHM ---
+  // Added a ref to track the raw text so we know when to override the state lock
+  const lastParsedLyricsRef = useRef<string>("");
+
   useEffect(() => {
     if (!generatedLyrics) return;
-    if (quantizedLines.length > 0) return; // Prevent overwriting manual drag edits
+    
+    // SURGICAL FIX: Only block updates if the lyrics haven't actually changed.
+    // This allows the user to re-generate in Room 3 and see the new text in Room 4.
+    if (quantizedLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
+    
+    lastParsedLyricsRef.current = generatedLyrics;
 
     const lines = generatedLyrics.split('\n');
     
     const sanitizedLines = lines.map(l => {
       let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
-      if (text.startsWith('[')) return { text, isHeader: true }; 
+      
+      // SURGICAL FIX: Broadened the regex to catch the new Energy Array headers
+      if (text.startsWith('[') && text.includes(']')) return { text, isHeader: true }; 
+      
       text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '').replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
       text = text.replace(/,/g, ', ').replace(/\s+/g, ' ').trim();
       return { text, isHeader: false };

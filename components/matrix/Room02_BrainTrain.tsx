@@ -214,7 +214,7 @@ export default function Room02_BrainTrain() {
           if (avgWords >= 12) finalStyleId = "chopper";
           else if (avgWords <= 6) finalStyleId = "lazy";
           else if (audioData?.bpm && audioData.bpm >= 138) finalStyleId = "triplet";
-          else finalStyleId = "heartbeat";
+          else finalStyleId = "getnice_hybrid"; // <-- SURGICAL FIX: Force GetNice signature flow
           
           finalStyleName = STYLES[finalStyleId as keyof typeof STYLES];
           setGwStyle(finalStyleId);
