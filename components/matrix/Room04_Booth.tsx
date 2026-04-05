@@ -317,8 +317,12 @@ export default function Room04_Booth() {
                 const res = await fetch('/api/audio/generate-guide', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  // Feed it the raw text without pipes so the TTS speaks clearly
-                  body: JSON.stringify({ lyrics: line.text.replace(/\|/g, ''), bpm: preciseBpm, gender: useMatrixStore.getState().gwGender || "male", pitch: "low" // Hint for the TTS engine })
+                  body: JSON.stringify({ 
+                    lyrics: line.text.replace(/\|/g, ''), 
+                    bpm: preciseBpm,
+                    gender: useMatrixStore.getState().gwGender || "male",
+                    pitch: "low" // Hint for the TTS engine
+                  })
                 });
                 
                 if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
