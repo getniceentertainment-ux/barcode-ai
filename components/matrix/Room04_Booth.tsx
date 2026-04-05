@@ -314,33 +314,31 @@ export default function Room04_Booth() {
         const line = parsedLines[i];
         setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
 
-        try {
-          const res = await fetch('/api/audio/generate-guide', {
+        const res = await fetch('/api/audio/generate-guide', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             // Feed it the raw text without pipes so the TTS speaks clearly
-            body: JSON.stringify({ lyrics: line.text, bpm: preciseBpm })
+            body: JSON.stringify({ lyrics: line.text.replace(/\|/g, ''), bpm: preciseBpm })
           });
           
           if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
 
           const arrayBuffer = await res.arrayBuffer();
           const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-          const trimmedBuffer = trimTTSBuffer(offlineCtx, audioBuffer);
           
-          // --- THE GETNICE GRANULAR SLICER ---
+          // --- THE GETNICE GRANULAR SLICER (MPC METHOD) ---
           const mappedWords = line.words;
           if (!mappedWords || mappedWords.length === 0) continue;
 
           // Divide the raw TTS audio evenly among the syllables
-          const ttsDuration = trimmedBuffer.duration;
+          const ttsDuration = audioBuffer.duration;
           const sliceDuration = ttsDuration / mappedWords.length;
 
           mappedWords.forEach((wordObj, wIdx) => {
             if (!wordObj.word.trim()) return; // Skip empty slots
 
             const source = offlineCtx.createBufferSource();
-            source.buffer = trimmedBuffer;
+            source.buffer = audioBuffer;
 
             // Calculate where in the TTS buffer to start slicing
             const sliceStart = wIdx * sliceDuration;
@@ -351,7 +349,7 @@ export default function Room04_Booth() {
 
             // Create a GainNode to fade the chops in/out (Prevents audio popping/clicking)
             const gainNode = offlineCtx.createGain();
-            const fadeTime = 0.015; // 15ms fade
+            const fadeTime = 0.015; // 15ms micro-fade
             
             gainNode.gain.setValueAtTime(0, wordObj.startTime);
             gainNode.gain.linearRampToValueAtTime(1, wordObj.startTime + fadeTime); 
@@ -367,6 +365,7 @@ export default function Room04_Booth() {
             // Trigger the exact slice of audio at the exact grid timestamp
             source.start(wordObj.startTime, sliceStart, sliceDuration);
           });
+          // --- END GRANULAR SLICER ---
 
         } catch (lineErr) {
           console.warn(`Soft-fail quantizing line ${i}:`, lineErr);

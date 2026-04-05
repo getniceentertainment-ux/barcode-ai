@@ -501,6 +501,21 @@ export default function Room03_Ghostwriter() {
                 <option value="switch">The Switch-Up (Mid-Verse Flow Shift)</option>
               </select>
             </div>
+
+            {/* SURGICAL ADDITION: POCKET PLACEMENT & CASCADE */}
+            <div>
+              <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Pocket Placement (Syncopation)</label>
+              <select 
+                value={gwPocket}
+                onChange={(e) => setGwPocket(e.target.value)}
+                className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest font-bold"
+              >
+                <option value="standard">Standard (Dead on the 1-Count)</option>
+                <option value="chainlink">Chain-Link (Interwoven / Spillover)</option>
+                <option value="pickup">The Drag (Pickup Notes & Delay)</option>
+                <option value="cascade">GetNice Cascade (Internal Carry-Over)</option>
+              </select>
+            </div>
           </div>
 
           <div className="space-y-3 pt-6 border-t border-[#222]">

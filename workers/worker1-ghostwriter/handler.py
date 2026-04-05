@@ -339,7 +339,7 @@ def handler(event):
     hook_type = job_input.get("hookType", "chant")
     flow_evolution = job_input.get("flowEvolution", "static")
     
-    # --- SURGICAL FIX: CATCH THE POCKET DROPDOWN PROPERLY ---
+    # --- CATCH THE POCKET DROPDOWN PROPERLY ---
     pocket = job_input.get("pocket", "standard")
 
     # --- CATCH THE DYNAMIC ARRAY ---
@@ -366,13 +366,15 @@ def handler(event):
     # Calculate the dynamically scaled baseline
     max_syllables = int(limits["min"] + (limits["max"] - limits["min"]) * bpm_ratio)
 
-    # --- SURGICAL FIX: ROUTE THE DROPDOWN VARIABLE, NOT THE TEXT BOX ---
+    # --- SURGICAL FIX: ADDED THE CASCADE LOGIC OVERRIDE ---
     pocket_instruction = "End every line with a period (.). You MUST hit Enter/Return to create a new line."
     
     if pocket == "chainlink":
         pocket_instruction = "CHAIN-LINK MODE: End every single line with a comma (,) for spillover. You MUST still hit Enter/Return after the comma to create a distinct new line on the page."
     elif pocket == "pickup":
         pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.). You MUST hit Enter/Return to create a new line."
+    elif pocket == "cascade":
+        pocket_instruction = "THE GETNICE CASCADE MODE (INTERNAL CARRY-OVER): Use heavy enjambment. End lines mid-phrase with no punctuation. You MUST rhyme the END of one line with the BEGINNING or MIDDLE of the very next line (e.g., Line 1 ends with 'rough', Line 2 starts with 'tough'). Create a relentless internal rhyme chain. You MUST hit Enter/Return to create a distinct new line."
 
     system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone)
     
