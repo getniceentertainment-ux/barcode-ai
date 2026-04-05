@@ -318,31 +318,55 @@ export default function Room04_Booth() {
           const res = await fetch('/api/audio/generate-guide', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lyrics: line.originalText, bpm: preciseBpm })
+            // Feed it the raw text without pipes so the TTS speaks clearly
+            body: JSON.stringify({ lyrics: line.text, bpm: preciseBpm })
           });
           
-          if (!res.ok) throw new Error("Groq API rate limit or disconnect.");
+          if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
 
           const arrayBuffer = await res.arrayBuffer();
           const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-
           const trimmedBuffer = trimTTSBuffer(offlineCtx, audioBuffer);
+          
+          // --- THE GETNICE GRANULAR SLICER ---
+          const mappedWords = line.words;
+          if (!mappedWords || mappedWords.length === 0) continue;
+
+          // Divide the raw TTS audio evenly among the syllables
           const ttsDuration = trimmedBuffer.duration;
-          const mathLineDuration = line.lineDuration || 2;
+          const sliceDuration = ttsDuration / mappedWords.length;
 
-          const source = offlineCtx.createBufferSource();
-          source.buffer = trimmedBuffer;
-          source.playbackRate.value = ttsDuration / mathLineDuration; 
+          mappedWords.forEach((wordObj, wIdx) => {
+            if (!wordObj.word.trim()) return; // Skip empty slots
 
-          const gainNode = offlineCtx.createGain();
-          gainNode.gain.setValueAtTime(0, line.startTime);
-          gainNode.gain.linearRampToValueAtTime(1, line.startTime + 0.01); 
-          gainNode.gain.setValueAtTime(1, line.startTime + mathLineDuration - 0.01);
-          gainNode.gain.linearRampToValueAtTime(0, line.startTime + mathLineDuration); 
+            const source = offlineCtx.createBufferSource();
+            source.buffer = trimmedBuffer;
 
-          source.connect(gainNode);
-          gainNode.connect(offlineCtx.destination);
-          source.start(line.startTime);
+            // Calculate where in the TTS buffer to start slicing
+            const sliceStart = wIdx * sliceDuration;
+
+            // Calculate stretch, but put a hard cap to PREVENT CHIPMUNKING
+            const targetRate = sliceDuration / wordObj.duration;
+            source.playbackRate.value = Math.min(1.25, Math.max(0.85, targetRate));
+
+            // Create a GainNode to fade the chops in/out (Prevents audio popping/clicking)
+            const gainNode = offlineCtx.createGain();
+            const fadeTime = 0.015; // 15ms fade
+            
+            gainNode.gain.setValueAtTime(0, wordObj.startTime);
+            gainNode.gain.linearRampToValueAtTime(1, wordObj.startTime + fadeTime); 
+            
+            // Hold volume, then fade out before the chop ends
+            const chopEndTime = wordObj.startTime + wordObj.duration;
+            gainNode.gain.setValueAtTime(1, chopEndTime - fadeTime);
+            gainNode.gain.linearRampToValueAtTime(0, chopEndTime); 
+
+            source.connect(gainNode);
+            gainNode.connect(offlineCtx.destination);
+            
+            // Trigger the exact slice of audio at the exact grid timestamp
+            source.start(wordObj.startTime, sliceStart, sliceDuration);
+          });
 
         } catch (lineErr) {
           console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
