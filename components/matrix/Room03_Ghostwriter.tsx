@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { 
   PenTool, Play, RefreshCw, Zap, AlignLeft, Edit3, 
   Loader2, Layout, ShieldCheck, Cpu, Activity, 
-  ArrowRight, Lock, Plus 
+  ArrowRight, Lock, Plus, Minus
 } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
@@ -132,7 +132,7 @@ export default function Room03_Ghostwriter() {
               ? verseVariations[0] 
               : verseVariations[verseCounter % verseVariations.length];
           
-          if (block.type !== 'INSTRUMENTAL') verseCounter++;
+          verseCounter++;
           
           activeArray = selected.array;
 
@@ -524,7 +524,7 @@ export default function Room03_Ghostwriter() {
               </select>
             </div>
 
-            {/* SURGICAL ADDITION: POCKET PLACEMENT & CASCADE */}
+            {/* SURGICAL ADDITION: POCKET PLACEMENT, CASCADE & PIVOT */}
             <div>
               <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Pocket Placement (Syncopation)</label>
               <select 
