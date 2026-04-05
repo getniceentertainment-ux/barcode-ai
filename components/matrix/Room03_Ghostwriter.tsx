@@ -47,8 +47,8 @@ export default function Room03_Ghostwriter() {
 
     // NEW A&R DIRECTIVES
     gwStrikeZone = "snare", setGwStrikeZone = () => {},
-    gwHookType = "chant", setGwHookType = () => {},
-    gwFlowEvolution = "static", setGwFlowEvolution = () => {}
+    gwHookType = "auto", setGwHookType = () => {}, // Changed default to "auto"
+    gwFlowEvolution = "auto", setGwFlowEvolution = () => {} // Changed default to "auto"
   } = useMatrixStore();
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -88,29 +88,48 @@ export default function Room03_Ghostwriter() {
     
     let cursor = 0;
     const variations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-    const hookVariation = variations[0]; 
-    const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
     let verseCounter = 0;
     
     let needsUpdate = false;
 
+    // A dictionary to translate the dropdown ID to a clean UI label
+    const hookLabels: Record<string, string> = {
+      auto: "Neural Match (DNA)",
+      chant: "Stadium Chant",
+      bouncy: "The Double-Up",
+      triplet: "Trap Triplet",
+      symmetry: "Symmetry Break",
+      prime: "Prime Syncopation"
+    };
+
     const synced = blueprint.map((block) => {
       const start = Math.max(cursor, (block as any).startBar ?? cursor);
       
-      let selected;
-      if (block.type === 'HOOK') {
-          selected = hookVariation;
-      } else {
-          selected = verseVariations[verseCounter % verseVariations.length];
-          if (block.type !== 'INSTRUMENTAL') verseCounter++;
-      }
+      let activeName = "";
+      let activeDesc = "";
+      let activeArray: number[] = [];
       
-      // --- SURGICAL FIX: DECOUPLE ENERGY FROM SYLLABLE MATH ---
-      // We pass the rhythmic FLOW_VAULT descriptions directly.
-      // The Python backend will handle the DSP dynamic_array silently in the background.
-      const activeArray = selected.array;
-      const activeName = selected.name;
-      const activeDesc = selected.desc;
+      if (block.type === 'HOOK') {
+          // --- OVERRIDE: Display the active Topline Directive ---
+          activeName = hookLabels[gwHookType as string] || "Custom Hook";
+          activeDesc = `Topline Override Active: ${activeName}`;
+      } else if (block.type === 'VERSE') {
+          // --- DYNAMIC: Append the Flow Evolution state to the Verse ---
+          const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
+          const selected = verseVariations[verseCounter % verseVariations.length];
+          verseCounter++;
+          
+          activeArray = selected.array;
+          
+          let evolutionLabel = "[Locked In]";
+          if (gwFlowEvolution === "switch") evolutionLabel = "[Switch-Up Active]";
+          else if (gwFlowEvolution === "auto") evolutionLabel = "[Neural Flow]"; // Dynamic label for auto
+
+          activeName = `${selected.name} ${evolutionLabel}`;
+          activeDesc = selected.desc;
+      } else {
+          activeName = "DSP Passthrough";
+      }
       
       if ((block as any).startBar !== start || (block as any).patternName !== activeName) {
           needsUpdate = true;
@@ -130,7 +149,7 @@ export default function Room03_Ghostwriter() {
     if (needsUpdate) {
         setBlueprint(synced);
     }
-  }, [gwStyle, layoutHash, blueprint, audioData]); 
+  }, [gwStyle, gwHookType, gwFlowEvolution, layoutHash, blueprint, audioData]);
 
   const updateBlueprintStartBar = (index: number, newStart: number) => {
     const newBp = [...blueprint];
@@ -187,6 +206,22 @@ export default function Room03_Ghostwriter() {
     setIsGenerating(true);
     setUxState("Synthesizing Bars via GETNICE Engine...");
 
+    // --- THE SILENT "SMART" FALLBACK LOGIC ---
+    // If the user selected the "Auto/Neural" option, we silently route 
+    // the backend math based on whatever Room 2 assigned to gwStyle.
+    let finalHookType = gwHookType;
+    if (gwHookType === "auto" || !gwHookType) {
+      if (gwStyle === "triplet") finalHookType = "triplet";
+      else if (gwStyle === "chopper") finalHookType = "bouncy";
+      else finalHookType = "chant";
+    }
+
+    let finalFlowEvolution = gwFlowEvolution;
+    if (gwFlowEvolution === "auto" || !gwFlowEvolution) {
+      // Choppers and Triplets sound great with switch-ups. Slower flows stay static.
+      finalFlowEvolution = (gwStyle === "chopper" || gwStyle === "triplet") ? "switch" : "static";
+    }
+
     const systemConstraint = `ABSOLUTE ENGINE RULES:
 1. RAW LYRICS ONLY: You must ONLY output the lyrics.
 2. NO PREFIXES: NEVER output labels like "1st Line:", "Hook:", or "Verse:" before the lyrics.
@@ -227,9 +262,9 @@ export default function Room03_Ghostwriter() {
           
           // INJECTING THE TOPLINE A&R DIRECTIVES
           strikeZone: gwStrikeZone,
-          hookType: gwHookType,
-          flowEvolution: gwFlowEvolution,
-          pocket: gwPocket, // Fallback for safety
+          hookType: finalHookType,             // <-- Send the translated logic
+          flowEvolution: finalFlowEvolution,   // <-- Send the translated logic
+          pocket: gwPocket, 
           
           root_note: rootNote,
           scale: scale,
@@ -445,6 +480,7 @@ export default function Room03_Ghostwriter() {
                 onChange={(e) => setGwHookType(e.target.value)}
                 className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest"
               >
+                <option value="auto">Neural Match (Room 02 DNA)</option>
                 <option value="chant">Stadium Chant (Spacious & Melodic)</option>
                 <option value="bouncy">The Double-Up (Dense & Repetitive)</option>
                 <option value="triplet">The Trap Triplet (12-Beat Subdivision)</option>
@@ -460,6 +496,7 @@ export default function Room03_Ghostwriter() {
                 onChange={(e) => setGwFlowEvolution(e.target.value)}
                 className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest"
               >
+                <option value="auto">Neural Match (Room 02 DNA)</option>
                 <option value="static">Locked In (Consistent Cadence)</option>
                 <option value="switch">The Switch-Up (Mid-Verse Flow Shift)</option>
               </select>

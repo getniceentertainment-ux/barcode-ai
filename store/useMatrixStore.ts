@@ -5,32 +5,11 @@ import { saveAudioToDisk, loadAudioFromDisk } from '../lib/dawStorage';
 import { supabase } from '../lib/supabase';
 
 // --- SURGICAL ADDITION: EXTENDED DSP TRUTH ---
+// We extend the baseline AudioAnalysis type to safely catch the new Essentia payload
 export type ExtendedAudioAnalysis = AudioAnalysis & {
   dynamic_array?: number[];
   contour?: string;
 };
-
-// --- NEW: THE QUANTIZER DATA STRUCTURES ---
-export interface QuantizedSyllable {
-  id: string;
-  word: string;
-  slot: number; // 0 to 15 (16th notes)
-  startTime: number;
-  duration: number;
-  isWordEnd?: boolean;
-}
-
-export interface QuantizedLine {
-  id: string;
-  barIndex: number;
-  text: string;
-  originalText: string;
-  startTime: number;
-  lineDuration?: number;
-  isHeader: boolean;
-  timestamp?: string;
-  words?: QuantizedSyllable[];
-}
 
 interface ToastMessage {
   id: string;
@@ -45,6 +24,7 @@ interface MatrixState {
   activeProjectId: string | null;
   isProjectFinalized: boolean;
 
+  // --- VISUAL SYNC HUD STATE ---
   syncStatus: "idle" | "saving" | "saved" | "error";
   setSyncStatus: (status: "idle" | "saving" | "saved" | "error") => void;
 
@@ -79,6 +59,7 @@ interface MatrixState {
   setActiveRoom: (roomId: string) => void;
   setActiveProject: (id: string | null, isFinalized: boolean) => void;
 
+  // --- SURGICAL FIX: USE EXTENDED DSP TYPE ---
   audioData: ExtendedAudioAnalysis | null;
   setAudioData: (data: ExtendedAudioAnalysis) => void;
   
@@ -93,13 +74,15 @@ interface MatrixState {
   gwUseSlang: boolean;
   gwUseIntel: boolean;
   
-  gwMotive: string;
-  gwStruggle: string;
-  gwHustle: string;
-
+  // --- TOPLINE DIRECTIVES (A&R MATH) ---
   gwStrikeZone: string;
   gwHookType: string;
   gwFlowEvolution: string;
+
+  // --- THEMATIC DIRECTIVES ---
+  gwMotive: string;
+  gwStruggle: string;
+  gwHustle: string;
   
   setGwTitle: (t: string) => void;
   setGwPrompt: (p: string) => void;
@@ -109,22 +92,20 @@ interface MatrixState {
   setGwUseSlang: (b: boolean) => void;
   setGwUseIntel: (b: boolean) => void;
   
+  // --- TOPLINE SETTERS ---
+  setGwStrikeZone: (z: string) => void;
+  setGwHookType: (t: string) => void;
+  setGwFlowEvolution: (e: string) => void;
+
+  // --- THEMATIC SETTERS ---
   setGwMotive: (m: string) => void;
   setGwStruggle: (s: string) => void;
   setGwHustle: (h: string) => void;
-
-  setGwStrikeZone: (val: string) => void;
-  setGwHookType: (val: string) => void;
-  setGwFlowEvolution: (val: string) => void;
 
   blueprint: BlueprintSection[];
   setBlueprint: (blueprint: BlueprintSection[]) => void;
   generatedLyrics: string | null;
   setGeneratedLyrics: (lyrics: string) => void;
-
-  // --- NEW: THE QUANTIZER HUD ---
-  quantizedLines: QuantizedLine[];
-  setQuantizedLines: (lines: QuantizedLine[]) => void;
 
   vocalStems: VocalStem[];
   addVocalStem: (stem: VocalStem) => void;
@@ -132,6 +113,7 @@ interface MatrixState {
   updateStemVolume: (id: string, volume: number) => void;
   updateStemOffset: (id: string, offsetBars: number) => void;
 
+  // --- THE SAFE MIDDLEMAN ---
   engineeredVocal: VocalStem | null;
   setEngineeredVocal: (stem: VocalStem | null) => void;
 
@@ -173,13 +155,15 @@ export const useMatrixStore = create<MatrixState>()(
       gwUseSlang: true,
       gwUseIntel: true,
       
+      // --- INITIAL TOPLINE STATE (NEURAL FALLBACKS) ---
+      gwStrikeZone: "snare",
+      gwHookType: "auto",
+      gwFlowEvolution: "auto",
+
+      // --- INITIAL THEMATIC STATE ---
       gwMotive: "",
       gwStruggle: "",
       gwHustle: "",
-
-      gwStrikeZone: "snare",
-      gwHookType: "chant",
-      gwFlowEvolution: "static",
       
       mixParams: {
         activeChain: "getnice_eq",
@@ -198,15 +182,21 @@ export const useMatrixStore = create<MatrixState>()(
       
       blueprint: [],
       generatedLyrics: null,
-      quantizedLines: [], // <-- Initialize
       vocalStems: [],
-      engineeredVocal: null, 
+      engineeredVocal: null, // <-- THE MIDDLEMAN
       finalMaster: null,
       toasts: [],
 
       setSyncStatus: (status) => set({ syncStatus: status }),
-      updateMixParams: (params) => set((state) => ({ mixParams: { ...state.mixParams, ...params } })),
-      updateAnrData: (data) => set((state) => ({ anrData: { ...state.anrData, ...data } })),
+
+      updateMixParams: (params) => set((state) => ({ 
+        mixParams: { ...state.mixParams, ...params } 
+      })),
+
+      updateAnrData: (data) => set((state) => ({ 
+        anrData: { ...state.anrData, ...data } 
+      })),
+
       setPlaybackMode: (mode) => set({ playbackMode: mode }),
       setRadioTrack: (track) => set({ radioTrack: track }),
       setMdxJobId: (id) => set({ mdxJobId: id }),
@@ -222,18 +212,20 @@ export const useMatrixStore = create<MatrixState>()(
       setGwUseSlang: (b) => set({ gwUseSlang: b }),
       setGwUseIntel: (b) => set({ gwUseIntel: b }),
       
+      // --- TOPLINE MUTATORS ---
+      setGwStrikeZone: (z) => set({ gwStrikeZone: z }),
+      setGwHookType: (t) => set({ gwHookType: t }),
+      setGwFlowEvolution: (e) => set({ gwFlowEvolution: e }),
+
+      // --- THEMATIC STATE MUTATORS ---
       setGwMotive: (m) => set({ gwMotive: m }),
       setGwStruggle: (s) => set({ gwStruggle: s }),
       setGwHustle: (h) => set({ gwHustle: h }),
 
-      setGwStrikeZone: (val) => set({ gwStrikeZone: val }),
-      setGwHookType: (val) => set({ gwHookType: val }),
-      setGwFlowEvolution: (val) => set({ gwFlowEvolution: val }),
-
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
-      setQuantizedLines: (lines) => set({ quantizedLines: lines }), // <-- Setter
 
+      // --- THE SETTER ---
       setEngineeredVocal: (stem) => {
         set({ engineeredVocal: stem });
         saveAudioToDisk('matrix_engineered_vocal', stem ? [stem] : []); 
@@ -246,6 +238,7 @@ export const useMatrixStore = create<MatrixState>()(
           }
           return { activeRoom: roomId };
         });
+        // TRIGGER LOUD CLOUD SAVE ON TRANSITION
         get().pushToCloud();
       },
 
@@ -294,13 +287,27 @@ export const useMatrixStore = create<MatrixState>()(
         
         return {
           audioData: null, flowDNA: null, generatedLyrics: null, vocalStems: [], activeRoom: "01",
-          engineeredVocal: null, quantizedLines: [], 
+          engineeredVocal: null, 
           gwTitle: "", gwPrompt: "", gwStyle: "getnice_hybrid", gwPocket: "standard", activeProjectId: null, isProjectFinalized: false, finalMaster: null,
           mdxJobId: null, mdxStatus: "idle", syncStatus: "idle",
+          
+          // --- CLEAR ALL A&R/THEMATIC DIRECTIVES ---
+          gwStrikeZone: "snare", gwHookType: "auto", gwFlowEvolution: "auto",
           gwMotive: "", gwStruggle: "", gwHustle: "",
-          gwStrikeZone: "snare", gwHookType: "chant", gwFlowEvolution: "static",
-          mixParams: { activeChain: "getnice_eq", presenceIntensity: 30, reverbMix: 25, eqGains: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5] },
-          anrData: { trackTitle: "", hitScore: 0, tiktokSnippet: "", coverUrl: "", status: "idle", }
+
+          mixParams: {
+            activeChain: "getnice_eq",
+            presenceIntensity: 30,
+            reverbMix: 25,
+            eqGains: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5]
+          },
+          anrData: {
+            trackTitle: "",
+            hitScore: 0,
+            tiktokSnippet: "",
+            coverUrl: "",
+            status: "idle",
+          }
         };
       }),
 
@@ -308,33 +315,53 @@ export const useMatrixStore = create<MatrixState>()(
         const state = get();
         if (!state.userSession?.id) return;
         try {
-          const { data } = await supabase.from('profiles').select('*').eq('id', state.userSession.id).maybeSingle(); 
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', state.userSession.id)
+            .maybeSingle(); 
+            
           if (data) {
             set({
               userSession: {
                 ...state.userSession,
+                
+                // --- 1. Standard Credits (Usually Artist Tier) ---
                 credits: data.credits ?? (state.userSession as any).credits, 
+                // FIX: Force UNLIMITED rendering for Moguls upon ledger hydration
                 creditsRemaining: data.tier === 'The Mogul' ? 'UNLIMITED' : (data.credits ?? (state.userSession as any).creditsRemaining),
+                
+                // --- 2. A-La-Carte Tokens (Usually Free Loader Tier) ---
                 tokens: data.tokens ?? (state.userSession as any).tokens,
                 free_credits: data.free_credits ?? (state.userSession as any).free_credits,
+                
+                // --- 3. Engineering Access (Map both cases) ---
                 has_engineering_token: data.has_engineering_token,
                 hasEngineeringToken: data.has_engineering_token, 
+                
+                // --- 4. Mastering Access (Map both cases) ---
                 mastering_tokens: data.mastering_tokens,
                 masteringTokens: data.mastering_tokens, 
                 has_mastering_token: data.has_mastering_token,
                 hasMasteringToken: data.has_mastering_token, 
+                
+                // --- 5. Bank / Marketing ---
                 marketingCredits: data.marketing_credits,
                 walletBalance: data.wallet_balance
               } as any
             });
           }
-        } catch (err) { console.error("Ledger sync failed", err); }
+        } catch (err) {
+          console.error("Ledger sync failed", err);
+        }
       },
 
+      // --- LOUD CLOUD SAVE ENGINE ---
       pushToCloud: async () => {
         const state = get();
         if (!state.userSession?.id) return;
 
+        // 1. Trigger the Opaque HUD!
         set({ syncStatus: "saving" });
         
         const draftSnapshot = {
@@ -342,25 +369,54 @@ export const useMatrixStore = create<MatrixState>()(
            flowDNA: state.flowDNA,
            blueprint: state.blueprint, 
            generatedLyrics: state.generatedLyrics,
-           quantizedLines: state.quantizedLines, // <-- Cloud Backup
-           gwTitle: state.gwTitle, gwPrompt: state.gwPrompt, gwStyle: state.gwStyle, gwPocket: state.gwPocket, 
-           gwMotive: state.gwMotive, gwStruggle: state.gwStruggle, gwHustle: state.gwHustle,
-           gwStrikeZone: state.gwStrikeZone, gwHookType: state.gwHookType, gwFlowEvolution: state.gwFlowEvolution,
-           mixParams: state.mixParams, anrData: state.anrData, activeProjectId: state.activeProjectId,
-           isProjectFinalized: state.isProjectFinalized, activeRoom: state.activeRoom,
+           gwTitle: state.gwTitle,
+           gwPrompt: state.gwPrompt,
+           gwStyle: state.gwStyle,
+           gwPocket: state.gwPocket,
+           
+           // --- BACKUP TOPLINE STATE TO CLOUD ---
+           gwStrikeZone: state.gwStrikeZone,
+           gwHookType: state.gwHookType,
+           gwFlowEvolution: state.gwFlowEvolution,
+
+           // --- BACKUP THEMATIC STATE TO CLOUD ---
+           gwMotive: state.gwMotive,
+           gwStruggle: state.gwStruggle,
+           gwHustle: state.gwHustle,
+           
+           mixParams: state.mixParams,
+           anrData: state.anrData,
+           activeProjectId: state.activeProjectId,
+           isProjectFinalized: state.isProjectFinalized,
+           activeRoom: state.activeRoom,
         };
 
         try {
-          const { data: existing } = await supabase.from('matrix_sessions').select('user_id').eq('user_id', state.userSession.id).maybeSingle();
+          const { data: existing } = await supabase
+            .from('matrix_sessions')
+            .select('user_id')
+            .eq('user_id', state.userSession.id)
+            .maybeSingle();
+
           if (existing) {
-            await supabase.from('matrix_sessions').update({ session_state: draftSnapshot, updated_at: new Date().toISOString() }).eq('user_id', state.userSession.id);
+            await supabase.from('matrix_sessions').update({
+              session_state: draftSnapshot, 
+              updated_at: new Date().toISOString()
+            }).eq('user_id', state.userSession.id);
           } else {
-            await supabase.from('matrix_sessions').insert([{ user_id: state.userSession.id, session_state: draftSnapshot }]);
+            await supabase.from('matrix_sessions').insert([{
+              user_id: state.userSession.id,
+              session_state: draftSnapshot 
+            }]);
           }
+
+          // 2. Flash Success, hide after 3 seconds
           set({ syncStatus: "saved" });
           setTimeout(() => set({ syncStatus: "idle" }), 3000);
+
         } catch (err) {
           console.error("Matrix Cloud Save Failed:", err);
+          // 3. Flash Error if connection fails
           set({ syncStatus: "error" });
           setTimeout(() => set({ syncStatus: "idle" }), 5000);
         }
@@ -368,17 +424,25 @@ export const useMatrixStore = create<MatrixState>()(
 
       pullFromCloud: async (userId: string) => {
         try {
-          const { data } = await supabase.from('matrix_sessions').select('session_state').eq('user_id', userId).maybeSingle();
+          const { data } = await supabase
+            .from('matrix_sessions')
+            .select('session_state')
+            .eq('user_id', userId)
+            .maybeSingle();
+
           if (data?.session_state) {
             set({ ...data.session_state });
             console.log("Matrix State Restored from Cloud Vault.");
           }
-        } catch (err) { console.error("Matrix Cloud Pull Failed:", err); }
+        } catch (err) {
+          console.error("Matrix Cloud Pull Failed:", err);
+        }
       },
 
       hydrateDiskAudio: async () => {
         try {
           await get().syncLedger();
+
           const savedBeat = await loadAudioFromDisk('matrix_audio_data');
           const savedStems = await loadAudioFromDisk('matrix_vocal_stems');
           const savedEngineered = await loadAudioFromDisk('matrix_engineered_vocal'); 
@@ -391,32 +455,60 @@ export const useMatrixStore = create<MatrixState>()(
           }
 
           if (savedStems && Array.isArray(savedStems)) {
-            const revivedStems = savedStems.map((stem: any) => ({ ...stem, url: stem.blob ? URL.createObjectURL(stem.blob) : stem.url }));
+            const revivedStems = savedStems.map((stem: any) => ({
+              ...stem,
+              url: stem.blob ? URL.createObjectURL(stem.blob) : stem.url
+            }));
             set({ vocalStems: revivedStems });
           }
 
           if (savedEngineered && Array.isArray(savedEngineered) && savedEngineered.length > 0) {
             const engStem = savedEngineered[0];
-            set({ engineeredVocal: { ...engStem, url: engStem.blob ? URL.createObjectURL(engStem.blob) : engStem.url }});
+            set({ engineeredVocal: {
+              ...engStem,
+              url: engStem.blob ? URL.createObjectURL(engStem.blob) : engStem.url
+            }});
           }
 
           if (savedMaster && (savedMaster as any).blob) {
              set({ finalMaster: { ...(savedMaster as any), url: URL.createObjectURL((savedMaster as any).blob) } });
           }
-        } catch (e) { console.error("Failed to hydrate audio from disk", e); }
+        } catch (e) {
+          console.error("Failed to hydrate audio from disk", e);
+        }
       }
     }),
     {
       name: 'barcode-matrix-storage', 
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ 
-        flowDNA: state.flowDNA, blueprint: state.blueprint, generatedLyrics: state.generatedLyrics, quantizedLines: state.quantizedLines,
-        gwTitle: state.gwTitle, gwPrompt: state.gwPrompt, gwStyle: state.gwStyle, gwPocket: state.gwPocket, 
-        audioData: state.audioData, gwMotive: state.gwMotive, gwStruggle: state.gwStruggle, gwHustle: state.gwHustle,
-        gwStrikeZone: state.gwStrikeZone, gwHookType: state.gwHookType, gwFlowEvolution: state.gwFlowEvolution,
-        mixParams: state.mixParams, anrData: state.anrData, playbackMode: state.playbackMode, radioTrack: state.radioTrack,
-        activeProjectId: state.activeProjectId, isProjectFinalized: state.isProjectFinalized, activeRoom: state.activeRoom,
-        hasAccess: state.hasAccess, userSession: state.userSession
+        flowDNA: state.flowDNA,
+        blueprint: state.blueprint, 
+        generatedLyrics: state.generatedLyrics,
+        gwTitle: state.gwTitle,
+        gwPrompt: state.gwPrompt,
+        gwStyle: state.gwStyle,
+        gwPocket: state.gwPocket,
+        
+        // --- SURGICAL ADDITION: PERSIST TOPLINE STATE LOCALLY ON REFRESH ---
+        gwStrikeZone: state.gwStrikeZone,
+        gwHookType: state.gwHookType,
+        gwFlowEvolution: state.gwFlowEvolution,
+
+        audioData: state.audioData,              
+        gwMotive: state.gwMotive,
+        gwStruggle: state.gwStruggle,
+        gwHustle: state.gwHustle,
+        
+        mixParams: state.mixParams,
+        anrData: state.anrData,
+        playbackMode: state.playbackMode,
+        radioTrack: state.radioTrack,
+        activeProjectId: state.activeProjectId,
+        isProjectFinalized: state.isProjectFinalized,
+        activeRoom: state.activeRoom,
+        hasAccess: state.hasAccess,
+        userSession: state.userSession
       }),
     }
   )
