@@ -166,6 +166,33 @@ export default function Room03_Ghostwriter() {
     }
   }, [gwStyle, gwHookType, gwFlowEvolution, gwPocket, layoutHash, blueprint, audioData]);
 
+  // --- THE SMART LOCK BOUNCER (PREVENTS ENGINE CRASHES) ---
+  useEffect(() => {
+    // Rule 1: Lazy Flow cannot handle Cascade pocket (Syllable Starvation)
+    if (gwStyle === "lazy" && gwPocket === "cascade") {
+      setGwPocket("standard");
+      if (addToast) addToast("Cascade disabled: Lazy flow lacks syllable density.", "info");
+    }
+    
+    // Rule 2: Chopper Flow cannot handle Spillover strike zone (Over-Stuffed Grid)
+    if (gwStyle === "chopper" && gwStrikeZone === "spillover") {
+      setGwStrikeZone("snare");
+      if (addToast) addToast("Spillover disabled: Chopper grid is too dense.", "info");
+    }
+
+    // Rule 3: Triplet Flow cannot handle Prime Hook (Math Mismatch)
+    if (gwStyle === "triplet" && gwHookType === "prime") {
+      setGwHookType("auto");
+      if (addToast) addToast("Prime disabled: Clashes with Triplet math.", "info");
+    }
+
+    // Rule 4: Pickup Pocket cannot handle Downbeat Strike Zone (Grid Collision)
+    if (gwPocket === "pickup" && gwStrikeZone === "downbeat") {
+      setGwStrikeZone("snare");
+      if (addToast) addToast("Downbeat disabled: Clashes with Pickup pocket.", "info");
+    }
+  }, [gwStyle, gwPocket, gwStrikeZone, gwHookType, setGwPocket, setGwStrikeZone, setGwHookType, addToast]);
+
   const updateBlueprintStartBar = (index: number, newStart: number) => {
     const newBp = [...blueprint];
     const oldStart = (newBp[index] as any).startBar || 0;
@@ -471,11 +498,11 @@ export default function Room03_Ghostwriter() {
               <select 
                 value={gwStrikeZone}
                 onChange={(e) => setGwStrikeZone(e.target.value)}
-                className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest"
+                className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest disabled:opacity-50"
               >
                 <option value="snare">The 2 & 4 (Snare Snap)</option>
-                <option value="downbeat">The Downbeat (Heavy Kick / Drill)</option>
-                <option value="spillover">The Spillover (Delayed Drag)</option>
+                <option value="downbeat" disabled={gwPocket === "pickup"}>The Downbeat {gwPocket === "pickup" ? "[LOCKED: PICKUP ACTIVE]" : "(Heavy Kick / Drill)"}</option>
+                <option value="spillover" disabled={gwStyle === "chopper"}>The Spillover {gwStyle === "chopper" ? "[LOCKED: CHOPPER ACTIVE]" : "(Delayed Drag)"}</option>
               </select>
             </div>
 
@@ -484,14 +511,14 @@ export default function Room03_Ghostwriter() {
               <select 
                 value={gwHookType}
                 onChange={(e) => setGwHookType(e.target.value)}
-                className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest"
+                className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest disabled:opacity-50"
               >
                 <option value="auto">Neural Match (Room 02 DNA)</option>
                 <option value="chant">Stadium Chant (Spacious & Melodic)</option>
                 <option value="bouncy">The Double-Up (Dense & Repetitive)</option>
                 <option value="triplet">The Trap Triplet (12-Beat Subdivision)</option>
                 <option value="symmetry">Symmetry Break (A-B-A-B Structure)</option>
-                <option value="prime">Prime Syncopation (Off-Beat Slide)</option>
+                <option value="prime" disabled={gwStyle === "triplet"}>Prime Syncopation {gwStyle === "triplet" ? "[LOCKED: TRIPLET ACTIVE]" : "(Off-Beat Slide)"}</option>
               </select>
             </div>
 
@@ -513,12 +540,12 @@ export default function Room03_Ghostwriter() {
               <select 
                 value={gwPocket}
                 onChange={(e) => setGwPocket(e.target.value)}
-                className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest font-bold"
+                className="w-full bg-black border border-[#333] p-3 text-xs text-white font-mono outline-none focus:border-[#E60000] transition-colors uppercase tracking-widest font-bold disabled:opacity-50"
               >
                 <option value="standard">Standard (Dead on the 1-Count)</option>
                 <option value="chainlink">Chain-Link (Interwoven / Spillover)</option>
                 <option value="pickup">The Drag (Pickup Notes & Delay)</option>
-                <option value="cascade">GetNice Cascade (Internal Carry-Over)</option>
+                <option value="cascade" disabled={gwStyle === "lazy"}>GetNice Cascade {gwStyle === "lazy" ? "[LOCKED: LAZY ACTIVE]" : "(Internal Carry-Over)"}</option>
                 <option value="matrix_pivot">Matrix Pivot (Array-Driven Internal Hinge)</option>
               </select>
             </div>
