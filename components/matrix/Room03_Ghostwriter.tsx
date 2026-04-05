@@ -45,10 +45,9 @@ export default function Room03_Ghostwriter() {
     gwStruggle = "", setGwStruggle = () => {},
     gwHustle = "", setGwHustle = () => {},
 
-    // NEW A&R DIRECTIVES
     gwStrikeZone = "snare", setGwStrikeZone = () => {},
-    gwHookType = "auto", setGwHookType = () => {}, // Changed default to "auto"
-    gwFlowEvolution = "auto", setGwFlowEvolution = () => {} // Changed default to "auto"
+    gwHookType = "auto", setGwHookType = () => {}, 
+    gwFlowEvolution = "auto", setGwFlowEvolution = () => {} 
   } = useMatrixStore();
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -92,7 +91,6 @@ export default function Room03_Ghostwriter() {
     
     let needsUpdate = false;
 
-    // A dictionary to translate the dropdown ID to a clean UI label
     const hookLabels: Record<string, string> = {
       auto: "Neural Match (DNA)",
       chant: "Stadium Chant",
@@ -110,11 +108,9 @@ export default function Room03_Ghostwriter() {
       let activeArray: number[] = [];
       
       if (block.type === 'HOOK') {
-          // --- OVERRIDE: Display the active Topline Directive ---
           activeName = hookLabels[gwHookType as string] || "Custom Hook";
           activeDesc = `Topline Override Active: ${activeName}`;
       } else if (block.type === 'VERSE') {
-          // --- DYNAMIC: Append the Flow Evolution state to the Verse ---
           const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
           
           let evolutionLabel = "[Locked In]";
@@ -127,7 +123,6 @@ export default function Room03_Ghostwriter() {
               evolutionLabel = "[Switch-Up Active]";
           }
 
-          // --- SURGICAL FIX: Respect 'Locked In' vs 'Switch-Up' for Verse Arrays ---
           const selected = finalEvolution === "static" 
               ? verseVariations[0] 
               : verseVariations[verseCounter % verseVariations.length];
@@ -136,7 +131,6 @@ export default function Room03_Ghostwriter() {
           
           activeArray = selected.array;
 
-          // SURGICAL FIX: Catch the Pocket modifier and append it to the visual name
           const pocketLabels: Record<string, string> = {
             standard: "Std",
             chainlink: "Chain-Link",
@@ -170,7 +164,6 @@ export default function Room03_Ghostwriter() {
     if (needsUpdate) {
         setBlueprint(synced);
     }
-  // SURGICAL FIX: Bound gwPocket to dependency array to instantly trigger UI redraws
   }, [gwStyle, gwHookType, gwFlowEvolution, gwPocket, layoutHash, blueprint, audioData]);
 
   const updateBlueprintStartBar = (index: number, newStart: number) => {
@@ -228,9 +221,6 @@ export default function Room03_Ghostwriter() {
     setIsGenerating(true);
     setUxState("Synthesizing Bars via GETNICE Engine...");
 
-    // --- THE SILENT "SMART" FALLBACK LOGIC ---
-    // If the user selected the "Auto/Neural" option, we silently route 
-    // the backend math based on whatever Room 2 assigned to gwStyle.
     let finalHookType = gwHookType;
     if (gwHookType === "auto" || !gwHookType) {
       if (gwStyle === "triplet") finalHookType = "triplet";
@@ -240,17 +230,15 @@ export default function Room03_Ghostwriter() {
 
     let finalFlowEvolution = gwFlowEvolution;
     if (gwFlowEvolution === "auto" || !gwFlowEvolution) {
-      // Choppers and Triplets sound great with switch-ups. Slower flows stay static.
       finalFlowEvolution = (gwStyle === "chopper" || gwStyle === "triplet") ? "switch" : "static";
     }
 
+    // --- SURGICAL FIX: Removed Pipe formatting to clear Cognitive Overload ---
     const systemConstraint = `ABSOLUTE ENGINE RULES:
 1. RAW LYRICS ONLY: You must ONLY output the lyrics.
 2. NO PREFIXES: NEVER output labels like "1st Line:", "Hook:", or "Verse:" before the lyrics.
-3. NO PADDING: NEVER pad lines with empty pipe symbols (e.g., "words. | | |" is FORBIDDEN). Use pipes ONLY between syllables (e.g., "CHIL|LAX|IN").
-4. NO META-COMMENTARY: Do not explain your output or write "(pipe symbol required)".
-5. COMPOUND RHYMING: Use 2- or 3-syllable compound rhymes on the structural accents.
-6. PITCH INTONATION: Align your vowel choices to the pitch contour of the beat. Use closed/heavy vowels for pitch drops, and open/elongated vowels for tension rises.`;
+3. COMPOUND RHYMING: Use 2- or 3-syllable compound rhymes on the structural accents.
+4. PITCH INTONATION: Align your vowel choices to the pitch contour of the beat. Use closed/heavy vowels for pitch drops, and open/elongated vowels for tension rises.`;
 
     const keyParts = audioData?.key ? audioData.key.split(" ") : ["C", "minor"];
     const rootNote = keyParts[0];
@@ -281,18 +269,14 @@ export default function Room03_Ghostwriter() {
           tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
-          
-          // INJECTING THE TOPLINE A&R DIRECTIVES
           strikeZone: gwStrikeZone,
-          hookType: finalHookType,             // <-- Send the translated logic
-          flowEvolution: finalFlowEvolution,   // <-- Send the translated logic
+          hookType: finalHookType,             
+          flowEvolution: finalFlowEvolution,   
           pocket: gwPocket, 
-          
           root_note: rootNote,
           scale: scale,
           contour: (audioData as any)?.contour || "drops into a lower, cadential register",
           dynamic_array: (audioData as any)?.dynamic_array,
-          
           systemConstraint: systemConstraint, 
           blueprint: blueprint.map(b => ({ 
             type: b.type, 
@@ -524,7 +508,6 @@ export default function Room03_Ghostwriter() {
               </select>
             </div>
 
-            {/* SURGICAL ADDITION: POCKET PLACEMENT, CASCADE & PIVOT */}
             <div>
               <label className="text-[10px] font-mono text-[#888] uppercase tracking-widest mb-2 block font-bold">Pocket Placement (Syncopation)</label>
               <select 

@@ -144,7 +144,6 @@ def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustl
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     banned_words_str = ", ".join(BAN_LIST)
     
-    # 1. Translate the Strike Zone into a prompt rule
     strike_rule = "Ensure your multi-syllabic rhyme endings land precisely on the 2-count and 4-count (the snare drum)."
     if strike_zone == "downbeat":
         strike_rule = "Force aggressive, heavy emphasis on the 1-count (the downbeat/kick drum). Hit the first beat hard."
@@ -184,11 +183,11 @@ You are "The Mogul." Your voice blends street-smart authenticity with boardroom 
 def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2):
     
     if section_index == 0:
-        arc_instruction = "Establish the setting and the origin. Ground the listener."
+        arc_instruction = "Establish the setting and the origin. Ground the listener. DO NOT copy the hook verbatim."
     elif section_type.upper() == "HOOK":
         arc_instruction = "Summarize the core theme. Make it highly repetitive and catchy."
     elif section_index in [1, 2]:
-        arc_instruction = "Introduce the depth of the topic. Connect directly to the previous verse and the Hook. Escalate the energy."
+        arc_instruction = "Introduce new depth to the topic. Evolve the story. DO NOT copy the hook verbatim."
     else:
         arc_instruction = "The resolution, the takeaway. High confidence, grounded reality."
     
@@ -204,13 +203,11 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         current_max_syllables = max(4, int(max_syllables * 0.6))
         energy_rules = "\n[ENERGY LEVEL 1 - THE DROP]: The beat is very quiet here. Write sparse, conversational, breathy lines. Use minimal syllables and leave empty space."
     elif current_energy == 4:
-        # SURGICAL FIX: The Hard Ceiling. Never let it exceed 15 syllables.
         current_max_syllables = min(15, int(max_syllables * 1.3))
         energy_rules = "\n[ENERGY LEVEL 4 - THE CLIMAX]: The beat is exploding. Pack the pocket. Write dense, aggressive, rapid-fire multi-syllabic rhymes."
     else:
         energy_rules = f"\n[ENERGY LEVEL {current_energy} - THE POCKET]: The beat has standard driving energy. Maintain a steady, confident cadence."
 
-    # 2. Translate Hook Type into Syllable Math
     if "HOOK" in section_type.upper():
         if hook_type == "bouncy":
             current_max_syllables = max(6, int(max_syllables * 0.9))
@@ -236,14 +233,13 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 3. THE 'B' LINES: Line 2 and Line 4 must be drastically different from the 'A' lines, but must perfectly match each other.
 """
         elif hook_type == "prime":
-            # Force odd prime numbers to create syncopation
             current_max_syllables = 7 if max_syllables > 7 else 5
             melodic_rules = f"""
 [THE PRIME FLOW OVERRIDE]
 1. SYNCOPATION MATH: Force an odd-numbered syllable count of EXACTLY {current_max_syllables} syllables per line.
 2. THE GAPS: Because this is an odd number over an even beat, leave unnatural gaps and rests at the end of the line. Make the flow slide over the downbeat.
 """
-        else: # Default: chant
+        else: 
             current_max_syllables = max(4, int(max_syllables * 0.5))
             melodic_rules = """
 [STADIUM CHANT HOOK OVERRIDE]
@@ -251,7 +247,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 2. SIMPLICITY: Highly memorable, heavily spaced out. Let the instrumental breathe between words.
 """
 
-    # 3. Translate Flow Evolution for Verses
     if "VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 12:
         evolution_rules = f"""
 [MID-VERSE SWITCH-UP ACTIVE]
@@ -268,6 +263,7 @@ Halfway through these {bars} bars, you MUST completely change your rhythmic cade
 - NARRATIVE ARC: {arc_instruction}
 - RHYTHMIC POCKET: {pattern_desc}
 - SYLLABLE LIMIT: Strictly {current_max_syllables} or less per line. (CRITICAL)
+- FORMATTING: Use normal English. Do NOT spell out words with dots.
 {energy_rules}
 {hook_context}
 {melodic_rules}
@@ -280,13 +276,15 @@ Write the draft now.
 <|im_end|>
 <|im_start|>assistant
 """
+    # SURGICAL FIX: INCREASED TOKEN CEILING TO 60 * bars (960 Tokens for 16 bars)
     inputs = tokenizer(draft_prompt, return_tensors="pt").to("cuda")
-    outputs = model.generate(**inputs, max_new_tokens=40 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15)
+    outputs = model.generate(**inputs, max_new_tokens=60 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15)
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    # PASS 2: THE MOGUL POLISH & ENGINEER FORMATTING
+    # PASS 2: THE MOGUL POLISH 
+    # SURGICAL FIX: Completely removed the Pipe formatting rule. Let the AI just write.
     refine_prompt = f"""<|im_start|>user
-[THE SECOND PASS - FINAL POLISH & ENGINEER FORMATTING]
+[THE SECOND PASS - FINAL POLISH]
 You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
@@ -295,24 +293,21 @@ CRITICAL REFINEMENT COMMANDS:
 2. OBEY THE POCKET: {pocket_instruction}
 3. NO HEADERS. NO TIMESTAMPS. NO POETRY.
 4. Output EXACTLY {bars} lines.
-5. THE ENGINEER PASS: You MUST place a pipe symbol (|) between syllables of multi-syllable words (e.g., "GET|TING"). You MUST preserve regular spaces between different words. DO NOT combine separate words together. CORRECT: "GET|TING NICE TO|DAY" INCORRECT: "GET|TING|NICE|TO|DAY"
-6. ANTI-CORRUPTION LAW: You MUST use standard English spelling. NEVER merge words with apostrophes to cheat the syllable count (e.g., "try'na", "schemin'sin'deu'th" are strictly FORBIDDEN). Keep all words distinctly separated by spaces.
+5. NO ACRONYM GLITCHING: Use standard natural English. Do NOT spell out words with dots (e.g., C.O.M.P.T.O.N is strictly forbidden). DO NOT copy previous sections verbatim.
 {energy_rules}
 {melodic_rules}
 
-Rewrite the final {bars} lines and map the syllables now.
+Rewrite the final {bars} lines now.
 <|im_end|>
 <|im_start|>assistant
 """
+    # SURGICAL FIX: Lowered temperature to 0.55 to prevent hallucination looping
     inputs_refine = tokenizer(refine_prompt, return_tensors="pt").to("cuda")
-    outputs_refine = model.generate(**inputs_refine, max_new_tokens=40 * bars, temperature=0.75, top_p=0.9, repetition_penalty=1.1)
+    outputs_refine = model.generate(**inputs_refine, max_new_tokens=60 * bars, temperature=0.55, top_p=0.9, repetition_penalty=1.1)
     final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
     clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and not line.startswith('[')]
     
-    # --- SURGICAL FIX: THE POCKET PADDING SAFETY NET ---
-    # If the LLM writes a run-on sentence or drops lines, forcefully pad the array 
-    # so the teleprompter timing and grid math never breaks in the booth.
     while len(clean_lines) < bars:
         clean_lines.append("... [Ride the pocket] ...")
         
@@ -334,39 +329,31 @@ def handler(event):
     scale = job_input.get("scale", "minor")
     contour = job_input.get("contour", "drops into a lower register")
     
-    # --- CATCH THE TOPLINE DIRECTIVES ---
     strike_zone = job_input.get("strikeZone", "snare")
     hook_type = job_input.get("hookType", "chant")
     flow_evolution = job_input.get("flowEvolution", "static")
-    
-    # --- CATCH THE POCKET DROPDOWN PROPERLY ---
     pocket = job_input.get("pocket", "standard")
 
-    # --- CATCH THE DYNAMIC ARRAY ---
     dynamic_array = job_input.get("dynamic_array", [2, 2, 2, 2, 2, 2, 2, 2])
     total_blueprint_bars = sum(sec.get("bars", 16) for sec in blueprint)
     if total_blueprint_bars == 0: total_blueprint_bars = 1
 
     seconds_per_bar = (60.0 / bpm) * 4.0
 
-    # --- THE GETNICE UNIVERSAL SUBDIVISION MATRIX ---
-    # Defines the absolute min/max syllables a human can physically rap based on the style
     style_limits = {
-        "lazy": {"min": 4, "max": 7},              # Quarter notes & Sparse 8ths
-        "heartbeat": {"min": 7, "max": 10},        # Classic 8th notes
-        "getnice_hybrid": {"min": 8, "max": 12},   # Syncopated 8ths / Light 16ths
-        "triplet": {"min": 9, "max": 12},          # Strict 8th-note triplets
-        "chopper": {"min": 12, "max": 16}          # Relentless 16th notes
+        "lazy": {"min": 4, "max": 7},              
+        "heartbeat": {"min": 7, "max": 10},        
+        "getnice_hybrid": {"min": 8, "max": 12},   
+        "triplet": {"min": 9, "max": 12},          
+        "chopper": {"min": 12, "max": 16}          
     }
 
     limits = style_limits.get(style, style_limits["getnice_hybrid"])
 
     bpm_ratio = min(1.0, max(0.0, (seconds_per_bar - 1.5) / (3.5 - 1.5))) 
     
-    # Calculate the dynamically scaled baseline
     max_syllables = int(limits["min"] + (limits["max"] - limits["min"]) * bpm_ratio)
 
-    # --- SURGICAL FIX: ADDED THE CASCADE LOGIC OVERRIDE ---
     pocket_instruction = "End every line with a period (.). You MUST hit Enter/Return to create a new line."
     
     if pocket == "chainlink":
@@ -375,6 +362,8 @@ def handler(event):
         pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.). You MUST hit Enter/Return to create a new line."
     elif pocket == "cascade":
         pocket_instruction = "THE GETNICE CASCADE MODE (INTERNAL CARRY-OVER): Use heavy enjambment. End lines mid-phrase with no punctuation. You MUST rhyme the END of one line with the BEGINNING or MIDDLE of the very next line (e.g., Line 1 ends with 'rough', Line 2 starts with 'tough'). Create a relentless internal rhyme chain. You MUST hit Enter/Return to create a distinct new line."
+    elif pocket == "matrix_pivot":
+        pocket_instruction = "THE MATRIX PIVOT (INTERNAL HINGE): Execute a cascading rhyme shift using the rhythmic array. Take the exact end-rhyme of the previous line, and place a matching rhyme on the 3rd spoken word (the 3rd rhythmic cluster) of the current line to link them. Then, immediately pivot the topic and end the current line with a completely NEW rhyme sound. You MUST hit Enter/Return to create a distinct new line."
 
     system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone)
     
@@ -391,7 +380,6 @@ def handler(event):
         start_bar = section.get("startBar", current_cumulative_bar)
         pattern_desc = section.get("patternDesc", "Standard Score Card")
         
-        # --- CALCULATE THE EXACT ENERGY FOR THIS SECTION ---
         progress_ratio = start_bar / total_blueprint_bars
         array_index = min(7, int(progress_ratio * 8))
         current_energy = dynamic_array[array_index]
@@ -399,17 +387,16 @@ def handler(event):
         final_lyrics += f"\n[{sec_type} - {bars} BARS | BAR {start_bar} | ENERGY: {current_energy}/4]\n"
         
         if sec_type == "INSTRUMENTAL":
-            section_lines = ["Mmm. Mmm." for _ in range(bars)]
+            # SURGICAL FIX: Remove "Mmm." so it doesn't poison the context window!
+            section_lines = ["[Instrumental Break]" for _ in range(bars)]
             
         elif "HOOK" in sec_type and saved_hook_lines is not None:
-            # COPY-PASTE THE EXACT HOOK FROM MEMORY
             section_lines = []
             while len(section_lines) < bars:
                 section_lines.extend(saved_hook_lines)
             section_lines = section_lines[:bars]
             
         else:
-            # NORMAL GENERATION (WITH TOPLINE PARAMS & ENERGY INJECTION)
             section_lines = generate_section(
                 system_prompt=system_prompt, 
                 previous_lyrics=context_lyrics, 
@@ -423,7 +410,7 @@ def handler(event):
                 anchor_hook=anchor_hook_text,
                 hook_type=hook_type,           
                 flow_evolution=flow_evolution,
-                current_energy=current_energy  # <-- THE LETHAL INJECTION
+                current_energy=current_energy  
             )
             
             if "HOOK" in sec_type:

@@ -318,7 +318,7 @@ export default function Room04_Booth() {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   // Feed it the raw text without pipes so the TTS speaks clearly
-                  body: JSON.stringify({ lyrics: line.text.replace(/\|/g, ''), bpm: preciseBpm })
+                  body: JSON.stringify({ lyrics: line.text.replace(/\|/g, ''), bpm: preciseBpm, gender: useMatrixStore.getState().gwGender || "male", pitch: "low" // Hint for the TTS engine })
                 });
                 
                 if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
@@ -340,29 +340,50 @@ export default function Room04_Booth() {
                   const source = offlineCtx.createBufferSource();
                   source.buffer = audioBuffer;
 
-                  // Calculate where in the TTS buffer to start slicing
                   const sliceStart = wIdx * sliceDuration;
 
-                  // Calculate stretch, but put a hard cap to PREVENT CHIPMUNKING
-                  const targetRate = sliceDuration / wordObj.duration;
-                  source.playbackRate.value = Math.min(1.25, Math.max(0.85, targetRate));
+                  // --- 1. THE MPC PITCH DROP ---
+                  // Calculate the required stretch to fit the grid, but forcefully multiply it by 0.82.
+                  // This drops the pitch by ~3 semitones. The sample will play slower, but the GainNode 
+                  // will gracefully choke (cut off) the tail before it bleeds into the next grid slot.
+                  const baseStretch = sliceDuration / wordObj.duration;
+                  const pitchShiftDrop = 0.82; 
+                  // Hard cap at 1.05 so it NEVER chipmunks, and drops as low as 0.65 for deep slow pockets.
+                  source.playbackRate.value = Math.min(1.05, Math.max(0.65, baseStretch * pitchShiftDrop));
 
-                  // Create a GainNode to fade the chops in/out (Prevents audio popping/clicking)
+                  // --- 2. THE "VOICE OF GOD" CHEST EQ ---
+                  // Boost 200Hz to synthesize a heavy, authoritative chest cavity
+                  const chestEq = offlineCtx.createBiquadFilter();
+                  chestEq.type = "peaking";
+                  chestEq.frequency.value = 200; 
+                  chestEq.Q.value = 1.0;
+                  chestEq.gain.value = 8; // +8dB of pure bass/low-mid resonance
+
+                  // Cut 4000Hz to remove the high-pitched, whiny digital squeak
+                  const highShelf = offlineCtx.createBiquadFilter();
+                  highShelf.type = "highshelf";
+                  highShelf.frequency.value = 4000;
+                  highShelf.gain.value = -3; 
+
+                  // --- 3. THE MICRO-FADER (CHOKE GROUP) ---
                   const gainNode = offlineCtx.createGain();
                   const fadeTime = 0.015; // 15ms micro-fade
                   
                   gainNode.gain.setValueAtTime(0, wordObj.startTime);
                   gainNode.gain.linearRampToValueAtTime(1, wordObj.startTime + fadeTime); 
                   
-                  // Hold volume, then fade out before the chop ends
                   const chopEndTime = wordObj.startTime + wordObj.duration;
                   gainNode.gain.setValueAtTime(1, chopEndTime - fadeTime);
                   gainNode.gain.linearRampToValueAtTime(0, chopEndTime); 
 
-                  source.connect(gainNode);
+                  // --- 4. ROUTE THE SIGNAL CHAIN ---
+                  // Source -> Chest EQ -> High Shelf Cut -> Fader -> Master Out
+                  source.connect(chestEq);
+                  chestEq.connect(highShelf);
+                  highShelf.connect(gainNode);
                   gainNode.connect(offlineCtx.destination);
                   
-                  // Trigger the exact slice of audio at the exact grid timestamp
+                  // Trigger the slice!
                   source.start(wordObj.startTime, sliceStart, sliceDuration);
                 });
                 // --- END GRANULAR SLICER ---
