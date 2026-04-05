@@ -309,6 +309,13 @@ Rewrite the final {bars} lines and map the syllables now.
     final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
     clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and not line.startswith('[')]
+    
+    # --- SURGICAL FIX: THE POCKET PADDING SAFETY NET ---
+    # If the LLM writes a run-on sentence or drops lines, forcefully pad the array 
+    # so the teleprompter timing and grid math never breaks in the booth.
+    while len(clean_lines) < bars:
+        clean_lines.append("... [Ride the pocket] ...")
+        
     return clean_lines[:bars]
 
 def handler(event):
@@ -331,6 +338,9 @@ def handler(event):
     strike_zone = job_input.get("strikeZone", "snare")
     hook_type = job_input.get("hookType", "chant")
     flow_evolution = job_input.get("flowEvolution", "static")
+    
+    # --- SURGICAL FIX: CATCH THE POCKET DROPDOWN PROPERLY ---
+    pocket = job_input.get("pocket", "standard")
 
     # --- CATCH THE DYNAMIC ARRAY ---
     dynamic_array = job_input.get("dynamic_array", [2, 2, 2, 2, 2, 2, 2, 2])
@@ -351,19 +361,18 @@ def handler(event):
 
     limits = style_limits.get(style, style_limits["getnice_hybrid"])
 
-    # If the beat is very fast (e.g. 140 BPM, short seconds), we lean toward the MIN limit.
-    # If the beat is very slow (e.g. 80 BPM, long seconds), we lean toward the MAX limit.
-    # This prevents fast beats from forcing the AI to cram 20 syllables into a line.
     bpm_ratio = min(1.0, max(0.0, (seconds_per_bar - 1.5) / (3.5 - 1.5))) 
     
     # Calculate the dynamically scaled baseline
     max_syllables = int(limits["min"] + (limits["max"] - limits["min"]) * bpm_ratio)
 
-    pocket_instruction = "End every line with a period (.)."
-    if "CHAIN-LINK" in topic.upper() or "CHAINLINK" in topic.upper():
-        pocket_instruction = "CHAIN-LINK MODE: End every single line with a comma (,) for spillover."
-    elif "DRAG" in topic.upper() or "PICKUP" in topic.upper():
-        pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.)."
+    # --- SURGICAL FIX: ROUTE THE DROPDOWN VARIABLE, NOT THE TEXT BOX ---
+    pocket_instruction = "End every line with a period (.). You MUST hit Enter/Return to create a new line."
+    
+    if pocket == "chainlink":
+        pocket_instruction = "CHAIN-LINK MODE: End every single line with a comma (,) for spillover. You MUST still hit Enter/Return after the comma to create a distinct new line on the page."
+    elif pocket == "pickup":
+        pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.). You MUST hit Enter/Return to create a new line."
 
     system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone)
     
