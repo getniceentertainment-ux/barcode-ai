@@ -105,11 +105,12 @@ export default function Room03_Ghostwriter() {
           if (block.type !== 'INSTRUMENTAL') verseCounter++;
       }
       
-      const activeArray = (audioData as any)?.dynamic_array || selected.array;
-      const activeName = (audioData as any)?.dynamic_array ? "Sentient Matrix" : selected.name;
-      const activeDesc = (audioData as any)?.dynamic_array 
-        ? `[DSP GRID] Force syllables to match this exact array: [${(audioData as any)?.dynamic_array.join(',')}]. Pitch contour: ${(audioData as any)?.contour || 'Dynamic'}` 
-        : selected.desc;
+      // --- SURGICAL FIX: DECOUPLE ENERGY FROM SYLLABLE MATH ---
+      // We pass the rhythmic FLOW_VAULT descriptions directly.
+      // The Python backend will handle the DSP dynamic_array silently in the background.
+      const activeArray = selected.array;
+      const activeName = selected.name;
+      const activeDesc = selected.desc;
       
       if ((block as any).startBar !== start || (block as any).patternName !== activeName) {
           needsUpdate = true;
