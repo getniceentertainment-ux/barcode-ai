@@ -311,66 +311,66 @@ export default function Room04_Booth() {
       const offlineCtx = new OfflineCtxClass(1, Math.ceil(sampleRate * renderDuration), sampleRate);
 
       for (let i = 0; i < parsedLines.length; i++) {
-        const line = parsedLines[i];
-        setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
+              const line = parsedLines[i];
+              
+              try {
+                const res = await fetch('/api/audio/generate-guide', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  // Feed it the raw text without pipes so the TTS speaks clearly
+                  body: JSON.stringify({ lyrics: line.text.replace(/\|/g, ''), bpm: preciseBpm })
+                });
+                
+                if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
 
-        const res = await fetch('/api/audio/generate-guide', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            // Feed it the raw text without pipes so the TTS speaks clearly
-            body: JSON.stringify({ lyrics: line.text.replace(/\|/g, ''), bpm: preciseBpm })
-          });
-          
-          if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
+                const arrayBuffer = await res.arrayBuffer();
+                const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+                
+                // --- THE GETNICE GRANULAR SLICER (MPC METHOD) ---
+                const mappedWords = line.words;
+                if (!mappedWords || mappedWords.length === 0) continue;
 
-          const arrayBuffer = await res.arrayBuffer();
-          const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-          
-          // --- THE GETNICE GRANULAR SLICER (MPC METHOD) ---
-          const mappedWords = line.words;
-          if (!mappedWords || mappedWords.length === 0) continue;
+                // Divide the raw TTS audio evenly among the syllables
+                const ttsDuration = audioBuffer.duration;
+                const sliceDuration = ttsDuration / mappedWords.length;
 
-          // Divide the raw TTS audio evenly among the syllables
-          const ttsDuration = audioBuffer.duration;
-          const sliceDuration = ttsDuration / mappedWords.length;
+                mappedWords.forEach((wordObj, wIdx) => {
+                  if (!wordObj.word.trim()) return; // Skip empty slots
 
-          mappedWords.forEach((wordObj, wIdx) => {
-            if (!wordObj.word.trim()) return; // Skip empty slots
+                  const source = offlineCtx.createBufferSource();
+                  source.buffer = audioBuffer;
 
-            const source = offlineCtx.createBufferSource();
-            source.buffer = audioBuffer;
+                  // Calculate where in the TTS buffer to start slicing
+                  const sliceStart = wIdx * sliceDuration;
 
-            // Calculate where in the TTS buffer to start slicing
-            const sliceStart = wIdx * sliceDuration;
+                  // Calculate stretch, but put a hard cap to PREVENT CHIPMUNKING
+                  const targetRate = sliceDuration / wordObj.duration;
+                  source.playbackRate.value = Math.min(1.25, Math.max(0.85, targetRate));
 
-            // Calculate stretch, but put a hard cap to PREVENT CHIPMUNKING
-            const targetRate = sliceDuration / wordObj.duration;
-            source.playbackRate.value = Math.min(1.25, Math.max(0.85, targetRate));
+                  // Create a GainNode to fade the chops in/out (Prevents audio popping/clicking)
+                  const gainNode = offlineCtx.createGain();
+                  const fadeTime = 0.015; // 15ms micro-fade
+                  
+                  gainNode.gain.setValueAtTime(0, wordObj.startTime);
+                  gainNode.gain.linearRampToValueAtTime(1, wordObj.startTime + fadeTime); 
+                  
+                  // Hold volume, then fade out before the chop ends
+                  const chopEndTime = wordObj.startTime + wordObj.duration;
+                  gainNode.gain.setValueAtTime(1, chopEndTime - fadeTime);
+                  gainNode.gain.linearRampToValueAtTime(0, chopEndTime); 
 
-            // Create a GainNode to fade the chops in/out (Prevents audio popping/clicking)
-            const gainNode = offlineCtx.createGain();
-            const fadeTime = 0.015; // 15ms micro-fade
-            
-            gainNode.gain.setValueAtTime(0, wordObj.startTime);
-            gainNode.gain.linearRampToValueAtTime(1, wordObj.startTime + fadeTime); 
-            
-            // Hold volume, then fade out before the chop ends
-            const chopEndTime = wordObj.startTime + wordObj.duration;
-            gainNode.gain.setValueAtTime(1, chopEndTime - fadeTime);
-            gainNode.gain.linearRampToValueAtTime(0, chopEndTime); 
+                  source.connect(gainNode);
+                  gainNode.connect(offlineCtx.destination);
+                  
+                  // Trigger the exact slice of audio at the exact grid timestamp
+                  source.start(wordObj.startTime, sliceStart, sliceDuration);
+                });
+                // --- END GRANULAR SLICER ---
 
-            source.connect(gainNode);
-            gainNode.connect(offlineCtx.destination);
-            
-            // Trigger the exact slice of audio at the exact grid timestamp
-            source.start(wordObj.startTime, sliceStart, sliceDuration);
-          });
-          // --- END GRANULAR SLICER ---
-
-        } catch (lineErr) {
-          console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
-        }
-      }
+              } catch (lineErr) {
+                console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
+              }
+            }
 
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);
