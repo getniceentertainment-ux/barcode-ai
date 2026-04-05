@@ -116,16 +116,37 @@ export default function Room03_Ghostwriter() {
       } else if (block.type === 'VERSE') {
           // --- DYNAMIC: Append the Flow Evolution state to the Verse ---
           const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
-          const selected = verseVariations[verseCounter % verseVariations.length];
-          verseCounter++;
-          
-          activeArray = selected.array;
           
           let evolutionLabel = "[Locked In]";
-          if (gwFlowEvolution === "switch") evolutionLabel = "[Switch-Up Active]";
-          else if (gwFlowEvolution === "auto") evolutionLabel = "[Neural Flow]"; // Dynamic label for auto
+          let finalEvolution = gwFlowEvolution;
+          
+          if (gwFlowEvolution === "auto" || !gwFlowEvolution) {
+              finalEvolution = (gwStyle === "chopper" || gwStyle === "triplet") ? "switch" : "static";
+              evolutionLabel = "[Neural Flow]";
+          } else if (gwFlowEvolution === "switch") {
+              evolutionLabel = "[Switch-Up Active]";
+          }
 
-          activeName = `${selected.name} ${evolutionLabel}`;
+          // --- SURGICAL FIX: Respect 'Locked In' vs 'Switch-Up' for Verse Arrays ---
+          const selected = finalEvolution === "static" 
+              ? verseVariations[0] 
+              : verseVariations[verseCounter % verseVariations.length];
+          
+          if (block.type !== 'INSTRUMENTAL') verseCounter++;
+          
+          activeArray = selected.array;
+
+          // SURGICAL FIX: Catch the Pocket modifier and append it to the visual name
+          const pocketLabels: Record<string, string> = {
+            standard: "Std",
+            chainlink: "Chain-Link",
+            pickup: "Drag",
+            cascade: "Cascade",
+            matrix_pivot: "Pivot" 
+          };
+          const pLabel = pocketLabels[gwPocket as string] || "Std";
+
+          activeName = `[${pLabel}] ${selected.name} ${evolutionLabel}`;
           activeDesc = selected.desc;
       } else {
           activeName = "DSP Passthrough";
@@ -149,7 +170,8 @@ export default function Room03_Ghostwriter() {
     if (needsUpdate) {
         setBlueprint(synced);
     }
-  }, [gwStyle, gwHookType, gwFlowEvolution, layoutHash, blueprint, audioData]);
+  // SURGICAL FIX: Bound gwPocket to dependency array to instantly trigger UI redraws
+  }, [gwStyle, gwHookType, gwFlowEvolution, gwPocket, layoutHash, blueprint, audioData]);
 
   const updateBlueprintStartBar = (index: number, newStart: number) => {
     const newBp = [...blueprint];
@@ -514,6 +536,7 @@ export default function Room03_Ghostwriter() {
                 <option value="chainlink">Chain-Link (Interwoven / Spillover)</option>
                 <option value="pickup">The Drag (Pickup Notes & Delay)</option>
                 <option value="cascade">GetNice Cascade (Internal Carry-Over)</option>
+                <option value="matrix_pivot">Matrix Pivot (Array-Driven Internal Hinge)</option>
               </select>
             </div>
           </div>
