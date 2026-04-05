@@ -204,7 +204,8 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         current_max_syllables = max(4, int(max_syllables * 0.6))
         energy_rules = "\n[ENERGY LEVEL 1 - THE DROP]: The beat is very quiet here. Write sparse, conversational, breathy lines. Use minimal syllables and leave empty space."
     elif current_energy == 4:
-        current_max_syllables = int(max_syllables * 1.2)
+        # SURGICAL FIX: The Hard Ceiling. Never let it exceed 15 syllables.
+        current_max_syllables = min(15, int(max_syllables * 1.3))
         energy_rules = "\n[ENERGY LEVEL 4 - THE CLIMAX]: The beat is exploding. Pack the pocket. Write dense, aggressive, rapid-fire multi-syllabic rhymes."
     else:
         energy_rules = f"\n[ENERGY LEVEL {current_energy} - THE POCKET]: The beat has standard driving energy. Maintain a steady, confident cadence."
@@ -295,6 +296,7 @@ CRITICAL REFINEMENT COMMANDS:
 3. NO HEADERS. NO TIMESTAMPS. NO POETRY.
 4. Output EXACTLY {bars} lines.
 5. THE ENGINEER PASS: You MUST place a pipe symbol (|) between syllables of multi-syllable words (e.g., "GET|TING"). You MUST preserve regular spaces between different words. DO NOT combine separate words together. CORRECT: "GET|TING NICE TO|DAY" INCORRECT: "GET|TING|NICE|TO|DAY"
+6. ANTI-CORRUPTION LAW: You MUST use standard English spelling. NEVER merge words with apostrophes to cheat the syllable count (e.g., "try'na", "schemin'sin'deu'th" are strictly FORBIDDEN). Keep all words distinctly separated by spaces.
 {energy_rules}
 {melodic_rules}
 
@@ -336,11 +338,26 @@ def handler(event):
     if total_blueprint_bars == 0: total_blueprint_bars = 1
 
     seconds_per_bar = (60.0 / bpm) * 4.0
-    speed_factor = 4.5
-    if "chopper" in style: speed_factor = 6.0
-    elif "lazy" in style: speed_factor = 3.0
-    elif "heartbeat" in style: speed_factor = 4.0
-    max_syllables = max(6, int(seconds_per_bar * speed_factor))
+
+    # --- THE GETNICE UNIVERSAL SUBDIVISION MATRIX ---
+    # Defines the absolute min/max syllables a human can physically rap based on the style
+    style_limits = {
+        "lazy": {"min": 4, "max": 7},              # Quarter notes & Sparse 8ths
+        "heartbeat": {"min": 7, "max": 10},        # Classic 8th notes
+        "getnice_hybrid": {"min": 8, "max": 12},   # Syncopated 8ths / Light 16ths
+        "triplet": {"min": 9, "max": 12},          # Strict 8th-note triplets
+        "chopper": {"min": 12, "max": 16}          # Relentless 16th notes
+    }
+
+    limits = style_limits.get(style, style_limits["getnice_hybrid"])
+
+    # If the beat is very fast (e.g. 140 BPM, short seconds), we lean toward the MIN limit.
+    # If the beat is very slow (e.g. 80 BPM, long seconds), we lean toward the MAX limit.
+    # This prevents fast beats from forcing the AI to cram 20 syllables into a line.
+    bpm_ratio = min(1.0, max(0.0, (seconds_per_bar - 1.5) / (3.5 - 1.5))) 
+    
+    # Calculate the dynamically scaled baseline
+    max_syllables = int(limits["min"] + (limits["max"] - limits["min"]) * bpm_ratio)
 
     pocket_instruction = "End every line with a period (.)."
     if "CHAIN-LINK" in topic.upper() or "CHAINLINK" in topic.upper():
