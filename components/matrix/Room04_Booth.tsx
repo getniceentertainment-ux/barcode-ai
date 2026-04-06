@@ -504,7 +504,6 @@ export default function Room04_Booth() {
   };
 
   // --- THE HIGH-PERFORMANCE VISUAL SYNC ENGINE ---
-  // We use a ref to hold the latest DOM logic, allowing the rAF to escape React state closures
   const updateVisualsRef = useRef<() => void>(() => {});
   
   updateVisualsRef.current = () => {
@@ -512,6 +511,11 @@ export default function Room04_Booth() {
     
     const time = wavesurferRef.current.getCurrentTime();
     setCurrentTimeDisplay(time); // Display clock updates smoothly
+
+    // 🚨 SURGICAL FIX: Visual Lookahead
+    // By pushing the visual clock 80ms into the future, we compensate for screen refresh 
+    // and human reaction latency, making the ball arrive flawlessly on time.
+    const visualTime = time + 0.08; 
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
@@ -527,7 +531,7 @@ export default function Room04_Booth() {
         const lineNode = lineNodes[i] as HTMLElement;
         if (!lineNode) continue;
 
-        if (time >= line.startTime && time < endTime) {
+        if (visualTime >= line.startTime && visualTime < endTime) {
           currentLineIndex = i;
           lineNode.classList.add('bg-[#E60000]/10', 'border-[#E60000]');
           lineNode.classList.remove('border-transparent');
@@ -538,12 +542,12 @@ export default function Room04_Booth() {
             if (!chunkNode) return;
             const ballNode = chunkNode.querySelector('.bouncing-ball');
             
-            if (time >= wObj.startTime && time < wObj.startTime + wObj.duration) {
+            if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
               // Active Syllable
               chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
               chunkNode.classList.remove('text-[#444]', 'text-[#888]');
               if (ballNode) ballNode.classList.remove('hidden');
-            } else if (time >= wObj.startTime + wObj.duration) {
+            } else if (visualTime >= wObj.startTime + wObj.duration) {
               // Past Syllable
               chunkNode.classList.add('text-[#888]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
@@ -566,7 +570,7 @@ export default function Room04_Booth() {
             const ballNode = chunkNode.querySelector('.bouncing-ball');
             if (ballNode) ballNode.classList.add('hidden');
 
-            if (time >= wObj.startTime + wObj.duration) {
+            if (visualTime >= wObj.startTime + wObj.duration) {
               chunkNode.classList.add('text-[#888]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
             } else {
@@ -588,7 +592,6 @@ export default function Room04_Booth() {
     }
   };
 
-  // The persistent loop that escapes React closure traps
   const animationTick = () => {
     updateVisualsRef.current();
     if (isPlayingRef.current || isRecordingRef.current) {
@@ -609,7 +612,7 @@ export default function Room04_Booth() {
 
     const willPlay = !isPlaying;
     setIsPlaying(willPlay);
-    isPlayingRef.current = willPlay; // Instantly push state to the rAF reference
+    isPlayingRef.current = willPlay; 
     
     const playheadTime = wavesurferRef.current.getCurrentTime();
 
@@ -617,7 +620,6 @@ export default function Room04_Booth() {
       const scheduleTime = audioCtxRef.current.currentTime + 0.05; 
       wavesurferRef.current.play();
       
-      // Ignite the 60fps teleprompter logic
       if (!animationFrameRef.current) {
          animationFrameRef.current = requestAnimationFrame(animationTick);
       }
@@ -700,7 +702,7 @@ export default function Room04_Booth() {
     }
     
     setCurrentTimeDisplay(0);
-    updateVisualsRef.current(); // Reset visual DOM state to 0
+    updateVisualsRef.current(); 
   };
 
   const startHardwareRecording = async () => {
@@ -834,7 +836,6 @@ export default function Room04_Booth() {
         if (dur > 0) setTrackDuration(dur);
       });
 
-      // Ensures DOM updates visually when clicking/scrubbing timeline while paused
       wavesurferRef.current.on('seeking', () => {
          if (!isPlayingRef.current && !isRecordingRef.current) {
             updateVisualsRef.current();
@@ -848,9 +849,9 @@ export default function Room04_Booth() {
 
   const lastParsedLyricsRef = useRef<string>("");
 
-  // 🚨 THE FIX: The Solid Integer Parsing Engine
-  // This uses the exact FLOW_VAULT logic to place syllables natively into the 16 slots.
-  // No decimals, no cramming. Perfect alignment for both the Teleprompter Ball and the Quantize Grid.
+  // 🚨 SURGICAL RESTORATION: The Proportional Syllable Engine
+  // This restores your exact, perfect logic that mapped the Quantize Grid correctly 
+  // without squashing or vertical stacking. 
   useEffect(() => {
     if (!generatedLyrics) return;
     if (quantizedLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
@@ -884,6 +885,7 @@ export default function Room04_Booth() {
     blueprint.forEach((bp, index) => {
       const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
+      const blockDurationSecs = bp.bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
       parsed.push({ id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] });
@@ -895,56 +897,76 @@ export default function Room04_Booth() {
 
       const numLines = blockData.lines.length;
       if (numLines > 0) {
+        const timeForThisLine = blockDurationSecs / numLines; 
+        let currentFlowTime = blockStartTime;
+
         const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
         const activePattern = (bp as any).patternArray || activeVariations[index % activeVariations.length];
 
-        blockData.lines.forEach((lineObj, lineIndex) => {
+        blockData.lines.forEach((lineObj) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: QuantizedSyllable[] = [];
 
-          // A line in a rap track is exactly 1 bar. Fixes layout vertical splitting entirely.
-          const lineStartTime = blockStartBar * secondsPerBar + (lineIndex * secondsPerBar);
-          const actualBarIndex = blockStartBar + lineIndex;
+          let totalLineSteps = 0;
+          let tempPatternIndex = 0;
 
-          let currentSlot = 0;
+          if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
+
+          const wordChunksArray = rawWords.map(w => {
+            const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
+            chunks.forEach(() => {
+              totalLineSteps += activePattern[tempPatternIndex % activePattern.length];
+              tempPatternIndex++;
+            });
+            return chunks;
+          });
+
+          const cleanTextEnd = lineObj.text.trim().slice(-1);
+          if (cleanTextEnd === '.') totalLineSteps += 4;
+          else if (cleanTextEnd === ',') totalLineSteps += 1;
+
+          const timePerStep = totalLineSteps > 0 ? timeForThisLine / totalLineSteps : 0;
+          let localWordTime = currentFlowTime;
+          const lineStartTime = currentFlowTime;
+
+          if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
+
           let patternIndex = 0;
 
-          if (lineObj.text.trim().startsWith('...')) currentSlot += 4; // Shift off the downbeat for pickup/drags
-
-          rawWords.forEach(w => {
-            const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
-            
+          wordChunksArray.forEach((chunks) => {
             chunks.forEach((chunk, cIdx) => {
-              const stepDelta = activePattern[patternIndex % activePattern.length];
+              const stepsRequired = activePattern[patternIndex % activePattern.length];
               patternIndex++;
 
-              const mappedSlot = Math.min(15, currentSlot);
+              const chunkDuration = stepsRequired * timePerStep;
+              // Mathematically snap back to the 0-15 layout structure
+              const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForThisLine) * 16)));
 
               mappedWords.push({
                 id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
                 word: chunk.replace(/\|/g, ''),
                 slot: mappedSlot,
-                startTime: lineStartTime + (mappedSlot * secondsPerSlot),
-                duration: stepDelta * secondsPerSlot,
+                startTime: localWordTime,
+                duration: chunkDuration, 
                 isWordEnd: (cIdx === chunks.length - 1)
               });
-
-              // Increment the integer slot for the next syllable, preventing overlap
-              currentSlot += stepDelta;
+              localWordTime += chunkDuration;
             });
           });
 
           parsed.push({ 
             id: `line-${lineIdCounter++}`,
-            barIndex: actualBarIndex,
+            barIndex: Math.floor(lineStartTime / secondsPerBar),
             text: lineObj.text.replace(/\|/g, ''), 
             originalText: lineObj.text,
             startTime: lineStartTime, 
-            lineDuration: secondsPerBar, 
+            lineDuration: timeForThisLine, 
             isHeader: false, 
             timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
+
+          currentFlowTime += timeForThisLine; 
         });
       }
       runningBlockStartBar = blockStartBar + bp.bars;
@@ -1072,8 +1094,8 @@ export default function Room04_Booth() {
                     <span className="flex-1 leading-loose">
                       {line.words?.map((wObj, wIdx) => (
                         <span key={wIdx} className={`syllable-chunk relative inline-block text-[#444] transition-colors duration-100 ${wObj.isWordEnd ? 'mr-2' : ''}`}>
-                          {/* 🚨 Z-INDEX FIX: Ball is explicitly brought to the front of the UI */}
-                          <span className="bouncing-ball hidden absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#E60000] rounded-full shadow-[0_0_5px_#E60000] z-50"></span>
+                          {/* 🚨 THE Z-INDEX AND ANIMATION FIX: Ball is pushed front and leaps off text */}
+                          <span className="bouncing-ball hidden absolute -top-4 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50 animate-bounce"></span>
                           {wObj.word}
                         </span>
                       ))}
