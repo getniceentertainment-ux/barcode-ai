@@ -302,7 +302,6 @@ export default function Room04_Booth() {
 
         const newWords = [...line.words];
 
-        // DYNAMIC SNAKING: Move the targeted word AND all subsequent words by the exact delta
         for (let i = targetIndex; i < newWords.length; i++) {
            let newSlot = newWords[i].slot + delta;
            newSlot = Math.max(0, Math.min(15, newSlot)); 
@@ -310,7 +309,6 @@ export default function Room04_Booth() {
            newWords[i] = {
              ...newWords[i],
              slot: newSlot,
-             // RE-CALCULATE AUDIO SYNC TIME SO GUIDE VOCALS MATCH THE GRID
              startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot)
            };
         }
@@ -351,7 +349,7 @@ export default function Room04_Booth() {
                     lyrics: line.text.replace(/\|/g, ''), 
                     bpm: preciseBpm,
                     gender: useMatrixStore.getState().gwGender || "male",
-                    pitch: "low" // Hint for the TTS engine
+                    pitch: "low"
                   })
                 });
                 
@@ -360,28 +358,23 @@ export default function Room04_Booth() {
                 const arrayBuffer = await res.arrayBuffer();
                 const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
                 
-                // --- THE GETNICE GRANULAR SLICER (MPC METHOD) ---
                 const mappedWords = line.words;
                 if (!mappedWords || mappedWords.length === 0) continue;
 
-                // Divide the raw TTS audio evenly among the syllables
                 const ttsDuration = audioBuffer.duration;
                 const sliceDuration = ttsDuration / mappedWords.length;
 
                 mappedWords.forEach((wordObj, wIdx) => {
-                  if (!wordObj.word.trim()) return; // Skip empty slots
+                  if (!wordObj.word.trim()) return;
 
                   const source = offlineCtx.createBufferSource();
                   source.buffer = audioBuffer;
-
                   const sliceStart = wIdx * sliceDuration;
 
-                  // --- 1. THE MPC PITCH DROP ---
                   const baseStretch = sliceDuration / wordObj.duration;
                   const pitchShiftDrop = 0.82; 
                   source.playbackRate.value = Math.min(1.05, Math.max(0.65, baseStretch * pitchShiftDrop));
 
-                  // --- 2. THE "VOICE OF GOD" CHEST EQ ---
                   const chestEq = offlineCtx.createBiquadFilter();
                   chestEq.type = "peaking";
                   chestEq.frequency.value = 200; 
@@ -393,7 +386,6 @@ export default function Room04_Booth() {
                   highShelf.frequency.value = 4000;
                   highShelf.gain.value = -3; 
 
-                  // --- 3. THE MICRO-FADER (CHOKE GROUP) ---
                   const gainNode = offlineCtx.createGain();
                   const fadeTime = 0.015; 
                   
@@ -404,7 +396,6 @@ export default function Room04_Booth() {
                   gainNode.gain.setValueAtTime(1, chopEndTime - fadeTime);
                   gainNode.gain.linearRampToValueAtTime(0, chopEndTime); 
 
-                  // --- 4. ROUTE THE SIGNAL CHAIN ---
                   source.connect(chestEq);
                   chestEq.connect(highShelf);
                   highShelf.connect(gainNode);
@@ -510,11 +501,8 @@ export default function Room04_Booth() {
     if (!wavesurferRef.current) return;
     
     const time = wavesurferRef.current.getCurrentTime();
-    setCurrentTimeDisplay(time); // Display clock updates smoothly
+    setCurrentTimeDisplay(time); 
 
-    // 🚨 SURGICAL FIX: Visual Lookahead
-    // By pushing the visual clock 80ms into the future, we compensate for screen refresh 
-    // and human reaction latency, making the ball arrive flawlessly on time.
     const visualTime = time + 0.08; 
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
@@ -549,13 +537,13 @@ export default function Room04_Booth() {
               if (ballNode) {
                 ballNode.classList.remove('hidden');
                 
-                // --- THE DYNAMIC MATH BOUNCE ---
-                // 1. Calculate exactly how far we are into this specific syllable's duration (0.0 to 1.0)
-                const progress = (visualTime - wObj.startTime) / wObj.duration;
+                // 🚨 FIX 3: GRAVITY CLAMP - Prevent fast syllables from vibrating wildly
+                let progress = (visualTime - wObj.startTime) / wObj.duration;
+                progress = Math.max(0, Math.min(1, progress)); 
                 
-                // 2. Map progress to a perfect Sine wave arc. 
-                // Fast words = fast hop. Slow, dragged out words = slow, floaty hop.
-                const bounceHeight = Math.sin(progress * Math.PI) * 16; // 16px max height
+                // Cap the jump height based on duration. Short words get a tiny flutter.
+                const maxBounce = Math.min(16, wObj.duration * 50); 
+                const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
                 
                 ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
               }
@@ -602,7 +590,6 @@ export default function Room04_Booth() {
         }
       }
 
-      // Hardware Accelerated Auto-Scroll
       if (autoScroll && currentLineIndex !== -1 && currentLineIndex !== lastActiveLineRef.current) {
         const activeNode = lineNodes[currentLineIndex] as HTMLElement;
         if (activeNode) {
@@ -870,9 +857,6 @@ export default function Room04_Booth() {
 
   const lastParsedLyricsRef = useRef<string>("");
 
-  // 🚨 SURGICAL RESTORATION: The Proportional Syllable Engine
-  // This restores your exact, perfect logic that mapped the Quantize Grid correctly 
-  // without squashing or vertical stacking. 
   useEffect(() => {
     if (!generatedLyrics) return;
     if (quantizedLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
@@ -906,13 +890,16 @@ export default function Room04_Booth() {
     blueprint.forEach((bp, index) => {
       const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
-      const blockDurationSecs = bp.bars * secondsPerBar;
+      
+      // 🚨 FIX 1: Provide safe fallback for missing bars so time math never results in NaN
+      const bars = bp.bars || (bp.type === "INSTRUMENTAL" ? 8 : 4);
+      const blockDurationSecs = bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
       parsed.push({ id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] });
 
       if (bp.type === "INSTRUMENTAL") {
-         const hums = Array(bp.bars).fill("Mmm. Mmm.").join(" ");
+         const hums = Array(bars).fill("Mmm. Mmm.").join(" ");
          blockData.lines = [{ text: hums, isHeader: false }];
       }
 
@@ -922,7 +909,12 @@ export default function Room04_Booth() {
         let currentFlowTime = blockStartTime;
 
         const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-        const activePattern = (bp as any).patternArray || activeVariations[index % activeVariations.length];
+        let activePattern = activeVariations[index % activeVariations.length];
+        
+        // Ensure active pattern is strictly an array of numbers
+        if (Array.isArray((bp as any).patternArray) && (bp as any).patternArray.length > 0) {
+           activePattern = (bp as any).patternArray;
+        }
 
         blockData.lines.forEach((lineObj) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
@@ -936,7 +928,9 @@ export default function Room04_Booth() {
           const wordChunksArray = rawWords.map(w => {
             const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
             chunks.forEach(() => {
-              totalLineSteps += activePattern[tempPatternIndex % activePattern.length];
+              // 🚨 FIX 2: Bulletproof step extraction to prevent string concatenation/NaN math
+              const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
+              totalLineSteps += isNaN(stepVal) ? 2 : stepVal; 
               tempPatternIndex++;
             });
             return chunks;
@@ -956,11 +950,10 @@ export default function Room04_Booth() {
 
           wordChunksArray.forEach((chunks) => {
             chunks.forEach((chunk, cIdx) => {
-              const stepsRequired = activePattern[patternIndex % activePattern.length];
+              const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
               patternIndex++;
 
               const chunkDuration = stepsRequired * timePerStep;
-              // Mathematically snap back to the 0-15 layout structure
               const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForThisLine) * 16)));
 
               mappedWords.push({
@@ -990,7 +983,7 @@ export default function Room04_Booth() {
           currentFlowTime += timeForThisLine; 
         });
       }
-      runningBlockStartBar = blockStartBar + bp.bars;
+      runningBlockStartBar = blockStartBar + bars;
     });
     
     setQuantizedLines(parsed);
@@ -1116,7 +1109,6 @@ export default function Room04_Booth() {
                     
                     <span className="flex-1 leading-loose flex flex-wrap gap-y-2">
                       {(() => {
-                        // 1. Re-group the flat syllables back into whole words
                         const wordGroups: QuantizedSyllable[][] = [];
                         let currentGroup: QuantizedSyllable[] = [];
                         
@@ -1129,13 +1121,11 @@ export default function Room04_Booth() {
                         });
                         if (currentGroup.length > 0) wordGroups.push(currentGroup);
 
-                        // 2. Render the whole word as an unbreakable horizontal block
                         return wordGroups.map((group, gIdx) => (
                           <span key={gIdx} className="inline-flex whitespace-nowrap mr-2">
                             {group.map((wObj, wIdx) => {
                               return (
                                 <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
-                                  {/* STATIC animate-bounce REMOVED. Positioned perfectly on top of text. */}
                                   <span className="bouncing-ball hidden absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50"></span>
                                   {wObj.word}
                                 </span>
