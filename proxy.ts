@@ -1,24 +1,49 @@
-import { createServerClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export default async function proxy(req: NextRequest) {
-  const res = NextResponse.next();
-  
-  // 🚨 FIXED: Using the compiler's requested Server Client
-  const supabase = createServerClient({ req, res });
+  // 1. Initialize the response object
+  let res = NextResponse.next({
+    request: { headers: req.headers },
+  });
+
+  // 2. The Modern Next.js 16 Supabase SSR Client (Requires 3 Arguments)
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return req.cookies.get(name)?.value;
+        },
+        set(name: string, value: string, options: any) {
+          req.cookies.set({ name, value, ...options });
+          res = NextResponse.next({ request: { headers: req.headers } });
+          res.cookies.set({ name, value, ...options });
+        },
+        remove(name: string, options: any) {
+          req.cookies.set({ name, value: '', ...options });
+          res = NextResponse.next({ request: { headers: req.headers } });
+          res.cookies.set({ name, value: '', ...options });
+        },
+      },
+    }
+  );
+
+  // 3. Securely fetch the session from the Edge
   const { data: { session } } = await supabase.auth.getSession();
 
   const url = req.nextUrl.pathname;
 
-  // 1. QUARANTINE THE DEV PORTAL (Nobody gets in)
+  // 4. QUARANTINE THE DEV PORTAL (Nobody gets in)
   if (url.startsWith('/dev-portal') || url.startsWith('/api/dev')) {
     return NextResponse.redirect(new URL('/dashboard', req.url));
   }
 
-  // 2. THE MASTER KEY (Only YOU get into the Admin Node)
+  // 5. THE MASTER KEY (Only YOU get into the Admin Node)
   if (url.startsWith('/admin-node')) {
-    // 🚨 IMPORTANT: Make sure your actual admin email is right here
+    // 🚨 IMPORTANT: Make sure your actual admin email is exactly right here
     const isMasterAdmin = session?.user?.email === 'YOUR_EMAIL@DOMAIN.COM'; 
     
     if (!session || !isMasterAdmin) {
@@ -29,7 +54,7 @@ export default async function proxy(req: NextRequest) {
   return res;
 }
 
-// 3. THE RADAR
+// 6. THE RADAR
 export const config = {
   matcher: ['/admin-node/:path*', '/dev-portal/:path*', '/api/dev/:path*'],
 };
