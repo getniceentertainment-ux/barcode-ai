@@ -196,6 +196,31 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
+// --- THE MACRO-RHYTHMIC FLOW VAULT ---
+const FLOW_VAULT: Record<string, number[][]> = {
+  "getnice_hybrid": [
+    [4, 2, 2,  3, 1, 4,  2, 2, 2, 2,  4, 4], 
+    [3, 1, 2, 2],
+    [6, 2, 4, 2, 2] 
+  ],
+  "chopper": [
+    [1, 1, 1, 1], 
+    [2, 1, 1, 1, 1, 2] 
+  ],
+  "heartbeat": [
+    [2, 2, 2, 2], 
+    [4, 2, 2, 4, 4] 
+  ],
+  "triplet": [
+    [3, 3, 2], 
+    [2, 2, 2, 3, 3, 4] 
+  ],
+  "lazy": [
+    [4, 2, 2], 
+    [6, 2, 8] 
+  ]
+};
+
 export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
@@ -212,10 +237,9 @@ export default function Room04_Booth() {
   const [guideProgress, setGuideProgress] = useState(0); 
   
   const [autoScroll, setAutoScroll] = useState(true);
-  const [activeLineIndex, setActiveLineIndex] = useState(-1);
   const [teleprompterEnabled, setTeleprompterEnabled] = useState(true);
 
-  const [currentTime, setCurrentTime] = useState(0);
+  const [currentTimeDisplay, setCurrentTimeDisplay] = useState(0);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
 
@@ -245,6 +269,12 @@ export default function Room04_Booth() {
   const recordedChunksRef = useRef<Float32Array[]>([]);
   const workletLoadedRef = useRef(false);
   const teleprompterRef = useRef<HTMLDivElement>(null);
+
+  // --- HIGH-PERFORMANCE rAF SYNC REFS ---
+  const animationFrameRef = useRef<number>();
+  const lastActiveLineRef = useRef<number>(-1);
+  const isPlayingRef = useRef(false);
+  const isRecordingRef = useRef(false);
 
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
@@ -347,23 +377,17 @@ export default function Room04_Booth() {
                   const sliceStart = wIdx * sliceDuration;
 
                   // --- 1. THE MPC PITCH DROP ---
-                  // Calculate the required stretch to fit the grid, but forcefully multiply it by 0.82.
-                  // This drops the pitch by ~3 semitones. The sample will play slower, but the GainNode 
-                  // will gracefully choke (cut off) the tail before it bleeds into the next grid slot.
                   const baseStretch = sliceDuration / wordObj.duration;
                   const pitchShiftDrop = 0.82; 
-                  // Hard cap at 1.05 so it NEVER chipmunks, and drops as low as 0.65 for deep slow pockets.
                   source.playbackRate.value = Math.min(1.05, Math.max(0.65, baseStretch * pitchShiftDrop));
 
                   // --- 2. THE "VOICE OF GOD" CHEST EQ ---
-                  // Boost 200Hz to synthesize a heavy, authoritative chest cavity
                   const chestEq = offlineCtx.createBiquadFilter();
                   chestEq.type = "peaking";
                   chestEq.frequency.value = 200; 
                   chestEq.Q.value = 1.0;
-                  chestEq.gain.value = 8; // +8dB of pure bass/low-mid resonance
+                  chestEq.gain.value = 8; 
 
-                  // Cut 4000Hz to remove the high-pitched, whiny digital squeak
                   const highShelf = offlineCtx.createBiquadFilter();
                   highShelf.type = "highshelf";
                   highShelf.frequency.value = 4000;
@@ -371,7 +395,7 @@ export default function Room04_Booth() {
 
                   // --- 3. THE MICRO-FADER (CHOKE GROUP) ---
                   const gainNode = offlineCtx.createGain();
-                  const fadeTime = 0.015; // 15ms micro-fade
+                  const fadeTime = 0.015; 
                   
                   gainNode.gain.setValueAtTime(0, wordObj.startTime);
                   gainNode.gain.linearRampToValueAtTime(1, wordObj.startTime + fadeTime); 
@@ -381,16 +405,13 @@ export default function Room04_Booth() {
                   gainNode.gain.linearRampToValueAtTime(0, chopEndTime); 
 
                   // --- 4. ROUTE THE SIGNAL CHAIN ---
-                  // Source -> Chest EQ -> High Shelf Cut -> Fader -> Master Out
                   source.connect(chestEq);
                   chestEq.connect(highShelf);
                   highShelf.connect(gainNode);
                   gainNode.connect(offlineCtx.destination);
                   
-                  // Trigger the slice!
                   source.start(wordObj.startTime, sliceStart, sliceDuration);
                 });
-                // --- END GRANULAR SLICER ---
 
               } catch (lineErr) {
                 console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
@@ -482,6 +503,101 @@ export default function Room04_Booth() {
     } finally { setIsProcessingTrim(false); }
   };
 
+  // --- THE HIGH-PERFORMANCE VISUAL SYNC ENGINE ---
+  // We use a ref to hold the latest DOM logic, allowing the rAF to escape React state closures
+  const updateVisualsRef = useRef<() => void>(() => {});
+  
+  updateVisualsRef.current = () => {
+    if (!wavesurferRef.current) return;
+    
+    const time = wavesurferRef.current.getCurrentTime();
+    setCurrentTimeDisplay(time); // Display clock updates smoothly
+
+    if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
+      const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
+      let currentLineIndex = -1;
+
+      for (let i = 0; i < quantizedLines.length; i++) {
+        const line = quantizedLines[i];
+        if (line.isHeader) continue;
+
+        const nextLine = quantizedLines.slice(i + 1).find(l => !l.isHeader);
+        const endTime = nextLine ? nextLine.startTime : (line.startTime + (line.lineDuration || 2));
+
+        const lineNode = lineNodes[i] as HTMLElement;
+        if (!lineNode) continue;
+
+        if (time >= line.startTime && time < endTime) {
+          currentLineIndex = i;
+          lineNode.classList.add('bg-[#E60000]/10', 'border-[#E60000]');
+          lineNode.classList.remove('border-transparent');
+
+          const chunks = lineNode.querySelectorAll('.syllable-chunk');
+          line.words?.forEach((wObj, wIdx) => {
+            const chunkNode = chunks[wIdx] as HTMLElement;
+            if (!chunkNode) return;
+            const ballNode = chunkNode.querySelector('.bouncing-ball');
+            
+            if (time >= wObj.startTime && time < wObj.startTime + wObj.duration) {
+              // Active Syllable
+              chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
+              chunkNode.classList.remove('text-[#444]', 'text-[#888]');
+              if (ballNode) ballNode.classList.remove('hidden');
+            } else if (time >= wObj.startTime + wObj.duration) {
+              // Past Syllable
+              chunkNode.classList.add('text-[#888]');
+              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
+              if (ballNode) ballNode.classList.add('hidden');
+            } else {
+              // Future Syllable
+              chunkNode.classList.add('text-[#444]');
+              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
+              if (ballNode) ballNode.classList.add('hidden');
+            }
+          });
+        } else {
+          lineNode.classList.remove('bg-[#E60000]/10', 'border-[#E60000]');
+          lineNode.classList.add('border-transparent');
+          
+          const chunks = lineNode.querySelectorAll('.syllable-chunk');
+          line.words?.forEach((wObj, wIdx) => {
+            const chunkNode = chunks[wIdx] as HTMLElement;
+            if (!chunkNode) return;
+            const ballNode = chunkNode.querySelector('.bouncing-ball');
+            if (ballNode) ballNode.classList.add('hidden');
+
+            if (time >= wObj.startTime + wObj.duration) {
+              chunkNode.classList.add('text-[#888]');
+              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
+            } else {
+              chunkNode.classList.add('text-[#444]');
+              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
+            }
+          });
+        }
+      }
+
+      // Hardware Accelerated Auto-Scroll
+      if (autoScroll && currentLineIndex !== -1 && currentLineIndex !== lastActiveLineRef.current) {
+        const activeNode = lineNodes[currentLineIndex] as HTMLElement;
+        if (activeNode) {
+          teleprompterRef.current.scrollTo({ top: activeNode.offsetTop - 150, behavior: 'smooth' });
+        }
+        lastActiveLineRef.current = currentLineIndex;
+      }
+    }
+  };
+
+  // The persistent loop that escapes React closure traps
+  const animationTick = () => {
+    updateVisualsRef.current();
+    if (isPlayingRef.current || isRecordingRef.current) {
+      animationFrameRef.current = requestAnimationFrame(animationTick);
+    } else {
+      animationFrameRef.current = undefined;
+    }
+  };
+
   const togglePlayback = async () => {
     if (!wavesurferRef.current || !audioCtxRef.current) {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -493,11 +609,19 @@ export default function Room04_Booth() {
 
     const willPlay = !isPlaying;
     setIsPlaying(willPlay);
+    isPlayingRef.current = willPlay; // Instantly push state to the rAF reference
+    
     const playheadTime = wavesurferRef.current.getCurrentTime();
 
     if (willPlay) {
       const scheduleTime = audioCtxRef.current.currentTime + 0.05; 
       wavesurferRef.current.play();
+      
+      // Ignite the 60fps teleprompter logic
+      if (!animationFrameRef.current) {
+         animationFrameRef.current = requestAnimationFrame(animationTick);
+      }
+
       activeSourcesRef.current.forEach(src => { try { src.disconnect() } catch(e){} });
       activeSourcesRef.current = [];
 
@@ -524,12 +648,25 @@ export default function Room04_Booth() {
       });
     } else {
       wavesurferRef.current.pause();
+      if (animationFrameRef.current) {
+         cancelAnimationFrame(animationFrameRef.current);
+         animationFrameRef.current = undefined;
+      }
       activeSourcesRef.current.forEach(src => { try { src.stop(); src.disconnect(); } catch (e) {} });
       activeSourcesRef.current = [];
     }
   };
 
   const stopEverything = async () => {
+    setIsPlaying(false);
+    isPlayingRef.current = false;
+    setIsRecording(false);
+    isRecordingRef.current = false;
+
+    if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = undefined;
+    }
     wavesurferRef.current?.pause(); 
     wavesurferRef.current?.seekTo(0);
     activeSourcesRef.current.forEach(src => { try { src.stop(); src.disconnect(); } catch (e) {} });
@@ -562,11 +699,11 @@ export default function Room04_Booth() {
       } finally { setIsUploading(false); }
     }
     
-    setIsPlaying(false); setIsRecording(false); setCurrentTime(0);
+    setCurrentTimeDisplay(0);
+    updateVisualsRef.current(); // Reset visual DOM state to 0
   };
 
   const startHardwareRecording = async () => {
-    // 1. LEDGER / TIER CHECK (From Snippet 1)
     const isMogul = (userSession?.tier as string) === "The Mogul";
     const currentCredits = Number((userSession as any)?.creditsRemaining || (userSession as any)?.credits || 0);
 
@@ -590,7 +727,6 @@ export default function Room04_Booth() {
       }
     }
 
-    // 2. INITIALIZE AUDIO CONTEXT NATIVELY
     if (!audioCtxRef.current) {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       audioCtxRef.current = new AudioContextClass();
@@ -599,7 +735,6 @@ export default function Room04_Booth() {
     try {
       if (audioCtxRef.current.state === 'suspended') await audioCtxRef.current.resume();
       
-      // Grab raw mic input without browser processing degrading the quality
       if (!mediaStreamRef.current) {
         mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ 
           audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
@@ -607,16 +742,12 @@ export default function Room04_Booth() {
         mediaSourceRef.current = audioCtxRef.current.createMediaStreamSource(mediaStreamRef.current);
       }
       
-      // 3. LATENCY COMPENSATION MATH
-      // 0.05 to 0.08 is the sweet spot for modern browsers. 0.15 (Snippet 2) is too late.
       const LATENCY_OFFSET = 0.06; 
       const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
       let padTime = Math.max(0, currentWS_Time - LATENCY_OFFSET);
       
-      // Pad the start of the recording with silence to push it exactly into the right place on the timeline
       recordedChunksRef.current = [new Float32Array(Math.floor(padTime * audioCtxRef.current.sampleRate))];
       
-      // 4. LOAD WORKLET
       if (!workletLoadedRef.current) {
         const workletCode = `class RecorderWorklet extends AudioWorkletProcessor { process(inputs) { if (inputs[0] && inputs[0][0]) { this.port.postMessage(new Float32Array(inputs[0][0])); } return true; } } registerProcessor('recorder-worklet', RecorderWorklet);`;
         const blob = new Blob([workletCode], { type: 'application/javascript' });
@@ -630,17 +761,14 @@ export default function Room04_Booth() {
       
       if (mediaSourceRef.current) mediaSourceRef.current.connect(workletNode);
       
-      // 5. ANTI-FEEDBACK GRAPH (Crucial)
       const silenceNode = audioCtxRef.current.createGain();
-      silenceNode.gain.value = 0; // Completely muted
+      silenceNode.gain.value = 0; 
       workletNode.connect(silenceNode);
       silenceNode.connect(audioCtxRef.current.destination);
       
-      // 6. SYNCHRONIZED START
       setIsRecording(true); 
-      if (!isPlaying) {
-         // Rely on your togglePlayback function (which should handle playing Wavesurfer 
-         // and Web Audio API buffer playback simultaneously, NOT HTML5 elements).
+      isRecordingRef.current = true;
+      if (!isPlayingRef.current) {
          await togglePlayback();
       }
       
@@ -706,24 +834,25 @@ export default function Room04_Booth() {
         if (dur > 0) setTrackDuration(dur);
       });
 
-      let lastRender = 0;
-      wavesurferRef.current.on('audioprocess', (time) => {
-        if (time - lastRender > 0.1) { setCurrentTime(time); lastRender = time; }
+      // Ensures DOM updates visually when clicking/scrubbing timeline while paused
+      wavesurferRef.current.on('seeking', () => {
+         if (!isPlayingRef.current && !isRecordingRef.current) {
+            updateVisualsRef.current();
+         }
       });
+      
       wavesurferRef.current.on('finish', () => stopEverything());
     }
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- THE MASTER SCORE CARD ALGORITHM ---
-  // Added a ref to track the raw text so we know when to override the state lock
   const lastParsedLyricsRef = useRef<string>("");
 
+  // 🚨 THE FIX: This specific block uses FLOW_VAULT to assign the rhythmic duration
+  // to syllables instead of evenly dividing them like a dumb metronome.
   useEffect(() => {
     if (!generatedLyrics) return;
     
-    // SURGICAL FIX: Only block updates if the lyrics haven't actually changed.
-    // This allows the user to re-generate in Room 3 and see the new text in Room 4.
     if (quantizedLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
     
     lastParsedLyricsRef.current = generatedLyrics;
@@ -732,8 +861,6 @@ export default function Room04_Booth() {
     
     const sanitizedLines = lines.map(l => {
       let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
-      
-      // SURGICAL FIX: Broadened the regex to catch the new Energy Array headers
       if (text.startsWith('[') && text.includes(']')) return { text, isHeader: true }; 
       
       text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '').replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
@@ -774,16 +901,27 @@ export default function Room04_Booth() {
         const timeForThisLine = blockDurationSecs / numLines; 
         let currentFlowTime = blockStartTime;
 
+        // FETCH THE ASSIGNED SCORE CARD PATTERN FOR THIS BLOCK
+        const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
+        const activePattern = (bp as any).patternArray || activeVariations[index % activeVariations.length];
+
         blockData.lines.forEach((lineObj) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: QuantizedSyllable[] = [];
 
           let totalLineSteps = 0;
+          let tempPatternIndex = 0; // Tracks which step of the vault array we are on
+
           if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
 
+          // PASS 1: Calculate the true rhythmic weight of the line based on the grid
           const wordChunksArray = rawWords.map(w => {
             const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
-            totalLineSteps += chunks.length;
+            chunks.forEach(() => {
+              // Add the weight assigned by the Score Card grid instead of treating every syllable equally
+              totalLineSteps += activePattern[tempPatternIndex % activePattern.length];
+              tempPatternIndex++;
+            });
             return chunks;
           });
 
@@ -797,10 +935,17 @@ export default function Room04_Booth() {
 
           if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
 
+          let patternIndex = 0;
+
+          // PASS 2: Assign real logical timing matching the grid weight
           wordChunksArray.forEach((chunks) => {
             chunks.forEach((chunk, cIdx) => {
-              const chunkDuration = timePerStep;
-              // Map initial time to grid slots (0-15)
+              // Get the specific subdivision logic for this exact syllable
+              const stepsRequired = activePattern[patternIndex % activePattern.length];
+              patternIndex++;
+              
+              // Syllable duration is now precisely tied to its rhythmic weight (e.g. 4 steps = longer hold)
+              const chunkDuration = stepsRequired * timePerStep; 
               const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForThisLine) * 16)));
 
               mappedWords.push({
@@ -808,7 +953,7 @@ export default function Room04_Booth() {
                 word: chunk.replace(/\|/g, ''),
                 slot: mappedSlot,
                 startTime: localWordTime,
-                duration: chunkDuration * 0.85, 
+                duration: chunkDuration, 
                 isWordEnd: (cIdx === chunks.length - 1)
               });
               localWordTime += chunkDuration;
@@ -835,39 +980,6 @@ export default function Room04_Booth() {
     
     setQuantizedLines(parsed);
   }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, quantizedLines, setQuantizedLines]);
-
-  useEffect(() => {
-    if (trimmingStem && trimWaveformRef.current) {
-      trimWavesurferRef.current = WaveSurfer.create({
-        container: trimWaveformRef.current, waveColor: '#555', progressColor: '#E60000', cursorColor: '#fff', barWidth: 2, barGap: 1, height: 100, normalize: true,
-      });
-      trimWavesurferRef.current.on('error', (err) => console.warn("Trim WaveSurfer Soft-fail:", err));
-      trimWavesurferRef.current.load(trimmingStem.url).catch(e => console.warn("Trim Load Aborted:", e.message));
-      trimWavesurferRef.current.on('ready', () => {
-        const dur = trimWavesurferRef.current?.getDuration() || 0;
-        setTrimDuration(dur); setTrimStart(0); setTrimEnd(dur);
-      });
-    }
-    return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
-  }, [trimmingStem]);
-
-  useEffect(() => {
-    if (!teleprompterEnabled) return; 
-
-    const currentLineIndex = quantizedLines.findIndex((l, i) => {
-      const nextLine = quantizedLines[i + 1];
-      return currentTime >= l.startTime && (!nextLine || currentTime < nextLine.startTime);
-    });
-
-    if (currentLineIndex !== activeLineIndex) {
-      setActiveLineIndex(currentLineIndex);
-      
-      if (autoScroll && currentLineIndex !== -1 && teleprompterRef.current) {
-        const activeEl = teleprompterRef.current.children[currentLineIndex] as HTMLElement;
-        if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
-      }
-    }
-  }, [currentTime, quantizedLines, autoScroll, activeLineIndex, teleprompterEnabled]);
 
   if (!audioData) {
     return (
@@ -977,28 +1089,21 @@ export default function Room04_Booth() {
               className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative"
             >
               {quantizedLines.map((line, i) => {
-                const isActiveLine = teleprompterEnabled && !line.isHeader && i === activeLineIndex;
+                if (line.isHeader) {
+                    return <p key={i} className="lyric-line-container text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs">{line.text}</p>;
+                }
                 
                 return (
-                  <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActiveLine ? 'bg-[#E60000]/10 py-2 px-3 rounded border-l-2 border-[#E60000]' : 'py-2 px-3 border-l-2 border-transparent'}`}>
-                    {!line.isHeader && line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
+                  <div key={i} className="lyric-line-container mb-2 py-2 px-3 border-l-2 border-transparent flex items-start gap-3 transition-colors duration-200">
+                    {line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
                     
                     <span className="flex-1 leading-loose">
-                      {line.isHeader ? line.text : line.words?.map((wObj, wIdx) => {
-                        const isPast = currentTime >= wObj.startTime + wObj.duration;
-                        const isActiveWord = isActiveLine && currentTime >= wObj.startTime && currentTime < wObj.startTime + wObj.duration;
-
-                        return (
-                          <span key={wIdx} className={`relative inline-block ${wObj.isWordEnd ? 'mr-2' : ''}`}>
-                            {isActiveWord && (
-                              <span className="absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#E60000] rounded-full animate-bounce shadow-[0_0_5px_#E60000]"></span>
-                            )}
-                            <span className={`transition-colors duration-100 ${isPast ? "text-[#888]" : isActiveWord ? "text-white font-bold drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" : "text-[#444]"}`}>
-                              {wObj.word}
-                            </span>
-                          </span>
-                        );
-                      })}
+                      {line.words?.map((wObj, wIdx) => (
+                        <span key={wIdx} className={`syllable-chunk relative inline-block text-[#444] transition-colors duration-100 ${wObj.isWordEnd ? 'mr-2' : ''}`}>
+                          <span className="bouncing-ball hidden absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#E60000] rounded-full shadow-[0_0_5px_#E60000]"></span>
+                          {wObj.word}
+                        </span>
+                      ))}
                     </span>
                   </div>
                 );
@@ -1009,8 +1114,8 @@ export default function Room04_Booth() {
                   <button 
                     onClick={() => {
                       setAutoScroll(true);
-                      if (activeLineIndex !== -1 && teleprompterRef.current) {
-                        const activeEl = teleprompterRef.current.children[activeLineIndex] as HTMLElement;
+                      if (lastActiveLineRef.current !== -1 && teleprompterRef.current) {
+                        const activeEl = teleprompterRef.current.children[lastActiveLineRef.current] as HTMLElement;
                         if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
                       }
                     }} 
@@ -1046,7 +1151,7 @@ export default function Room04_Booth() {
                </div>
             )}
             <div className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
-              {Math.floor(currentTime / 60).toString().padStart(2, '0')}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
+              {Math.floor(currentTimeDisplay / 60).toString().padStart(2, '0')}:{Math.floor(currentTimeDisplay % 60).toString().padStart(2, '0')}
             </div>
           </div>
 
