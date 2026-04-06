@@ -848,13 +848,12 @@ export default function Room04_Booth() {
 
   const lastParsedLyricsRef = useRef<string>("");
 
-  // 🚨 THE FIX: This specific block uses FLOW_VAULT to assign the rhythmic duration
-  // to syllables instead of evenly dividing them like a dumb metronome.
+  // 🚨 THE FIX: The Solid Integer Parsing Engine
+  // This uses the exact FLOW_VAULT logic to place syllables natively into the 16 slots.
+  // No decimals, no cramming. Perfect alignment for both the Teleprompter Ball and the Quantize Grid.
   useEffect(() => {
     if (!generatedLyrics) return;
-    
     if (quantizedLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
-    
     lastParsedLyricsRef.current = generatedLyrics;
 
     const lines = generatedLyrics.split('\n');
@@ -862,7 +861,6 @@ export default function Room04_Booth() {
     const sanitizedLines = lines.map(l => {
       let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
       if (text.startsWith('[') && text.includes(']')) return { text, isHeader: true }; 
-      
       text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '').replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
       text = text.replace(/,/g, ', ').replace(/\s+/g, ' ').trim();
       return { text, isHeader: false };
@@ -886,7 +884,6 @@ export default function Room04_Booth() {
     blueprint.forEach((bp, index) => {
       const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
-      const blockDurationSecs = bp.bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
       parsed.push({ id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] });
@@ -898,81 +895,56 @@ export default function Room04_Booth() {
 
       const numLines = blockData.lines.length;
       if (numLines > 0) {
-        const timeForThisLine = blockDurationSecs / numLines; 
-        let currentFlowTime = blockStartTime;
-
-        // FETCH THE ASSIGNED SCORE CARD PATTERN FOR THIS BLOCK
         const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
         const activePattern = (bp as any).patternArray || activeVariations[index % activeVariations.length];
 
-        blockData.lines.forEach((lineObj) => {
+        blockData.lines.forEach((lineObj, lineIndex) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: QuantizedSyllable[] = [];
 
-          let totalLineSteps = 0;
-          let tempPatternIndex = 0; // Tracks which step of the vault array we are on
+          // A line in a rap track is exactly 1 bar. Fixes layout vertical splitting entirely.
+          const lineStartTime = blockStartBar * secondsPerBar + (lineIndex * secondsPerBar);
+          const actualBarIndex = blockStartBar + lineIndex;
 
-          if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
-
-          // PASS 1: Calculate the true rhythmic weight of the line based on the grid
-          const wordChunksArray = rawWords.map(w => {
-            const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
-            chunks.forEach(() => {
-              // Add the weight assigned by the Score Card grid instead of treating every syllable equally
-              totalLineSteps += activePattern[tempPatternIndex % activePattern.length];
-              tempPatternIndex++;
-            });
-            return chunks;
-          });
-
-          const cleanTextEnd = lineObj.text.trim().slice(-1);
-          if (cleanTextEnd === '.') totalLineSteps += 4;
-          else if (cleanTextEnd === ',') totalLineSteps += 1;
-
-          const timePerStep = totalLineSteps > 0 ? timeForThisLine / totalLineSteps : 0;
-          let localWordTime = currentFlowTime;
-          const lineStartTime = currentFlowTime;
-
-          if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
-
+          let currentSlot = 0;
           let patternIndex = 0;
 
-          // PASS 2: Assign real logical timing matching the grid weight
-          wordChunksArray.forEach((chunks) => {
+          if (lineObj.text.trim().startsWith('...')) currentSlot += 4; // Shift off the downbeat for pickup/drags
+
+          rawWords.forEach(w => {
+            const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
+            
             chunks.forEach((chunk, cIdx) => {
-              // Get the specific subdivision logic for this exact syllable
-              const stepsRequired = activePattern[patternIndex % activePattern.length];
+              const stepDelta = activePattern[patternIndex % activePattern.length];
               patternIndex++;
-              
-              // Syllable duration is now precisely tied to its rhythmic weight (e.g. 4 steps = longer hold)
-              const chunkDuration = stepsRequired * timePerStep; 
-              const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForThisLine) * 16)));
+
+              const mappedSlot = Math.min(15, currentSlot);
 
               mappedWords.push({
                 id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
                 word: chunk.replace(/\|/g, ''),
                 slot: mappedSlot,
-                startTime: localWordTime,
-                duration: chunkDuration, 
+                startTime: lineStartTime + (mappedSlot * secondsPerSlot),
+                duration: stepDelta * secondsPerSlot,
                 isWordEnd: (cIdx === chunks.length - 1)
               });
-              localWordTime += chunkDuration;
+
+              // Increment the integer slot for the next syllable, preventing overlap
+              currentSlot += stepDelta;
             });
           });
 
           parsed.push({ 
             id: `line-${lineIdCounter++}`,
-            barIndex: Math.floor(lineStartTime / secondsPerBar),
+            barIndex: actualBarIndex,
             text: lineObj.text.replace(/\|/g, ''), 
             originalText: lineObj.text,
             startTime: lineStartTime, 
-            lineDuration: timeForThisLine, 
+            lineDuration: secondsPerBar, 
             isHeader: false, 
             timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
-
-          currentFlowTime += timeForThisLine; 
         });
       }
       runningBlockStartBar = blockStartBar + bp.bars;
@@ -1100,7 +1072,8 @@ export default function Room04_Booth() {
                     <span className="flex-1 leading-loose">
                       {line.words?.map((wObj, wIdx) => (
                         <span key={wIdx} className={`syllable-chunk relative inline-block text-[#444] transition-colors duration-100 ${wObj.isWordEnd ? 'mr-2' : ''}`}>
-                          <span className="bouncing-ball hidden absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#E60000] rounded-full shadow-[0_0_5px_#E60000]"></span>
+                          {/* 🚨 Z-INDEX FIX: Ball is explicitly brought to the front of the UI */}
+                          <span className="bouncing-ball hidden absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#E60000] rounded-full shadow-[0_0_5px_#E60000] z-50"></span>
                           {wObj.word}
                         </span>
                       ))}
