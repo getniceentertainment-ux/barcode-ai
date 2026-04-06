@@ -34,7 +34,7 @@ export default async function proxy(req: NextRequest) {
 
   // 🚨 THE MASTER KEY: Insert the email you use to log into Bar-Code.ai right here!
   // Example: 'founder@getnice.com'
-  const isMasterAdmin = session?.user?.email === getnice.entertainment@gmail.com; 
+  const isMasterAdmin = session?.user?.email === 'getnice.entertainment@gmail.com'; 
 
   // 1. THE VAULT DOOR (Protects Admin Node, Dev Portal, and Dev API)
   if (url.startsWith('/admin-node') || url.startsWith('/dev-portal') || url.startsWith('/api/dev')) {
