@@ -214,7 +214,6 @@ export default function Room04_Booth() {
   const [autoScroll, setAutoScroll] = useState(true);
   const [teleprompterEnabled, setTeleprompterEnabled] = useState(true);
 
-  // Replaced Throttled Playhead with Display-Only State
   const [currentTimeDisplay, setCurrentTimeDisplay] = useState(0);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
@@ -246,9 +245,11 @@ export default function Room04_Booth() {
   const workletLoadedRef = useRef(false);
   const teleprompterRef = useRef<HTMLDivElement>(null);
 
-  // High-performance rAF tracking
+  // --- HIGH-PERFORMANCE rAF SYNC REFS ---
   const animationFrameRef = useRef<number>();
   const lastActiveLineRef = useRef<number>(-1);
+  const isPlayingRef = useRef(false);
+  const isRecordingRef = useRef(false);
 
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
@@ -478,7 +479,10 @@ export default function Room04_Booth() {
   };
 
   // --- THE HIGH-PERFORMANCE VISUAL SYNC ENGINE ---
-  const updateVisuals = (loop = true) => {
+  // We use a ref to hold the latest DOM logic, allowing the rAF to escape React state closures
+  const updateVisualsRef = useRef<() => void>(() => {});
+  
+  updateVisualsRef.current = () => {
     if (!wavesurferRef.current) return;
     
     const time = wavesurferRef.current.getCurrentTime();
@@ -557,9 +561,15 @@ export default function Room04_Booth() {
         lastActiveLineRef.current = currentLineIndex;
       }
     }
+  };
 
-    if (loop && (isPlaying || isRecording)) {
-      animationFrameRef.current = requestAnimationFrame(() => updateVisuals(true));
+  // The persistent loop that escapes React closure traps
+  const animationTick = () => {
+    updateVisualsRef.current();
+    if (isPlayingRef.current || isRecordingRef.current) {
+      animationFrameRef.current = requestAnimationFrame(animationTick);
+    } else {
+      animationFrameRef.current = undefined;
     }
   };
 
@@ -574,6 +584,8 @@ export default function Room04_Booth() {
 
     const willPlay = !isPlaying;
     setIsPlaying(willPlay);
+    isPlayingRef.current = willPlay; // Instantly push state to the rAF reference
+    
     const playheadTime = wavesurferRef.current.getCurrentTime();
 
     if (willPlay) {
@@ -582,7 +594,7 @@ export default function Room04_Booth() {
       
       // Ignite the 60fps teleprompter logic
       if (!animationFrameRef.current) {
-         animationFrameRef.current = requestAnimationFrame(() => updateVisuals(true));
+         animationFrameRef.current = requestAnimationFrame(animationTick);
       }
 
       activeSourcesRef.current.forEach(src => { try { src.disconnect() } catch(e){} });
@@ -621,6 +633,11 @@ export default function Room04_Booth() {
   };
 
   const stopEverything = async () => {
+    setIsPlaying(false);
+    isPlayingRef.current = false;
+    setIsRecording(false);
+    isRecordingRef.current = false;
+
     if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = undefined;
@@ -657,8 +674,8 @@ export default function Room04_Booth() {
       } finally { setIsUploading(false); }
     }
     
-    setIsPlaying(false); setIsRecording(false); setCurrentTimeDisplay(0);
-    updateVisuals(false); // Reset visual state to 0
+    setCurrentTimeDisplay(0);
+    updateVisualsRef.current(); // Reset visual DOM state to 0
   };
 
   const startHardwareRecording = async () => {
@@ -725,7 +742,8 @@ export default function Room04_Booth() {
       silenceNode.connect(audioCtxRef.current.destination);
       
       setIsRecording(true); 
-      if (!isPlaying) {
+      isRecordingRef.current = true;
+      if (!isPlayingRef.current) {
          await togglePlayback();
       }
       
@@ -791,10 +809,10 @@ export default function Room04_Booth() {
         if (dur > 0) setTrackDuration(dur);
       });
 
-      // Allow visual clock update when clicking around timeline while paused
+      // Ensures DOM updates visually when clicking/scrubbing timeline while paused
       wavesurferRef.current.on('seeking', () => {
-         if (!isPlaying && !isRecording) {
-            updateVisuals(false);
+         if (!isPlayingRef.current && !isRecordingRef.current) {
+            updateVisualsRef.current();
          }
       });
       
@@ -889,7 +907,6 @@ export default function Room04_Booth() {
                 word: chunk.replace(/\|/g, ''),
                 slot: mappedSlot,
                 startTime: localWordTime,
-                // 🚨 SURGICAL FIX: Restored to 100% duration to prevent collision window skipping
                 duration: chunkDuration, 
                 isWordEnd: (cIdx === chunks.length - 1)
               });
