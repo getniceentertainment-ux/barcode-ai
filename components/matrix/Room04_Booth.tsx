@@ -566,6 +566,7 @@ export default function Room04_Booth() {
   };
 
   const startHardwareRecording = async () => {
+    // 1. LEDGER / TIER CHECK (From Snippet 1)
     const isMogul = (userSession?.tier as string) === "The Mogul";
     const currentCredits = Number((userSession as any)?.creditsRemaining || (userSession as any)?.credits || 0);
 
@@ -589,6 +590,7 @@ export default function Room04_Booth() {
       }
     }
 
+    // 2. INITIALIZE AUDIO CONTEXT NATIVELY
     if (!audioCtxRef.current) {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       audioCtxRef.current = new AudioContextClass();
@@ -596,16 +598,25 @@ export default function Room04_Booth() {
 
     try {
       if (audioCtxRef.current.state === 'suspended') await audioCtxRef.current.resume();
+      
+      // Grab raw mic input without browser processing degrading the quality
       if (!mediaStreamRef.current) {
-        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ 
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+        });
         mediaSourceRef.current = audioCtxRef.current.createMediaStreamSource(mediaStreamRef.current);
       }
       
+      // 3. LATENCY COMPENSATION MATH
+      // 0.05 to 0.08 is the sweet spot for modern browsers. 0.15 (Snippet 2) is too late.
+      const LATENCY_OFFSET = 0.06; 
       const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
-      const LATENCY_OFFSET = 0.05; 
       let padTime = Math.max(0, currentWS_Time - LATENCY_OFFSET);
+      
+      // Pad the start of the recording with silence to push it exactly into the right place on the timeline
       recordedChunksRef.current = [new Float32Array(Math.floor(padTime * audioCtxRef.current.sampleRate))];
       
+      // 4. LOAD WORKLET
       if (!workletLoadedRef.current) {
         const workletCode = `class RecorderWorklet extends AudioWorkletProcessor { process(inputs) { if (inputs[0] && inputs[0][0]) { this.port.postMessage(new Float32Array(inputs[0][0])); } return true; } } registerProcessor('recorder-worklet', RecorderWorklet);`;
         const blob = new Blob([workletCode], { type: 'application/javascript' });
@@ -614,20 +625,28 @@ export default function Room04_Booth() {
       }
       
       const workletNode = new AudioWorkletNode(audioCtxRef.current, 'recorder-worklet');
-        workletNodeRef.current = workletNode;
+      workletNodeRef.current = workletNode;
       workletNode.port.onmessage = (e) => recordedChunksRef.current.push(new Float32Array(e.data));
       
       if (mediaSourceRef.current) mediaSourceRef.current.connect(workletNode);
       
+      // 5. ANTI-FEEDBACK GRAPH (Crucial)
       const silenceNode = audioCtxRef.current.createGain();
-      silenceNode.gain.value = 0;
+      silenceNode.gain.value = 0; // Completely muted
       workletNode.connect(silenceNode);
       silenceNode.connect(audioCtxRef.current.destination);
       
+      // 6. SYNCHRONIZED START
       setIsRecording(true); 
-      if (!isPlaying) await togglePlayback();
+      if (!isPlaying) {
+         // Rely on your togglePlayback function (which should handle playing Wavesurfer 
+         // and Web Audio API buffer playback simultaneously, NOT HTML5 elements).
+         await togglePlayback();
+      }
       
-    } catch (err) { alert("Hardware microphone access required for Worklet processing."); }
+    } catch (err) { 
+      alert("Hardware microphone access required for Worklet processing."); 
+    }
   };
 
   useEffect(() => {
