@@ -30,7 +30,6 @@ export async function middleware(req: NextRequest) {
 }
 
 // 3. THE RADAR
-// This tells the middleware exactly which URLs to watch out for
 export const config = {
   matcher: ['/admin-node/:path*', '/dev-portal/:path*', '/api/dev/:path*'],
 };
