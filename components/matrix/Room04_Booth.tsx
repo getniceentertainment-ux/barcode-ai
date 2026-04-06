@@ -1117,8 +1117,8 @@ export default function Room04_Booth() {
                     <span className="flex-1 leading-loose flex flex-wrap gap-y-2">
                       {(() => {
                         // 1. Re-group the flat syllables back into whole words
-                        const wordGroups: typeof line.words[] = [];
-                        let currentGroup: typeof line.words = [];
+                        const wordGroups: QuantizedSyllable[][] = [];
+                        let currentGroup: QuantizedSyllable[] = [];
                         
                         line.words?.forEach(wObj => {
                           currentGroup.push(wObj);
