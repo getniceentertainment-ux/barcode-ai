@@ -12,42 +12,53 @@ export default async function proxy(req: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return req.cookies.get(name)?.value;
+        getAll() {
+          return req.cookies.getAll();
         },
-        set(name: string, value: string, options: any) {
-          req.cookies.set({ name, value, ...options });
-          res = NextResponse.next({ request: { headers: req.headers } });
-          res.cookies.set({ name, value, ...options });
-        },
-        remove(name: string, options: any) {
-          req.cookies.set({ name, value: '', ...options });
-          res = NextResponse.next({ request: { headers: req.headers } });
-          res.cookies.set({ name, value: '', ...options });
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            req.cookies.set(name, value);
+            res = NextResponse.next({ request: { headers: req.headers } });
+            res.cookies.set({ name, value, ...options });
+          });
         },
       },
     }
   );
 
-  const { data: { session } } = await supabase.auth.getSession();
   const url = req.nextUrl.pathname;
+  const isRestrictedRoute = url.startsWith('/admin-node') || url.startsWith('/dev-portal') || url.startsWith('/api/dev');
 
-  // 🚨 THE MASTER KEY: Insert the email you use to log into Bar-Code.ai right here!
-  // Example: 'founder@getnice.com'
-  const isMasterAdmin = session?.user?.email === 'getnice.entertainment@gmail.com'; 
+  // We only run the database check if someone is actively trying to pick the lock
+  if (isRestrictedRoute) {
+    // 1. Get the secure Auth User ID from the session
+    const { data: { user } } = await supabase.auth.getUser();
 
-  // 1. THE VAULT DOOR (Protects Admin Node, Dev Portal, and Dev API)
-  if (url.startsWith('/admin-node') || url.startsWith('/dev-portal') || url.startsWith('/api/dev')) {
+    if (!user) {
+      return NextResponse.redirect(new URL('/', req.url)); // Not logged in
+    }
+
+    // 2. Cross-reference the database 'profiles' table using that ID
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', user.id)
+      .single();
+
+    // 🚨 THE MASTER KEY
+    const MASTER_EMAIL = 'getnice.entertainment@gmail.com'.toLowerCase(); 
+    const profileEmail = profile?.email?.toLowerCase();
     
-    // 2. THE BOUNCER CHECK
-    // If they aren't logged in, OR their email doesn't match the Master Key exactly...
-    if (!session || !isMasterAdmin) {
-      // Kick them safely to the homepage (avoids the Artist Alias trap)
+    // 3. The Final Boss Check
+    const isMasterAdmin = profileEmail === MASTER_EMAIL;
+
+    if (!isMasterAdmin) {
+      // You aren't the boss. Get out.
       return NextResponse.redirect(new URL('/', req.url));
     }
   }
 
-  // If you are the boss, the Bouncer steps aside and lets the request through
+  // The door is open.
   return res;
 }
 
