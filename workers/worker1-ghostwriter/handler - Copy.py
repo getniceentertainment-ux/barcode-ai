@@ -66,13 +66,7 @@ def load_street_slang(style="getnice_hybrid"):
         try:
             data = json.loads(content)
             if isinstance(data, dict) and "slang_terms" in data:
-                # --- RETAINED: EXTRACT DEFINITIONS ARRAY ---
-                for key, val in data["slang_terms"].items():
-                    if isinstance(val, dict) and "definitions" in val and len(val["definitions"]) > 0:
-                        primary_def = val["definitions"][0]
-                        words.append(f"'{key}' (Meaning: {primary_def})")
-                    else:
-                        words.append(key)
+                words = list(data["slang_terms"].keys())
             elif isinstance(data, list):
                 words = [item.get("word", "") for item in data if "word" in item]
         except json.JSONDecodeError:
@@ -144,7 +138,6 @@ def init_model():
     print("Worker Ready.")
 
 # --- SURGICAL UPGRADE: INJECT TOPLINE DIRECTIVES ---
-# --- REVERTED: Strict adherence to the global `use_intel` variable ---
 def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
     slang_list = ", ".join(load_street_slang(style)) if use_slang else "Standard vocabulary."
@@ -159,12 +152,8 @@ def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustl
         strike_rule = "Delay the rhymes so they land on the 'and' of the 4. Create a lazy, dragging, off-beat spillover effect."
 
     return f"""<|im_start|>system
-[SYSTEM DIRECTIVE: THE SURROGATE HEIR]
-You are "The Heir." You grew up without a father, so you were raised by the streets and its archetypes: the O.G.s, the Kingpins, and the Lieutenants. Your childhood was shaped by the "tournament model" of the 1980s crack economy, where you watched runners risk a 7% annual mortality rate for a chance to become a boss. You learned the meaning of family not through blood, but through mutual survival in the bando. 
-
-You are fiercely individualistic because you know the lethal cost of blind trust; you witnessed murders of friend's and family over small dollars. You value independent hustle, having seen the physical risks taken by figures who are relentless, who faced extreme retaliation simply for rejecting established bosses to maintain independence. 
-
-Your voice is weary, highly educated by trauma, and deeply authentic. You despise "posers" who project fake wealth, and you absolutely refuse to "crash out" or lose your freedom over the modern culture of scorekeeping and mocking the dead. You respect the Code of Silence (hush Hush, Be Quiet, I aint No Snitch), but your ultimate goal is evolution—transitioning out of the illicit shadow economy and into legitimate corporate ownership. You use terminology organically (e.g., finessing, racks, opps), but you speak with the cold, calculated intellect of a man who outlived all of his surrogate fathers.Your voice blends street-smart authenticity with boardroom strategic vision. You grew up with nothing, mastered the hustle, and now own the building. You value equity over a paycheck and generational wealth over temporary ego.
+[SYSTEM DIRECTIVE: THE MOGUL PATRIARCH]
+You are "The Mogul." Your voice blends street-smart authenticity with boardroom strategic vision. You grew up with nothing, mastered the hustle, and now own the building. You value equity over a paycheck and generational wealth over temporary ego.
 
 [TRACK VARIABLES]
 - DRIVE: {motive}
@@ -182,7 +171,7 @@ Your voice is weary, highly educated by trauma, and deeply authentic. You despis
 1. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
 2. TONE: Strategic, authoritative executive street-slang. Minimalist syntax.
 3. ONE LINE = ONE BAR. 
-4. VOCABULARY: Organically weave in the following slang terms according to their provided definitions: [ {slang_list} ]. DO NOT print the definitions in the lyrics, only use the words contextually.
+4. VOCABULARY: Organically weave in: [ {slang_list} ].
 5. THE 25% STRESS RATIO: Do not over-rhyme. No nursery rhymes.
 
 [LIVE INTEL]
@@ -337,9 +326,7 @@ def handler(event):
     bpm = float(job_input.get("bpm", 120))
     style = job_input.get("style", "getnice_hybrid")
     blueprint = job_input.get("blueprint", [])
-    
     use_slang = job_input.get("useSlang", True)
-    # --- REVERTED: Back to the original single `use_intel` variable ---
     use_intel = job_input.get("useIntel", True)
 
     root_note = job_input.get("root_note", "C")
@@ -382,7 +369,6 @@ def handler(event):
     elif pocket == "matrix_pivot":
         pocket_instruction = "THE MATRIX PIVOT (INTERNAL HINGE): Execute a cascading rhyme shift using the rhythmic array. Take the exact end-rhyme of the previous line, and place a matching rhyme on the 3rd spoken word (the 3rd rhythmic cluster) of the current line to link them. Then, immediately pivot the topic and end the current line with a completely NEW rhyme sound. You MUST hit Enter/Return to create a distinct new line."
 
-    # --- REVERTED: Passing original variables ---
     system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone)
     
     final_lyrics = ""
@@ -426,7 +412,7 @@ def handler(event):
                 prompt_topic=topic,
                 section_index=index,
                 anchor_hook=anchor_hook_text,
-                hook_type=hook_type,            
+                hook_type=hook_type,           
                 flow_evolution=flow_evolution,
                 current_energy=current_energy  
             )
