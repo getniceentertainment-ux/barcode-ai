@@ -10,6 +10,10 @@ import { supabase } from "../../lib/supabase";
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
+// SURGICAL FIX: Enforced strict typing so the Grid knows these properties exist
+type WordMapping = { id: string; word: string; startTime: number; duration: number; slot: number; isWordEnd?: boolean };
+type LyricLine = { id: string; text: string; originalText: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[]; barIndex: number };
+
 // --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR (FALLBACK ONLY) ---
 function estimateSyllables(word: string): number {
   const w = word.toLowerCase().replace(/[^a-z]/g, '');
@@ -240,6 +244,7 @@ export default function Room04_Booth() {
   const [teleprompterEnabled, setTeleprompterEnabled] = useState(true);
 
   const [currentTimeDisplay, setCurrentTimeDisplay] = useState(0);
+  const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
 
@@ -295,7 +300,8 @@ export default function Room04_Booth() {
     const delta = targetSlot - originalSlot;
     if (delta === 0) return;
 
-    setQuantizedLines(quantizedLines.map(line => {
+    // 🚨 FIX 3: Route Drag & Drop update to local lyricLines so the Grid mathematically updates
+    setLyricLines(prev => prev.map(line => {
       if (line.id === targetLineId && !line.isHeader && line.words) {
         const targetIndex = line.words.findIndex(w => w.id === syllableId);
         if (targetIndex === -1) return line;
@@ -320,7 +326,7 @@ export default function Room04_Booth() {
   };
 
   const handleGenerateGuide = async () => {
-    if (!quantizedLines || quantizedLines.length === 0) {
+    if (!lyricLines || lyricLines.length === 0) {
       if (addToast) addToast("No valid lyrics found to generate guide.", "error");
       return;
     }
@@ -329,7 +335,8 @@ export default function Room04_Booth() {
     setGuideProgress(0);
     
     try {
-      const parsedLines = quantizedLines.filter(l => !l.isHeader && l.text.trim().length > 0);
+      // 🚨 FIX 4: Guide reads from the mathematically accurate local state, not the stale store
+      const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
       if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
       const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
@@ -341,6 +348,9 @@ export default function Room04_Booth() {
       for (let i = 0; i < parsedLines.length; i++) {
               const line = parsedLines[i];
               
+              // 🚨 FIX 2: Restore Guide Progress Percentage
+              setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
+
               try {
                 const res = await fetch('/api/audio/generate-guide', {
                   method: 'POST',
@@ -361,47 +371,34 @@ export default function Room04_Booth() {
                 const mappedWords = line.words;
                 if (!mappedWords || mappedWords.length === 0) continue;
 
+                // 🚨 FIX 1: Restore Proportional Crossfade Audio Logic (Syllable Syncing)
                 const ttsDuration = audioBuffer.duration;
-                const sliceDuration = ttsDuration / mappedWords.length;
+                const mathLineDuration = line.lineDuration || 2;
 
-                mappedWords.forEach((wordObj, wIdx) => {
-                  if (!wordObj.word.trim()) return;
+                mappedWords.forEach((wObj) => {
+                  if (!wObj.word.trim()) return;
+
+                  const relativeWordStart = wObj.startTime - line.startTime;
+                  const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
+                  const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
+
+                  const tailBleed = 0.35; 
+                  const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
 
                   const source = offlineCtx.createBufferSource();
                   source.buffer = audioBuffer;
-                  const sliceStart = wIdx * sliceDuration;
-
-                  const baseStretch = sliceDuration / wordObj.duration;
-                  const pitchShiftDrop = 0.82; 
-                  source.playbackRate.value = Math.min(1.05, Math.max(0.65, baseStretch * pitchShiftDrop));
-
-                  const chestEq = offlineCtx.createBiquadFilter();
-                  chestEq.type = "peaking";
-                  chestEq.frequency.value = 200; 
-                  chestEq.Q.value = 1.0;
-                  chestEq.gain.value = 8; 
-
-                  const highShelf = offlineCtx.createBiquadFilter();
-                  highShelf.type = "highshelf";
-                  highShelf.frequency.value = 4000;
-                  highShelf.gain.value = -3; 
+                  source.playbackRate.value = 1.0; 
 
                   const gainNode = offlineCtx.createGain();
-                  const fadeTime = 0.015; 
-                  
-                  gainNode.gain.setValueAtTime(0, wordObj.startTime);
-                  gainNode.gain.linearRampToValueAtTime(1, wordObj.startTime + fadeTime); 
-                  
-                  const chopEndTime = wordObj.startTime + wordObj.duration;
-                  gainNode.gain.setValueAtTime(1, chopEndTime - fadeTime);
-                  gainNode.gain.linearRampToValueAtTime(0, chopEndTime); 
+                  gainNode.gain.setValueAtTime(0, wObj.startTime);
+                  gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
+                  gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
+                  gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
 
-                  source.connect(chestEq);
-                  chestEq.connect(highShelf);
-                  highShelf.connect(gainNode);
+                  source.connect(gainNode);
                   gainNode.connect(offlineCtx.destination);
                   
-                  source.start(wordObj.startTime, sliceStart, sliceDuration);
+                  source.start(wObj.startTime, ttsOffset, safeExtractDuration);
                 });
 
               } catch (lineErr) {
@@ -509,11 +506,11 @@ export default function Room04_Booth() {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
       let currentLineIndex = -1;
 
-      for (let i = 0; i < quantizedLines.length; i++) {
-        const line = quantizedLines[i];
+      for (let i = 0; i < lyricLines.length; i++) {
+        const line = lyricLines[i];
         if (line.isHeader) continue;
 
-        const nextLine = quantizedLines.slice(i + 1).find(l => !l.isHeader);
+        const nextLine = lyricLines.slice(i + 1).find(l => !l.isHeader);
         const endTime = nextLine ? nextLine.startTime : (line.startTime + (line.lineDuration || 2));
 
         const lineNode = lineNodes[i] as HTMLElement;
@@ -531,24 +528,20 @@ export default function Room04_Booth() {
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             
             if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
-              // Active Syllable
               chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
               chunkNode.classList.remove('text-[#444]', 'text-[#888]');
               if (ballNode) {
                 ballNode.classList.remove('hidden');
                 
-                // 🚨 FIX 3: GRAVITY CLAMP - Prevent fast syllables from vibrating wildly
                 let progress = (visualTime - wObj.startTime) / wObj.duration;
                 progress = Math.max(0, Math.min(1, progress)); 
                 
-                // Cap the jump height based on duration. Short words get a tiny flutter.
                 const maxBounce = Math.min(16, wObj.duration * 50); 
                 const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
                 
                 ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
               }
             } else if (visualTime >= wObj.startTime + wObj.duration) {
-              // Past Syllable
               chunkNode.classList.add('text-[#888]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
               if (ballNode) {
@@ -556,7 +549,6 @@ export default function Room04_Booth() {
                 ballNode.style.transform = `translateX(-50%) translateY(0px)`;
               }
             } else {
-              // Future Syllable
               chunkNode.classList.add('text-[#444]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
               if (ballNode) {
@@ -859,7 +851,7 @@ export default function Room04_Booth() {
 
   useEffect(() => {
     if (!generatedLyrics) return;
-    if (quantizedLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
+    if (lyricLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
     lastParsedLyricsRef.current = generatedLyrics;
 
     const lines = generatedLyrics.split('\n');
@@ -883,7 +875,7 @@ export default function Room04_Booth() {
     });
     if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) llmBlocks.push(currentLlmBlock);
 
-    const parsed: QuantizedLine[] = [];
+    const parsed: LyricLine[] = [];
     let runningBlockStartBar = 0;
     let lineIdCounter = 0;
 
@@ -891,7 +883,6 @@ export default function Room04_Booth() {
       const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
       
-      // 🚨 FIX 1: Provide safe fallback for missing bars so time math never results in NaN
       const bars = bp.bars || (bp.type === "INSTRUMENTAL" ? 8 : 4);
       const blockDurationSecs = bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
@@ -911,14 +902,13 @@ export default function Room04_Booth() {
         const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
         let activePattern = activeVariations[index % activeVariations.length];
         
-        // Ensure active pattern is strictly an array of numbers
         if (Array.isArray((bp as any).patternArray) && (bp as any).patternArray.length > 0) {
            activePattern = (bp as any).patternArray;
         }
 
         blockData.lines.forEach((lineObj) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
-          const mappedWords: QuantizedSyllable[] = [];
+          const mappedWords: WordMapping[] = [];
 
           let totalLineSteps = 0;
           let tempPatternIndex = 0;
@@ -928,7 +918,6 @@ export default function Room04_Booth() {
           const wordChunksArray = rawWords.map(w => {
             const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
             chunks.forEach(() => {
-              // 🚨 FIX 2: Bulletproof step extraction to prevent string concatenation/NaN math
               const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
               totalLineSteps += isNaN(stepVal) ? 2 : stepVal; 
               tempPatternIndex++;
@@ -986,8 +975,27 @@ export default function Room04_Booth() {
       runningBlockStartBar = blockStartBar + bars;
     });
     
-    setQuantizedLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, quantizedLines, setQuantizedLines]);
+    setLyricLines(parsed);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, lyricLines, setLyricLines]);
+
+  useEffect(() => {
+    if (trimmingStem && trimWaveformRef.current) {
+      trimWavesurferRef.current = WaveSurfer.create({
+        container: trimWaveformRef.current, waveColor: '#555', progressColor: '#E60000', cursorColor: '#fff', barWidth: 2, barGap: 1, height: 100, normalize: true,
+      });
+      trimWavesurferRef.current.on('error', (err) => console.warn("Trim WaveSurfer Soft-fail:", err));
+      
+      // 🚨 FIX 4: Guaranteed WaveSurfer Slicer Load Fallback
+      const safeUrl = trimmingStem.blob ? URL.createObjectURL(trimmingStem.blob) : trimmingStem.url;
+      trimWavesurferRef.current.load(safeUrl).catch(e => console.warn("Trim Load Aborted:", e.message));
+      
+      trimWavesurferRef.current.on('ready', () => {
+        const dur = trimWavesurferRef.current?.getDuration() || 0;
+        setTrimDuration(dur); setTrimStart(0); setTrimEnd(dur);
+      });
+    }
+    return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
+  }, [trimmingStem]);
 
   if (!audioData) {
     return (
@@ -1052,7 +1060,8 @@ export default function Room04_Booth() {
                 </div>
 
                 <div className="space-y-4 pb-20">
-                  {quantizedLines.filter(l => !l.isHeader).map((line) => (
+                  {/* 🚨 FIX 3: Renders from lyricLines directly */}
+                  {lyricLines.filter(l => !l.isHeader).map((line) => (
                     <div key={line.id} className="bg-black border border-[#222] rounded overflow-hidden">
                       <div className="text-[8px] font-mono text-[#555] p-1 bg-[#0a0a0a] border-b border-[#111] truncate">{line.text}</div>
                       <div className="flex h-10 relative bg-[#0a0a0a]">
@@ -1096,7 +1105,7 @@ export default function Room04_Booth() {
               onTouchMove={() => setAutoScroll(false)} 
               className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative"
             >
-              {quantizedLines.map((line, i) => {
+              {lyricLines.map((line, i) => {
                 if (line.isHeader) {
                     return <p key={i} className="lyric-line-container text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs">{line.text}</p>;
                 }
@@ -1109,8 +1118,8 @@ export default function Room04_Booth() {
                     
                     <span className="flex-1 leading-loose flex flex-wrap gap-y-2">
                       {(() => {
-                        const wordGroups: QuantizedSyllable[][] = [];
-                        let currentGroup: QuantizedSyllable[] = [];
+                        const wordGroups: WordMapping[][] = [];
+                        let currentGroup: WordMapping[] = [];
                         
                         line.words?.forEach(wObj => {
                           currentGroup.push(wObj);
@@ -1159,7 +1168,7 @@ export default function Room04_Booth() {
           )}
         </div>
 
-        {/* RIGHT PANEL: MIXER & RECORDER (UNTOUCHED) */}
+        {/* RIGHT PANEL: MIXER & RECORDER */}
         <div className="flex-1 flex flex-col relative bg-black">
           <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10 relative">
             <div className="flex items-center gap-4">
@@ -1255,7 +1264,7 @@ export default function Room04_Booth() {
         </div>
       </div>
 
-      {/* OVERLAYS: TRIMMING STEM (UNTOUCHED) */}
+      {/* OVERLAYS: TRIMMING STEM */}
       {trimmingStem && (
         <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-8 animate-in zoom-in duration-300">
           <div className="bg-[#050505] border border-[#E60000] rounded-lg w-full max-w-2xl p-8 shadow-[0_0_50px_rgba(230,0,0,0.2)]">
