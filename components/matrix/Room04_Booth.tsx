@@ -310,7 +310,7 @@ export default function Room04_Booth() {
            newWords[i] = {
              ...newWords[i],
              slot: newSlot,
-             // RE-CALCULATE AUDIO SYNC TIME
+             // RE-CALCULATE AUDIO SYNC TIME SO GUIDE VOCALS MATCH THE GRID
              startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot)
            };
         }
@@ -540,23 +540,41 @@ export default function Room04_Booth() {
           line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
-            const ballNode = chunkNode.querySelector('.bouncing-ball');
+            const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             
             if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
               // Active Syllable
               chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
               chunkNode.classList.remove('text-[#444]', 'text-[#888]');
-              if (ballNode) ballNode.classList.remove('hidden');
+              if (ballNode) {
+                ballNode.classList.remove('hidden');
+                
+                // --- THE DYNAMIC MATH BOUNCE ---
+                // 1. Calculate exactly how far we are into this specific syllable's duration (0.0 to 1.0)
+                const progress = (visualTime - wObj.startTime) / wObj.duration;
+                
+                // 2. Map progress to a perfect Sine wave arc. 
+                // Fast words = fast hop. Slow, dragged out words = slow, floaty hop.
+                const bounceHeight = Math.sin(progress * Math.PI) * 16; // 16px max height
+                
+                ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
+              }
             } else if (visualTime >= wObj.startTime + wObj.duration) {
               // Past Syllable
               chunkNode.classList.add('text-[#888]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
-              if (ballNode) ballNode.classList.add('hidden');
+              if (ballNode) {
+                ballNode.classList.add('hidden');
+                ballNode.style.transform = `translateX(-50%) translateY(0px)`;
+              }
             } else {
               // Future Syllable
               chunkNode.classList.add('text-[#444]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
-              if (ballNode) ballNode.classList.add('hidden');
+              if (ballNode) {
+                ballNode.classList.add('hidden');
+                ballNode.style.transform = `translateX(-50%) translateY(0px)`;
+              }
             }
           });
         } else {
@@ -567,8 +585,11 @@ export default function Room04_Booth() {
           line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
-            const ballNode = chunkNode.querySelector('.bouncing-ball');
-            if (ballNode) ballNode.classList.add('hidden');
+            const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
+            if (ballNode) {
+              ballNode.classList.add('hidden');
+              ballNode.style.transform = `translateX(-50%) translateY(0px)`;
+            }
 
             if (visualTime >= wObj.startTime + wObj.duration) {
               chunkNode.classList.add('text-[#888]');
@@ -1087,18 +1108,42 @@ export default function Room04_Booth() {
                     return <p key={i} className="lyric-line-container text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs">{line.text}</p>;
                 }
                 
+                const isActiveLine = teleprompterEnabled && !line.isHeader && i === lastActiveLineRef.current;
+                
                 return (
-                  <div key={i} className="lyric-line-container mb-2 py-2 px-3 border-l-2 border-transparent flex items-start gap-3 transition-colors duration-200">
+                  <div key={i} className={`lyric-line-container mb-2 py-2 px-3 border-l-2 ${isActiveLine ? 'bg-[#E60000]/10 border-[#E60000]' : 'border-transparent'} flex items-start gap-3 transition-colors duration-200`}>
                     {line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
                     
-                    <span className="flex-1 leading-loose">
-                      {line.words?.map((wObj, wIdx) => (
-                        <span key={wIdx} className={`syllable-chunk relative inline-block text-[#444] transition-colors duration-100 ${wObj.isWordEnd ? 'mr-2' : ''}`}>
-                          {/* 🚨 THE Z-INDEX AND ANIMATION FIX: Ball is pushed front and leaps off text */}
-                          <span className="bouncing-ball hidden absolute -top-4 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50 animate-bounce"></span>
-                          {wObj.word}
-                        </span>
-                      ))}
+                    <span className="flex-1 leading-loose flex flex-wrap gap-y-2">
+                      {(() => {
+                        // 1. Re-group the flat syllables back into whole words
+                        const wordGroups: typeof line.words[] = [];
+                        let currentGroup: typeof line.words = [];
+                        
+                        line.words?.forEach(wObj => {
+                          currentGroup.push(wObj);
+                          if (wObj.isWordEnd) { 
+                            wordGroups.push(currentGroup); 
+                            currentGroup = []; 
+                          }
+                        });
+                        if (currentGroup.length > 0) wordGroups.push(currentGroup);
+
+                        // 2. Render the whole word as an unbreakable horizontal block
+                        return wordGroups.map((group, gIdx) => (
+                          <span key={gIdx} className="inline-flex whitespace-nowrap mr-2">
+                            {group.map((wObj, wIdx) => {
+                              return (
+                                <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
+                                  {/* STATIC animate-bounce REMOVED. Positioned perfectly on top of text. */}
+                                  <span className="bouncing-ball hidden absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50"></span>
+                                  {wObj.word}
+                                </span>
+                              );
+                            })}
+                          </span>
+                        ));
+                      })()}
                     </span>
                   </div>
                 );
