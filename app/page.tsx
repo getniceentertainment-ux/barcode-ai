@@ -42,6 +42,13 @@ export default function MatrixController() {
     radioTrack, setRadioTrack, addToast, hydrateDiskAudio 
   } = useMatrixStore();
 
+
+  const MASTER_EMAIL = 'getnice.entertainment@gmail.com';
+  const isMasterAdmin = userSession?.email?.toLowerCase() === MASTER_EMAIL;
+
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [isBoosting, setIsBoosting] = useState(false);
+
   const [isHydrated, setIsHydrated] = useState(false);
   const [isBoosting, setIsBoosting] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -513,17 +520,20 @@ export default function MatrixController() {
           </div>
 
           <div className="pt-4 border-t border-[#111] space-y-1">
-            <Link href="/dev-portal" className="w-full flex items-center gap-3 px-5 py-4 text-left text-[#555] hover:text-white hover:bg-[#0a0a0a] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold">
-              <ShieldAlert size={16} /> API Portal
-            </Link>
+            {/* 🚨 THE UI MASTER KEY: Completely hides the API and Admin rooms from public view */}
+            {isMasterAdmin && (
+              <>
+                <Link href="/dev-portal" className="w-full flex items-center gap-3 px-5 py-4 text-left text-[#555] hover:text-white hover:bg-[#0a0a0a] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold">
+                  <ShieldAlert size={16} /> API Portal
+                </Link>
 
-            {CREATOR_ID && userSession?.id === CREATOR_ID && (
-              <Link href="/admin-node" className="w-full flex items-center gap-3 px-5 py-4 text-left text-yellow-600 hover:text-yellow-400 hover:bg-[#111] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold border border-yellow-600/20">
-                <Terminal size={16} /> Admin Node
-              </Link>
+                <Link href="/admin-node" className="w-full flex items-center gap-3 px-5 py-4 text-left text-yellow-600 hover:text-yellow-400 hover:bg-[#111] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold border border-yellow-600/20">
+                  <Terminal size={16} /> Admin Node
+                </Link>
+              </>
             )}
 
-            {/* NEW: COMM-LINK / HELP BUTTON */}
+            {/* NEW: COMM-LINK / HELP BUTTON (Visible to everyone) */}
             <button onClick={() => setShowHelp(true)} className="w-full flex items-center gap-3 px-5 py-4 text-left text-[#555] hover:text-white hover:bg-[#0a0a0a] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold border-t border-[#111] mt-4">
               <HelpCircle size={16} /> Comm-Link / Help
             </button>
