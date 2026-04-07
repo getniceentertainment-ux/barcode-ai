@@ -52,13 +52,13 @@ export default function AdminNode() {
   // --- THE BOUNCER & DATA INITIALIZER ---
   useEffect(() => {
     const verifyGodMode = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      // 🚨 THE FIX: Use getUser() to prevent the hard-reload race condition
+      const { data: { user }, error } = await supabase.auth.getUser();
       
-      // 🚨 THE MASTER KEY
       const MASTER_ID = 'f7c05436-8294-4450-8c89-4dfbb70e44b6';
       
-      // Strict Security Check: Allows the env var OR your direct Master ID
-      if (!session || (session.user.id !== CREATOR_ID && session.user.id !== MASTER_ID)) {
+      // Check the verified user object, not the cached session
+      if (error || !user || (user.id !== CREATOR_ID && user.id !== MASTER_ID)) {
         console.warn("UNAUTHORIZED ACCESS ATTEMPT DETECTED. EJECTING NODE.");
         router.replace('/'); 
         return;
