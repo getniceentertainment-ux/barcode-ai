@@ -54,8 +54,11 @@ export default function AdminNode() {
     const verifyGodMode = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       
-      // Strict Security Check[cite: 14]
-      if (!session || session.user.id !== CREATOR_ID) {
+      // 🚨 THE MASTER KEY
+      const MASTER_ID = 'f7c05436-8294-4450-8c89-4dfbb70e44b6';
+      
+      // Strict Security Check: Allows the env var OR your direct Master ID
+      if (!session || (session.user.id !== CREATOR_ID && session.user.id !== MASTER_ID)) {
         console.warn("UNAUTHORIZED ACCESS ATTEMPT DETECTED. EJECTING NODE.");
         router.replace('/'); 
         return;
