@@ -11,10 +11,14 @@ import {
 } from "lucide-react";
 
 import { supabase } from "../../lib/supabase";
+import { useMatrixStore } from "../../store/useMatrixStore";
 
 export default function AdminNode() {
   const router = useRouter();
   const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID;
+
+// 🚨 THE FIX: Bring the userSession into the room so the Bouncer can read it
+  const { userSession } = useMatrixStore();
 
   // AUTHORIZATION GUARD
   const [isAuthorized, setIsAuthorized] = useState(false);
