@@ -27,34 +27,31 @@ export default async function proxy(req: NextRequest) {
   );
 
   const url = req.nextUrl.pathname;
-  const isRestrictedRoute = url.startsWith('/admin-node') || url.startsWith('/dev-portal') || url.startsWith('/api/dev');
+  
+  // 🚨 SURGICAL FIX 1: The Proxy now ONLY guards the backend API.
+  // It completely ignores /admin-node and /dev-portal, letting React handle them.
+  const isRestrictedRoute = url.startsWith('/api/dev');
 
   if (isRestrictedRoute) {
-    // 1. Securely ping Supabase Auth to verify the token (No database queries)
     const { data: { user }, error } = await supabase.auth.getUser();
 
-    // If there is an auth error or no user, kick to homepage
     if (error || !user) {
       return NextResponse.redirect(new URL('/', req.url));
     }
 
-    // 🚨 THE MASTER KEY
-    // Type your exact login email here, strictly in lowercase
     const MASTER_EMAIL = 'getnice.entertainment@gmail.com'; 
-    
-    // 2. Read the email directly from the secure Auth token payload
     const authEmail = user.email?.toLowerCase();
 
-    // 3. The Final Boss Check
     if (authEmail !== MASTER_EMAIL) {
       return NextResponse.redirect(new URL('/', req.url));
     }
   }
 
-  // The door is open.
   return res;
 }
 
+// 🚨 SURGICAL FIX 2: Reactivate the Radar
 export const config = {
-  matcher: ['/admin-node/:path*', '/dev-portal/:path*', '/api/dev/:path*'],
+  // We turn the Edge Proxy back on, but ONLY point it at your API endpoints.
+  matcher: ['/api/dev/:path*'], 
 };

@@ -49,27 +49,25 @@ export default function AdminNode() {
   const [isInjecting, setIsInjecting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- THE BOUNCER & DATA INITIALIZER ---
+  // --- THE UNBREAKABLE BOUNCER ---
   useEffect(() => {
-    const verifyGodMode = async () => {
-      // 🚨 THE FIX: Use getUser() to prevent the hard-reload race condition
-      const { data: { user }, error } = await supabase.auth.getUser();
-      
-      const MASTER_ID = 'f7c05436-8294-4450-8c89-4dfbb70e44b6';
-      
-      // Check the verified user object, not the cached session
-      if (error || !user || (user.id !== CREATOR_ID && user.id !== MASTER_ID)) {
-        console.warn("UNAUTHORIZED ACCESS ATTEMPT DETECTED. EJECTING NODE.");
-        router.replace('/'); 
-        return;
-      }
-      
-      setIsAuthorized(true);
-      fetchAllData();
-    };
+    const MASTER_ID = 'f7c05436-8294-4450-8c89-4dfbb70e44b6';
 
-    verifyGodMode();
-  }, [router, CREATOR_ID]);
+    // 1. Wait for the global store to load your session
+    if (userSession === undefined) return;
+
+    // 2. If there is no session, or the ID is wrong, kick to homepage
+    if (!userSession || (userSession.id !== CREATOR_ID && userSession.id !== MASTER_ID)) {
+      console.warn("UNAUTHORIZED. EJECTING.");
+      window.location.replace('/'); 
+      return;
+    }
+
+    // 3. You are the boss. Open the door.
+    setIsAuthorized(true);
+    fetchAllData();
+    
+  }, [userSession, CREATOR_ID]);
 
   // --- OMNI-FETCHER: EXACT TABLE MAPPING ---
   const fetchAllData = async () => {
