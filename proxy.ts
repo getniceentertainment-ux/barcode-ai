@@ -29,31 +29,24 @@ export default async function proxy(req: NextRequest) {
   const url = req.nextUrl.pathname;
   const isRestrictedRoute = url.startsWith('/admin-node') || url.startsWith('/dev-portal') || url.startsWith('/api/dev');
 
-  // We only run the database check if someone is actively trying to pick the lock
   if (isRestrictedRoute) {
-    // 1. Get the secure Auth User ID from the session
-    const { data: { user } } = await supabase.auth.getUser();
+    // 1. Securely ping Supabase Auth to verify the token (No database queries)
+    const { data: { user }, error } = await supabase.auth.getUser();
 
-    if (!user) {
-      return NextResponse.redirect(new URL('/', req.url)); // Not logged in
+    // If there is an auth error or no user, kick to homepage
+    if (error || !user) {
+      return NextResponse.redirect(new URL('/', req.url));
     }
 
-    // 2. Cross-reference the database 'profiles' table using that ID
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('email')
-      .eq('id', user.id)
-      .single();
-
     // 🚨 THE MASTER KEY
-    const MASTER_EMAIL = 'getnice.entertainment@gmail.com'.toLowerCase(); 
-    const profileEmail = profile?.email?.toLowerCase();
+    // Type your exact login email here, strictly in lowercase
+    const MASTER_EMAIL = 'getnice.entertainment@gmail.com'; 
     
-    // 3. The Final Boss Check
-    const isMasterAdmin = profileEmail === MASTER_EMAIL;
+    // 2. Read the email directly from the secure Auth token payload
+    const authEmail = user.email?.toLowerCase();
 
-    if (!isMasterAdmin) {
-      // You aren't the boss. Get out.
+    // 3. The Final Boss Check
+    if (authEmail !== MASTER_EMAIL) {
       return NextResponse.redirect(new URL('/', req.url));
     }
   }
