@@ -43,9 +43,8 @@ export default function MatrixController() {
   } = useMatrixStore();
 
 
-  const MASTER_EMAIL = 'getnice.entertainment@gmail.com';
-  const isMasterAdmin = (userSession as any)?.email?.toLowerCase() === MASTER_EMAIL;
-
+  const MASTER_ID = 'f7c05436-8294-4450-8c89-4dfbb70e44b6';
+  const isMasterAdmin = userSession?.id === MASTER_ID || userSession?.id === CREATOR_ID;
   const [isHydrated, setIsHydrated] = useState(false);
   const [isBoosting, setIsBoosting] = useState(false);
 
