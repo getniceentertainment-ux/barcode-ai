@@ -433,7 +433,7 @@ export default function Room04_Booth() {
             const bufferOffset = playheadTime - offsetSecs;
             if (bufferOffset < buffer.duration) source.start(scheduleTime, bufferOffset);
           }
-          activeSourcesRef.push(source);
+          activeSourcesRef.current.push(source);
         }
       });
     } else {
