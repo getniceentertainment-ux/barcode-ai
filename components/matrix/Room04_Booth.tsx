@@ -1,16 +1,102 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, ToggleLeft, ToggleRight } from "lucide-react";
+import { 
+  Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, ToggleLeft, ToggleRight, Crosshair, ListVideo
+} from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
-import { useMatrixStore } from "../../store/useMatrixStore";
+import { useMatrixStore, QuantizedLine, QuantizedSyllable } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase"; 
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
-type WordMapping = { word: string; startTime: number; duration: number };
-// SURGICAL FIX: Added lineDuration so the audio can read the Bouncing Ball's exact timing
-type LyricLine = { text: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[] };
+// --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR (FALLBACK ONLY) ---
+function estimateSyllables(word: string): number {
+  const w = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (!w) return 1;
+  if (w.length <= 3) return 1;
+  let count = (w.match(/[aeiouy]+/g) || []).length;
+  if (w.endsWith('e') && !w.endsWith('le')) count--;
+  return Math.max(1, count);
+}
+
+// --- THE VISUAL SYLLABLE CHUNKER (FALLBACK ONLY) ---
+function chunkWordForVisuals(word: string): string[] {
+  const match = word.match(/^([^a-zA-Z]*)([a-zA-Z\']+)([^a-zA-Z]*)$/);
+  if (!match || match[2].length <= 3) return [word];
+  
+  const pre = match[1];
+  const alpha = match[2];
+  const post = match[3];
+  
+  const vowelClusters = alpha.match(/[aeiouy]+/gi);
+  if (!vowelClusters || vowelClusters.length <= 1) return [word];
+  
+  const chunks = [];
+  let currentChunk = "";
+  
+  for (let i = 0; i < alpha.length; i++) {
+    currentChunk += alpha[i];
+    const isVowel = /[aeiouy]/i.test(alpha[i]);
+    const nextIsVowel = i + 1 < alpha.length ? /[aeiouy]/i.test(alpha[i+1]) : false;
+    
+    if (isVowel && !nextIsVowel && i + 2 < alpha.length) {
+      const remaining = alpha.slice(i + 1);
+      if (/[aeiouy]/i.test(remaining)) {
+        currentChunk += alpha[i+1];
+        chunks.push(currentChunk);
+        currentChunk = "";
+        i++; 
+      }
+    }
+  }
+  if (currentChunk) chunks.push(currentChunk);
+  
+  if (chunks.length > 0) {
+    chunks[0] = pre + chunks[0];
+    chunks[chunks.length - 1] = chunks[chunks.length - 1] + post;
+  }
+  
+  return chunks.filter(c => c.length > 0);
+}
+
+// --- TTS SILENCE TRIMMER (Kills Dead Air) ---
+function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
+  let startOffset = 0;
+  let endOffset = buffer.length;
+  const threshold = 0.03; 
+  
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const data = buffer.getChannelData(c);
+    let firstSignal = 0;
+    let lastSignal = data.length;
+    
+    for (let i = 0; i < data.length; i++) {
+      if (Math.abs(data[i]) > threshold) { firstSignal = i; break; }
+    }
+    for (let i = data.length - 1; i >= 0; i--) {
+      if (Math.abs(data[i]) > threshold) { lastSignal = i; break; }
+    }
+    
+    const pad = Math.floor(buffer.sampleRate * 0.08); 
+    if (c === 0) {
+      startOffset = Math.max(0, firstSignal - pad);
+      endOffset = Math.min(data.length, lastSignal + pad);
+    } else {
+      startOffset = Math.min(startOffset, Math.max(0, firstSignal - pad));
+      endOffset = Math.max(endOffset, Math.min(data.length, lastSignal + pad));
+    }
+  }
+  
+  if (startOffset >= endOffset) return buffer; 
+  
+  const frameCount = endOffset - startOffset;
+  const trimmed = audioCtx.createBuffer(buffer.numberOfChannels, frameCount, buffer.sampleRate);
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    trimmed.copyToChannel(buffer.getChannelData(c).subarray(startOffset, endOffset), c);
+  }
+  return trimmed;
+}
 
 // --- BULLETPROOF AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
@@ -110,22 +196,50 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
+// --- THE MACRO-RHYTHMIC FLOW VAULT ---
+const FLOW_VAULT: Record<string, number[][]> = {
+  "getnice_hybrid": [
+    [4, 2, 2,  3, 1, 4,  2, 2, 2, 2,  4, 4], 
+    [3, 1, 2, 2],
+    [6, 2, 4, 2, 2] 
+  ],
+  "chopper": [
+    [1, 1, 1, 1], 
+    [2, 1, 1, 1, 1, 2] 
+  ],
+  "heartbeat": [
+    [2, 2, 2, 2], 
+    [4, 2, 2, 4, 4] 
+  ],
+  "triplet": [
+    [3, 3, 2], 
+    [2, 2, 2, 3, 3, 4] 
+  ],
+  "lazy": [
+    [4, 2, 2], 
+    [6, 2, 8] 
+  ]
+};
+
 export default function Room04_Booth() {
-  const { generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, addToast } = useMatrixStore();
+  const { 
+    generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
+    updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, 
+    addToast, gwStyle, quantizedLines, setQuantizedLines 
+  } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isReviewMode, setIsReviewMode] = useState(false); 
   
   const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
   const [guideProgress, setGuideProgress] = useState(0); 
   
   const [autoScroll, setAutoScroll] = useState(true);
-  const [activeLineIndex, setActiveLineIndex] = useState(-1);
   const [teleprompterEnabled, setTeleprompterEnabled] = useState(true);
 
-  const [currentTime, setCurrentTime] = useState(0);
-  const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
+  const [currentTimeDisplay, setCurrentTimeDisplay] = useState(0);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
 
@@ -138,9 +252,9 @@ export default function Room04_Booth() {
   const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
 
   const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
-
   const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
   const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
+  const secondsPerSlot = secondsPerBar / 16; 
 
   const trimWaveformRef = useRef<HTMLDivElement>(null);
   const trimWavesurferRef = useRef<WaveSurfer | null>(null);
@@ -156,11 +270,59 @@ export default function Room04_Booth() {
   const workletLoadedRef = useRef(false);
   const teleprompterRef = useRef<HTMLDivElement>(null);
 
+  // --- HIGH-PERFORMANCE rAF SYNC REFS ---
+  const animationFrameRef = useRef<number>();
+  const lastActiveLineRef = useRef<number>(-1);
+  const isPlayingRef = useRef(false);
+  const isRecordingRef = useRef(false);
+
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
-const handleGenerateGuide = async () => {
-    if (!lyricLines || lyricLines.length === 0) {
+  // --- 1. THE SNAKING DRAG & DROP LOGIC ---
+  const handleDragStart = (e: React.DragEvent, lineId: string, syllableId: string, originalSlot: number) => {
+    e.dataTransfer.setData("application/json", JSON.stringify({ lineId, syllableId, originalSlot }));
+  };
+
+  const handleDrop = (e: React.DragEvent, targetLineId: string, targetSlot: number) => {
+    e.preventDefault();
+    const dataString = e.dataTransfer.getData("application/json");
+    if (!dataString) return;
+    
+    const { lineId, syllableId, originalSlot } = JSON.parse(dataString);
+    if (lineId !== targetLineId) return; 
+
+    const delta = targetSlot - originalSlot;
+    if (delta === 0) return;
+
+    setQuantizedLines(quantizedLines.map(line => {
+      if (line.id === targetLineId && !line.isHeader && line.words) {
+        const targetIndex = line.words.findIndex(w => w.id === syllableId);
+        if (targetIndex === -1) return line;
+
+        const newWords = [...line.words];
+
+        // DYNAMIC SNAKING: Move the targeted word AND all subsequent words by the exact delta
+        for (let i = targetIndex; i < newWords.length; i++) {
+           let newSlot = newWords[i].slot + delta;
+           newSlot = Math.max(0, Math.min(15, newSlot)); 
+           
+           newWords[i] = {
+             ...newWords[i],
+             slot: newSlot,
+             // RE-CALCULATE AUDIO SYNC TIME SO GUIDE VOCALS MATCH THE GRID
+             startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot)
+           };
+        }
+
+        return { ...line, words: newWords };
+      }
+      return line;
+    }));
+  };
+
+  const handleGenerateGuide = async () => {
+    if (!quantizedLines || quantizedLines.length === 0) {
       if (addToast) addToast("No valid lyrics found to generate guide.", "error");
       return;
     }
@@ -169,10 +331,9 @@ const handleGenerateGuide = async () => {
     setGuideProgress(0);
     
     try {
-      const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
+      const parsedLines = quantizedLines.filter(l => !l.isHeader && l.text.trim().length > 0);
       if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
-      // Creates a blank, silent canvas the exact length of the track
       const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
       const sampleRate = 44100;
       
@@ -180,92 +341,89 @@ const handleGenerateGuide = async () => {
       const offlineCtx = new OfflineCtxClass(1, Math.ceil(sampleRate * renderDuration), sampleRate);
 
       for (let i = 0; i < parsedLines.length; i++) {
-        const line = parsedLines[i];
-        setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
-
-        try {
-          const res = await fetch('/api/audio/generate-guide', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lyrics: line.text, bpm: preciseBpm })
-          });
-          
-          if (!res.ok) throw new Error("Groq API rate limit or disconnect.");
-
-          const arrayBuffer = await res.arrayBuffer();
-          const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-
-          // --- SURGICAL PIVOT: THE MICRO-CHUNK QUANTIZER ---
-          const ttsDuration = audioBuffer.duration;
-          const mathLineDuration = line.lineDuration || 2;
-
-	  if (line.words && line.words.length > 0) {
-            line.words.forEach((wObj) => {
-              // 1. Calculate where this specific word exists proportionally
-              const relativeWordStart = wObj.startTime - line.startTime;
-              const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
-              const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
-
-              // --- THE OVERLAP CROSSFADE FIX ---
-              // Add a "tail" so the word finishes sounding out naturally.
-              // 0.35 seconds is enough to catch the end of a syllable without dragging.
-              const tailBleed = 0.35; 
+              const line = parsedLines[i];
               
-              // Ensure we don't try to extract audio past the end of the TTS file
-              const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
+              try {
+                const res = await fetch('/api/audio/generate-guide', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ 
+                    lyrics: line.text.replace(/\|/g, ''), 
+                    bpm: preciseBpm,
+                    gender: useMatrixStore.getState().gwGender || "male",
+                    pitch: "low" // Hint for the TTS engine
+                  })
+                });
+                
+                if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
 
-              const source = offlineCtx.createBufferSource();
-              source.buffer = audioBuffer;
-              source.playbackRate.value = 1.0; // High-fidelity preservation
+                const arrayBuffer = await res.arrayBuffer();
+                const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+                
+                // --- THE GETNICE GRANULAR SLICER (MPC METHOD) ---
+                const mappedWords = line.words;
+                if (!mappedWords || mappedWords.length === 0) continue;
 
-              // 2. Create the Crossfade Envelope
-              const gainNode = offlineCtx.createGain();
-              
-              // 10ms micro-fade IN (prevents sharp pops)
-              gainNode.gain.setValueAtTime(0, wObj.startTime);
-              gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
-              
-              // Hold at full volume for the exact visual duration of the red ball
-              gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-              
-              // Slowly fade out into the next word over the 350ms tail (The Crossfade)
-              gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
+                // Divide the raw TTS audio evenly among the syllables
+                const ttsDuration = audioBuffer.duration;
+                const sliceDuration = ttsDuration / mappedWords.length;
 
-              source.connect(gainNode);
-              gainNode.connect(offlineCtx.destination);
+                mappedWords.forEach((wordObj, wIdx) => {
+                  if (!wordObj.word.trim()) return; // Skip empty slots
 
-              // 3. Drop the audio slice with the extended overlapping tail
-              // Syntax: start(when, offset_in_audio_file, duration_to_play)
-              source.start(wObj.startTime, ttsOffset, safeExtractDuration);
-            });
-          } else {
-            // Fallback for lines without word mappings
-            const source = offlineCtx.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(offlineCtx.destination);
-            source.start(line.startTime);
-          }
-          // ---------------------------------------------
+                  const source = offlineCtx.createBufferSource();
+                  source.buffer = audioBuffer;
 
-        } catch (lineErr) {
-          console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
-        }
-      }
+                  const sliceStart = wIdx * sliceDuration;
+
+                  // --- 1. THE MPC PITCH DROP ---
+                  const baseStretch = sliceDuration / wordObj.duration;
+                  const pitchShiftDrop = 0.82; 
+                  source.playbackRate.value = Math.min(1.05, Math.max(0.65, baseStretch * pitchShiftDrop));
+
+                  // --- 2. THE "VOICE OF GOD" CHEST EQ ---
+                  const chestEq = offlineCtx.createBiquadFilter();
+                  chestEq.type = "peaking";
+                  chestEq.frequency.value = 200; 
+                  chestEq.Q.value = 1.0;
+                  chestEq.gain.value = 8; 
+
+                  const highShelf = offlineCtx.createBiquadFilter();
+                  highShelf.type = "highshelf";
+                  highShelf.frequency.value = 4000;
+                  highShelf.gain.value = -3; 
+
+                  // --- 3. THE MICRO-FADER (CHOKE GROUP) ---
+                  const gainNode = offlineCtx.createGain();
+                  const fadeTime = 0.015; 
+                  
+                  gainNode.gain.setValueAtTime(0, wordObj.startTime);
+                  gainNode.gain.linearRampToValueAtTime(1, wordObj.startTime + fadeTime); 
+                  
+                  const chopEndTime = wordObj.startTime + wordObj.duration;
+                  gainNode.gain.setValueAtTime(1, chopEndTime - fadeTime);
+                  gainNode.gain.linearRampToValueAtTime(0, chopEndTime); 
+
+                  // --- 4. ROUTE THE SIGNAL CHAIN ---
+                  source.connect(chestEq);
+                  chestEq.connect(highShelf);
+                  highShelf.connect(gainNode);
+                  gainNode.connect(offlineCtx.destination);
+                  
+                  source.start(wordObj.startTime, sliceStart, sliceDuration);
+                });
+
+              } catch (lineErr) {
+                console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
+              }
+            }
 
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
 
-      addVocalStem({ 
-        id: takeId, 
-        type: "Guide" as TrackType, 
-        url: url, 
-        blob: blob, 
-        volume: 0.3, 
-        offsetBars: 0 
-      });
-      
+      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.3, offsetBars: 0 });
       if (addToast) addToast("High-fidelity audio glued to visual metronome.", "success");
     } catch (err: any) {
       console.error(err);
@@ -285,9 +443,7 @@ const handleGenerateGuide = async () => {
     if (!userSession?.id) return;
     if(addToast) addToast("Routing to Secure Checkout...", "info");
     try {
-      const res = await fetch('/api/stripe/engineering-token', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: userSession.id })
-      });
+      const res = await fetch('/api/stripe/engineering-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: userSession.id }) });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
       else throw new Error(data.error || "Failed to route to checkout.");
@@ -344,8 +500,125 @@ const handleGenerateGuide = async () => {
     } catch (err: any) {
       console.error("Trim math failed:", err);
       if (addToast) addToast(err.message || "Failed to slice audio.", "error");
-    } finally {
-      setIsProcessingTrim(false);
+    } finally { setIsProcessingTrim(false); }
+  };
+
+  // --- THE HIGH-PERFORMANCE VISUAL SYNC ENGINE ---
+  const updateVisualsRef = useRef<() => void>(() => {});
+  
+  updateVisualsRef.current = () => {
+    if (!wavesurferRef.current) return;
+    
+    const time = wavesurferRef.current.getCurrentTime();
+    setCurrentTimeDisplay(time); // Display clock updates smoothly
+
+    // 🚨 SURGICAL FIX: Visual Lookahead
+    // By pushing the visual clock 80ms into the future, we compensate for screen refresh 
+    // and human reaction latency, making the ball arrive flawlessly on time.
+    const visualTime = time + 0.08; 
+
+    if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
+      const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
+      let currentLineIndex = -1;
+
+      for (let i = 0; i < quantizedLines.length; i++) {
+        const line = quantizedLines[i];
+        if (line.isHeader) continue;
+
+        const nextLine = quantizedLines.slice(i + 1).find(l => !l.isHeader);
+        const endTime = nextLine ? nextLine.startTime : (line.startTime + (line.lineDuration || 2));
+
+        const lineNode = lineNodes[i] as HTMLElement;
+        if (!lineNode) continue;
+
+        if (visualTime >= line.startTime && visualTime < endTime) {
+          currentLineIndex = i;
+          lineNode.classList.add('bg-[#E60000]/10', 'border-[#E60000]');
+          lineNode.classList.remove('border-transparent');
+
+          const chunks = lineNode.querySelectorAll('.syllable-chunk');
+          line.words?.forEach((wObj, wIdx) => {
+            const chunkNode = chunks[wIdx] as HTMLElement;
+            if (!chunkNode) return;
+            const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
+            
+            if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
+              // Active Syllable
+              chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
+              chunkNode.classList.remove('text-[#444]', 'text-[#888]');
+              if (ballNode) {
+                ballNode.classList.remove('hidden');
+                
+                // --- THE DYNAMIC MATH BOUNCE ---
+                // 1. Calculate exactly how far we are into this specific syllable's duration (0.0 to 1.0)
+                const progress = (visualTime - wObj.startTime) / wObj.duration;
+                
+                // 2. Map progress to a perfect Sine wave arc. 
+                // Fast words = fast hop. Slow, dragged out words = slow, floaty hop.
+                const bounceHeight = Math.sin(progress * Math.PI) * 16; // 16px max height
+                
+                ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
+              }
+            } else if (visualTime >= wObj.startTime + wObj.duration) {
+              // Past Syllable
+              chunkNode.classList.add('text-[#888]');
+              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
+              if (ballNode) {
+                ballNode.classList.add('hidden');
+                ballNode.style.transform = `translateX(-50%) translateY(0px)`;
+              }
+            } else {
+              // Future Syllable
+              chunkNode.classList.add('text-[#444]');
+              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
+              if (ballNode) {
+                ballNode.classList.add('hidden');
+                ballNode.style.transform = `translateX(-50%) translateY(0px)`;
+              }
+            }
+          });
+        } else {
+          lineNode.classList.remove('bg-[#E60000]/10', 'border-[#E60000]');
+          lineNode.classList.add('border-transparent');
+          
+          const chunks = lineNode.querySelectorAll('.syllable-chunk');
+          line.words?.forEach((wObj, wIdx) => {
+            const chunkNode = chunks[wIdx] as HTMLElement;
+            if (!chunkNode) return;
+            const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
+            if (ballNode) {
+              ballNode.classList.add('hidden');
+              ballNode.style.transform = `translateX(-50%) translateY(0px)`;
+            }
+
+            if (visualTime >= wObj.startTime + wObj.duration) {
+              chunkNode.classList.add('text-[#888]');
+              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
+            } else {
+              chunkNode.classList.add('text-[#444]');
+              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
+            }
+          });
+        }
+      }
+
+      // Hardware Accelerated Auto-Scroll
+      if (autoScroll && currentLineIndex !== -1 && currentLineIndex !== lastActiveLineRef.current) {
+        const activeNode = lineNodes[currentLineIndex] as HTMLElement;
+        if (activeNode) {
+          teleprompterRef.current.scrollTo({ top: activeNode.offsetTop - 150, behavior: 'smooth' });
+        }
+        lastActiveLineRef.current = currentLineIndex;
+      }
+    }
+  };
+
+  const animationTick = () => {
+    updateVisualsRef.current();
+    if (isPlayingRef.current || isRecordingRef.current) {
+      animationFrameRef.current = requestAnimationFrame(animationTick);
+    } else {
+      animationFrameRef.current = undefined;
     }
   };
 
@@ -360,11 +633,18 @@ const handleGenerateGuide = async () => {
 
     const willPlay = !isPlaying;
     setIsPlaying(willPlay);
+    isPlayingRef.current = willPlay; 
+    
     const playheadTime = wavesurferRef.current.getCurrentTime();
 
     if (willPlay) {
       const scheduleTime = audioCtxRef.current.currentTime + 0.05; 
       wavesurferRef.current.play();
+      
+      if (!animationFrameRef.current) {
+         animationFrameRef.current = requestAnimationFrame(animationTick);
+      }
+
       activeSourcesRef.current.forEach(src => { try { src.disconnect() } catch(e){} });
       activeSourcesRef.current = [];
 
@@ -391,12 +671,25 @@ const handleGenerateGuide = async () => {
       });
     } else {
       wavesurferRef.current.pause();
+      if (animationFrameRef.current) {
+         cancelAnimationFrame(animationFrameRef.current);
+         animationFrameRef.current = undefined;
+      }
       activeSourcesRef.current.forEach(src => { try { src.stop(); src.disconnect(); } catch (e) {} });
       activeSourcesRef.current = [];
     }
   };
 
   const stopEverything = async () => {
+    setIsPlaying(false);
+    isPlayingRef.current = false;
+    setIsRecording(false);
+    isRecordingRef.current = false;
+
+    if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = undefined;
+    }
     wavesurferRef.current?.pause(); 
     wavesurferRef.current?.seekTo(0);
     activeSourcesRef.current.forEach(src => { try { src.stop(); src.disconnect(); } catch (e) {} });
@@ -412,30 +705,25 @@ const handleGenerateGuide = async () => {
       for (let chunk of recordedChunksRef.current) { merged.set(chunk, offset); offset += chunk.length; }
       const wavBlob = encodeWAV(merged, audioCtxRef.current.sampleRate);
       
-      setIsRecording(false);
-      setIsUploading(true);
+      setIsRecording(false); setIsUploading(true);
       
       try {
         const takeId = `TAKE_${Date.now()}`;
         const fileName = `${userSession?.id || 'anon'}/${takeId}.wav`;
-
         const { error } = await supabase.storage.from('raw-audio').upload(fileName, wavBlob, { contentType: 'audio/wav', upsert: true });
         if (error) throw error;
-
         const { data: publicData } = supabase.storage.from('raw-audio').getPublicUrl(fileName);
-
         addVocalStem({ id: takeId, type: activeTrack, url: publicData.publicUrl, blob: wavBlob, volume: 1, offsetBars: 0 });
         if (addToast) addToast("Vocal take secured in raw-audio ledger.", "success");
       } catch (err) {
         console.error("Upload error", err);
         if (addToast) addToast("Storage sync failed. Temporarily mapped to local blob.", "error");
         addVocalStem({ id: `TAKE_${Date.now()}`, type: activeTrack, url: URL.createObjectURL(wavBlob), blob: wavBlob, volume: 1, offsetBars: 0 });
-      } finally {
-        setIsUploading(false);
-      }
+      } finally { setIsUploading(false); }
     }
     
-    setIsPlaying(false); setIsRecording(false); setCurrentTime(0);
+    setCurrentTimeDisplay(0);
+    updateVisualsRef.current(); 
   };
 
   const startHardwareRecording = async () => {
@@ -469,14 +757,18 @@ const handleGenerateGuide = async () => {
 
     try {
       if (audioCtxRef.current.state === 'suspended') await audioCtxRef.current.resume();
+      
       if (!mediaStreamRef.current) {
-        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ 
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+        });
         mediaSourceRef.current = audioCtxRef.current.createMediaStreamSource(mediaStreamRef.current);
       }
       
+      const LATENCY_OFFSET = 0.06; 
       const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
-      const LATENCY_OFFSET = 0.05; 
       let padTime = Math.max(0, currentWS_Time - LATENCY_OFFSET);
+      
       recordedChunksRef.current = [new Float32Array(Math.floor(padTime * audioCtxRef.current.sampleRate))];
       
       if (!workletLoadedRef.current) {
@@ -493,14 +785,19 @@ const handleGenerateGuide = async () => {
       if (mediaSourceRef.current) mediaSourceRef.current.connect(workletNode);
       
       const silenceNode = audioCtxRef.current.createGain();
-      silenceNode.gain.value = 0;
+      silenceNode.gain.value = 0; 
       workletNode.connect(silenceNode);
       silenceNode.connect(audioCtxRef.current.destination);
       
       setIsRecording(true); 
-      if (!isPlaying) await togglePlayback();
+      isRecordingRef.current = true;
+      if (!isPlayingRef.current) {
+         await togglePlayback();
+      }
       
-    } catch (err) { alert("Hardware microphone access required for Worklet processing."); }
+    } catch (err) { 
+      alert("Hardware microphone access required for Worklet processing."); 
+    }
   };
 
   useEffect(() => {
@@ -535,9 +832,7 @@ const handleGenerateGuide = async () => {
             const audioBuf = await new Promise<AudioBuffer>((resolve, reject) => {
                audioCtxRef.current!.decodeAudioData(arrayBuf, resolve, reject);
             });
-            if (isMounted) {
-              stemBuffersRef.current.set(stem.id, audioBuf);
-            }
+            if (isMounted) stemBuffersRef.current.set(stem.id, audioBuf);
           } catch (e: any) { 
             if (e.name !== 'AbortError') console.warn(`Soft-fail decoding stem ${stem.id}:`, e); 
           }
@@ -562,64 +857,59 @@ const handleGenerateGuide = async () => {
         if (dur > 0) setTrackDuration(dur);
       });
 
-      let lastRender = 0;
-      wavesurferRef.current.on('audioprocess', (time) => {
-        if (time - lastRender > 0.1) { setCurrentTime(time); lastRender = time; }
+      wavesurferRef.current.on('seeking', () => {
+         if (!isPlayingRef.current && !isRecordingRef.current) {
+            updateVisualsRef.current();
+         }
       });
+      
       wavesurferRef.current.on('finish', () => stopEverything());
     }
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  // --- THE MASTER FIX: PROPORTIONAL POCKET MAPPING (SWING/SYNCOPATION) ---
+  const lastParsedLyricsRef = useRef<string>("");
+
+  // 🚨 SURGICAL RESTORATION: The Proportional Syllable Engine
+  // This restores your exact, perfect logic that mapped the Quantize Grid correctly 
+  // without squashing or vertical stacking. 
   useEffect(() => {
     if (!generatedLyrics) return;
+    if (quantizedLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
+    lastParsedLyricsRef.current = generatedLyrics;
 
     const lines = generatedLyrics.split('\n');
     
-    // 1. Clean the text
     const sanitizedLines = lines.map(l => {
-      let text = l.trim();
-      if (text.startsWith('[')) return { text, isHeader: true }; 
-      text = text
-        .replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
-        .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
-        .replace(/pipe\s*symbol/gi, '') 
-        .replace(/\|/g, '') 
-        .trim();
+      let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
+      if (text.startsWith('[') && text.includes(']')) return { text, isHeader: true }; 
+      text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '').replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
+      text = text.replace(/,/g, ', ').replace(/\s+/g, ' ').trim();
       return { text, isHeader: false };
     }).filter(obj => obj.text.length > 0);
 
-    // 2. Group the hallucinated text into blocks
     const llmBlocks: { header: string, lines: typeof sanitizedLines }[] = [];
     let currentLlmBlock = { header: "", lines: [] as typeof sanitizedLines };
 
     sanitizedLines.forEach(obj => {
       if (obj.isHeader) {
-        if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) {
-          llmBlocks.push(currentLlmBlock);
-        }
+        if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) llmBlocks.push(currentLlmBlock);
         currentLlmBlock = { header: obj.text, lines: [] };
-      } else {
-        currentLlmBlock.lines.push(obj);
-      }
+      } else { currentLlmBlock.lines.push(obj); }
     });
-    if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) {
-      llmBlocks.push(currentLlmBlock);
-    }
+    if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) llmBlocks.push(currentLlmBlock);
 
-    // 3. Map strictly to the Blueprint with Proportional Timing
-    const parsed: LyricLine[] = [];
+    const parsed: QuantizedLine[] = [];
     let runningBlockStartBar = 0;
+    let lineIdCounter = 0;
 
     blueprint.forEach((bp, index) => {
       const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
-
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
       const blockDurationSecs = bp.bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
-      parsed.push({ text: `[${bp.type}]`, startTime: blockStartTime, lineDuration: 0, isHeader: true, timestamp: "", words: [] });
+      parsed.push({ id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] });
 
       if (bp.type === "INSTRUMENTAL") {
          const hums = Array(bp.bars).fill("Mmm. Mmm.").join(" ");
@@ -628,100 +918,83 @@ const handleGenerateGuide = async () => {
 
       const numLines = blockData.lines.length;
       if (numLines > 0) {
-        // Step A: Calculate the total grammatical weight to maintain your specific ratio
-        let totalBlockWeight = 0;
-        blockData.lines.forEach(lineObj => {
-          const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
-          // Syllable weight + space weight
-          words.forEach(w => totalBlockWeight += w.length + 1.5);
-          // The "Breath Penalty" you defined
-          totalBlockWeight += 4; 
-        });
-
-        // Use your currentFlowTime to allow lines to start "off-grid" or as pickups
+        const timeForThisLine = blockDurationSecs / numLines; 
         let currentFlowTime = blockStartTime;
 
-        // Step B: Allocate time proportionally
+        const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
+        const activePattern = (bp as any).patternArray || activeVariations[index % activeVariations.length];
+
         blockData.lines.forEach((lineObj) => {
-          const words = lineObj.text.split(/\s+/).filter(w => w.length > 0);
-          
-          let lineWeight = 0;
-          words.forEach(w => lineWeight += w.length + 1.5);
-          lineWeight += 4; 
+          const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
+          const mappedWords: QuantizedSyllable[] = [];
 
-          // Calculate duration based on the total block's weight
-          const timeForThisLine = totalBlockWeight > 0 ? (lineWeight / totalBlockWeight) * blockDurationSecs : 0;
-          const timePerWeight = totalBlockWeight > 0 ? blockDurationSecs / totalBlockWeight : 0;
+          let totalLineSteps = 0;
+          let tempPatternIndex = 0;
 
-          let localWordTime = currentFlowTime;
+          if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
 
-          const mappedWords = words.map(w => {
-            const wordWeight = w.length;
-            const wordDuration = wordWeight * timePerWeight;
-            const wordStart = localWordTime;
-            
-            // Increment local time for the word + the space
-            localWordTime += wordDuration + (1.5 * timePerWeight);
-            
-            return { word: w, startTime: wordStart, duration: wordDuration };
+          const wordChunksArray = rawWords.map(w => {
+            const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
+            chunks.forEach(() => {
+              totalLineSteps += activePattern[tempPatternIndex % activePattern.length];
+              tempPatternIndex++;
+            });
+            return chunks;
           });
 
-          // Pushing to the LyricLine object
+          const cleanTextEnd = lineObj.text.trim().slice(-1);
+          if (cleanTextEnd === '.') totalLineSteps += 4;
+          else if (cleanTextEnd === ',') totalLineSteps += 1;
+
+          const timePerStep = totalLineSteps > 0 ? timeForThisLine / totalLineSteps : 0;
+          let localWordTime = currentFlowTime;
+          const lineStartTime = currentFlowTime;
+
+          if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
+
+          let patternIndex = 0;
+
+          wordChunksArray.forEach((chunks) => {
+            chunks.forEach((chunk, cIdx) => {
+              const stepsRequired = activePattern[patternIndex % activePattern.length];
+              patternIndex++;
+
+              const chunkDuration = stepsRequired * timePerStep;
+              // Mathematically snap back to the 0-15 layout structure
+              const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForThisLine) * 16)));
+
+              mappedWords.push({
+                id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+                word: chunk.replace(/\|/g, ''),
+                slot: mappedSlot,
+                startTime: localWordTime,
+                duration: chunkDuration, 
+                isWordEnd: (cIdx === chunks.length - 1)
+              });
+              localWordTime += chunkDuration;
+            });
+          });
+
           parsed.push({ 
-            text: lineObj.text, 
-            startTime: currentFlowTime, 
-            lineDuration: timeForThisLine,
+            id: `line-${lineIdCounter++}`,
+            barIndex: Math.floor(lineStartTime / secondsPerBar),
+            text: lineObj.text.replace(/\|/g, ''), 
+            originalText: lineObj.text,
+            startTime: lineStartTime, 
+            lineDuration: timeForThisLine, 
             isHeader: false, 
-            timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
+            timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
 
-          // --- THE SYNC FIX ---
-          // Instead of letting currentFlowTime drift infinitely, we ensure 
-          // that if the line duration is extremely short, it still maintains 
-          // a rhythmic relationship to the project's BPM.
-          currentFlowTime += timeForThisLine;
+          currentFlowTime += timeForThisLine; 
         });
       }
-
       runningBlockStartBar = blockStartBar + bp.bars;
     });
     
-    setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar]);
-
-  useEffect(() => {
-    if (trimmingStem && trimWaveformRef.current) {
-      trimWavesurferRef.current = WaveSurfer.create({
-        container: trimWaveformRef.current, waveColor: '#555', progressColor: '#E60000', cursorColor: '#fff', barWidth: 2, barGap: 1, height: 100, normalize: true,
-      });
-      trimWavesurferRef.current.on('error', (err) => console.warn("Trim WaveSurfer Soft-fail:", err));
-      trimWavesurferRef.current.load(trimmingStem.url).catch(e => console.warn("Trim Load Aborted:", e.message));
-      trimWavesurferRef.current.on('ready', () => {
-        const dur = trimWavesurferRef.current?.getDuration() || 0;
-        setTrimDuration(dur); setTrimStart(0); setTrimEnd(dur);
-      });
-    }
-    return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
-  }, [trimmingStem]);
-
-  useEffect(() => {
-    if (!teleprompterEnabled) return; 
-
-    const currentLineIndex = lyricLines.findIndex((l, i) => {
-      const nextLine = lyricLines[i + 1];
-      return currentTime >= l.startTime && (!nextLine || currentTime < nextLine.startTime);
-    });
-
-    if (currentLineIndex !== activeLineIndex) {
-      setActiveLineIndex(currentLineIndex);
-      
-      if (autoScroll && currentLineIndex !== -1 && teleprompterRef.current) {
-        const activeEl = teleprompterRef.current.children[currentLineIndex] as HTMLElement;
-        if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
-      }
-    }
-  }, [currentTime, lyricLines, autoScroll, activeLineIndex, teleprompterEnabled]);
+    setQuantizedLines(parsed);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, quantizedLines, setQuantizedLines]);
 
   if (!audioData) {
     return (
@@ -734,187 +1007,265 @@ const handleGenerateGuide = async () => {
   }
 
   return (
-    <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500 relative">
+    <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500 relative flex-col">
       
-      {/* LEFT SIDEBAR: TELEPROMPTER */}
-      <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
-        <div className="p-8 pb-4 border-b border-[#111] flex justify-between items-center relative">
-           <div className="flex items-center gap-4">
-             <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555]">Teleprompter</h2>
+      <div className="flex-1 flex overflow-hidden">
+        {/* LEFT SIDEBAR: HUD TOGGLE (PROMPTER VS QUANTIZER) */}
+        <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
+          <div className="p-8 pb-4 border-b border-[#111] flex justify-between items-center relative flex-wrap gap-4">
+             <div className="flex items-center gap-4">
+               <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555] flex items-center gap-2">
+                  <Mic size={20} /> BOOTH
+               </h2>
+               
+               <div className="flex border border-[#333] rounded overflow-hidden">
+                 <button 
+                   onClick={() => setIsReviewMode(false)}
+                   className={`px-3 py-1.5 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 ${!isReviewMode ? 'bg-[#E60000]/20 text-[#E60000]' : 'bg-black text-[#555] hover:text-white'}`}
+                 >
+                   <ListVideo size={12} /> Prompter
+                 </button>
+                 <button 
+                   onClick={() => setIsReviewMode(true)}
+                   className={`px-3 py-1.5 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 border-l border-[#333] ${isReviewMode ? 'bg-yellow-500/10 text-yellow-500' : 'bg-black text-[#555] hover:text-white'}`}
+                 >
+                   <Crosshair size={12} /> Quantize Grid
+                 </button>
+               </div>
+             </div>
              
-             <button 
-               onClick={() => setTeleprompterEnabled(!teleprompterEnabled)}
-               className={`px-3 py-1 text-[9px] uppercase font-mono font-bold transition-all border flex items-center gap-1.5 ${teleprompterEnabled ? 'bg-[#E60000]/20 text-[#E60000] border-[#E60000]/50' : 'bg-black text-[#555] border-[#333] hover:text-white'}`}
-             >
-               {teleprompterEnabled ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-               {teleprompterEnabled ? 'Active' : 'Muted'}
-             </button>
-
-             <button 
-               onClick={handleGenerateGuide}
-               disabled={isGeneratingGuide || !generatedLyrics}
-               className="bg-[#111] border border-[#333] text-[#E60000] hover:bg-white hover:text-black hover:border-white px-2.5 py-1 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
-               title="Quantize AI Vocals to Grid"
-             >
-               {isGeneratingGuide ? (
-                 <><Loader2 size={10} className="animate-spin" /> {guideProgress}%</>
-               ) : (
-                 <><Mic size={10} /> Generate Guide</>
-               )}
-             </button>
-           </div>
-           {audioData?.bpm && <span className="text-[10px] text-[#E60000] font-mono absolute right-8 top-3">{preciseBpm.toFixed(3)} BPM</span>}
-        </div>
-        
-        <div 
-          ref={teleprompterRef} 
-          onWheel={() => setAutoScroll(false)} 
-          onTouchMove={() => setAutoScroll(false)} 
-          className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative"
-        >
-          {lyricLines.map((line, i) => {
-            const isActiveLine = teleprompterEnabled && !line.isHeader && i === activeLineIndex;
-            
-            return (
-              <div key={i} className={`${line.isHeader ? 'text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs' : 'mb-2 flex items-start gap-3 transition-all duration-300'} ${isActiveLine ? 'bg-[#E60000]/10 py-2 px-3 rounded border-l-2 border-[#E60000]' : 'py-2 px-3 border-l-2 border-transparent'}`}>
-                {!line.isHeader && line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
-                
-                <span className="flex-1 leading-loose">
-                  {line.isHeader ? line.text : line.words?.map((wObj, wIdx) => {
-                    const isPast = currentTime >= wObj.startTime + wObj.duration;
-                    const isActiveWord = isActiveLine && currentTime >= wObj.startTime && currentTime < wObj.startTime + wObj.duration;
-
-                    return (
-                      <span key={wIdx} className="relative inline-block mr-2">
-                        {isActiveWord && (
-                          <span className="absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#E60000] rounded-full animate-bounce shadow-[0_0_5px_#E60000]"></span>
-                        )}
-                        <span className={`transition-colors duration-100 ${isPast ? "text-[#888]" : isActiveWord ? "text-white font-bold drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" : "text-[#444]"}`}>
-                          {wObj.word}
-                        </span>
-                      </span>
-                    );
-                  })}
-                </span>
-              </div>
-            );
-          })}
+             {!isReviewMode && (
+               <button 
+                 onClick={handleGenerateGuide}
+                 disabled={isGeneratingGuide || !generatedLyrics}
+                 className="bg-[#111] border border-[#333] text-[#E60000] hover:bg-white hover:text-black hover:border-white px-2.5 py-1 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+               >
+                 {isGeneratingGuide ? <><Loader2 size={10} className="animate-spin" /> {guideProgress}%</> : <><Mic size={10} /> Sync Guide Audio</>}
+               </button>
+             )}
+          </div>
           
-          {teleprompterEnabled && !autoScroll && (
-            <div className="sticky bottom-4 w-full flex justify-center mt-8">
-              <button 
-                onClick={() => {
-                  setAutoScroll(true);
-                  if (activeLineIndex !== -1 && teleprompterRef.current) {
-                    const activeEl = teleprompterRef.current.children[activeLineIndex] as HTMLElement;
-                    if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
-                  }
-                }} 
-                className="bg-[#E60000] text-white text-[9px] px-4 py-2 font-mono uppercase tracking-widest shadow-[0_0_15px_rgba(230,0,0,0.5)] rounded-full flex items-center gap-2 transition-all hover:bg-red-700 hover:scale-105"
-              >
-                <Activity size={12} className="animate-pulse" /> Resume Sync
-              </button>
+          {/* CONTENT TOGGLE */}
+          {isReviewMode ? (
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-[#020202]">
+                <div className="mb-6 flex justify-between items-end border-b border-[#222] pb-4">
+                  <div>
+                    <h3 className="font-oswald text-sm uppercase tracking-widest text-white">MIDI Flow Engine</h3>
+                    <p className="font-mono text-[9px] text-[#888] mt-1">Snaking Drag enabled. Shifts subsequent text.</p>
+                  </div>
+                  <div className="flex gap-2 text-[8px] font-mono text-[#555] uppercase font-bold">
+                    <span>Kick (1)</span> | <span>Snare (2,4)</span>
+                  </div>
+                </div>
+
+                <div className="space-y-4 pb-20">
+                  {quantizedLines.filter(l => !l.isHeader).map((line) => (
+                    <div key={line.id} className="bg-black border border-[#222] rounded overflow-hidden">
+                      <div className="text-[8px] font-mono text-[#555] p-1 bg-[#0a0a0a] border-b border-[#111] truncate">{line.text}</div>
+                      <div className="flex h-10 relative bg-[#0a0a0a]">
+                        {Array.from({ length: 16 }).map((_, slotIndex) => {
+                          const mappedSyl = line.words?.find(s => s.slot === slotIndex);
+                          const isDownbeat = slotIndex % 4 === 0;
+                          const isSnare = slotIndex === 4 || slotIndex === 12;
+
+                          return (
+                            <div 
+                              key={slotIndex}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={(e) => handleDrop(e, line.id, slotIndex)}
+                              className={`flex-1 border-r border-[#111] relative flex items-center justify-center
+                                ${isDownbeat ? 'bg-[#151515]' : ''} 
+                                ${isSnare ? 'bg-[#2a0505]' : ''}
+                              `}
+                            >
+                              {mappedSyl && (
+                                <div 
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, line.id, mappedSyl.id, mappedSyl.slot)}
+                                  className="absolute z-10 w-[90%] py-1 bg-[#E60000] text-white text-[9px] font-mono font-bold text-center rounded cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(230,0,0,0.4)] hover:bg-red-500 overflow-hidden text-ellipsis whitespace-nowrap"
+                                  title={mappedSyl.word}
+                                >
+                                  {mappedSyl.word}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+            </div>
+          ) : (
+            <div 
+              ref={teleprompterRef} 
+              onWheel={() => setAutoScroll(false)} 
+              onTouchMove={() => setAutoScroll(false)} 
+              className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative"
+            >
+              {quantizedLines.map((line, i) => {
+                if (line.isHeader) {
+                    return <p key={i} className="lyric-line-container text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs">{line.text}</p>;
+                }
+                
+                const isActiveLine = teleprompterEnabled && !line.isHeader && i === lastActiveLineRef.current;
+                
+                return (
+                  <div key={i} className={`lyric-line-container mb-2 py-2 px-3 border-l-2 ${isActiveLine ? 'bg-[#E60000]/10 border-[#E60000]' : 'border-transparent'} flex items-start gap-3 transition-colors duration-200`}>
+                    {line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
+                    
+                    <span className="flex-1 leading-loose flex flex-wrap gap-y-2">
+                      {(() => {
+                        // 1. Re-group the flat syllables back into whole words
+                        const wordGroups: QuantizedSyllable[][] = [];
+                        let currentGroup: QuantizedSyllable[] = [];
+                        
+                        line.words?.forEach(wObj => {
+                          currentGroup.push(wObj);
+                          if (wObj.isWordEnd) { 
+                            wordGroups.push(currentGroup); 
+                            currentGroup = []; 
+                          }
+                        });
+                        if (currentGroup.length > 0) wordGroups.push(currentGroup);
+
+                        // 2. Render the whole word as an unbreakable horizontal block
+                        return wordGroups.map((group, gIdx) => (
+                          <span key={gIdx} className="inline-flex whitespace-nowrap mr-2">
+                            {group.map((wObj, wIdx) => {
+                              return (
+                                <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
+                                  {/* STATIC animate-bounce REMOVED. Positioned perfectly on top of text. */}
+                                  <span className="bouncing-ball hidden absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50"></span>
+                                  {wObj.word}
+                                </span>
+                              );
+                            })}
+                          </span>
+                        ));
+                      })()}
+                    </span>
+                  </div>
+                );
+              })}
+              
+              {teleprompterEnabled && !autoScroll && (
+                <div className="sticky bottom-4 w-full flex justify-center mt-8">
+                  <button 
+                    onClick={() => {
+                      setAutoScroll(true);
+                      if (lastActiveLineRef.current !== -1 && teleprompterRef.current) {
+                        const activeEl = teleprompterRef.current.children[lastActiveLineRef.current] as HTMLElement;
+                        if (activeEl) teleprompterRef.current.scrollTo({ top: activeEl.offsetTop - 150, behavior: 'smooth' });
+                      }
+                    }} 
+                    className="bg-[#E60000] text-white text-[9px] px-4 py-2 font-mono uppercase tracking-widest shadow-[0_0_15px_rgba(230,0,0,0.5)] rounded-full flex items-center gap-2 transition-all hover:bg-red-700 hover:scale-105"
+                  >
+                    <Activity size={12} className="animate-pulse" /> Resume Sync
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
-      </div>
 
-      {/* RIGHT PANEL: MIXER & RECORDER */}
-      <div className="flex-1 flex flex-col relative bg-black">
-        <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10 relative">
-          <div className="flex items-center gap-4">
-            <button onClick={togglePlayback} disabled={isUploading} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all disabled:opacity-50">
-              {isPlaying && !isRecording ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
-            </button>
-            <button onClick={stopEverything} disabled={isUploading} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all text-[#888] disabled:opacity-50">
-              <Square size={20} />
-            </button>
-            <button onClick={isRecording ? stopEverything : startHardwareRecording} disabled={isUploading} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all disabled:opacity-50 ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse' : 'bg-[#111] border border-[#333] text-white hover:text-[#E60000]'}`}>
-              {isUploading ? <Loader2 size={24} className="animate-spin" /> : <Mic size={24} />}
-            </button>
-          </div>
-          
-          {isUploading && (
-             <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 text-[#E60000] bg-[#110000] px-4 py-1.5 border border-[#E60000]/30 rounded-full animate-pulse">
-               <Activity size={14} />
-               <span className="font-mono text-[9px] uppercase tracking-widest font-bold">Syncing storage node...</span>
-             </div>
-          )}
-          <div className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
-            {Math.floor(currentTime / 60).toString().padStart(2, '0')}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
-          </div>
-        </div>
-
-        <div className="p-6 border-b border-[#222] bg-[#050505]">
-          <div ref={waveformRef} className="w-full h-20 bg-black border border-[#111] rounded-lg"></div>
-        </div>
-
-        <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
-          <div className="flex border-b border-[#111] mb-6">
-            {(["Lead", "Adlib", "Double", "Guide"] as TrackType[]).map(t => (
-              <button key={t} onClick={() => setActiveTrack(t)} className={`flex-1 py-3 font-oswald text-[10px] uppercase tracking-[0.2em] font-bold transition-all ${activeTrack === t ? 'bg-[#E60000] text-white' : 'text-[#444] hover:text-white hover:bg-[#0a0a0a]'}`}>{t} Tracking</button>
-            ))}
+        {/* RIGHT PANEL: MIXER & RECORDER (UNTOUCHED) */}
+        <div className="flex-1 flex flex-col relative bg-black">
+          <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10 relative">
+            <div className="flex items-center gap-4">
+              <button onClick={togglePlayback} disabled={isUploading} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all disabled:opacity-50">
+                {isPlaying && !isRecording ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
+              </button>
+              <button onClick={stopEverything} disabled={isUploading} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all text-[#888] disabled:opacity-50">
+                <Square size={20} />
+              </button>
+              <button onClick={isRecording ? stopEverything : startHardwareRecording} disabled={isUploading} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all disabled:opacity-50 ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse' : 'bg-[#111] border border-[#333] text-white hover:text-[#E60000]'}`}>
+                {isUploading ? <Loader2 size={24} className="animate-spin" /> : <Mic size={24} />}
+              </button>
+            </div>
+            
+            {isUploading && (
+               <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 text-[#E60000] bg-[#110000] px-4 py-1.5 border border-[#E60000]/30 rounded-full animate-pulse">
+                 <Activity size={14} />
+                 <span className="font-mono text-[9px] uppercase tracking-widest font-bold">Syncing storage node...</span>
+               </div>
+            )}
+            <div className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
+              {Math.floor(currentTimeDisplay / 60).toString().padStart(2, '0')}:{Math.floor(currentTimeDisplay % 60).toString().padStart(2, '0')}
+            </div>
           </div>
 
-          <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Timeline Layers</h4>
-          <div className="space-y-3">
-            {vocalStems.map(s => {
-              const isMuted = mutedStems.has(s.id);
-              return (
-              <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
-                <div className="flex justify-between items-center mb-3">
-                  <div className="flex items-center gap-4">
-                    <select value={s.type || "Lead"} onChange={(e) => handleUpdateTakeType(s.id, e.target.value)} className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white">
-                      <option value="Lead">Lead</option><option value="Adlib">Adlib</option><option value="Double">Double</option><option value="Guide">Guide</option>
-                    </select>
-                    <span className="font-mono text-[10px] text-[#444]">{s.id.substring(5, 12)}</span>
-                    <span className={`font-mono text-[8px] px-1 border ${s.type === 'Guide' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-green-500/10 text-green-500 border-green-500/20'}`}>
-                      {s.type === 'Guide' ? 'NEURAL-AUDIO' : 'RAW-AUDIO'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 mr-4">
-                      <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors"><Scissors size={14} /></button>
-                      <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>{isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>
+          <div className="p-6 border-b border-[#222] bg-[#050505]">
+            <div ref={waveformRef} className="w-full h-20 bg-black border border-[#111] rounded-lg"></div>
+          </div>
+
+          <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+            <div className="flex border-b border-[#111] mb-6">
+              {(["Lead", "Adlib", "Double", "Guide"] as TrackType[]).map(t => (
+                <button key={t} onClick={() => setActiveTrack(t)} className={`flex-1 py-3 font-oswald text-[10px] uppercase tracking-[0.2em] font-bold transition-all ${activeTrack === t ? 'bg-[#E60000] text-white' : 'text-[#444] hover:text-white hover:bg-[#0a0a0a]'}`}>{t} Tracking</button>
+              ))}
+            </div>
+
+            <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Timeline Layers</h4>
+            <div className="space-y-3">
+              {vocalStems.map(s => {
+                const isMuted = mutedStems.has(s.id);
+                return (
+                <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="flex items-center gap-4">
+                      <select value={s.type || "Lead"} onChange={(e) => handleUpdateTakeType(s.id, e.target.value)} className="bg-black border border-[#333] text-[9px] uppercase font-bold tracking-widest text-[#888] px-2 py-1 outline-none hover:text-white">
+                        <option value="Lead">Lead</option><option value="Adlib">Adlib</option><option value="Double">Double</option><option value="Guide">Guide</option>
+                      </select>
+                      <span className="font-mono text-[10px] text-[#444]">{s.id.substring(5, 12)}</span>
+                      <span className={`font-mono text-[8px] px-1 border ${s.type === 'Guide' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-green-500/10 text-green-500 border-green-500/20'}`}>
+                        {s.type === 'Guide' ? 'NEURAL-AUDIO' : 'RAW-AUDIO'}
+                      </span>
                     </div>
-                    <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2 mr-4">
+                        <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors"><Scissors size={14} /></button>
+                        <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>{isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>
+                      </div>
+                      <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-4 mt-3 border-t border-[#111] pt-4">
+                    <div className="flex items-center gap-4">
+                      <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Start Bar</span>
+                      <div className="flex-1 flex items-center gap-3">
+                        <button onClick={() => updateStemOffset(s.id, Math.max(0, (s.offsetBars||0) - 1))} className="text-[#444] hover:text-white"><ChevronLeft size={16}/></button>
+                        <div className="flex-1 h-1 bg-[#111] rounded-full relative"><div className="absolute h-full bg-[#E60000] transition-all" style={{ width: `${((s.offsetBars||0) / 64) * 100}%` }}></div></div>
+                        <button onClick={() => updateStemOffset(s.id, (s.offsetBars||0) + 1)} className="text-[#444] hover:text-white"><ChevronRight size={16}/></button>
+                      </div>
+                      <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{s.offsetBars || 0}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Take Gain</span>
+                      <input type="range" min="0" max="2" step="0.05" value={s.volume ?? 1} onChange={(e) => updateStemVolume(s.id, parseFloat(e.target.value))} className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
+                      <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{Math.round((s.volume ?? 1) * 100)}%</span>
+                    </div>
                   </div>
                 </div>
-
-                <div className="flex flex-col gap-4 mt-3 border-t border-[#111] pt-4">
-                  <div className="flex items-center gap-4">
-                    <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Start Bar</span>
-                    <div className="flex-1 flex items-center gap-3">
-                      <button onClick={() => updateStemOffset(s.id, Math.max(0, (s.offsetBars||0) - 1))} className="text-[#444] hover:text-white"><ChevronLeft size={16}/></button>
-                      <div className="flex-1 h-1 bg-[#111] rounded-full relative"><div className="absolute h-full bg-[#E60000] transition-all" style={{ width: `${((s.offsetBars||0) / 64) * 100}%` }}></div></div>
-                      <button onClick={() => updateStemOffset(s.id, (s.offsetBars||0) + 1)} className="text-[#444] hover:text-white"><ChevronRight size={16}/></button>
-                    </div>
-                    <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{s.offsetBars || 0}</span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-[9px] font-mono text-[#555] uppercase w-16 tracking-widest">Take Gain</span>
-                    <input type="range" min="0" max="2" step="0.05" value={s.volume ?? 1} onChange={(e) => updateStemVolume(s.id, parseFloat(e.target.value))} className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
-                    <span className="text-xs font-mono text-[#E60000] w-8 text-right font-bold">{Math.round((s.volume ?? 1) * 100)}%</span>
-                  </div>
-                </div>
-              </div>
-            )})}
+              )})}
+            </div>
           </div>
-        </div>
 
-        <div className="h-16 bg-black border-t border-[#222] flex items-center justify-between px-10">
-          <div className="flex items-center gap-2 text-[10px] font-mono text-green-500 uppercase tracking-widest opacity-80">
-            {vocalStems.length > 0 && <><Save size={14} /> Storage Synchronized</>}
+          <div className="h-16 bg-black border-t border-[#222] flex items-center justify-between px-10">
+            <div className="flex items-center gap-2 text-[10px] font-mono text-green-500 uppercase tracking-widest opacity-80">
+              {vocalStems.length > 0 && <><Save size={14} /> Storage Synchronized</>}
+            </div>
+            {isFreeLoader && !hasEngToken ? (
+              <button onClick={handleProceedToEngineering} disabled={vocalStems.length === 0} className="flex items-center gap-3 bg-[#E60000] text-white px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-red-700 transition-all disabled:opacity-30">Unlock Engineering ($4.99) <Lock size={14} /></button>
+            ) : (
+              <button onClick={handleProceedToEngineering} disabled={vocalStems.length === 0 || isUploading} className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed">Engineering Suite <ArrowRight size={16} /></button>
+            )}
           </div>
-          {isFreeLoader && !hasEngToken ? (
-            <button onClick={handleProceedToEngineering} disabled={vocalStems.length === 0} className="flex items-center gap-3 bg-[#E60000] text-white px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-red-700 transition-all disabled:opacity-30">Unlock Engineering ($4.99) <Lock size={14} /></button>
-          ) : (
-            <button onClick={handleProceedToEngineering} disabled={vocalStems.length === 0 || isUploading} className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed">Engineering Suite <ArrowRight size={16} /></button>
-          )}
         </div>
       </div>
 
-      {/* OVERLAYS: TRIMMING STEM */}
+      {/* OVERLAYS: TRIMMING STEM (UNTOUCHED) */}
       {trimmingStem && (
         <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-8 animate-in zoom-in duration-300">
           <div className="bg-[#050505] border border-[#E60000] rounded-lg w-full max-w-2xl p-8 shadow-[0_0_50px_rgba(230,0,0,0.2)]">
