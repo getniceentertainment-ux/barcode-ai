@@ -13,6 +13,36 @@ type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 type WordMapping = { id: string; word: string; startTime: number; duration: number; slot: number; isWordEnd?: boolean };
 type LyricLine = { id: string; text: string; originalText: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[]; barIndex: number };
 
+// --- THE MACRO-RHYTHMIC NEURAL ENGINE ---
+// Transforms textual directives (from Room 3) into mathematical arrays for the visualizer
+function determineRhythmicPattern(style: string, pocket: string, patternDesc: string): number[] {
+  const desc = (patternDesc || "").toLowerCase();
+  const st = (style || "").toLowerCase();
+  const p = (pocket || "").toLowerCase();
+
+  // 1. Hook Architecture
+  if (desc.includes("stadium") || desc.includes("spacious")) return [6, 2, 8];
+  if (desc.includes("double-up") || desc.includes("dense")) return [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 4];
+  if (desc.includes("triplet") || desc.includes("12-beat")) return [3, 3, 2, 3, 3, 2];
+  if (desc.includes("symmetry") || desc.includes("a-b-a-b")) return [4, 2, 2, 4, 4];
+  if (desc.includes("switch-up")) return [2, 1, 1, 2, 1, 1, 4];
+  
+  // 2. Topline & Pocket Directives
+  if (desc.includes("strike zone") || p.includes("strike")) return [1, 1, 2, 1, 1, 2, 1, 1, 2]; // Fast 16th clusters
+  if (desc.includes("2 & 4") || desc.includes("snare")) return [4, 2, 2, 4, 2, 2]; // Hits the 2 & 4 snap
+  if (desc.includes("downbeat") || p.includes("downbeat")) return [4, 4, 4, 4]; // Heavy quarters
+  if (p.includes("chainlink") || p.includes("chain-link") || desc.includes("spillover")) return [2, 2, 2, 2, 2, 2, 1, 1, 1, 1]; // Bleeds at the end
+  if (p.includes("drag") || p.includes("pickup") || desc.includes("drag")) return [6, 2, 2, 2, 2, 2]; // Delays the 1 count
+
+  // 3. Fallback to Style DNA
+  if (st.includes("chopper")) return [1, 1, 1, 1, 1, 1, 1, 1];
+  if (st.includes("heartbeat")) return [2, 2, 2, 2];
+  if (st.includes("triplet")) return [3, 3, 2];
+  if (st.includes("lazy")) return [4, 4, 2, 6];
+  
+  return [4, 2, 2, 3, 1, 4, 2, 2, 2, 2]; // getnice_hybrid standard default
+}
+
 // --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR (FALLBACK ONLY) ---
 function estimateSyllables(word: string): number {
   const w = word.toLowerCase().replace(/[^a-z]/g, '');
@@ -199,36 +229,11 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
-// --- THE MACRO-RHYTHMIC FLOW VAULT ---
-const FLOW_VAULT: Record<string, number[][]> = {
-  "getnice_hybrid": [
-    [4, 2, 2,  3, 1, 4,  2, 2, 2, 2,  4, 4], 
-    [3, 1, 2, 2],
-    [6, 2, 4, 2, 2] 
-  ],
-  "chopper": [
-    [1, 1, 1, 1], 
-    [2, 1, 1, 1, 1, 2] 
-  ],
-  "heartbeat": [
-    [2, 2, 2, 2], 
-    [4, 2, 2, 4, 4] 
-  ],
-  "triplet": [
-    [3, 3, 2], 
-    [2, 2, 2, 3, 3, 4] 
-  ],
-  "lazy": [
-    [4, 2, 2], 
-    [6, 2, 8] 
-  ]
-};
-
 export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
     updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, 
-    addToast, gwStyle, quantizedLines, setQuantizedLines 
+    addToast, gwStyle, gwPocket, quantizedLines, setQuantizedLines 
   } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -852,7 +857,8 @@ export default function Room04_Booth() {
 
   const lastParsedLyricsRef = useRef<string>("");
 
-  // 🚨 THE FIX: The Solid Integer Parsing Engine + Metadata Scrubber
+  // 🚨 THE FIX: NEURAL PATTERN GENERATION
+  // Uses the Room 3 Topline Directives to calculate precise grid weights.
   useEffect(() => {
     if (!generatedLyrics) return;
     if (lyricLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
@@ -913,26 +919,24 @@ export default function Room04_Booth() {
         const timeForThisLine = blockDurationSecs / numLines; 
         let currentFlowTime = blockStartTime;
 
-        const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-        let activePattern = activeVariations[index % activeVariations.length];
-        
-        if (Array.isArray((bp as any).patternArray) && (bp as any).patternArray.length > 0) {
-           activePattern = (bp as any).patternArray;
-        }
+        // 🚨 Fetch the exact math array based on Room 3's Topline Directives
+        const activePattern = determineRhythmicPattern(gwStyle, gwPocket, (bp as any).patternDesc);
 
-        blockData.lines.forEach((lineObj) => {
+        blockData.lines.forEach((lineObj, lineIndex) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: WordMapping[] = [];
 
-          // Fix: Ensure the line's visual grid falls precisely where currentFlowTime dictates
-          const lineStartTime = currentFlowTime;
-          const actualBarIndex = Math.floor(lineStartTime / secondsPerBar);
+          const lineStartTime = blockStartBar * secondsPerBar + (lineIndex * secondsPerBar);
+          const actualBarIndex = blockStartBar + lineIndex;
+
+          let currentSlot = 0;
+          let patternIndex = 0;
+
+          if (lineObj.text.trim().startsWith('...')) currentSlot += 4; 
 
           let totalLineSteps = 0;
           let tempPatternIndex = 0;
-
-          if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4; 
-
+          
           const wordChunksArray = rawWords.map(w => {
             const chunks = chunkWordForVisuals(w); 
             chunks.forEach(() => {
@@ -951,10 +955,6 @@ export default function Room04_Booth() {
 
           if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
 
-          let patternIndex = 0;
-          let sylIndex = 0;
-          const totalSyllables = wordChunksArray.reduce((acc, chunks) => acc + chunks.length, 0);
-
           wordChunksArray.forEach((chunks) => {
             chunks.forEach((chunk, cIdx) => {
               const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
@@ -962,9 +962,8 @@ export default function Room04_Booth() {
 
               const chunkDuration = stepsRequired * timePerStep;
               
-              // GUARANTEED SAFE PROPORTIONAL SLOT DISTRIBUTION (0-15)
-              // Syllables mathematically spread evenly across the 16 columns of the grid without stacking.
-              const mappedSlot = totalSyllables > 0 ? Math.min(15, Math.floor((sylIndex / totalSyllables) * 16)) : 0;
+              // PERFECT PROPORTIONAL VISUAL UI MAPPING
+              const mappedSlot = totalLineSteps > 0 ? Math.min(15, Math.floor((currentSlot / totalLineSteps) * 16)) : 0;
 
               mappedWords.push({
                 id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
@@ -976,7 +975,7 @@ export default function Room04_Booth() {
               });
 
               localWordTime += chunkDuration;
-              sylIndex++;
+              currentSlot += stepsRequired;
             });
           });
 
@@ -999,7 +998,7 @@ export default function Room04_Booth() {
     });
     
     setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, lyricLines, setLyricLines]);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, gwPocket, lyricLines, setLyricLines]);
 
   if (!audioData) {
     return (
@@ -1138,7 +1137,6 @@ export default function Room04_Booth() {
                             {group.map((wObj, wIdx) => {
                               return (
                                 <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
-                                  {/* 🚨 THE Z-INDEX AND HOVER FIX: Ball explicitly placed above text */}
                                   <span 
                                     className="bouncing-ball hidden absolute left-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50 pointer-events-none"
                                     style={{ bottom: '100%', marginBottom: '4px' }}
