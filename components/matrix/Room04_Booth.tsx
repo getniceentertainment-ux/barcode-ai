@@ -753,7 +753,7 @@ export default function Room04_Booth() {
       const numLines = blockData.lines.length;
       if (numLines > 0) {
         const isHook = bp.type.toUpperCase().includes("HOOK");
-        let activePattern = determineRhythmicPattern(gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution, isHook);
+        let activePattern = (bp as any).patternArray || determineRhythmicPattern(gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution, isHook);
         
         const safeLines = blockData.lines.slice(0, bars);
 

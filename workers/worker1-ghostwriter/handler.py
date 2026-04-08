@@ -258,6 +258,8 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 - REQUIRED: {bars} bars.
 - TOPIC: '{prompt_topic}'
 - NARRATIVE ARC: {arc_instruction}
+- RHYTHMIC CADENCE: {pattern_desc}
+- THE POCKET: {pocket_instruction}
 - SYLLABLE LIMIT: Strictly {current_max_syllables} or less per line.
 - FORMATTING: Use normal English. Do NOT spell out words with dots.
 {energy_rules}
