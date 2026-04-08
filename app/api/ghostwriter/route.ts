@@ -11,6 +11,108 @@ const redis = new Redis({ url: process.env.UPSTASH_REDIS_REST_URL || '', token: 
 const ratelimit = new Ratelimit({ redis: redis, limiter: Ratelimit.slidingWindow(5, "1 m") });
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
+// --- THE DYNAMIC ASSASSIN DICTIONARY (FRONTEND CONTROLLED) ---
+// Update this list anytime. Next.js will pass it to the Python worker on every request.
+const BANNED_WORDS_MAP = {
+  "\\bconcrete jungle\\b": "the pavement",
+  "\\bjiggy\\b": "active",
+  "\\bphat\\b": "heavy",
+  "\\bcheddar\\b": "capital",
+  "\\brags to riches\\b": "mud to margins",
+  "\\bno pain no gain\\b": "sweat equity",
+  "\\bweathered storms?\\b": "took the hits",
+  "\\bnaysayers?\\b": "detractors",
+  "\\bdarkest hour\\b": "bottom line",
+  "\\bspirits? took flight\\b": "numbers went up",
+  "\\bdreams? dare to breathe\\b": "vision stays clear",
+  "\\brise from our knees\\b": "stand on business",
+  "\\btime'?s arrow\\b": "the clock",
+  "\\bchatter\\b": "static",
+  "\\btapestr(?:y|ies)\\b": "blueprint",
+  "\\bdelve[sd]?\\b": "dig",
+  "\\btestaments?\\b": "proof",
+  "\\bbeacons?\\b": "target",
+  "\\bjourneys?\\b": "process",
+  "\\bmyriad\\b": "hundred",
+  "\\blandscapes?\\b": "market",
+  "\\bnavigat(?:e|ed|ing|es)\\b": "maneuver",
+  "\\bresonat(?:e|ed|ing|es)\\b": "connect",
+  "\\bfoster(?:s|ed|ing)?\\b": "build",
+  "\\bcatalysts?\\b": "spark",
+  "\\bparadigms?\\b": "model",
+  "\\bsynerg(?:y|ies)\\b": "leverage",
+  "\\bunleash(?:es|ed|ing)?\\b": "deploy",
+  "\\bplights?\\b": "risk",
+  "\\bfrights?\\b": "panic",
+  "\\bignit(?:e|es|ed|ing)\\b": "spark",
+  "\\bdivine\\b": "exact",
+  "\\bsublime\\b": "top tier",
+  "\\bmindstreams?\\b": "focus",
+  "\\bwhispers?\\b": "talk",
+  "\\bshadows?\\b": "blindspots",
+  "\\bdancing\\b": "moving",
+  "\\bembrac(?:e|es|ed|ing)\\b": "lock in",
+  "\\bsouls?\\b": "heads",
+  "\\babyss(?:es)?\\b": "the red",
+  "\\bvoids?\\b": "the red",
+  "\\bchaos\\b": "static",
+  "\\bdestin(?:y|ies)\\b": "outcome",
+  "\\bfates?\\b": "odds",
+  "\\btears\\b": "losses",
+  "\\bsorrows?\\b": "stress",
+  "\\bmelod(?:y|ies)\\b": "rhythm",
+  "\\bsymphon(?:y|ies)\\b": "system",
+  "\\bashes\\b": "dust",
+  "\\bstrife\\b": "pressure",
+  "\\byearning\\b": "starving",
+  "\\bkingdoms?\\b": "boardroom",
+  "\\bthrones?\\b": "desk",
+  "\\bcrowns?\\b": "equity",
+  "\\brealms?\\b": "zone",
+  "\\blegac(?:y|ies)\\b": "portfolio",
+  "\\bquests?\\b": "hustle",
+  "\\bvanquish(?:es|ed|ing)?\\b": "clear",
+  "\\bfortress(?:es)?\\b": "compound",
+  "\\bprophec(?:y|ies)\\b": "forecast",
+  "\\bomens?\\b": "signal",
+  "\\bcrusades?\\b": "campaign",
+  "\\bvanguards?\\b": "frontline",
+  "\\bsovereigns?\\b": "owner",
+  "\\bdominions?\\b": "territory",
+  "\\bforsaken\\b": "cut off",
+  "\\bweav(?:e|es|ed|ing)\\b": "build",
+  "\\bforg(?:e|es|ed|ing)\\b": "build",
+  "\\bcraft(?:s|ed|ing)?\\b": "build",
+  "\\bsculpt(?:s|ed|ing)?\\b": "mold",
+  "\\bflutter(?:s|ed|ing)?\\b": "shake",
+  "\\bplung(?:e|es|ed|ing)\\b": "drop",
+  "\\bunfurl(?:s|ed|ing)?\\b": "open",
+  "\\bawaken(?:s|ed|ing)?\\b": "wake",
+  "\\bslumber(?:s|ed|ing)?\\b": "sleep",
+  "\\bbeckon(?:s|ed|ing)?\\b": "call",
+  "\\bentwin(?:e|es|ed|ing)\\b": "lock",
+  "\\benchant(?:s|ed|ing)?\\b": "hook",
+  "\\bcaptivat(?:e|es|ed|ing)\\b": "trap",
+  "\\billuminat(?:e|es|ed|ing)\\b": "expose",
+  "\\btranscend(?:s|ed|ing)?\\b": "scale",
+  "\\blucre\\b": "funds",
+  "\\bserene\\b": "calm",
+  "\\buncoil(?:s|ed|ing)?\\b": "move",
+  "\\bveins\\b": "lines",
+  "\\bstains\\b": "marks",
+  "\\bplains\\b": "blocks",
+  "\\brefrains\\b": "hooks",
+  "\\bgleam(?:s|ed|ing)?\\b": "shine",
+  "\\bbeams?\\b": "lights",
+  "\\bclimb(?:s|ed|ing)?\\b": "scale",
+  "\\bmachines?\\b": "engine",
+  "\\bvisages?\\b": "face",
+  "\\bclandestine\\b": "off-books",
+  "\\bsupreme\\b": "top",
+  "\\bschemes?\\b": "play",
+  "\\bspoils?\\b": "profits"
+};
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -79,7 +181,6 @@ export async function POST(req: Request) {
 
     const activeBpm = bpm || 120;
     const secondsPerBar = (60 / activeBpm) * 4;
-    // The 1-to-1 Timeline Fix (Eliminates high-BPM glitching)
     const timePerLine = secondsPerBar; 
     const maxSyllables = Math.max(6, Math.floor(timePerLine * ttsSpeedLimit));
 
@@ -126,9 +227,22 @@ export async function POST(req: Request) {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}` },
       body: JSON.stringify({
         input: {
-          task_type: "generate", prompt: thematicPrompt, flowReference: flowReference,
-          motive: motive, struggle: struggle, hustle: hustle, bpm: activeBpm, key: key || "Unknown Key",            
-          style: forcedStyle, stageName: stageName || "The Artist", tag: tag, useSlang: useSlang, useIntel: useIntel, blueprint: blueprint 
+          task_type: "generate", 
+          prompt: thematicPrompt, 
+          flowReference: flowReference,
+          motive: motive, 
+          struggle: struggle, 
+          hustle: hustle, 
+          bpm: activeBpm, 
+          key: key || "Unknown Key",            
+          style: forcedStyle, 
+          stageName: stageName || "The Artist", 
+          tag: tag, 
+          useSlang: useSlang, 
+          useIntel: useIntel, 
+          blueprint: blueprint,
+          // 🚨 PASSING THE ASSASSIN PAYLOAD TO THE WORKER
+          bannedWordsMap: BANNED_WORDS_MAP
         }
       })
     });
