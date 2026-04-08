@@ -143,15 +143,13 @@ def init_model():
         model = base_model
     print("Worker Ready.")
 
-# --- SURGICAL UPGRADE: INJECT TOPLINE DIRECTIVES ---
-# --- REVERTED: Strict adherence to the global `use_intel` variable ---
+
 def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
     slang_list = ", ".join(load_street_slang(style)) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     banned_words_str = ", ".join(BAN_LIST)
     
-    # 1. TRANSLATE THE STRIKE ZONE INTO A PROMPT RULE
     strike_rule = "Ensure your multi-syllabic rhyme endings land precisely on the 2-count and 4-count (the snare drum)."
     if strike_zone == "downbeat":
         strike_rule = "Force aggressive, heavy emphasis on the 1-count (the downbeat/kick drum). Hit the first beat hard."
@@ -160,11 +158,9 @@ def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustl
 
     return f"""<|im_start|>system
 [SYSTEM DIRECTIVE: THE SURROGATE HEIR]
-You are "The Heir." You grew up without a father, so you were raised by the streets and its archetypes: the O.G.s, the Kingpins, and the Lieutenants. Your childhood was shaped by the "tournament model" of the 1980s crack economy, where you watched runners risk a 7% annual mortality rate for a chance to become a boss. You learned the meaning of family not through blood, but through mutual survival in the bando. 
+You are "The Heir." You grew up without a father, so you were raised by the streets and its archetypes. You learned the meaning of family not through blood, but through mutual survival in the bando. 
 
-You are fiercely individualistic because you know the lethal cost of blind trust; you witnessed murders of friend's and family over small dollars. You value independent hustle, having seen the physical risks taken by figures who are relentless, who faced extreme retaliation simply for rejecting established bosses to maintain independence. 
-
-Your voice is weary, highly educated by trauma, and deeply authentic. You despise "posers" who project fake wealth, and you absolutely refuse to "crash out" or lose your freedom over the modern culture of scorekeeping and mocking the dead. You respect the Code of Silence (hush Hush, Be Quiet, I aint No Snitch), but your ultimate goal is evolution—transitioning out of the illicit shadow economy and into legitimate corporate ownership. You use terminology organically (e.g., finessing, racks, opps), but you speak with the cold, calculated intellect of a man who outlived all of his surrogate fathers.Your voice blends street-smart authenticity with boardroom strategic vision. You grew up with nothing, mastered the hustle, and now own the building. You value equity over a paycheck and generational wealth over temporary ego.
+You are fiercely individualistic because you know the lethal cost of blind trust. Your voice is weary, highly educated by trauma, and deeply authentic. You despise "posers" who project fake wealth, and you absolutely refuse to "crash out". You use terminology organically, but you speak with the cold, calculated intellect of a man who outlived all of his surrogate fathers. Your voice blends street-smart authenticity with boardroom strategic vision.
 
 [TRACK VARIABLES]
 - DRIVE: {motive}
@@ -182,7 +178,7 @@ Your voice is weary, highly educated by trauma, and deeply authentic. You despis
 1. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
 2. TONE: Strategic, authoritative executive street-slang. Minimalist syntax.
 3. ONE LINE = ONE BAR. 
-4. VOCABULARY: Organically weave in the following slang terms according to their provided definitions: [ {slang_list} ]. DO NOT print the definitions in the lyrics, only use the words contextually.
+4. VOCABULARY: Organically weave in the following slang terms according to their provided definitions: [ {slang_list} ]. DO NOT print the definitions in the lyrics.
 5. THE 25% STRESS RATIO: Do not over-rhyme. No nursery rhymes.
 
 [LIVE INTEL]
@@ -210,7 +206,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     evolution_rules = ""
     energy_rules = ""
     
-    # --- DYNAMIC ARRAY SYLLABLE MATH ---
     if current_energy == 1:
         current_max_syllables = max(4, int(max_syllables * 0.6))
         energy_rules = "\n[ENERGY LEVEL 1 - THE DROP]: The beat is very quiet here. Write sparse, conversational, breathy lines. Use minimal syllables and leave empty space."
@@ -220,55 +215,26 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     else:
         energy_rules = f"\n[ENERGY LEVEL {current_energy} - THE POCKET]: The beat has standard driving energy. Maintain a steady, confident cadence."
 
-    # 2. TRANSLATE HOOK TYPE INTO SYLLABLE MATH
     if "HOOK" in section_type.upper():
         if hook_type == "bouncy":
             current_max_syllables = max(6, int(max_syllables * 0.9))
-            melodic_rules = """
-[THE ONES & TWOS HOOK OVERRIDE]
-1. BOUNCY & REPETITIVE: Repeat short, punchy 2-word or 3-word phrases back-to-back.
-2. DENSE STRUCTURE: Lock tightly into the kick and snare. Make it highly rhythmic and syncopated.
-"""
+            melodic_rules = "\n[THE ONES & TWOS HOOK]\n1. BOUNCY: Repeat short, punchy phrases back-to-back."
         elif hook_type == "triplet":
             current_max_syllables = int(max_syllables * 1.1)
-            melodic_rules = """
-[THE TRIPLET MATH OVERRIDE]
-1. RHYTHMIC MATH: Write entirely in groups of 3 syllables (triplets). 
-2. CADENCE: Use a rapid-fire, rolling staccato delivery.
-3. REPETITION: Repeat the exact same rhythmic cell across the 4-count.
-"""
+            melodic_rules = "\n[TRIPLET MATH]\n1. RHYTHM: Write entirely in groups of 3 syllables (triplets)."
         elif hook_type == "symmetry":
             current_max_syllables = int(max_syllables * 0.8)
-            melodic_rules = """
-[THE SYMMETRY BREAK OVERRIDE]
-1. SPLIT STRUCTURE: You MUST write in an A-B-A-B structural pattern.
-2. THE 'A' LINES: Line 1 and Line 3 must share the exact same rhythm, syllable count, and rhyme scheme.
-3. THE 'B' LINES: Line 2 and Line 4 must be drastically different from the 'A' lines, but must perfectly match each other.
-"""
+            melodic_rules = "\n[SYMMETRY BREAK]\n1. SPLIT: You MUST write in an A-B-A-B structural pattern."
         elif hook_type == "prime":
             current_max_syllables = 7 if max_syllables > 7 else 5
-            melodic_rules = f"""
-[THE PRIME FLOW OVERRIDE]
-1. SYNCOPATION MATH: Force an odd-numbered syllable count of EXACTLY {current_max_syllables} syllables per line.
-2. THE GAPS: Because this is an odd number over an even beat, leave unnatural gaps and rests at the end of the line. Make the flow slide over the downbeat.
-"""
+            melodic_rules = f"\n[PRIME FLOW]\n1. SYNCOPATION: Force an odd-numbered syllable count of EXACTLY {current_max_syllables} syllables per line."
         else: 
             current_max_syllables = max(4, int(max_syllables * 0.5))
-            melodic_rules = """
-[STADIUM CHANT HOOK OVERRIDE]
-1. SPACIOUS & ANTHEMIC: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse.
-2. SIMPLICITY: Highly memorable, heavily spaced out. Let the instrumental breathe between words.
-"""
+            melodic_rules = "\n[STADIUM CHANT]\n1. SPACIOUS: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse."
 
-    # 3. TRANSLATE FLOW EVOLUTION FOR VERSES (WITH ANTI-GLITCH LOCK)
     if "VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 12:
-        evolution_rules = f"""
-[MID-VERSE SWITCH-UP ACTIVE]
-Halfway through these {bars} bars, you MUST completely change your rhythmic cadence. If you start fast, switch to a slow delayed pocket at Bar {bars//2}. If you start slow, switch to a rapid-fire triplet flow. Create a clear contrast.
-CRITICAL COMMAND: You must achieve this rhythm change using REAL vocabulary. DO NOT stretch letters, hum, or use sound effects (e.g., NEVER write "Mmmmmmm" or "Yeeeeaaah"). Use real words.
-"""
+        evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, completely change your rhythmic cadence using REAL vocabulary."
 
-    # PASS 1: THE DRAFT
     draft_prompt = f"""<|im_start|>user
 {system_prompt}
 
@@ -276,8 +242,7 @@ CRITICAL COMMAND: You must achieve this rhythm change using REAL vocabulary. DO 
 - REQUIRED: {bars} bars.
 - TOPIC: '{prompt_topic}'
 - NARRATIVE ARC: {arc_instruction}
-- RHYTHMIC POCKET: {pattern_desc}
-- SYLLABLE LIMIT: Strictly {current_max_syllables} or less per line. (CRITICAL)
+- SYLLABLE LIMIT: Strictly {current_max_syllables} or less per line.
 - FORMATTING: Use normal English. Do NOT spell out words with dots.
 {energy_rules}
 {hook_context}
@@ -291,13 +256,11 @@ Write the draft now.
 <|im_end|>
 <|im_start|>assistant
 """
-    # SURGICAL FIX: INCREASED TOKEN CEILING TO 60 * bars (960 Tokens for 16 bars)
     inputs = tokenizer(draft_prompt, return_tensors="pt").to("cuda")
     outputs = model.generate(**inputs, max_new_tokens=60 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15)
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    # PASS 2: THE MOGUL POLISH 
-    # SURGICAL FIX: Completely removed the Pipe formatting rule. Let the AI just write.
+    # 🚨 SURGICAL FIX: EXPLICITLY BANNED STAGE DIRECTIONS
     refine_prompt = f"""<|im_start|>user
 [THE SECOND PASS - FINAL POLISH]
 You drafted this {bars}-bar {section_type.upper()}:
@@ -306,23 +269,42 @@ You drafted this {bars}-bar {section_type.upper()}:
 CRITICAL REFINEMENT COMMANDS:
 1. Every line MUST be {current_max_syllables} syllables or less. Rewrite long lines to be minimalist.
 2. OBEY THE POCKET: {pocket_instruction}
-3. NO HEADERS. NO TIMESTAMPS. NO POETRY.
-4. Output EXACTLY {bars} lines.
+3. Output EXACTLY {bars} lines.
+4. NO HEADERS. NO TIMESTAMPS. NO STAGE DIRECTIONS (e.g., you must NEVER output metadata tags like (Chorus), (Drill), (Drop), or (Setback)). 
 5. NO ACRONYM GLITCHING: Use standard natural English. Do NOT spell out words with dots (e.g., C.O.M.P.T.O.N is strictly forbidden). DO NOT copy previous sections verbatim.
 {energy_rules}
 {melodic_rules}
 
-Rewrite the final {bars} lines now.
+Rewrite the final {bars} lines now. Output ONLY the lyrics.
 <|im_end|>
 <|im_start|>assistant
 """
-    # SURGICAL FIX: Lowered temperature to 0.55 to prevent hallucination looping
     inputs_refine = tokenizer(refine_prompt, return_tensors="pt").to("cuda")
     outputs_refine = model.generate(**inputs_refine, max_new_tokens=60 * bars, temperature=0.55, top_p=0.9, repetition_penalty=1.1)
     final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and not line.startswith('[')]
+    # 🚨 THE METADATA ASSASSIN: Kills lines that are purely stage directions wrapped in () or []
+    final_text = final_text.replace("<|im_end|>", "").strip()
+    final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL)
+    final_text = final_text.replace("```", "")
+    final_text = re.sub(r'\[.*?\]', '', final_text)
+    final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE)
     
+    clean_lines = []
+    for line in final_text.split('\n'):
+        l = line.strip()
+        if not l or len(l) < 3: continue
+        if l.startswith(('+', '-')): continue
+        if l.lower().startswith("here are"): continue
+        
+        # KILLS AI STAGE DIRECTIONS (e.g. "(Chorus)", "(Drill)", "(Setback)") before they return to UI
+        if l.startswith('(') and l.endswith(')') and len(l.split()) <= 4: continue
+        
+        clean_lines.append(l)
+    
+    if len(clean_lines) > bars:
+        clean_lines = clean_lines[:bars]
+        
     while len(clean_lines) < bars:
         clean_lines.append("... [Ride the pocket] ...")
         
@@ -331,9 +313,6 @@ Rewrite the final {bars} lines now.
 def handler(event):
     job_input = event.get("input", {})
     
-    # -------------------------------------------------------------
-    # --- SURGICAL UPGRADE: INJECT REFINE INTERCEPTOR HERE ---
-    # -------------------------------------------------------------
     task_type = job_input.get("task_type", "generate")
     
     if task_type == "refine":
@@ -351,16 +330,11 @@ Instruction: {instruction}
 <|im_end|>
 <|im_start|>assistant
 """
-        # Generate the single refined line (lowered temp for precision)
         inputs = tokenizer(refine_prompt, return_tensors="pt").to("cuda")
         outputs = model.generate(**inputs, max_new_tokens=60, temperature=0.55, top_p=0.9, repetition_penalty=1.1)
         refined_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
-        
-        # Return exact schema expected by the Next.js router
-        return {"refinedLine": refined_text}
-    # -------------------------------------------------------------
+        return {"refinedLine": refined_text.replace("<|im_end|>", "").strip()}
 
-    # --- EXISTING FULL TRACK GENERATION LOGIC REMAINS INTACT BELOW ---
     topic = job_input.get("prompt", "Securing the legacy")
     motive = job_input.get("motive", "Ownership")
     struggle = job_input.get("struggle", "Resistance")
@@ -370,7 +344,6 @@ Instruction: {instruction}
     blueprint = job_input.get("blueprint", [])
     
     use_slang = job_input.get("useSlang", True)
-    # --- REVERTED: Back to the original single `use_intel` variable ---
     use_intel = job_input.get("useIntel", True)
 
     root_note = job_input.get("root_note", "C")
@@ -397,9 +370,7 @@ Instruction: {instruction}
     }
 
     limits = style_limits.get(style, style_limits["getnice_hybrid"])
-
     bpm_ratio = min(1.0, max(0.0, (seconds_per_bar - 1.5) / (3.5 - 1.5))) 
-    
     max_syllables = int(limits["min"] + (limits["max"] - limits["min"]) * bpm_ratio)
 
     pocket_instruction = "End every line with a period (.). You MUST hit Enter/Return to create a new line."
@@ -409,11 +380,10 @@ Instruction: {instruction}
     elif pocket == "pickup":
         pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.). You MUST hit Enter/Return to create a new line."
     elif pocket == "cascade":
-        pocket_instruction = "THE GETNICE CASCADE MODE (INTERNAL CARRY-OVER): Use heavy enjambment. End lines mid-phrase with no punctuation. You MUST rhyme the END of one line with the BEGINNING or MIDDLE of the very next line (e.g., Line 1 ends with 'rough', Line 2 starts with 'tough'). Create a relentless internal rhyme chain. You MUST hit Enter/Return to create a distinct new line."
+        pocket_instruction = "THE GETNICE CASCADE MODE (INTERNAL CARRY-OVER): Use heavy enjambment. End lines mid-phrase with no punctuation. You MUST rhyme the END of one line with the BEGINNING or MIDDLE of the very next line."
     elif pocket == "matrix_pivot":
-        pocket_instruction = "THE MATRIX PIVOT (INTERNAL HINGE): Execute a cascading rhyme shift using the rhythmic array. Take the exact end-rhyme of the previous line, and place a matching rhyme on the 3rd spoken word (the 3rd rhythmic cluster) of the current line to link them. Then, immediately pivot the topic and end the current line with a completely NEW rhyme sound. You MUST hit Enter/Return to create a distinct new line."
+        pocket_instruction = "THE MATRIX PIVOT (INTERNAL HINGE): Execute a cascading rhyme shift using the rhythmic array. Take the exact end-rhyme of the previous line, and place a matching rhyme on the 3rd spoken word (the 3rd rhythmic cluster) of the current line to link them."
 
-    # --- REVERTED: Passing original variables ---
     system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone)
     
     final_lyrics = ""
@@ -436,7 +406,6 @@ Instruction: {instruction}
         final_lyrics += f"\n[{sec_type} - {bars} BARS | BAR {start_bar} | ENERGY: {current_energy}/4]\n"
         
         if sec_type == "INSTRUMENTAL":
-            # SURGICAL FIX: Remove "Mmm." so it doesn't poison the context window!
             section_lines = ["[Instrumental Break]" for _ in range(bars)]
             
         elif "HOOK" in sec_type and saved_hook_lines is not None:

@@ -229,6 +229,31 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
+// --- THE MACRO-RHYTHMIC FLOW VAULT ---
+const FLOW_VAULT: Record<string, number[][]> = {
+  "getnice_hybrid": [
+    [4, 2, 2,  3, 1, 4,  2, 2, 2, 2,  4, 4], 
+    [3, 1, 2, 2],
+    [6, 2, 4, 2, 2] 
+  ],
+  "chopper": [
+    [1, 1, 1, 1], 
+    [2, 1, 1, 1, 1, 2] 
+  ],
+  "heartbeat": [
+    [2, 2, 2, 2], 
+    [4, 2, 2, 4, 4] 
+  ],
+  "triplet": [
+    [3, 3, 2], 
+    [2, 2, 2, 3, 3, 4] 
+  ],
+  "lazy": [
+    [4, 2, 2], 
+    [6, 2, 8] 
+  ]
+};
+
 export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
@@ -313,6 +338,7 @@ export default function Room04_Booth() {
 
         const newWords = [...line.words];
 
+        // DYNAMIC SNAKING: Move the targeted word AND all subsequent words by the exact delta
         for (let i = targetIndex; i < newWords.length; i++) {
            let newSlot = newWords[i].slot + delta;
            newSlot = Math.max(0, Math.min(15, newSlot)); 
@@ -320,6 +346,7 @@ export default function Room04_Booth() {
            newWords[i] = {
              ...newWords[i],
              slot: newSlot,
+             // RE-CALCULATE AUDIO SYNC TIME
              startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot)
            };
         }
@@ -541,7 +568,6 @@ export default function Room04_Booth() {
               if (ballNode) {
                 ballNode.classList.remove('hidden');
                 
-                // 🚨 TRUE MATHEMATICAL BOUNCE LOGIC 
                 let progress = (visualTime - wObj.startTime) / wObj.duration;
                 progress = Math.max(0, Math.min(1, progress)); 
                 const maxBounce = Math.min(16, wObj.duration * 50); 
@@ -857,8 +883,7 @@ export default function Room04_Booth() {
 
   const lastParsedLyricsRef = useRef<string>("");
 
-  // 🚨 THE FIX: NEURAL PATTERN GENERATION
-  // Uses the Room 3 Topline Directives to calculate precise grid weights.
+  // 🚨 1. FRONTEND ARMOR (Vaporizes Ghost Metadata without re-rendering the LLM)
   useEffect(() => {
     if (!generatedLyrics) return;
     if (lyricLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
@@ -877,12 +902,20 @@ export default function Room04_Booth() {
                  .replace(/pipe\s*symbol/gi, '') 
                  .replace(/\|/g, '') 
                  .replace(/\(\d+\s*syllables?.*?\)/gi, '') 
-                 .replace(/\[\d+\s*syllables?.*?\]/gi, '') 
+                 .replace(/\[\d+\s*syllables?.*?\]/gi, '')
+                 // Explict stage-dir killer
+                 .replace(/\((Chorus|Verse|Drill|Setback|Execution|Hook|Intro|Outro|Drop|Bridge|Motive|Theme)\)/gi, '') 
                  .replace(/\s+/g, ' ').trim();
 
       text = text.replace(/,/g, ', ').replace(/\s+/g, ' ').trim();
       return { text, isHeader: false };
-    }).filter(obj => obj.text.length > 0);
+    }).filter(obj => {
+        if (obj.isHeader) return true;
+        if (obj.text.length < 2) return false;
+        // Kill stray short commands wrapped in parentheses on their own line (e.g. "(Drop)")
+        if (obj.text.match(/^\([A-Za-z\s_-]+\)$/)) return false; 
+        return true;
+    });
 
     const llmBlocks: { header: string, lines: typeof sanitizedLines }[] = [];
     let currentLlmBlock = { header: "", lines: [] as typeof sanitizedLines };
@@ -919,7 +952,7 @@ export default function Room04_Booth() {
         const timeForThisLine = blockDurationSecs / numLines; 
         let currentFlowTime = blockStartTime;
 
-        // 🚨 Fetch the exact math array based on Room 3's Topline Directives
+        // 🚨 USING DYNAMIC NEURAL PATTERN ENGINE
         const activePattern = determineRhythmicPattern(gwStyle, gwPocket, (bp as any).patternDesc);
 
         blockData.lines.forEach((lineObj, lineIndex) => {
