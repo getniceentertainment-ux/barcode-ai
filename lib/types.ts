@@ -6,6 +6,8 @@ export interface UserSession {
   tier: AccessTier;
   walletBalance: number;
   creditsRemaining: number | "UNLIMITED";
+  has_engineering_token?: boolean; // Added for Room 05 logic
+  hasEngineeringToken?: boolean;   // Match store mapping
 }
 
 export interface AudioAnalysis {
@@ -13,11 +15,11 @@ export interface AudioAnalysis {
   fileName: string;
   bpm: number;
   totalBars: number;
-  duration?: number; // Preserving our Phase 1 addition
+  duration?: number; 
   grid?: number[];
   key?: string;
-  dynamic_array?: number[]; // <--- ADD THIS
-  contour?: string;         // <--- ADD THIS
+  dynamic_array?: number[]; 
+  contour?: string;         
 }
 
 export interface FlowDNA {
@@ -28,17 +30,21 @@ export interface FlowDNA {
 
 export interface BlueprintSection {
   id: string;
-  type: "INTRO" | "HOOK" | "VERSE" | "OUTRO" | "BRIDGE" | "INSTRUMENTAL"; // <-- SURGICAL ADDITION
+  type: "INTRO" | "HOOK" | "VERSE" | "OUTRO" | "BRIDGE" | "INSTRUMENTAL";
   bars: number;
+  startBar?: number;
+  patternName?: string;
+  patternDesc?: string;
+  patternArray?: number[];
 }
 
 export interface VocalStem {
   id: string;
-  type: "Lead" | "Adlib" | "Double" | "Guide";
+  type: "Lead" | "Adlib" | "Double" | "Guide" | string;
   url: string;
   blob?: Blob;
   volume: number; 
-  offsetBars: number; // MANDATORY: Required for Timeline Sliding
+  offsetBars: number;
 }
 
 export interface FinalMaster {
