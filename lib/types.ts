@@ -6,8 +6,7 @@ export interface UserSession {
   tier: AccessTier;
   walletBalance: number;
   creditsRemaining: number | "UNLIMITED";
-  has_engineering_token?: boolean; // Added for Room 05 logic
-  hasEngineeringToken?: boolean;   // Match store mapping
+  hasEngineeringToken?: boolean;   // SURGICAL FIX: Consolidated to camelCase to match store
 }
 
 export interface AudioAnalysis {
@@ -18,8 +17,8 @@ export interface AudioAnalysis {
   duration?: number; 
   grid?: number[];
   key?: string;
-  dynamic_array?: number[]; 
-  contour?: string;         
+  dynamic_array?: number[]; // SURGICAL FIX: Explicit mapping for DSP Truth
+  contour?: string;         // SURGICAL FIX: Explicit mapping for DSP Truth
 }
 
 export interface FlowDNA {
@@ -44,10 +43,29 @@ export interface VocalStem {
   url: string;
   blob?: Blob;
   volume: number; 
-  offsetBars: number;
+  offsetBars?: number;
 }
 
 export interface FinalMaster {
+  id: string;
   url: string;
-  blob: Blob;
+  blob?: Blob;
+}
+
+export interface MixParams {
+  leadVol: number;
+  adlibVol: number;
+  doubleVol: number;
+  beatVol: number;
+  eqLow: number;
+  eqMid: number;
+  eqHigh: number;
+  compressorThresh: number;
+  compressorRatio: number;
+  reverbMix: number;
+  reverbSize: number;
+  delayMix: number;
+  delayTime: number;
+  chorusMix: number;
+  masterLimiter: number;
 }
