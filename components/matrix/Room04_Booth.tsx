@@ -45,7 +45,6 @@ function determineRhythmicPattern(style: string, pocket: string, strikeZone: str
 function chunkWordForVisuals(word: string): string[] {
   const match = word.match(/^([^a-zA-Z]*)([a-zA-Z\']+)([^a-zA-Z]*)$/);
   if (!match || match[2].length <= 3) return [word];
-  
   const alpha = match[2];
   const vowelClusters = alpha.match(/[aeiouy]+/gi);
   if (!vowelClusters || vowelClusters.length <= 1) return [word];
@@ -81,8 +80,8 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const dataSize = buffer.length * blockAlign;
   const wavBuffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(wavBuffer);
-  const writeString = (view: DataView, offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+  const writeString = (v: DataView, o: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
   };
   writeString(view, 0, 'RIFF'); view.setUint32(4, 36 + dataSize, true);
   writeString(view, 8, 'WAVE'); writeString(view, 12, 'fmt ');
@@ -135,8 +134,8 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
   const dataSize = samples.length * blockAlign;
   const buffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(buffer);
-  const writeString = (view: DataView, offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+  const writeString = (v: DataView, o: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
   };
   writeString(view, 0, 'RIFF'); view.setUint32(4, 36 + dataSize, true);
   writeString(view, 8, 'WAVE'); writeString(view, 12, 'fmt '); 
@@ -158,7 +157,8 @@ export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
     updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, 
-    addToast, gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution
+    addToast, gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution,
+    gwGender // 🚨 FIXED: Destructured missing gwGender to resolve build error
   } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -200,7 +200,7 @@ export default function Room04_Booth() {
   const isRecordingRef = useRef(false);
 
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
-  const hasEngToken = (userSession as any)?.has_engineering_token === true;
+  const hasEngToken = (userSession as any)?.has_engineering_token === true || (userSession as any)?.hasEngineeringToken === true;
 
   const actualBeatBars = audioData?.totalBars || 64;
   const preciseBpm = audioData?.bpm || 120;
@@ -428,7 +428,6 @@ export default function Room04_Booth() {
         blockData.lines.forEach((lineObj) => {
           const rawWords = lineObj.text.split(/\s+/).filter((w: string) => w.length > 0);
           const mappedWords: WordMapping[] = [];
-          // 🚨 FIX: Correct definition of lineStartTime for Scoping
           const lineStartTime = currentFlowTime; 
           let totalLineSteps = 0;
           let tempPatternIndex = 0;
