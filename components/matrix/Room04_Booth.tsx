@@ -766,19 +766,27 @@ export default function Room04_Booth() {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: WordMapping[] = [];
 
-          // Force absolute alignment to the beat
           const lineStartTime = blockStartBar * secondsPerBar + (lineIndex * secondsPerBar);
           const actualBarIndex = blockStartBar + lineIndex;
 
           let totalLineSteps = 0;
           let tempPatternIndex = 0;
 
-          // Pickup Handle
           if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4; 
 
-          const wordChunksArray: string[][] = [];
+          const wordChunksArray: (string[] | 'EMPTY_BREATH')[] = [];
+          
           rawWords.forEach(w => {
-            const cleanW = w.replace(/\|/g, '').replace(/,/g, '').trim();
+            // 🚨 SURGICAL INJECTION: Detect Breath Marker
+            if (w === '|') {
+              wordChunksArray.push('EMPTY_BREATH');
+              const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]) || 2;
+              totalLineSteps += stepVal;
+              tempPatternIndex++;
+              return;
+            }
+
+            const cleanW = w.replace(/,/g, '').trim();
             if (cleanW) {
               const chunks = chunkWordForVisuals(cleanW);
               chunks.forEach(() => {
@@ -794,9 +802,8 @@ export default function Room04_Booth() {
           if (cleanTextEnd === '.') totalLineSteps += 4;
           else if (cleanTextEnd === ',') totalLineSteps += 1;
 
-          // 🚨 CRITICAL: Ensure totalLineSteps never short-circuits the grid
           const barStepLimit = 16; 
-          const timePerStep = secondsPerSlot; // Fixed mathematical sync
+          const timePerStep = secondsPerSlot; 
           
           let localWordTime = lineStartTime;
           let currentSlot = 0;
@@ -807,38 +814,45 @@ export default function Room04_Booth() {
           }
 
           let patternIndex = 0;
-          wordChunksArray.forEach((chunks) => {
-            chunks.forEach((chunk, cIdx) => {
-              const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
-              patternIndex++;
+  wordChunksArray.forEach((entry) => {
+    if (entry === 'EMPTY_BREATH') {
+      // 🚨 ADVANCE CLOCK FOR BREATH BUT DRAW NO BOX
+      const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
+      patternIndex++;
+      localWordTime += (stepsRequired * timePerStep);
+      currentSlot += stepsRequired;
+      return;
+    }
 
-              const chunkDuration = stepsRequired * timePerStep;
-              
-              // Map slot proportionately to the 16-slot grid
-              // This prevents words from bunching at the start or breaking early
-              const mappedSlot = Math.min(15, Math.floor((currentSlot / Math.max(barStepLimit, totalLineSteps)) * 16));
+    entry.forEach((chunk, cIdx) => {
+      const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
+      patternIndex++;
 
-              mappedWords.push({
-                id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-                word: chunk,
-                slot: mappedSlot,
-                startTime: localWordTime,
-                duration: chunkDuration, 
-                isWordEnd: (cIdx === chunks.length - 1)
-              });
+      const chunkDuration = stepsRequired * timePerStep;
+      // Proportional grid placement
+      const mappedSlot = Math.min(15, Math.floor((currentSlot / Math.max(16, totalLineSteps)) * 16));
 
-              localWordTime += chunkDuration;
-              currentSlot += stepsRequired;
-            });
-          });
+      mappedWords.push({
+        id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+        word: chunk,
+        slot: mappedSlot,
+        startTime: localWordTime,
+        duration: chunkDuration, 
+        isWordEnd: (cIdx === entry.length - 1)
+      });
 
-         parsed.push({ 
+      localWordTime += chunkDuration;
+      currentSlot += stepsRequired;
+    });
+  });
+
+          parsed.push({ 
             id: `line-${lineIdCounter++}`,
             barIndex: actualBarIndex,
             text: lineObj.text,
             originalText: lineObj.text,
             startTime: lineStartTime, 
-            lineDuration: secondsPerBar, // 🚨 FORCES BREATH: Holds the UI on this row for the full bar duration
+            lineDuration: secondsPerBar, 
             isHeader: false, 
             timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 

@@ -217,6 +217,8 @@ export async function POST(req: Request) {
         - Spelled-out words or acronyms for bounce (e.g., "T to the A", "S-T-A-R").
         - Isolated 1-word chants followed by commas to simulate vocal drops/pauses (e.g., "WAIT, I took the...", "YEAH, we running...").
         - ${dspVocalInstruction}
+    11. BREATH CONTROL: Use the pipe symbol (|) to insert rhythmic pauses. One pipe equals one rhythmic step of silence on the 16-slot grid. Use this to create a "Texas Drawl" or heavy syncopation.
+
     `;
 
     const thematicPrompt = `SONG TITLE: "${title || 'UNTITLED'}".\nUSER PROMPT: ${prompt}\nTHE MOTIVE (Drive): ${motive || "Mastering the craft"}\nTHE STRUGGLE (Setback): ${struggle || "Against the odds"}\nTHE HUSTLE (Execution): ${hustle || "Relentless execution"}\n${getNiceOverride}\n${systemConstraint || ''}`; 

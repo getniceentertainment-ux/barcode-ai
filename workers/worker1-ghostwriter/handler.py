@@ -262,6 +262,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 - THE POCKET: {pocket_instruction}
 - SYLLABLE LIMIT: Strictly {current_max_syllables} or less per line.
 - FORMATTING: Use normal English. Do NOT spell out words with dots.
+- BREATH CONTROL: Use the pipe symbol (|) to indicate a rhythmic breath or mathematical rest (e.g., "BOSS | IN THE CAGE").
 {energy_rules}
 {hook_context}
 {melodic_rules}

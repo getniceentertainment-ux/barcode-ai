@@ -263,9 +263,10 @@ export default function Room03_Ghostwriter() {
     // --- SURGICAL FIX: Removed Pipe formatting to clear Cognitive Overload ---
     const systemConstraint = `ABSOLUTE ENGINE RULES:
 1. RAW LYRICS ONLY: You must ONLY output the lyrics.
-2. NO PREFIXES: NEVER output labels like "1st Line:", "Hook:", or "Verse:" before the lyrics.
-3. COMPOUND RHYMING: Use 2- or 3-syllable compound rhymes on the structural accents.
-4. PITCH INTONATION: Align your vowel choices to the pitch contour of the beat. Use closed/heavy vowels for pitch drops, and open/elongated vowels for tension rises.`;
+2. BREATH CONTROL: Use the pipe symbol (|) to indicate a breath or rhythmic pause. 
+3. LINE BREAKS: One line still equals one bar. If you want a pause in the middle of a bar, use the pipe (e.g., "I'm a boss | in this cage").
+4. COMPOUND RHYMING: Use 2- or 3-syllable compound rhymes on structural accents.
+5. PITCH INTONATION: Align vowel choices to the pitch contour.`;
 
     const keyParts = audioData?.key ? audioData.key.split(" ") : ["C", "minor"];
     const rootNote = keyParts[0];
@@ -338,9 +339,8 @@ export default function Room03_Ghostwriter() {
             let rawLyrics = statusData.output.lyrics || "";
             let cleanedLyrics = rawLyrics
               .replace(/\(pipe symbol.*?\)/gi, '') 
-              .replace(/\|(?:\s*\|)+/g, '') 
+              .replace(/\|(?:\s*\|)+/g, '|') // Change double pipes to single pipes
               .replace(/(\(\d+:\d{2}\)\s*)\|\s*/gm, '$1') 
-              .replace(/\|\s*$/gm, '') 
               .replace(/(\(\d+:\d{2}\)\s*)(?:\d+(?:st|nd|rd|th)? Line:|Line \d+:|Hook:|Verse:|Chorus:|Intro:|Outro:)\s*/gmi, '$1')
               .trim();
 
