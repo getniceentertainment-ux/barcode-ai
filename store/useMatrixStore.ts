@@ -333,16 +333,17 @@ export const useMatrixStore = create<MatrixState>()(
 
       pushToCloud: async () => {
         const state = get();
-        if (!state.userSession?.id) return;
+        const userId = state.userSession?.id;
+        if (!userId) return;
 
         set({ syncStatus: "saving" });
         
-        const draftSnapshot = {
+        const session_state = {
            audioData: state.audioData,                     
            flowDNA: state.flowDNA,
            blueprint: state.blueprint, 
            generatedLyrics: state.generatedLyrics,
-           quantizedLines: state.quantizedLines, // <-- Cloud Backup
+           quantizedLines: state.quantizedLines,
            gwTitle: state.gwTitle, gwPrompt: state.gwPrompt, gwStyle: state.gwStyle, gwPocket: state.gwPocket, 
            gwMotive: state.gwMotive, gwStruggle: state.gwStruggle, gwHustle: state.gwHustle,
            gwStrikeZone: state.gwStrikeZone, gwHookType: state.gwHookType, gwFlowEvolution: state.gwFlowEvolution,
@@ -351,12 +352,20 @@ export const useMatrixStore = create<MatrixState>()(
         };
 
         try {
-          const { data: existing } = await supabase.from('matrix_sessions').select('user_id').eq('user_id', state.userSession.id).maybeSingle();
-          if (existing) {
-            await supabase.from('matrix_sessions').update({ session_state: draftSnapshot, updated_at: new Date().toISOString() }).eq('user_id', state.userSession.id);
-          } else {
-            await supabase.from('matrix_sessions').insert([{ user_id: state.userSession.id, session_state: draftSnapshot }]);
-          }
+          // 🚨 SURGICAL FIX: Using UPSERT to prevent primary key conflicts (409 Conflict)
+          const { error } = await supabase
+            .from('matrix_sessions')
+            .upsert(
+              { 
+                user_id: userId, 
+                session_state, 
+                updated_at: new Date().toISOString() 
+              }, 
+              { onConflict: 'user_id' } // Target the unique constraint
+            );
+
+          if (error) throw error;
+
           set({ syncStatus: "saved" });
           setTimeout(() => set({ syncStatus: "idle" }), 3000);
         } catch (err) {
