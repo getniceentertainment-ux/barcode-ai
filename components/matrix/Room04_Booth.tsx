@@ -5,26 +5,47 @@ import {
   Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, ToggleLeft, ToggleRight, Crosshair, ListVideo
 } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
-import { useMatrixStore, QuantizedLine, QuantizedSyllable } from "../../store/useMatrixStore";
+import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase"; 
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
-// SURGICAL FIX: Enforced strict typing so the Grid knows these properties exist
 type WordMapping = { id: string; word: string; startTime: number; duration: number; slot: number; isWordEnd?: boolean };
 type LyricLine = { id: string; text: string; originalText: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[]; barIndex: number };
 
-// --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR (FALLBACK ONLY) ---
-function estimateSyllables(word: string): number {
-  const w = word.toLowerCase().replace(/[^a-z]/g, '');
-  if (!w) return 1;
-  if (w.length <= 3) return 1;
-  let count = (w.match(/[aeiouy]+/g) || []).length;
-  if (w.endsWith('e') && !w.endsWith('le')) count--;
-  return Math.max(1, count);
+// --- THE MACRO-RHYTHMIC NEURAL ENGINE ---
+// Translates your exact Topline Directives into the visual metronome matrix
+function determineRhythmicPattern(style: string, pocket: string, strikeZone: string, hookType: string, flowEvolution: string, isHook: boolean): number[] {
+  const st = (style || "").toLowerCase();
+  const p = (pocket || "").toLowerCase();
+  const sz = (strikeZone || "").toLowerCase();
+  const ht = (hookType || "").toLowerCase();
+
+  // 1. Hook Architecture Overrides
+  if (isHook) {
+    if (ht.includes("bouncy")) return [2, 1, 1, 2, 2];
+    if (ht.includes("triplet")) return [3, 3, 2, 3, 3, 2];
+    if (ht.includes("symmetry")) return [4, 2, 2, 4, 4];
+    if (ht.includes("prime")) return [5, 3, 5, 3];
+    return [6, 2, 8]; // stadium/chant
+  }
+
+  // 2. Topline & Pocket Directives
+  if (sz.includes("strike zone") || sz.includes("strike")) return [1, 1, 2, 1, 1, 2, 1, 1, 2]; // Fast 16th clusters
+  if (sz.includes("snare") || sz.includes("2 & 4")) return [4, 2, 2, 4, 2, 2]; // Hits the 2 & 4 snap
+  if (sz.includes("downbeat")) return [4, 4, 4, 4]; // Heavy quarters
+  if (p.includes("chainlink") || p.includes("chain-link")) return [2, 2, 2, 2, 2, 2, 1, 1, 1, 1]; // Bleeds at the end
+  if (p.includes("drag") || p.includes("pickup")) return [6, 2, 2, 2, 2, 2]; // Delays the 1 count
+
+  // 3. Fallback to Style DNA
+  if (st.includes("chopper")) return [1, 1, 1, 1, 1, 1, 1, 1];
+  if (st.includes("heartbeat")) return [2, 2, 2, 2];
+  if (st.includes("triplet")) return [3, 3, 2];
+  if (st.includes("lazy")) return [4, 4, 2, 6];
+  
+  return [4, 2, 2, 3, 1, 4, 2, 2, 2, 2]; // getnice_hybrid standard default
 }
 
-// --- THE VISUAL SYLLABLE CHUNKER (FALLBACK ONLY) ---
 function chunkWordForVisuals(word: string): string[] {
   const match = word.match(/^([^a-zA-Z]*)([a-zA-Z\']+)([^a-zA-Z]*)$/);
   if (!match || match[2].length <= 3) return [word];
@@ -64,45 +85,6 @@ function chunkWordForVisuals(word: string): string[] {
   return chunks.filter(c => c.length > 0);
 }
 
-// --- TTS SILENCE TRIMMER (Kills Dead Air) ---
-function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
-  let startOffset = 0;
-  let endOffset = buffer.length;
-  const threshold = 0.03; 
-  
-  for (let c = 0; c < buffer.numberOfChannels; c++) {
-    const data = buffer.getChannelData(c);
-    let firstSignal = 0;
-    let lastSignal = data.length;
-    
-    for (let i = 0; i < data.length; i++) {
-      if (Math.abs(data[i]) > threshold) { firstSignal = i; break; }
-    }
-    for (let i = data.length - 1; i >= 0; i--) {
-      if (Math.abs(data[i]) > threshold) { lastSignal = i; break; }
-    }
-    
-    const pad = Math.floor(buffer.sampleRate * 0.08); 
-    if (c === 0) {
-      startOffset = Math.max(0, firstSignal - pad);
-      endOffset = Math.min(data.length, lastSignal + pad);
-    } else {
-      startOffset = Math.min(startOffset, Math.max(0, firstSignal - pad));
-      endOffset = Math.max(endOffset, Math.min(data.length, lastSignal + pad));
-    }
-  }
-  
-  if (startOffset >= endOffset) return buffer; 
-  
-  const frameCount = endOffset - startOffset;
-  const trimmed = audioCtx.createBuffer(buffer.numberOfChannels, frameCount, buffer.sampleRate);
-  for (let c = 0; c < buffer.numberOfChannels; c++) {
-    trimmed.copyToChannel(buffer.getChannelData(c).subarray(startOffset, endOffset), c);
-  }
-  return trimmed;
-}
-
-// --- BULLETPROOF AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const numChannels = buffer.numberOfChannels;
   const sampleRate = buffer.sampleRate;
@@ -150,7 +132,7 @@ async function trimAudioBlob(originalBlob: Blob, startSec: number, endSec: numbe
   const arrayBuffer = await originalBlob.arrayBuffer();
   
   const audioBuffer = await new Promise<AudioBuffer>((resolve, reject) => {
-    audioContext.decodeAudioData(arrayBuffer, resolve, (err) => reject(new Error("Unable to decode audio format. " + (err?.message || ""))));
+    audioContext.decodeAudioData(arrayBuffer, resolve, (err) => reject(new Error("Unable to decode audio format.")));
   });
   
   const sampleRate = audioBuffer.sampleRate;
@@ -200,36 +182,12 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
-// --- THE MACRO-RHYTHMIC FLOW VAULT ---
-const FLOW_VAULT: Record<string, number[][]> = {
-  "getnice_hybrid": [
-    [4, 2, 2,  3, 1, 4,  2, 2, 2, 2,  4, 4], 
-    [3, 1, 2, 2],
-    [6, 2, 4, 2, 2] 
-  ],
-  "chopper": [
-    [1, 1, 1, 1], 
-    [2, 1, 1, 1, 1, 2] 
-  ],
-  "heartbeat": [
-    [2, 2, 2, 2], 
-    [4, 2, 2, 4, 4] 
-  ],
-  "triplet": [
-    [3, 3, 2], 
-    [2, 2, 2, 3, 3, 4] 
-  ],
-  "lazy": [
-    [4, 2, 2], 
-    [6, 2, 8] 
-  ]
-};
-
 export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
     updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, 
-    addToast, gwStyle, quantizedLines, setQuantizedLines 
+    addToast, gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution,
+    gwGender 
   } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -275,16 +233,16 @@ export default function Room04_Booth() {
   const workletLoadedRef = useRef(false);
   const teleprompterRef = useRef<HTMLDivElement>(null);
 
-  // --- HIGH-PERFORMANCE rAF SYNC REFS ---
+  const timeDisplayRef = useRef<HTMLDivElement>(null);
+
   const animationFrameRef = useRef<number>();
   const lastActiveLineRef = useRef<number>(-1);
   const isPlayingRef = useRef(false);
   const isRecordingRef = useRef(false);
 
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
-  const hasEngToken = (userSession as any)?.has_engineering_token === true;
+  const hasEngToken = (userSession as any)?.has_engineering_token === true || (userSession as any)?.hasEngineeringToken === true;
 
-  // --- 1. THE SNAKING DRAG & DROP LOGIC ---
   const handleDragStart = (e: React.DragEvent, lineId: string, syllableId: string, originalSlot: number) => {
     e.dataTransfer.setData("application/json", JSON.stringify({ lineId, syllableId, originalSlot }));
   };
@@ -300,7 +258,6 @@ export default function Room04_Booth() {
     const delta = targetSlot - originalSlot;
     if (delta === 0) return;
 
-    // 🚨 FIX 3: Route Drag & Drop update to local lyricLines so the Grid mathematically updates
     setLyricLines(prev => prev.map(line => {
       if (line.id === targetLineId && !line.isHeader && line.words) {
         const targetIndex = line.words.findIndex(w => w.id === syllableId);
@@ -335,7 +292,6 @@ export default function Room04_Booth() {
     setGuideProgress(0);
     
     try {
-      // 🚨 FIX 4: Guide reads from the mathematically accurate local state, not the stale store
       const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
       if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
@@ -348,7 +304,6 @@ export default function Room04_Booth() {
       for (let i = 0; i < parsedLines.length; i++) {
               const line = parsedLines[i];
               
-              // 🚨 FIX 2: Restore Guide Progress Percentage
               setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
 
               try {
@@ -358,7 +313,7 @@ export default function Room04_Booth() {
                   body: JSON.stringify({ 
                     lyrics: line.text.replace(/\|/g, ''), 
                     bpm: preciseBpm,
-                    gender: useMatrixStore.getState().gwGender || "male",
+                    gender: gwGender || "male",
                     pitch: "low"
                   })
                 });
@@ -371,7 +326,6 @@ export default function Room04_Booth() {
                 const mappedWords = line.words;
                 if (!mappedWords || mappedWords.length === 0) continue;
 
-                // 🚨 FIX 1: Restore Proportional Crossfade Audio Logic (Syllable Syncing)
                 const ttsDuration = audioBuffer.duration;
                 const mathLineDuration = line.lineDuration || 2;
 
@@ -498,7 +452,12 @@ export default function Room04_Booth() {
     if (!wavesurferRef.current) return;
     
     const time = wavesurferRef.current.getCurrentTime();
-    setCurrentTimeDisplay(time); 
+    
+    if (timeDisplayRef.current) {
+        const mins = Math.floor(time / 60).toString().padStart(2, '0');
+        const secs = Math.floor(time % 60).toString().padStart(2, '0');
+        timeDisplayRef.current.innerText = `${mins}:${secs}`;
+    }
 
     const visualTime = time + 0.08; 
 
@@ -528,14 +487,19 @@ export default function Room04_Booth() {
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             
             if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
+              
+              // 🚨 RESTORED: Working CSS drop shadow
               chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
               chunkNode.classList.remove('text-[#444]', 'text-[#888]');
+              
               if (ballNode) {
-                ballNode.classList.remove('hidden');
+                // 🚨 RESTORED: Opacity Toggling instead of hidden (Smooth Transitions)
+                ballNode.classList.remove('opacity-0');
+                ballNode.classList.add('opacity-100');
                 
+                // 🚨 RESTORED: True Mathematical Arc Logic
                 let progress = (visualTime - wObj.startTime) / wObj.duration;
                 progress = Math.max(0, Math.min(1, progress)); 
-                
                 const maxBounce = Math.min(16, wObj.duration * 50); 
                 const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
                 
@@ -545,14 +509,16 @@ export default function Room04_Booth() {
               chunkNode.classList.add('text-[#888]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
               if (ballNode) {
-                ballNode.classList.add('hidden');
+                ballNode.classList.add('opacity-0');
+                ballNode.classList.remove('opacity-100');
                 ballNode.style.transform = `translateX(-50%) translateY(0px)`;
               }
             } else {
               chunkNode.classList.add('text-[#444]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
               if (ballNode) {
-                ballNode.classList.add('hidden');
+                ballNode.classList.add('opacity-0');
+                ballNode.classList.remove('opacity-100');
                 ballNode.style.transform = `translateX(-50%) translateY(0px)`;
               }
             }
@@ -567,7 +533,8 @@ export default function Room04_Booth() {
             if (!chunkNode) return;
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             if (ballNode) {
-              ballNode.classList.add('hidden');
+              ballNode.classList.add('opacity-0');
+              ballNode.classList.remove('opacity-100');
               ballNode.style.transform = `translateX(-50%) translateY(0px)`;
             }
 
@@ -701,7 +668,7 @@ export default function Room04_Booth() {
       } finally { setIsUploading(false); }
     }
     
-    setCurrentTimeDisplay(0);
+    if (timeDisplayRef.current) timeDisplayRef.current.innerText = "00:00";
     updateVisualsRef.current(); 
   };
 
@@ -859,8 +826,14 @@ export default function Room04_Booth() {
     const sanitizedLines = lines.map(l => {
       let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
       if (text.startsWith('[') && text.includes(']')) return { text, isHeader: true }; 
-      text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '').replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
-      text = text.replace(/,/g, ', ').replace(/\s+/g, ' ').trim();
+      
+      // 🚨 AGGRESSIVE METADATA SCRUBBER
+      text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
+                 .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
+                 .replace(/\(\d+\s*syllables?.*?\)/gi, '') 
+                 .replace(/\[\d+\s*syllables?.*?\]/gi, '') 
+                 .replace(/\s+/g, ' ').trim();
+
       return { text, isHeader: false };
     }).filter(obj => obj.text.length > 0);
 
@@ -884,7 +857,6 @@ export default function Room04_Booth() {
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
       
       const bars = bp.bars || (bp.type === "INSTRUMENTAL" ? 8 : 4);
-      const blockDurationSecs = bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
       parsed.push({ id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] });
@@ -896,87 +868,68 @@ export default function Room04_Booth() {
 
       const numLines = blockData.lines.length;
       if (numLines > 0) {
-        const timeForThisLine = blockDurationSecs / numLines; 
-        let currentFlowTime = blockStartTime;
-
-        const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-        let activePattern = activeVariations[index % activeVariations.length];
+        const isHook = bp.type.toUpperCase().includes("HOOK");
+        let activePattern = determineRhythmicPattern(gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution, isHook);
         
-        if (Array.isArray((bp as any).patternArray) && (bp as any).patternArray.length > 0) {
-           activePattern = (bp as any).patternArray;
-        }
+        // 🚨 PREVENT OVERLAP: If AI hallucinates extra lines, trim them to fit the allocated bars perfectly
+        const safeLines = blockData.lines.slice(0, bars);
 
-        blockData.lines.forEach((lineObj) => {
+        safeLines.forEach((lineObj, lineIndex) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: WordMapping[] = [];
 
-          let totalLineSteps = 0;
-          let tempPatternIndex = 0;
+          // 🚨 RESTORED 1-BAR-PER-LINE MATH: Forces absolute bar alignment perfectly
+          const lineStartTime = blockStartBar * secondsPerBar + (lineIndex * secondsPerBar);
+          const actualBarIndex = blockStartBar + lineIndex;
 
-          if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
-
-          const wordChunksArray = rawWords.map(w => {
-            const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
-            chunks.forEach(() => {
-              const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
-              totalLineSteps += isNaN(stepVal) ? 2 : stepVal; 
-              tempPatternIndex++;
-            });
-            return chunks;
-          });
-
-          const cleanTextEnd = lineObj.text.trim().slice(-1);
-          if (cleanTextEnd === '.') totalLineSteps += 4;
-          else if (cleanTextEnd === ',') totalLineSteps += 1;
-
-          const timePerStep = totalLineSteps > 0 ? timeForThisLine / totalLineSteps : 0;
-          let localWordTime = currentFlowTime;
-          const lineStartTime = currentFlowTime;
-
-          if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
-
+          let currentSlot = 0;
           let patternIndex = 0;
 
-          wordChunksArray.forEach((chunks) => {
+          if (lineObj.text.trim().startsWith('...')) currentSlot += 4; 
+
+          rawWords.forEach(w => {
+            // Strip the pipe purely for display chunking, keep strict math
+            const cleanW = w.replace(/\|/g, '').replace(/,/g, ''); 
+            if(!cleanW) return;
+            const chunks = chunkWordForVisuals(cleanW); 
+            
             chunks.forEach((chunk, cIdx) => {
-              const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
+              const stepVal = Number(activePattern[patternIndex % activePattern.length]) || 2;
               patternIndex++;
 
-              const chunkDuration = stepsRequired * timePerStep;
-              const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForThisLine) * 16)));
+              const mappedSlot = Math.min(15, currentSlot);
 
               mappedWords.push({
                 id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-                word: chunk.replace(/\|/g, ''),
+                word: chunk,
                 slot: mappedSlot,
-                startTime: localWordTime,
-                duration: chunkDuration, 
+                startTime: lineStartTime + (mappedSlot * secondsPerSlot),
+                duration: stepVal * secondsPerSlot,
                 isWordEnd: (cIdx === chunks.length - 1)
               });
-              localWordTime += chunkDuration;
+
+              currentSlot += stepVal;
             });
           });
 
           parsed.push({ 
             id: `line-${lineIdCounter++}`,
-            barIndex: Math.floor(lineStartTime / secondsPerBar),
+            barIndex: actualBarIndex,
             text: lineObj.text.replace(/\|/g, ''), 
             originalText: lineObj.text,
             startTime: lineStartTime, 
-            lineDuration: timeForThisLine, 
+            lineDuration: secondsPerBar, 
             isHeader: false, 
             timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
-
-          currentFlowTime += timeForThisLine; 
         });
       }
       runningBlockStartBar = blockStartBar + bars;
     });
     
     setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, lyricLines, setLyricLines]);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution]);
 
   useEffect(() => {
     if (trimmingStem && trimWaveformRef.current) {
@@ -985,7 +938,6 @@ export default function Room04_Booth() {
       });
       trimWavesurferRef.current.on('error', (err) => console.warn("Trim WaveSurfer Soft-fail:", err));
       
-      // 🚨 FIX 4: Guaranteed WaveSurfer Slicer Load Fallback
       const safeUrl = trimmingStem.blob ? URL.createObjectURL(trimmingStem.blob) : trimmingStem.url;
       trimWavesurferRef.current.load(safeUrl).catch(e => console.warn("Trim Load Aborted:", e.message));
       
@@ -1060,7 +1012,6 @@ export default function Room04_Booth() {
                 </div>
 
                 <div className="space-y-4 pb-20">
-                  {/* 🚨 FIX 3: Renders from lyricLines directly */}
                   {lyricLines.filter(l => !l.isHeader).map((line) => (
                     <div key={line.id} className="bg-black border border-[#222] rounded overflow-hidden">
                       <div className="text-[8px] font-mono text-[#555] p-1 bg-[#0a0a0a] border-b border-[#111] truncate">{line.text}</div>
@@ -1135,7 +1086,8 @@ export default function Room04_Booth() {
                             {group.map((wObj, wIdx) => {
                               return (
                                 <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
-                                  <span className="bouncing-ball hidden absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50"></span>
+                                  {/* 🚨 RESTORED: Original Hover CSS to prevent transition breaking */}
+                                  <span className="bouncing-ball opacity-0 absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50 pointer-events-none transition-opacity duration-150"></span>
                                   {wObj.word}
                                 </span>
                               );
@@ -1189,8 +1141,8 @@ export default function Room04_Booth() {
                  <span className="font-mono text-[9px] uppercase tracking-widest font-bold">Syncing storage node...</span>
                </div>
             )}
-            <div className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
-              {Math.floor(currentTimeDisplay / 60).toString().padStart(2, '0')}:{Math.floor(currentTimeDisplay % 60).toString().padStart(2, '0')}
+            <div ref={timeDisplayRef} className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
+              00:00
             </div>
           </div>
 
