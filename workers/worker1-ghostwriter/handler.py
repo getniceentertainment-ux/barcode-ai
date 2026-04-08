@@ -18,7 +18,7 @@ SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_
 SLANG_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/Dictionary.json"
 CULTURE_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/master_index.json"
 
-# --- DEFAULT FALLBACK ASSASSIN (Only used if frontend fails to pass payload) ---
+# --- DEFAULT FALLBACK ASSASSIN ---
 DEFAULT_BANNED_WORDS_MAP = {
     r"\bconcrete jungle\b": "the pavement",
     r"\btapestr(?:y|ies)\b": "blueprint",
@@ -160,7 +160,6 @@ def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustl
     slang_list = ", ".join(load_street_slang(style)) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
     
-    # Pass the actual keys from the dynamic map so the LLM knows what to avoid
     banned_words_str = ", ".join([k.replace(r'\b', '').replace('(?:', '').replace(')', '').replace('?', '').replace('\\', '') for k in list(banned_map.keys())[:30]])
     
     strike_rule = "Ensure your multi-syllabic rhyme endings land precisely on the 2-count and 4-count (the snare drum)."
@@ -193,6 +192,7 @@ You are fiercely individualistic because you know the lethal cost of blind trust
 3. ONE LINE = ONE BAR. 
 4. VOCABULARY: Organically weave in the following slang terms according to their provided definitions: [ {slang_list} ]. DO NOT print the definitions in the lyrics.
 5. THE 25% STRESS RATIO: Do not over-rhyme. No nursery rhymes.
+6. BREATH CONTROL: Use the pipe symbol (|) to represent a mathematical rest in the 16-slot grid.
 
 [LIVE INTEL]
 {rag_context}
@@ -261,8 +261,8 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 - RHYTHMIC CADENCE: {pattern_desc}
 - THE POCKET: {pocket_instruction}
 - SYLLABLE LIMIT: Strictly {current_max_syllables} or less per line.
-- FORMATTING: Use normal English. Do NOT spell out words with dots.
 - BREATH CONTROL: Use the pipe symbol (|) to indicate a rhythmic breath or mathematical rest (e.g., "BOSS | IN THE CAGE").
+- FORMATTING: Use normal English. Do NOT spell out words with dots.
 {energy_rules}
 {hook_context}
 {melodic_rules}
@@ -279,7 +279,6 @@ Write the draft now.
     outputs = model.generate(**inputs, max_new_tokens=60 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15)
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    # 🚨 STRIKE 1: DYNAMIC ASSASSIN
     draft_text = execute_banned_word_assassin(draft_text, banned_map)
 
     refine_prompt = f"""<|im_start|>user
@@ -290,9 +289,10 @@ You drafted this {bars}-bar {section_type.upper()}:
 CRITICAL REFINEMENT COMMANDS:
 1. Every line MUST be {current_max_syllables} syllables or less. Rewrite long lines to be minimalist.
 2. OBEY THE POCKET: {pocket_instruction}
-3. Output EXACTLY {bars} lines.
-4. NO HEADERS. NO TIMESTAMPS. NO STAGE DIRECTIONS (e.g., you must NEVER output metadata tags like (Chorus), (Drill), (Drop), or (Setback)). 
-5. NO ACRONYM GLITCHING: Use standard natural English. Do NOT spell out words with dots (e.g., C.O.M.P.T.O.N is strictly forbidden). DO NOT copy previous sections verbatim.
+3. BREATH CONTROL: Use the pipe symbol (|) for mathematical rests.
+4. Output EXACTLY {bars} lines.
+5. NO HEADERS. NO TIMESTAMPS. NO STAGE DIRECTIONS. 
+6. NO ACRONYM GLITCHING: Use standard natural English. Do NOT spell out words with dots.
 {energy_rules}
 {melodic_rules}
 
@@ -304,7 +304,6 @@ Rewrite the final {bars} lines now. Output ONLY the lyrics.
     outputs_refine = model.generate(**inputs_refine, max_new_tokens=60 * bars, temperature=0.55, top_p=0.9, repetition_penalty=1.1)
     final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    # 🚨 STRIKE 2: DYNAMIC ASSASSIN
     final_text = execute_banned_word_assassin(final_text, banned_map)
 
     final_text = final_text.replace("<|im_end|>", "").strip()
@@ -333,15 +332,14 @@ Rewrite the final {bars} lines now. Output ONLY the lyrics.
 def handler(event):
     job_input = event.get("input", {})
     
-    # --- DIAGNOSTIC TRAP: VERIFY INCOMING PAYLOAD ---
     print("\n" + "="*50)
     print("🔥 NEW JOB INITIATED - CHECKING PAYLOAD VARIABLES")
     print(f"Incoming Keys: {list(job_input.keys())}")
     print(f"dynamic_array caught: {job_input.get('dynamic_array', 'MISSING!')}")
     print(f"contour caught: {job_input.get('contour', 'MISSING!')}")
     print("="*50 + "\n")
-    banned_map = job_input.get("bannedWordsMap", DEFAULT_BANNED_WORDS_MAP)
     
+    banned_map = job_input.get("bannedWordsMap", DEFAULT_BANNED_WORDS_MAP)
     task_type = job_input.get("task_type", "generate")
     
     if task_type == "refine":
@@ -350,8 +348,8 @@ def handler(event):
         
         refine_prompt = f"""<|im_start|>system
 [SYSTEM DIRECTIVE: THE MOGUL POLISH]
-You are an elite hip-hop ghostwriter. The user wants to surgically refine a specific bar of lyrics.
-Follow their instructions. Output ONLY the new final line. No quotes, no explanations, no headers.
+You are an elite hip-hop ghostwriter. Surgically refine a specific bar of lyrics.
+Follow instructions. Output ONLY the new final line. No quotes, no explanations.
 <|im_end|>
 <|im_start|>user
 Original Line: "{original_line}"
@@ -362,8 +360,6 @@ Instruction: {instruction}
         inputs = tokenizer(refine_prompt, return_tensors="pt").to("cuda")
         outputs = model.generate(**inputs, max_new_tokens=60, temperature=0.55, top_p=0.9, repetition_penalty=1.1)
         refined_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
-        
-        # Assassin cleans manual refine lines too
         refined_text = execute_banned_word_assassin(refined_text, banned_map)
         return {"refinedLine": refined_text.replace("<|im_end|>", "").strip()}
 
@@ -392,7 +388,6 @@ Instruction: {instruction}
     if total_blueprint_bars == 0: total_blueprint_bars = 1
 
     seconds_per_bar = (60.0 / bpm) * 4.0
-
     style_limits = {
         "lazy": {"min": 4, "max": 7},              
         "heartbeat": {"min": 7, "max": 10},        
@@ -401,27 +396,24 @@ Instruction: {instruction}
         "chopper": {"min": 12, "max": 16}          
     }
 
-    limits = style_limits.get(style, style_limits["getnice_hybrid"])
-    bpm_ratio = min(1.0, max(0.0, (seconds_per_bar - 1.5) / (3.5 - 1.5))) 
-    max_syllables = int(limits["min"] + (limits["max"] - limits["min"]) * bpm_ratio)
+    limits = style_limits.get(style.split(' ')[0], style_limits["getnice_hybrid"])
+    max_syllables = int(limits["min"] + (limits["max"] - limits["min"]) * min(1.0, max(0.0, (seconds_per_bar - 1.5) / 2.0)))
 
     pocket_instruction = "End every line with a period (.). You MUST hit Enter/Return to create a new line."
-    
     if pocket == "chainlink":
-        pocket_instruction = "CHAIN-LINK MODE: End every single line with a comma (,) for spillover. You MUST still hit Enter/Return after the comma to create a distinct new line on the page."
+        pocket_instruction = "CHAIN-LINK MODE: End every single line with a comma (,) for spillover."
     elif pocket == "pickup":
-        pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.). You MUST hit Enter/Return to create a new line."
+        pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.)."
     elif pocket == "cascade":
-        pocket_instruction = "THE GETNICE CASCADE MODE (INTERNAL CARRY-OVER): Use heavy enjambment. End lines mid-phrase with no punctuation. You MUST rhyme the END of one line with the BEGINNING or MIDDLE of the very next line."
+        pocket_instruction = "THE GETNICE CASCADE MODE: Use heavy enjambment. End lines mid-phrase with no punctuation."
     elif pocket == "matrix_pivot":
-        pocket_instruction = "THE MATRIX PIVOT (INTERNAL HINGE): Execute a cascading rhyme shift using the rhythmic array. Take the exact end-rhyme of the previous line, and place a matching rhyme on the 3rd spoken word (the 3rd rhythmic cluster) of the current line to link them."
+        pocket_instruction = "THE MATRIX PIVOT: Execute a cascading rhyme shift using the rhythmic array."
 
     system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, banned_map)
     
     final_lyrics = ""
     context_lyrics = ""
     current_cumulative_bar = 0
-    
     saved_hook_lines = None 
     anchor_hook_text = None
 
@@ -439,13 +431,11 @@ Instruction: {instruction}
         
         if sec_type == "INSTRUMENTAL":
             section_lines = ["[Instrumental Break]" for _ in range(bars)]
-            
         elif "HOOK" in sec_type and saved_hook_lines is not None:
             section_lines = []
             while len(section_lines) < bars:
                 section_lines.extend(saved_hook_lines)
             section_lines = section_lines[:bars]
-            
         else:
             section_lines = generate_section(
                 system_prompt=system_prompt, 
@@ -461,20 +451,16 @@ Instruction: {instruction}
                 hook_type=hook_type,            
                 flow_evolution=flow_evolution,
                 current_energy=current_energy,
-                banned_map=banned_map # 🚨 PASS MAP HERE
+                banned_map=banned_map
             )
-            
             if "HOOK" in sec_type:
                 saved_hook_lines = section_lines
                 anchor_hook_text = "\n".join(section_lines)
-                
             context_lyrics = "\n".join(section_lines[-4:])
         
         for i, line in enumerate(section_lines):
-            line_bar = start_bar + i
-            line_time = line_bar * seconds_per_bar
-            mins, secs = int(line_time // 60), int(line_time % 60)
-            final_lyrics += f"({mins}:{secs:02d}) {line}\n"
+            line_time = (start_bar + i) * seconds_per_bar
+            final_lyrics += f"({int(line_time // 60)}:{int(line_time % 60):02d}) {line}\n"
         
         current_cumulative_bar = start_bar + bars
 
