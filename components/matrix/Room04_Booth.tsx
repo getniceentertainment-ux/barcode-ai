@@ -14,32 +14,36 @@ type WordMapping = { id: string; word: string; startTime: number; duration: numb
 type LyricLine = { id: string; text: string; originalText: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[]; barIndex: number };
 
 // --- THE MACRO-RHYTHMIC NEURAL ENGINE ---
+// Translates your exact Topline Directives into the visual metronome matrix
 function determineRhythmicPattern(style: string, pocket: string, strikeZone: string, hookType: string, flowEvolution: string, isHook: boolean): number[] {
   const st = (style || "").toLowerCase();
   const p = (pocket || "").toLowerCase();
   const sz = (strikeZone || "").toLowerCase();
   const ht = (hookType || "").toLowerCase();
 
+  // 1. Hook Architecture Overrides
   if (isHook) {
     if (ht.includes("bouncy")) return [2, 1, 1, 2, 2];
     if (ht.includes("triplet")) return [3, 3, 2, 3, 3, 2];
     if (ht.includes("symmetry")) return [4, 2, 2, 4, 4];
     if (ht.includes("prime")) return [5, 3, 5, 3];
-    return [6, 2, 8]; 
+    return [6, 2, 8]; // stadium/chant
   }
 
-  if (sz.includes("strike zone") || sz.includes("strike")) return [1, 1, 2, 1, 1, 2, 1, 1, 2];
-  if (sz.includes("snare") || sz.includes("2 & 4")) return [4, 2, 2, 4, 2, 2];
-  if (sz.includes("downbeat")) return [4, 4, 4, 4];
-  if (p.includes("chainlink") || p.includes("chain-link")) return [2, 2, 2, 2, 2, 2, 1, 1, 1, 1];
-  if (p.includes("drag") || p.includes("pickup")) return [6, 2, 2, 2, 2, 2];
+  // 2. Topline & Pocket Directives
+  if (sz.includes("strike zone") || sz.includes("strike")) return [1, 1, 2, 1, 1, 2, 1, 1, 2]; // Fast 16th clusters
+  if (sz.includes("snare") || sz.includes("2 & 4")) return [4, 2, 2, 4, 2, 2]; // Hits the 2 & 4 snap
+  if (sz.includes("downbeat")) return [4, 4, 4, 4]; // Heavy quarters
+  if (p.includes("chainlink") || p.includes("chain-link")) return [2, 2, 2, 2, 2, 2, 1, 1, 1, 1]; // Bleeds at the end
+  if (p.includes("drag") || p.includes("pickup")) return [6, 2, 2, 2, 2, 2]; // Delays the 1 count
 
+  // 3. Fallback to Style DNA
   if (st.includes("chopper")) return [1, 1, 1, 1, 1, 1, 1, 1];
   if (st.includes("heartbeat")) return [2, 2, 2, 2];
   if (st.includes("triplet")) return [3, 3, 2];
   if (st.includes("lazy")) return [4, 4, 2, 6];
   
-  return [4, 2, 2, 3, 1, 4, 2, 2, 2, 2];
+  return [4, 2, 2, 3, 1, 4, 2, 2, 2, 2]; // getnice_hybrid standard default
 }
 
 function chunkWordForVisuals(word: string): string[] {
@@ -158,7 +162,7 @@ export default function Room04_Booth() {
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
     updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, 
     addToast, gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution,
-    gwGender // 🚨 FIXED: Destructured missing gwGender to resolve build error
+    gwGender
   } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -225,10 +229,16 @@ export default function Room04_Booth() {
         const targetIndex = line.words.findIndex(w => w.id === syllableId);
         if (targetIndex === -1) return line;
         const newWords = [...line.words];
+
+        // 🚨 SNAKING LOGIC RESTORED: Shift target AND subsequent words
         for (let i = targetIndex; i < newWords.length; i++) {
            let newSlot = newWords[i].slot + delta;
            newSlot = Math.max(0, Math.min(15, newSlot)); 
-           newWords[i] = { ...newWords[i], slot: newSlot, startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot) };
+           newWords[i] = { 
+             ...newWords[i], 
+             slot: newSlot, 
+             startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot) 
+           };
         }
         return { ...line, words: newWords };
       }
@@ -269,12 +279,15 @@ export default function Room04_Booth() {
             const source = offlineCtx.createBufferSource();
             source.buffer = audioBuffer;
             const gainNode = offlineCtx.createGain();
+            
+            // 🚨 GUIDED CROSSFADE AUDIO LOGIC
             gainNode.gain.setValueAtTime(0, wObj.startTime);
             gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01);
             gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-            gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + 0.2);
+            gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + 0.35);
+            
             source.connect(gainNode); gainNode.connect(offlineCtx.destination);
-            source.start(wObj.startTime, ttsOffset, Math.min(ttsWordDuration + 0.2, ttsDuration - ttsOffset));
+            source.start(wObj.startTime, ttsOffset, Math.min(ttsWordDuration + 0.35, ttsDuration - ttsOffset));
           });
         } catch (lineErr) { console.warn("TTS Error", lineErr); }
       }
@@ -311,21 +324,37 @@ export default function Room04_Booth() {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
+            
             if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
               chunkNode.classList.add('text-white', 'font-bold');
               if (ballNode) {
-                ballNode.classList.remove('hidden');
+                // 🚨 RESTORED TRUE MATHEMATICAL BOUNCE LOGIC
+                ballNode.classList.remove('opacity-0');
                 let progress = (visualTime - wObj.startTime) / wObj.duration;
-                const bounceHeight = Math.sin(progress * Math.PI) * 16;
+                progress = Math.max(0, Math.min(1, progress));
+                const maxBounce = Math.min(16, wObj.duration * 50); 
+                const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
+                
                 ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
               }
             } else {
                chunkNode.classList.remove('text-white', 'font-bold');
-               if (ballNode) ballNode.classList.add('hidden');
+               if (ballNode) {
+                 ballNode.classList.add('opacity-0');
+                 ballNode.style.transform = `translateX(-50%) translateY(0px)`;
+               }
             }
           });
         } else {
           lineNode.classList.remove('bg-[#E60000]/10', 'border-[#E60000]');
+          const chunks = lineNode.querySelectorAll('.syllable-chunk');
+          chunks.forEach(c => {
+             const ball = c.querySelector('.bouncing-ball') as HTMLElement;
+             if (ball) {
+               ball.classList.add('opacity-0');
+               ball.style.transform = `translateX(-50%) translateY(0px)`;
+             }
+          });
         }
       }
       if (autoScroll && currentLineIndex !== -1 && currentLineIndex !== lastActiveLineRef.current) {
@@ -394,7 +423,13 @@ export default function Room04_Booth() {
     const sanitizedLines = lines.map(l => {
       let text = l.trim();
       if (text.startsWith('[')) return { text, isHeader: true };
-      text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').replace(/bars?\s*\d+/gi, '').replace(/\s+/g, ' ').trim();
+      
+      // 🚨 AGGRESSIVE METADATA SCRUBBER
+      text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '')
+                 .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '')
+                 .replace(/\(\d+\s*syllables?.*?\)/gi, '')
+                 .replace(/\[\d+\s*syllables?.*?\]/gi, '')
+                 .replace(/\s+/g, ' ').trim();
       return { text, isHeader: false };
     }).filter(obj => obj.text.length > 0);
 
@@ -434,7 +469,7 @@ export default function Room04_Booth() {
 
           if (lineObj.text.startsWith('...')) totalLineSteps += 4;
           const wordChunksArray = rawWords.map((w: string) => {
-            const chunks = chunkWordForVisuals(w);
+            const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
             chunks.forEach(() => { totalLineSteps += (activePattern[tempPatternIndex % activePattern.length] || 2); tempPatternIndex++; });
             return chunks;
           });
@@ -451,15 +486,22 @@ export default function Room04_Booth() {
               const steps = activePattern[patternIndex % activePattern.length] || 2;
               patternIndex++;
               const duration = steps * timePerStep;
-              const slot = Math.min(15, Math.floor((currentSlot / totalLineSteps) * 16));
-              mappedWords.push({ id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`, word: chunk, slot, startTime: localWordTime, duration, isWordEnd: (cIdx === chunks.length - 1) });
+              const slot = Math.min(15, Math.floor((currentSlot / (totalLineSteps || 16)) * 16));
+              mappedWords.push({ 
+                id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`, 
+                word: chunk.replace(/\|/g, ''), 
+                slot, 
+                startTime: localWordTime, 
+                duration, 
+                isWordEnd: (cIdx === chunks.length - 1) 
+              });
               localWordTime += duration; currentSlot += steps;
             });
           });
 
           parsed.push({ 
             id: `line-${lineIdCounter++}`, barIndex: Math.floor(lineStartTime / secondsPerBar),
-            text: lineObj.text, originalText: lineObj.text, startTime: lineStartTime, lineDuration: timeForThisLine,
+            text: lineObj.text.replace(/\|/g, ''), originalText: lineObj.text, startTime: lineStartTime, lineDuration: timeForThisLine,
             isHeader: false, timestamp: `(${Math.floor(lineStartTime/60)}:${Math.floor(lineStartTime%60).toString().padStart(2,'0')})`,
             words: mappedWords 
           });
@@ -476,16 +518,16 @@ export default function Room04_Booth() {
   return (
     <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500 relative flex-col">
       <div className="flex-1 flex overflow-hidden">
-        <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative">
+        <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
           <div className="p-8 pb-4 border-b border-[#111] flex justify-between items-center relative flex-wrap gap-4">
              <div className="flex items-center gap-4">
                <h2 className="font-oswald text-xl uppercase tracking-widest font-bold text-[#555] flex items-center gap-2"><Mic size={20} /> BOOTH</h2>
                <div className="flex border border-[#333] rounded overflow-hidden">
-                 <button onClick={() => setIsReviewMode(false)} className={`px-3 py-1.5 text-[9px] uppercase font-mono font-bold ${!isReviewMode ? 'bg-[#E60000]/20 text-[#E60000]' : 'bg-black text-[#555]'}`}><ListVideo size={12} /> Prompter</button>
-                 <button onClick={() => setIsReviewMode(true)} className={`px-3 py-1.5 text-[9px] uppercase font-mono font-bold border-l border-[#333] ${isReviewMode ? 'bg-yellow-500/10 text-yellow-500' : 'bg-black text-[#555]'}`}><Crosshair size={12} /> Quantize Grid</button>
+                 <button onClick={() => setIsReviewMode(false)} className={`px-3 py-1.5 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 ${!isReviewMode ? 'bg-[#E60000]/20 text-[#E60000]' : 'bg-black text-[#555] hover:text-white'}`}><ListVideo size={12} /> Prompter</button>
+                 <button onClick={() => setIsReviewMode(true)} className={`px-3 py-1.5 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 border-l border-[#333] ${isReviewMode ? 'bg-yellow-500/10 text-yellow-500' : 'bg-black text-[#555] hover:text-white'}`}><Crosshair size={12} /> Quantize Grid</button>
                </div>
              </div>
-             {!isReviewMode && <button onClick={handleGenerateGuide} disabled={isGeneratingGuide} className="bg-[#111] border border-[#333] text-[#E60000] px-2.5 py-1 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5">{isGeneratingGuide ? <Loader2 size={10} className="animate-spin" /> : <Mic size={10} />} Sync Guide Audio</button>}
+             {!isReviewMode && <button onClick={handleGenerateGuide} disabled={isGeneratingGuide} className="bg-[#111] border border-[#333] text-[#E60000] px-2.5 py-1 text-[9px] uppercase font-mono font-bold transition-all flex items-center gap-1.5 disabled:opacity-50">{isGeneratingGuide ? <Loader2 size={10} className="animate-spin" /> : <Mic size={10} />} Sync Guide Audio</button>}
           </div>
           {isReviewMode ? (
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-[#020202]">
@@ -498,7 +540,7 @@ export default function Room04_Booth() {
                           const mappedSyl = line.words?.find(s => s.slot === slotIndex);
                           return (
                             <div key={slotIndex} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, line.id, slotIndex)} className={`flex-1 border-r border-[#111] relative flex items-center justify-center ${slotIndex % 4 === 0 ? 'bg-[#151515]' : ''}`}>
-                              {mappedSyl && <div draggable onDragStart={(e) => handleDragStart(e, line.id, mappedSyl.id, mappedSyl.slot)} className="absolute z-10 w-[90%] py-1 bg-[#E60000] text-white text-[9px] font-mono font-bold text-center rounded cursor-grab overflow-hidden text-ellipsis">{mappedSyl.word}</div>}
+                              {mappedSyl && <div draggable onDragStart={(e) => handleDragStart(e, line.id, mappedSyl.id, mappedSyl.slot)} className="absolute z-10 w-[90%] py-1 bg-[#E60000] text-white text-[9px] font-mono font-bold text-center rounded cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(230,0,0,0.4)] hover:bg-red-500 overflow-hidden text-ellipsis whitespace-nowrap" title={mappedSyl.word}>{mappedSyl.word}</div>}
                             </div>
                           );
                         })}
@@ -509,20 +551,22 @@ export default function Room04_Booth() {
             </div>
           ) : (
             <div ref={teleprompterRef} className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative">
-              {lyricLines.map((line, i) => (
-                <div key={i} className={`lyric-line-container mb-2 py-2 px-3 border-l-2 ${line.isHeader ? 'text-[#E60000] font-bold mt-8 border-none' : 'border-transparent'}`}>
-                  {!line.isHeader && <span className="text-[9px] text-[#555] mr-3">{line.timestamp}</span>}
-                  <span className="flex-1 flex flex-wrap gap-x-2">
-                    {line.words?.map((w, idx) => (
-                      <span key={idx} className="syllable-chunk relative inline-block text-[#444] transition-colors">
-                        <span className="bouncing-ball hidden absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50"></span>
-                        {w.word}
-                      </span>
-                    ))}
-                    {line.isHeader && line.text}
-                  </span>
-                </div>
-              ))}
+              {lyricLines.map((line, i) => {
+                if (line.isHeader) return <p key={i} className="text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs">{line.text}</p>;
+                return (
+                  <div key={i} className={`lyric-line-container mb-2 py-2 px-3 border-l-2 border-transparent flex items-start transition-colors duration-200`}>
+                    <span className="text-[9px] text-[#555] mt-1.5 mr-3 shrink-0">{line.timestamp}</span>
+                    <span className="flex-1 leading-loose flex flex-wrap gap-y-2">
+                      {line.words?.map((w, idx) => (
+                        <span key={idx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100 mr-2">
+                          <span className="bouncing-ball opacity-0 absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50 pointer-events-none transition-opacity duration-150"></span>
+                          {w.word}
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -530,36 +574,61 @@ export default function Room04_Booth() {
         <div className="flex-1 flex flex-col relative bg-black">
           <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10 relative">
             <div className="flex items-center gap-4">
-              <button onClick={togglePlayback} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all">{isPlaying ? <Pause size={24} /> : <Play size={24} className="ml-1" />}</button>
-              <button onClick={stopEverything} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all text-[#888]"><Square size={20} /></button>
-              <button onClick={isRecording ? () => setIsRecording(false) : startHardwareRecording} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse' : 'bg-[#111] border border-[#333]'}`}>{isUploading ? <Loader2 size={24} className="animate-spin" /> : <Mic size={24} />}</button>
+              <button onClick={togglePlayback} disabled={isUploading} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all disabled:opacity-50">{isPlaying ? <Pause size={24} /> : <Play size={24} className="ml-1" />}</button>
+              <button onClick={stopEverything} disabled={isUploading} className="w-14 h-14 rounded-full border border-[#333] flex items-center justify-center bg-[#111] hover:bg-white hover:text-black transition-all text-[#888] disabled:opacity-50"><Square size={20} /></button>
+              <button onClick={isRecording ? stopEverything : startHardwareRecording} disabled={isUploading} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all disabled:opacity-50 ${isRecording ? 'bg-red-950 text-[#E60000] border-2 border-[#E60000] animate-pulse' : 'bg-[#111] border border-[#333]'}`}>{isUploading ? <Loader2 size={24} className="animate-spin" /> : <Mic size={24} />}</button>
             </div>
             <div className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">{Math.floor(currentTimeDisplay/60).toString().padStart(2,'0')}:{Math.floor(currentTimeDisplay%60).toString().padStart(2,'0')}</div>
           </div>
           <div className="p-6 border-b border-[#222] bg-[#050505]"><div ref={waveformRef} className="w-full h-20 bg-black border border-[#111] rounded-lg"></div></div>
           <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
-            <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Layers</h4>
+            <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Timeline Layers</h4>
             <div className="space-y-3">
               {vocalStems.map(s => (
-                <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group">
+                <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
                   <div className="flex justify-between items-center mb-3">
-                    <span className="font-mono text-[10px] text-[#444]">{s.id.substring(5, 12)}</span>
+                    <span className="font-mono text-[10px] text-[#444]">{s.id.substring(5, 12)} ({s.type})</span>
                     <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
                   </div>
                   <div className="flex flex-col gap-4 mt-3 border-t border-[#111] pt-4">
                     <div className="flex items-center gap-4">
-                      <span className="text-[9px] font-mono text-[#555] uppercase w-16">Offset</span>
-                      <button onClick={() => updateStemOffset(s.id, Math.max(0, s.offsetBars - 1))} className="text-[#444]"><ChevronLeft size={16}/></button>
-                      <span className="text-xs font-mono text-[#E60000] w-8 text-center">{s.offsetBars}</span>
-                      <button onClick={() => updateStemOffset(s.id, s.offsetBars + 1)} className="text-[#444]"><ChevronRight size={16}/></button>
+                      <span className="text-[9px] font-mono text-[#555] uppercase w-16">Start Bar</span>
+                      <button onClick={() => updateStemOffset(s.id, Math.max(0, s.offsetBars - 1))} className="text-[#444] hover:text-white"><ChevronLeft size={16}/></button>
+                      <span className="text-xs font-mono text-[#E60000] w-8 text-center font-bold">{s.offsetBars}</span>
+                      <button onClick={() => updateStemOffset(s.id, s.offsetBars + 1)} className="text-[#444] hover:text-white"><ChevronRight size={16}/></button>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
+          <div className="h-16 bg-black border-t border-[#222] flex items-center justify-end px-10">
+            <button onClick={() => setActiveRoom("05")} disabled={vocalStems.length === 0 || isUploading} className="flex items-center gap-3 bg-white text-black px-8 py-2 font-oswald font-bold uppercase tracking-widest text-xs hover:bg-[#E60000] hover:text-white transition-all disabled:opacity-30">Engineering Suite <ArrowRight size={16} /></button>
+          </div>
         </div>
       </div>
+
+      {trimmingStem && (
+        <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-8 animate-in zoom-in duration-300">
+          <div className="bg-[#050505] border border-[#E60000] rounded-lg w-full max-w-2xl p-8 shadow-[0_0_50px_rgba(230,0,0,0.2)]">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-oswald text-2xl uppercase tracking-widest text-[#E60000] font-bold flex items-center gap-3"><Scissors size={24} /> Slice Region</h3>
+              <button onClick={() => setTrimmingStem(null)} className="text-[#555] hover:text-white"><X size={24}/></button>
+            </div>
+            <p className="font-mono text-[10px] text-gray-400 uppercase tracking-widest mb-6">Drag sliders to crop dead air from the microphone take.</p>
+            <div className="bg-black border border-[#222] p-4 rounded-lg relative">
+              <div ref={trimWaveformRef} className="w-full h-24 pointer-events-none"></div>
+              <div className="absolute inset-0 px-4 flex flex-col justify-center">
+                <input type="range" min={0} max={trimDuration} step={0.01} value={trimStart} onChange={(e) => setTrimStart(Math.min(parseFloat(e.target.value), trimEnd - 0.1))} className="w-full absolute opacity-50 cursor-ew-resize h-full top-0 left-0 accent-[#E60000]" style={{ zIndex: 10 }} />
+                <input type="range" min={0} max={trimDuration} step={0.01} value={trimEnd} onChange={(e) => setTrimEnd(Math.max(parseFloat(e.target.value), trimStart + 0.1))} className="w-full absolute opacity-50 cursor-ew-resize h-full top-0 left-0 accent-white" style={{ zIndex: 11 }} />
+              </div>
+              {trimDuration > 0 && <div className="absolute top-4 bottom-4 bg-[#E60000]/20 border-l-2 border-r-2 border-[#E60000] pointer-events-none" style={{ left: `calc(1rem + ${(trimStart / trimDuration) * (100 - 2)}%)`, width: `${((trimEnd - trimStart) / trimDuration) * (100 - 2)}%` }} />}
+            </div>
+            <div className="flex justify-between font-mono text-[10px] text-[#888] mt-4 uppercase"><span>Start: {trimStart.toFixed(2)}s</span><span>Keep: {(trimEnd - trimStart).toFixed(2)}s</span><span>End: {trimEnd.toFixed(2)}s</span></div>
+            <button onClick={applyTrim} disabled={isProcessingTrim} className="w-full mt-8 bg-[#E60000] text-white py-4 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50">{isProcessingTrim ? <Loader2 size={20} className="animate-spin" /> : <><Scissors size={20} /> Execute Destructive Slice & Upload</>}</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

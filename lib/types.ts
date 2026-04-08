@@ -13,11 +13,11 @@ export interface AudioAnalysis {
   fileName: string;
   bpm: number;
   totalBars: number;
-  duration?: number; 
+  duration?: number; // Preserving our Phase 1 addition
   grid?: number[];
   key?: string;
-  dynamic_array?: number[]; // THEMATIC ENERGY ARRAY
-  contour?: string;         // PITCH DIRECTION
+  dynamic_array?: number[]; // <--- ADD THIS
+  contour?: string;         // <--- ADD THIS
 }
 
 export interface FlowDNA {
@@ -28,12 +28,8 @@ export interface FlowDNA {
 
 export interface BlueprintSection {
   id: string;
-  type: "INTRO" | "HOOK" | "VERSE" | "OUTRO" | "BRIDGE" | "INSTRUMENTAL";
+  type: "INTRO" | "HOOK" | "VERSE" | "OUTRO" | "BRIDGE" | "INSTRUMENTAL"; // <-- SURGICAL ADDITION
   bars: number;
-  startBar?: number;
-  patternName?: string;
-  patternDesc?: string;
-  patternArray?: number[];
 }
 
 export interface VocalStem {
@@ -42,7 +38,7 @@ export interface VocalStem {
   url: string;
   blob?: Blob;
   volume: number; 
-  offsetBars: number;
+  offsetBars: number; // MANDATORY: Required for Timeline Sliding
 }
 
 export interface FinalMaster {
