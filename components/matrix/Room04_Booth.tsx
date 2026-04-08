@@ -10,10 +10,6 @@ import { supabase } from "../../lib/supabase";
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
-// SURGICAL FIX: Enforced strict typing so the Grid knows these properties exist
-type WordMapping = { id: string; word: string; startTime: number; duration: number; slot: number; isWordEnd?: boolean };
-type LyricLine = { id: string; text: string; originalText: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[]; barIndex: number };
-
 // --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR (FALLBACK ONLY) ---
 function estimateSyllables(word: string): number {
   const w = word.toLowerCase().replace(/[^a-z]/g, '');
@@ -244,7 +240,6 @@ export default function Room04_Booth() {
   const [teleprompterEnabled, setTeleprompterEnabled] = useState(true);
 
   const [currentTimeDisplay, setCurrentTimeDisplay] = useState(0);
-  const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
 
@@ -300,14 +295,14 @@ export default function Room04_Booth() {
     const delta = targetSlot - originalSlot;
     if (delta === 0) return;
 
-    // 🚨 FIX 3: Route Drag & Drop update to local lyricLines so the Grid mathematically updates
-    setLyricLines(prev => prev.map(line => {
+    setQuantizedLines(quantizedLines.map(line => {
       if (line.id === targetLineId && !line.isHeader && line.words) {
         const targetIndex = line.words.findIndex(w => w.id === syllableId);
         if (targetIndex === -1) return line;
 
         const newWords = [...line.words];
 
+        // DYNAMIC SNAKING: Move the targeted word AND all subsequent words by the exact delta
         for (let i = targetIndex; i < newWords.length; i++) {
            let newSlot = newWords[i].slot + delta;
            newSlot = Math.max(0, Math.min(15, newSlot)); 
@@ -315,6 +310,7 @@ export default function Room04_Booth() {
            newWords[i] = {
              ...newWords[i],
              slot: newSlot,
+             // RE-CALCULATE AUDIO SYNC TIME
              startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot)
            };
         }
@@ -326,7 +322,7 @@ export default function Room04_Booth() {
   };
 
   const handleGenerateGuide = async () => {
-    if (!lyricLines || lyricLines.length === 0) {
+    if (!quantizedLines || quantizedLines.length === 0) {
       if (addToast) addToast("No valid lyrics found to generate guide.", "error");
       return;
     }
@@ -335,8 +331,7 @@ export default function Room04_Booth() {
     setGuideProgress(0);
     
     try {
-      // 🚨 FIX 4: Guide reads from the mathematically accurate local state, not the stale store
-      const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
+      const parsedLines = quantizedLines.filter(l => !l.isHeader && l.text.trim().length > 0);
       if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
       const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
@@ -348,9 +343,6 @@ export default function Room04_Booth() {
       for (let i = 0; i < parsedLines.length; i++) {
               const line = parsedLines[i];
               
-              // 🚨 FIX 2: Restore Guide Progress Percentage
-              setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
-
               try {
                 const res = await fetch('/api/audio/generate-guide', {
                   method: 'POST',
@@ -359,7 +351,7 @@ export default function Room04_Booth() {
                     lyrics: line.text.replace(/\|/g, ''), 
                     bpm: preciseBpm,
                     gender: useMatrixStore.getState().gwGender || "male",
-                    pitch: "low"
+                    pitch: "low" // Hint for the TTS engine
                   })
                 });
                 
@@ -368,37 +360,57 @@ export default function Room04_Booth() {
                 const arrayBuffer = await res.arrayBuffer();
                 const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
                 
+                // --- THE GETNICE GRANULAR SLICER (MPC METHOD) ---
                 const mappedWords = line.words;
                 if (!mappedWords || mappedWords.length === 0) continue;
 
-                // 🚨 FIX 1: Restore Proportional Crossfade Audio Logic (Syllable Syncing)
+                // Divide the raw TTS audio evenly among the syllables
                 const ttsDuration = audioBuffer.duration;
-                const mathLineDuration = line.lineDuration || 2;
+                const sliceDuration = ttsDuration / mappedWords.length;
 
-                mappedWords.forEach((wObj) => {
-                  if (!wObj.word.trim()) return;
-
-                  const relativeWordStart = wObj.startTime - line.startTime;
-                  const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
-                  const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
-
-                  const tailBleed = 0.35; 
-                  const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
+                mappedWords.forEach((wordObj, wIdx) => {
+                  if (!wordObj.word.trim()) return; // Skip empty slots
 
                   const source = offlineCtx.createBufferSource();
                   source.buffer = audioBuffer;
-                  source.playbackRate.value = 1.0; 
 
+                  const sliceStart = wIdx * sliceDuration;
+
+                  // --- 1. THE MPC PITCH DROP ---
+                  const baseStretch = sliceDuration / wordObj.duration;
+                  const pitchShiftDrop = 0.82; 
+                  source.playbackRate.value = Math.min(1.05, Math.max(0.65, baseStretch * pitchShiftDrop));
+
+                  // --- 2. THE "VOICE OF GOD" CHEST EQ ---
+                  const chestEq = offlineCtx.createBiquadFilter();
+                  chestEq.type = "peaking";
+                  chestEq.frequency.value = 200; 
+                  chestEq.Q.value = 1.0;
+                  chestEq.gain.value = 8; 
+
+                  const highShelf = offlineCtx.createBiquadFilter();
+                  highShelf.type = "highshelf";
+                  highShelf.frequency.value = 4000;
+                  highShelf.gain.value = -3; 
+
+                  // --- 3. THE MICRO-FADER (CHOKE GROUP) ---
                   const gainNode = offlineCtx.createGain();
-                  gainNode.gain.setValueAtTime(0, wObj.startTime);
-                  gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
-                  gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-                  gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
+                  const fadeTime = 0.015; 
+                  
+                  gainNode.gain.setValueAtTime(0, wordObj.startTime);
+                  gainNode.gain.linearRampToValueAtTime(1, wordObj.startTime + fadeTime); 
+                  
+                  const chopEndTime = wordObj.startTime + wordObj.duration;
+                  gainNode.gain.setValueAtTime(1, chopEndTime - fadeTime);
+                  gainNode.gain.linearRampToValueAtTime(0, chopEndTime); 
 
-                  source.connect(gainNode);
+                  // --- 4. ROUTE THE SIGNAL CHAIN ---
+                  source.connect(chestEq);
+                  chestEq.connect(highShelf);
+                  highShelf.connect(gainNode);
                   gainNode.connect(offlineCtx.destination);
                   
-                  source.start(wObj.startTime, ttsOffset, safeExtractDuration);
+                  source.start(wordObj.startTime, sliceStart, sliceDuration);
                 });
 
               } catch (lineErr) {
@@ -498,7 +510,7 @@ export default function Room04_Booth() {
     if (!wavesurferRef.current) return;
     
     const time = wavesurferRef.current.getCurrentTime();
-    setCurrentTimeDisplay(time); 
+    setCurrentTimeDisplay(time); // Display clock updates smoothly
 
     const visualTime = time + 0.08; 
 
@@ -506,11 +518,11 @@ export default function Room04_Booth() {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
       let currentLineIndex = -1;
 
-      for (let i = 0; i < lyricLines.length; i++) {
-        const line = lyricLines[i];
+      for (let i = 0; i < quantizedLines.length; i++) {
+        const line = quantizedLines[i];
         if (line.isHeader) continue;
 
-        const nextLine = lyricLines.slice(i + 1).find(l => !l.isHeader);
+        const nextLine = quantizedLines.slice(i + 1).find(l => !l.isHeader);
         const endTime = nextLine ? nextLine.startTime : (line.startTime + (line.lineDuration || 2));
 
         const lineNode = lineNodes[i] as HTMLElement;
@@ -525,36 +537,23 @@ export default function Room04_Booth() {
           line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
-            const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
+            const ballNode = chunkNode.querySelector('.bouncing-ball');
             
             if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
+              // Active Syllable
               chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
               chunkNode.classList.remove('text-[#444]', 'text-[#888]');
-              if (ballNode) {
-                ballNode.classList.remove('hidden');
-                
-                let progress = (visualTime - wObj.startTime) / wObj.duration;
-                progress = Math.max(0, Math.min(1, progress)); 
-                
-                const maxBounce = Math.min(16, wObj.duration * 50); 
-                const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
-                
-                ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
-              }
+              if (ballNode) ballNode.classList.remove('hidden');
             } else if (visualTime >= wObj.startTime + wObj.duration) {
+              // Past Syllable
               chunkNode.classList.add('text-[#888]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
-              if (ballNode) {
-                ballNode.classList.add('hidden');
-                ballNode.style.transform = `translateX(-50%) translateY(0px)`;
-              }
+              if (ballNode) ballNode.classList.add('hidden');
             } else {
+              // Future Syllable
               chunkNode.classList.add('text-[#444]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
-              if (ballNode) {
-                ballNode.classList.add('hidden');
-                ballNode.style.transform = `translateX(-50%) translateY(0px)`;
-              }
+              if (ballNode) ballNode.classList.add('hidden');
             }
           });
         } else {
@@ -565,11 +564,8 @@ export default function Room04_Booth() {
           line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
-            const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
-            if (ballNode) {
-              ballNode.classList.add('hidden');
-              ballNode.style.transform = `translateX(-50%) translateY(0px)`;
-            }
+            const ballNode = chunkNode.querySelector('.bouncing-ball');
+            if (ballNode) ballNode.classList.add('hidden');
 
             if (visualTime >= wObj.startTime + wObj.duration) {
               chunkNode.classList.add('text-[#888]');
@@ -582,6 +578,7 @@ export default function Room04_Booth() {
         }
       }
 
+      // Hardware Accelerated Auto-Scroll
       if (autoScroll && currentLineIndex !== -1 && currentLineIndex !== lastActiveLineRef.current) {
         const activeNode = lineNodes[currentLineIndex] as HTMLElement;
         if (activeNode) {
@@ -849,17 +846,30 @@ export default function Room04_Booth() {
 
   const lastParsedLyricsRef = useRef<string>("");
 
+  // 🚨 THE FIX: AGGRESSIVE AI METADATA SCRUBBER
+  // This physically destroys hallucinations like "|", "(4 syllables total)", or "[4 syllables]" 
+  // BEFORE the Quantize Engine calculates the logic. The ball will only ride pure lyrics.
   useEffect(() => {
     if (!generatedLyrics) return;
-    if (lyricLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
+    if (quantizedLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
     lastParsedLyricsRef.current = generatedLyrics;
 
     const lines = generatedLyrics.split('\n');
     
     const sanitizedLines = lines.map(l => {
       let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
+      
       if (text.startsWith('[') && text.includes(']')) return { text, isHeader: true }; 
-      text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '').replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
+      
+      // VAPORIZE AI METADATA HALLUCINATIONS
+      text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') // Strips (1:08)
+                 .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') // Strips (Bar 1-4)
+                 .replace(/pipe\s*symbol/gi, '') 
+                 .replace(/\|/g, '') // STRIPS LITERAL PIPES
+                 .replace(/\(\d+\s*syllables?.*?\)/gi, '') // STRIPS (4 syllables total)
+                 .replace(/\[\d+\s*syllables?.*?\]/gi, '') // STRIPS [4 syllables]
+                 .replace(/\s+/g, ' ').trim();
+
       text = text.replace(/,/g, ', ').replace(/\s+/g, ' ').trim();
       return { text, isHeader: false };
     }).filter(obj => obj.text.length > 0);
@@ -875,22 +885,20 @@ export default function Room04_Booth() {
     });
     if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) llmBlocks.push(currentLlmBlock);
 
-    const parsed: LyricLine[] = [];
+    const parsed: QuantizedLine[] = [];
     let runningBlockStartBar = 0;
     let lineIdCounter = 0;
 
     blueprint.forEach((bp, index) => {
       const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
-      
-      const bars = bp.bars || (bp.type === "INSTRUMENTAL" ? 8 : 4);
-      const blockDurationSecs = bars * secondsPerBar;
+      const blockDurationSecs = bp.bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
       parsed.push({ id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] });
 
       if (bp.type === "INSTRUMENTAL") {
-         const hums = Array(bars).fill("Mmm. Mmm.").join(" ");
+         const hums = Array(bp.bars).fill("Mmm. Mmm.").join(" ");
          blockData.lines = [{ text: hums, isHeader: false }];
       }
 
@@ -900,102 +908,60 @@ export default function Room04_Booth() {
         let currentFlowTime = blockStartTime;
 
         const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-        let activePattern = activeVariations[index % activeVariations.length];
-        
-        if (Array.isArray((bp as any).patternArray) && (bp as any).patternArray.length > 0) {
-           activePattern = (bp as any).patternArray;
-        }
+        const activePattern = (bp as any).patternArray || activeVariations[index % activeVariations.length];
 
-        blockData.lines.forEach((lineObj) => {
+        blockData.lines.forEach((lineObj, lineIndex) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
-          const mappedWords: WordMapping[] = [];
+          const mappedWords: QuantizedSyllable[] = [];
 
-          let totalLineSteps = 0;
-          let tempPatternIndex = 0;
+          const lineStartTime = blockStartBar * secondsPerBar + (lineIndex * secondsPerBar);
+          const actualBarIndex = blockStartBar + lineIndex;
 
-          if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
-
-          const wordChunksArray = rawWords.map(w => {
-            const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
-            chunks.forEach(() => {
-              const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
-              totalLineSteps += isNaN(stepVal) ? 2 : stepVal; 
-              tempPatternIndex++;
-            });
-            return chunks;
-          });
-
-          const cleanTextEnd = lineObj.text.trim().slice(-1);
-          if (cleanTextEnd === '.') totalLineSteps += 4;
-          else if (cleanTextEnd === ',') totalLineSteps += 1;
-
-          const timePerStep = totalLineSteps > 0 ? timeForThisLine / totalLineSteps : 0;
-          let localWordTime = currentFlowTime;
-          const lineStartTime = currentFlowTime;
-
-          if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
-
+          let currentSlot = 0;
           let patternIndex = 0;
 
-          wordChunksArray.forEach((chunks) => {
+          if (lineObj.text.trim().startsWith('...')) currentSlot += 4; 
+
+          rawWords.forEach(w => {
+            const chunks = chunkWordForVisuals(w); // Pipes were stripped globally above
+            
             chunks.forEach((chunk, cIdx) => {
-              const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
+              const stepDelta = activePattern[patternIndex % activePattern.length];
               patternIndex++;
 
-              const chunkDuration = stepsRequired * timePerStep;
-              const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForThisLine) * 16)));
+              const mappedSlot = Math.min(15, currentSlot);
 
               mappedWords.push({
                 id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-                word: chunk.replace(/\|/g, ''),
+                word: chunk,
                 slot: mappedSlot,
-                startTime: localWordTime,
-                duration: chunkDuration, 
+                startTime: lineStartTime + (mappedSlot * secondsPerSlot),
+                duration: stepDelta * secondsPerSlot,
                 isWordEnd: (cIdx === chunks.length - 1)
               });
-              localWordTime += chunkDuration;
+
+              currentSlot += stepDelta;
             });
           });
 
           parsed.push({ 
             id: `line-${lineIdCounter++}`,
-            barIndex: Math.floor(lineStartTime / secondsPerBar),
-            text: lineObj.text.replace(/\|/g, ''), 
+            barIndex: actualBarIndex,
+            text: lineObj.text, 
             originalText: lineObj.text,
             startTime: lineStartTime, 
-            lineDuration: timeForThisLine, 
+            lineDuration: secondsPerBar, 
             isHeader: false, 
             timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
-
-          currentFlowTime += timeForThisLine; 
         });
       }
-      runningBlockStartBar = blockStartBar + bars;
+      runningBlockStartBar = blockStartBar + bp.bars;
     });
     
-    setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, lyricLines, setLyricLines]);
-
-  useEffect(() => {
-    if (trimmingStem && trimWaveformRef.current) {
-      trimWavesurferRef.current = WaveSurfer.create({
-        container: trimWaveformRef.current, waveColor: '#555', progressColor: '#E60000', cursorColor: '#fff', barWidth: 2, barGap: 1, height: 100, normalize: true,
-      });
-      trimWavesurferRef.current.on('error', (err) => console.warn("Trim WaveSurfer Soft-fail:", err));
-      
-      // 🚨 FIX 4: Guaranteed WaveSurfer Slicer Load Fallback
-      const safeUrl = trimmingStem.blob ? URL.createObjectURL(trimmingStem.blob) : trimmingStem.url;
-      trimWavesurferRef.current.load(safeUrl).catch(e => console.warn("Trim Load Aborted:", e.message));
-      
-      trimWavesurferRef.current.on('ready', () => {
-        const dur = trimWavesurferRef.current?.getDuration() || 0;
-        setTrimDuration(dur); setTrimStart(0); setTrimEnd(dur);
-      });
-    }
-    return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
-  }, [trimmingStem]);
+    setQuantizedLines(parsed);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, quantizedLines, setQuantizedLines]);
 
   if (!audioData) {
     return (
@@ -1060,8 +1026,7 @@ export default function Room04_Booth() {
                 </div>
 
                 <div className="space-y-4 pb-20">
-                  {/* 🚨 FIX 3: Renders from lyricLines directly */}
-                  {lyricLines.filter(l => !l.isHeader).map((line) => (
+                  {quantizedLines.filter(l => !l.isHeader).map((line) => (
                     <div key={line.id} className="bg-black border border-[#222] rounded overflow-hidden">
                       <div className="text-[8px] font-mono text-[#555] p-1 bg-[#0a0a0a] border-b border-[#111] truncate">{line.text}</div>
                       <div className="flex h-10 relative bg-[#0a0a0a]">
@@ -1105,44 +1070,23 @@ export default function Room04_Booth() {
               onTouchMove={() => setAutoScroll(false)} 
               className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative"
             >
-              {lyricLines.map((line, i) => {
+              {quantizedLines.map((line, i) => {
                 if (line.isHeader) {
                     return <p key={i} className="lyric-line-container text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs">{line.text}</p>;
                 }
                 
-                const isActiveLine = teleprompterEnabled && !line.isHeader && i === lastActiveLineRef.current;
-                
                 return (
-                  <div key={i} className={`lyric-line-container mb-2 py-2 px-3 border-l-2 ${isActiveLine ? 'bg-[#E60000]/10 border-[#E60000]' : 'border-transparent'} flex items-start gap-3 transition-colors duration-200`}>
+                  <div key={i} className="lyric-line-container mb-2 py-2 px-3 border-l-2 border-transparent flex items-start gap-3 transition-colors duration-200">
                     {line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
                     
-                    <span className="flex-1 leading-loose flex flex-wrap gap-y-2">
-                      {(() => {
-                        const wordGroups: WordMapping[][] = [];
-                        let currentGroup: WordMapping[] = [];
-                        
-                        line.words?.forEach(wObj => {
-                          currentGroup.push(wObj);
-                          if (wObj.isWordEnd) { 
-                            wordGroups.push(currentGroup); 
-                            currentGroup = []; 
-                          }
-                        });
-                        if (currentGroup.length > 0) wordGroups.push(currentGroup);
-
-                        return wordGroups.map((group, gIdx) => (
-                          <span key={gIdx} className="inline-flex whitespace-nowrap mr-2">
-                            {group.map((wObj, wIdx) => {
-                              return (
-                                <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
-                                  <span className="bouncing-ball hidden absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50"></span>
-                                  {wObj.word}
-                                </span>
-                              );
-                            })}
-                          </span>
-                        ));
-                      })()}
+                    <span className="flex-1 leading-loose">
+                      {line.words?.map((wObj, wIdx) => (
+                        <span key={wIdx} className={`syllable-chunk relative inline-block text-[#444] transition-colors duration-100 ${wObj.isWordEnd ? 'mr-2' : ''}`}>
+                          {/* 🚨 BALL VISIBILITY ENSURED: z-50 and absolute positioning */}
+                          <span className="bouncing-ball hidden absolute -top-4 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50 animate-bounce"></span>
+                          {wObj.word}
+                        </span>
+                      ))}
                     </span>
                   </div>
                 );

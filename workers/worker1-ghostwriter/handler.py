@@ -330,6 +330,37 @@ Rewrite the final {bars} lines now.
 
 def handler(event):
     job_input = event.get("input", {})
+    
+    # -------------------------------------------------------------
+    # --- SURGICAL UPGRADE: INJECT REFINE INTERCEPTOR HERE ---
+    # -------------------------------------------------------------
+    task_type = job_input.get("task_type", "generate")
+    
+    if task_type == "refine":
+        original_line = job_input.get("originalLine", "")
+        instruction = job_input.get("instruction", "Make it hit harder.")
+        
+        refine_prompt = f"""<|im_start|>system
+[SYSTEM DIRECTIVE: THE MOGUL POLISH]
+You are an elite hip-hop ghostwriter. The user wants to surgically refine a specific bar of lyrics.
+Follow their instructions. Output ONLY the new final line. No quotes, no explanations, no headers.
+<|im_end|>
+<|im_start|>user
+Original Line: "{original_line}"
+Instruction: {instruction}
+<|im_end|>
+<|im_start|>assistant
+"""
+        # Generate the single refined line (lowered temp for precision)
+        inputs = tokenizer(refine_prompt, return_tensors="pt").to("cuda")
+        outputs = model.generate(**inputs, max_new_tokens=60, temperature=0.55, top_p=0.9, repetition_penalty=1.1)
+        refined_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
+        
+        # Return exact schema expected by the Next.js router
+        return {"refinedLine": refined_text}
+    # -------------------------------------------------------------
+
+    # --- EXISTING FULL TRACK GENERATION LOGIC REMAINS INTACT BELOW ---
     topic = job_input.get("prompt", "Securing the legacy")
     motive = job_input.get("motive", "Ownership")
     struggle = job_input.get("struggle", "Resistance")
