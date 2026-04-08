@@ -433,7 +433,7 @@ export default function Room04_Booth() {
             const bufferOffset = playheadTime - offsetSecs;
             if (bufferOffset < buffer.duration) source.start(scheduleTime, bufferOffset);
           }
-          activeSourcesRef.current.push(source);
+          activeSourcesRef.push(source);
         }
       });
     } else {
@@ -751,7 +751,7 @@ export default function Room04_Booth() {
       parsed.push({ id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] });
 
       if (bp.type === "INSTRUMENTAL") {
-         const hums = Array(bars).fill("Mmm. Mmm.").join(" ");
+         const hums = Array(bars).fill("Mmm.").join(" ");
          blockData.lines = [{ text: hums, isHeader: false }];
       }
 
@@ -802,7 +802,6 @@ export default function Room04_Booth() {
           if (cleanTextEnd === '.') totalLineSteps += 4;
           else if (cleanTextEnd === ',') totalLineSteps += 1;
 
-          const barStepLimit = 16; 
           const timePerStep = secondsPerSlot; 
           
           let localWordTime = lineStartTime;
@@ -825,14 +824,15 @@ export default function Room04_Booth() {
             }
 
             entry.forEach((chunk, cIdx) => {
-              // 🚨 FIX: The Modulo (%) ensures that if the line has 15 syllables 
-              // but the pattern only has 5 numbers, it REPEATS the pattern 
+              // 🚨 FIX: The Modulo (%) ensures that if the line has more syllables 
+              // but the pattern is shorter, it REPEATS the pattern 
               // instead of skipping words.
               const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
               patternIndex++;
 
               const chunkDuration = stepsRequired * timePerStep;
-     	 const virtualMaxSteps = Math.max(16, totalLineSteps);
+              // 🚨 FINAL DYNAMIC OVERFLOW PROTECTION
+              const virtualMaxSteps = Math.max(16, totalLineSteps);
               const mappedSlot = Math.min(15, Math.floor((currentSlot / virtualMaxSteps) * 16));
 
               mappedWords.push({
@@ -849,13 +849,20 @@ export default function Room04_Booth() {
             });
           });
 
+          // 🚨 FINAL DYNAMIC OVERFLOW PROTECTION: Line stays active until the dense text actually finishes.
+          const lastWordEnd = mappedWords.length > 0 
+            ? mappedWords[mappedWords.length - 1].startTime + mappedWords[mappedWords.length - 1].duration 
+            : lineStartTime + secondsPerBar;
+
+          const finalLineDuration = Math.max(secondsPerBar, lastWordEnd - lineStartTime);
+
           parsed.push({ 
             id: `line-${lineIdCounter++}`,
             barIndex: actualBarIndex,
             text: lineObj.text,
             originalText: lineObj.text,
             startTime: lineStartTime, 
-            lineDuration: secondsPerBar, 
+            lineDuration: finalLineDuration, 
             isHeader: false, 
             timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
