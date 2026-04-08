@@ -5,12 +5,11 @@ import {
   Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, ToggleLeft, ToggleRight, Crosshair, ListVideo
 } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
-import { useMatrixStore } from "../../store/useMatrixStore";
+import { useMatrixStore, QuantizedLine, QuantizedSyllable } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase"; 
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
-// SURGICAL FIX: Enforced strict typing so the Grid knows these properties exist
 type WordMapping = { id: string; word: string; startTime: number; duration: number; slot: number; isWordEnd?: boolean };
 type LyricLine = { id: string; text: string; originalText: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[]; barIndex: number };
 
@@ -229,7 +228,7 @@ export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
     updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, 
-    addToast, gwStyle 
+    addToast, gwStyle, quantizedLines, setQuantizedLines 
   } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -302,7 +301,6 @@ export default function Room04_Booth() {
     const delta = targetSlot - originalSlot;
     if (delta === 0) return;
 
-    // 🚨 FIX 3: Route Drag & Drop update to local lyricLines so the Grid mathematically updates
     setLyricLines(prev => prev.map(line => {
       if (line.id === targetLineId && !line.isHeader && line.words) {
         const targetIndex = line.words.findIndex(w => w.id === syllableId);
@@ -536,8 +534,7 @@ export default function Room04_Booth() {
               chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
               chunkNode.classList.remove('text-[#444]', 'text-[#888]');
               if (ballNode) {
-                ballNode.classList.remove('opacity-0');
-                ballNode.classList.add('opacity-100');
+                ballNode.classList.remove('hidden');
                 
                 // 🚨 TRUE MATHEMATICAL BOUNCE LOGIC 
                 let progress = (visualTime - wObj.startTime) / wObj.duration;
@@ -551,16 +548,14 @@ export default function Room04_Booth() {
               chunkNode.classList.add('text-[#888]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
               if (ballNode) {
-                ballNode.classList.add('opacity-0');
-                ballNode.classList.remove('opacity-100');
+                ballNode.classList.add('hidden');
                 ballNode.style.transform = `translateX(-50%) translateY(0px)`;
               }
             } else {
               chunkNode.classList.add('text-[#444]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
               if (ballNode) {
-                ballNode.classList.add('opacity-0');
-                ballNode.classList.remove('opacity-100');
+                ballNode.classList.add('hidden');
                 ballNode.style.transform = `translateX(-50%) translateY(0px)`;
               }
             }
@@ -575,8 +570,7 @@ export default function Room04_Booth() {
             if (!chunkNode) return;
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             if (ballNode) {
-              ballNode.classList.add('opacity-0');
-              ballNode.classList.remove('opacity-100');
+              ballNode.classList.add('hidden');
               ballNode.style.transform = `translateX(-50%) translateY(0px)`;
             }
 
@@ -858,8 +852,7 @@ export default function Room04_Booth() {
 
   const lastParsedLyricsRef = useRef<string>("");
 
-  // 🚨 SOLID INTEGER MATH (No More Vertical Stacking) 
-  // Paired seamlessly with the aggressive Metadata Scrubber to ensure the ball only rides lyrics.
+  // 🚨 THE FIX: The Solid Integer Parsing Engine + Metadata Scrubber
   useEffect(() => {
     if (!generatedLyrics) return;
     if (lyricLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
@@ -905,6 +898,7 @@ export default function Room04_Booth() {
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
       
       const bars = bp.bars || (bp.type === "INSTRUMENTAL" ? 8 : 4);
+      const blockDurationSecs = bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
       parsed.push({ id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] });
@@ -916,6 +910,9 @@ export default function Room04_Booth() {
 
       const numLines = blockData.lines.length;
       if (numLines > 0) {
+        const timeForThisLine = blockDurationSecs / numLines; 
+        let currentFlowTime = blockStartTime;
+
         const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
         let activePattern = activeVariations[index % activeVariations.length];
         
@@ -923,37 +920,63 @@ export default function Room04_Booth() {
            activePattern = (bp as any).patternArray;
         }
 
-        blockData.lines.forEach((lineObj, lineIndex) => {
+        blockData.lines.forEach((lineObj) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: WordMapping[] = [];
 
-          const lineStartTime = blockStartBar * secondsPerBar + (lineIndex * secondsPerBar);
-          const actualBarIndex = blockStartBar + lineIndex;
+          // Fix: Ensure the line's visual grid falls precisely where currentFlowTime dictates
+          const lineStartTime = currentFlowTime;
+          const actualBarIndex = Math.floor(lineStartTime / secondsPerBar);
 
-          let currentSlot = 0;
-          let patternIndex = 0;
+          let totalLineSteps = 0;
+          let tempPatternIndex = 0;
 
-          if (lineObj.text.trim().startsWith('...')) currentSlot += 4; 
+          if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4; 
 
-          rawWords.forEach(w => {
+          const wordChunksArray = rawWords.map(w => {
             const chunks = chunkWordForVisuals(w); 
-            
+            chunks.forEach(() => {
+              totalLineSteps += Number(activePattern[tempPatternIndex % activePattern.length]) || 2;
+              tempPatternIndex++;
+            });
+            return chunks;
+          });
+
+          const cleanTextEnd = lineObj.text.trim().slice(-1);
+          if (cleanTextEnd === '.') totalLineSteps += 4;
+          else if (cleanTextEnd === ',') totalLineSteps += 1;
+
+          const timePerStep = totalLineSteps > 0 ? timeForThisLine / totalLineSteps : 0;
+          let localWordTime = currentFlowTime;
+
+          if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
+
+          let patternIndex = 0;
+          let sylIndex = 0;
+          const totalSyllables = wordChunksArray.reduce((acc, chunks) => acc + chunks.length, 0);
+
+          wordChunksArray.forEach((chunks) => {
             chunks.forEach((chunk, cIdx) => {
-              const stepVal = Number(activePattern[patternIndex % activePattern.length]) || 2;
+              const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
               patternIndex++;
 
-              const mappedSlot = Math.min(15, currentSlot);
+              const chunkDuration = stepsRequired * timePerStep;
+              
+              // GUARANTEED SAFE PROPORTIONAL SLOT DISTRIBUTION (0-15)
+              // Syllables mathematically spread evenly across the 16 columns of the grid without stacking.
+              const mappedSlot = totalSyllables > 0 ? Math.min(15, Math.floor((sylIndex / totalSyllables) * 16)) : 0;
 
               mappedWords.push({
                 id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
                 word: chunk,
                 slot: mappedSlot,
-                startTime: lineStartTime + (mappedSlot * secondsPerSlot),
-                duration: stepVal * secondsPerSlot,
+                startTime: localWordTime,
+                duration: chunkDuration, 
                 isWordEnd: (cIdx === chunks.length - 1)
               });
 
-              currentSlot += stepVal;
+              localWordTime += chunkDuration;
+              sylIndex++;
             });
           });
 
@@ -963,11 +986,13 @@ export default function Room04_Booth() {
             text: lineObj.text, 
             originalText: lineObj.text,
             startTime: lineStartTime, 
-            lineDuration: secondsPerBar, 
+            lineDuration: timeForThisLine, 
             isHeader: false, 
             timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
+
+          currentFlowTime += timeForThisLine;
         });
       }
       runningBlockStartBar = blockStartBar + bars;
@@ -1113,8 +1138,11 @@ export default function Room04_Booth() {
                             {group.map((wObj, wIdx) => {
                               return (
                                 <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
-                                  {/* 🚨 THE Z-INDEX AND OPACITY FIX: Ball physically hovers and never conflicts with CSS state loops */}
-                                  <span className="bouncing-ball opacity-0 absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50 pointer-events-none"></span>
+                                  {/* 🚨 THE Z-INDEX AND HOVER FIX: Ball explicitly placed above text */}
+                                  <span 
+                                    className="bouncing-ball hidden absolute left-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50 pointer-events-none"
+                                    style={{ bottom: '100%', marginBottom: '4px' }}
+                                  ></span>
                                   {wObj.word}
                                 </span>
                               );
