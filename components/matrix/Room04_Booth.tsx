@@ -307,13 +307,19 @@ export default function Room04_Booth() {
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
       let currentLineIndex = -1;
+      
       for (let i = 0; i < lyricLines.length; i++) {
         const line = lyricLines[i];
         if (line.isHeader) continue;
         const lineNode = lineNodes[i] as HTMLElement;
         if (!lineNode) continue;
-        const nextLine = lyricLines.slice(i+1).find(l => !l.isHeader);
-        const endTime = nextLine ? nextLine.startTime : (line.startTime + (line.lineDuration || 2));
+        
+        // --- SURGICAL FIX: THE OVERLAP BUFFER ---
+        // Rather than strictly cutting off at the next line's start time, 
+        // we ride out the current line's calculated duration, plus a bleed buffer.
+        // This ensures "max busting seams" stays fully lit up until the final bouncing ball lands.
+        const bleedBuffer = (gwPocket === 'chainlink' || gwPocket === 'matrix_pivot' || gwPocket === 'pickup') ? 0.4 : 0.15;
+        const endTime = line.startTime + (line.lineDuration || 2) + bleedBuffer;
 
         if (visualTime >= line.startTime && visualTime < endTime) {
           currentLineIndex = i;
@@ -372,6 +378,7 @@ export default function Room04_Booth() {
           });
         }
       }
+      
       if (autoScroll && currentLineIndex !== -1 && currentLineIndex !== lastActiveLineRef.current) {
         const activeNode = lineNodes[currentLineIndex] as HTMLElement;
         if (activeNode) teleprompterRef.current.scrollTo({ top: activeNode.offsetTop - 150, behavior: 'smooth' });
