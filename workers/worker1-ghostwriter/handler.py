@@ -332,7 +332,13 @@ Rewrite the final {bars} lines now. Output ONLY the lyrics.
 def handler(event):
     job_input = event.get("input", {})
     
-    # Extract the dynamic map shipped from Next.js, fallback to defaults if needed
+    # --- DIAGNOSTIC TRAP: VERIFY INCOMING PAYLOAD ---
+    print("\n" + "="*50)
+    print("🔥 NEW JOB INITIATED - CHECKING PAYLOAD VARIABLES")
+    print(f"Incoming Keys: {list(job_input.keys())}")
+    print(f"dynamic_array caught: {job_input.get('dynamic_array', 'MISSING!')}")
+    print(f"contour caught: {job_input.get('contour', 'MISSING!')}")
+    print("="*50 + "\n")
     banned_map = job_input.get("bannedWordsMap", DEFAULT_BANNED_WORDS_MAP)
     
     task_type = job_input.get("task_type", "generate")

@@ -168,7 +168,6 @@ export default function Room04_Booth() {
   const [guideProgress, setGuideProgress] = useState(0); 
   const [autoScroll, setAutoScroll] = useState(true);
   const [teleprompterEnabled, setTeleprompterEnabled] = useState(true);
-  const [currentTimeDisplay, setCurrentTimeDisplay] = useState(0);
   const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
@@ -296,7 +295,13 @@ export default function Room04_Booth() {
   updateVisualsRef.current = () => {
     if (!wavesurferRef.current) return;
     const time = wavesurferRef.current.getCurrentTime();
-    setCurrentTimeDisplay(time); 
+    
+    if (timeDisplayRef.current) {
+      const mins = Math.floor(time / 60).toString().padStart(2, '0');
+      const secs = Math.floor(time % 60).toString().padStart(2, '0');
+      timeDisplayRef.current.innerText = `${mins}:${secs}`;
+    }
+    
     const visualTime = time + 0.08; 
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
@@ -484,7 +489,7 @@ export default function Room04_Booth() {
       } finally { setIsUploading(false); }
     }
     
-    setCurrentTimeDisplay(0);
+    if (timeDisplayRef.current) timeDisplayRef.current.innerText = "00:00";
     updateVisualsRef.current(); 
   };
 
