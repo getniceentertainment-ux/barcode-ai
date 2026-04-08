@@ -16,6 +16,8 @@ export interface AudioAnalysis {
   duration?: number; // Preserving our Phase 1 addition
   grid?: number[];
   key?: string;
+  dynamic_array?: number[]; // <--- ADD THIS
+  contour?: string;         // <--- ADD THIS
 }
 
 export interface FlowDNA {

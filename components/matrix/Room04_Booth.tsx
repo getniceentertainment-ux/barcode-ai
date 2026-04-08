@@ -932,13 +932,16 @@ export default function Room04_Booth() {
           else if (cleanTextEnd === ',') totalLineSteps += 1;
 
           const timePerStep = totalLineSteps > 0 ? timeForThisLine / totalLineSteps : 0;
+          const lineStartTime = currentFlowTime; // 🚨 FIX: Defined lineStartTime to prevent build crash
           let localWordTime = currentFlowTime;
+          let currentSlot = 0;
 
-          if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
+          if (lineObj.text.trim().startsWith('...')) {
+            localWordTime += (4 * timePerStep);
+            currentSlot += 4;
+          }
 
           let patternIndex = 0;
-          let sylIndex = 0;
-          const totalSyllables = wordChunksArray.reduce((acc, chunks) => acc + chunks.length, 0);
 
           wordChunksArray.forEach((chunks) => {
             chunks.forEach((chunk, cIdx) => {
@@ -947,7 +950,8 @@ export default function Room04_Booth() {
 
               const chunkDuration = stepsRequired * timePerStep;
               
-              const mappedSlot = totalSyllables > 0 ? Math.min(15, Math.floor((sylIndex / totalSyllables) * 16)) : 0;
+              // 🚨 FIX: Accurate rhythmic mapping based on cumulative steps (currentSlot)
+              const mappedSlot = totalLineSteps > 0 ? Math.min(15, Math.floor((currentSlot / totalLineSteps) * 16)) : 0;
 
               mappedWords.push({
                 id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
@@ -959,7 +963,7 @@ export default function Room04_Booth() {
               });
 
               localWordTime += chunkDuration;
-              sylIndex++;
+              currentSlot += stepsRequired;
             });
           });
 
