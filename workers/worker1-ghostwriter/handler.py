@@ -159,6 +159,10 @@ Rewrite these bars to be exactly {bars} lines.
 - SYLLABLE LIMIT: {current_max_syllables} (STRICT)
 - FORMAT: ONE BAR PER LINE. No intro/outro text.
 - BREATHING: Use '|' for rests.
+- TAIL-END WEIGHT: Ensure the final 3-4 syllables of every line are multi-syllabic and dense.
+- POCKET FILL: Do not leave the end of the bar empty; use the full {current_max_syllables} syllable limit to trigger the UI bleed-over effect.
+-RHYTHMIC OVERLAP: If POCKET is chainlink, force the last word to physically feel like it belongs to the next measure.
+
 Bars: "{draft_text}"
 <|im_end|>
 <|im_start|>assistant
