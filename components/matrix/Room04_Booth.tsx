@@ -269,7 +269,6 @@ export default function Room04_Booth() {
   const workletLoadedRef = useRef(false);
   const teleprompterRef = useRef<HTMLDivElement>(null);
 
-  // 🚨 THE FIX: A dedicated ref to update the clock without triggering React Re-renders
   const timeDisplayRef = useRef<HTMLDivElement>(null);
 
   // --- HIGH-PERFORMANCE rAF SYNC REFS ---
@@ -513,7 +512,6 @@ export default function Room04_Booth() {
     
     const time = wavesurferRef.current.getCurrentTime();
     
-    // 🚨 ESCAPING THE REACT TRAP: Update the clock without forcing a component re-render
     if (timeDisplayRef.current) {
         const mins = Math.floor(time / 60).toString().padStart(2, '0');
         const secs = Math.floor(time % 60).toString().padStart(2, '0');
@@ -551,17 +549,26 @@ export default function Room04_Booth() {
               // Active Syllable
               chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
               chunkNode.classList.remove('text-[#444]', 'text-[#888]');
-              if (ballNode) ballNode.classList.remove('hidden');
+              if (ballNode) {
+                  ballNode.classList.remove('opacity-0');
+                  ballNode.classList.add('opacity-100');
+              }
             } else if (visualTime >= wObj.startTime + wObj.duration) {
               // Past Syllable
               chunkNode.classList.add('text-[#888]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
-              if (ballNode) ballNode.classList.add('hidden');
+              if (ballNode) {
+                  ballNode.classList.add('opacity-0');
+                  ballNode.classList.remove('opacity-100');
+              }
             } else {
               // Future Syllable
               chunkNode.classList.add('text-[#444]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
-              if (ballNode) ballNode.classList.add('hidden');
+              if (ballNode) {
+                  ballNode.classList.add('opacity-0');
+                  ballNode.classList.remove('opacity-100');
+              }
             }
           });
         } else {
@@ -573,14 +580,17 @@ export default function Room04_Booth() {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
             const ballNode = chunkNode.querySelector('.bouncing-ball');
-            if (ballNode) ballNode.classList.add('hidden');
-
+            
             if (visualTime >= wObj.startTime + wObj.duration) {
               chunkNode.classList.add('text-[#888]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
             } else {
               chunkNode.classList.add('text-[#444]');
               chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
+            }
+            if (ballNode) {
+                ballNode.classList.add('opacity-0');
+                ballNode.classList.remove('opacity-100');
             }
           });
         }
@@ -854,6 +864,8 @@ export default function Room04_Booth() {
 
   const lastParsedLyricsRef = useRef<string>("");
 
+  // 🚨 RESTORED SOLID INTEGER MATH
+  // Distributes syllables perfectly onto the 16-slot visual grid without stacking
   useEffect(() => {
     if (!generatedLyrics) return;
     if (quantizedLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
@@ -896,7 +908,6 @@ export default function Room04_Booth() {
     blueprint.forEach((bp, index) => {
       const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
       const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
-      const blockDurationSecs = bp.bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
       parsed.push({ id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] });
@@ -908,9 +919,6 @@ export default function Room04_Booth() {
 
       const numLines = blockData.lines.length;
       if (numLines > 0) {
-        const timeForThisLine = blockDurationSecs / numLines; 
-        let currentFlowTime = blockStartTime;
-
         const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
         const activePattern = (bp as any).patternArray || activeVariations[index % activeVariations.length];
 
@@ -918,6 +926,7 @@ export default function Room04_Booth() {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: QuantizedSyllable[] = [];
 
+          // A line in a rap track is exactly 1 bar.
           const lineStartTime = blockStartBar * secondsPerBar + (lineIndex * secondsPerBar);
           const actualBarIndex = blockStartBar + lineIndex;
 
@@ -1086,9 +1095,9 @@ export default function Room04_Booth() {
                     <span className="flex-1 leading-loose">
                       {line.words?.map((wObj, wIdx) => (
                         <span key={wIdx} className={`syllable-chunk relative inline-block text-[#444] transition-colors duration-100 ${wObj.isWordEnd ? 'mr-2' : ''}`}>
-                          {/* 🚨 TAILWIND ANIMATION PROTECTED: Bouncing ball is placed in a pure positioning container */}
-                          <span className="absolute -top-4 left-1/2 -translate-x-1/2 z-50">
-                            <span className="bouncing-ball hidden w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] animate-bounce block"></span>
+                          {/* 🚨 VISIBILITY FIX: Using opacity instead of hidden to prevent Tailwind conflicts */}
+                          <span className="absolute -top-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+                            <span className="bouncing-ball opacity-0 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] animate-bounce block"></span>
                           </span>
                           {wObj.word}
                         </span>
