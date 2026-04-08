@@ -814,37 +814,40 @@ export default function Room04_Booth() {
           }
 
           let patternIndex = 0;
-  wordChunksArray.forEach((entry) => {
-    if (entry === 'EMPTY_BREATH') {
-      // 🚨 ADVANCE CLOCK FOR BREATH BUT DRAW NO BOX
-      const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
-      patternIndex++;
-      localWordTime += (stepsRequired * timePerStep);
-      currentSlot += stepsRequired;
-      return;
-    }
+          wordChunksArray.forEach((entry) => {
+            if (entry === 'EMPTY_BREATH') {
+              // 🚨 Advance for breath
+              const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
+              patternIndex++;
+              localWordTime += (stepsRequired * timePerStep);
+              currentSlot += stepsRequired;
+              return;
+            }
 
-    entry.forEach((chunk, cIdx) => {
-      const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
-      patternIndex++;
+            entry.forEach((chunk, cIdx) => {
+              // 🚨 FIX: The Modulo (%) ensures that if the line has 15 syllables 
+              // but the pattern only has 5 numbers, it REPEATS the pattern 
+              // instead of skipping words.
+              const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
+              patternIndex++;
 
-      const chunkDuration = stepsRequired * timePerStep;
-      // Proportional grid placement
-      const mappedSlot = Math.min(15, Math.floor((currentSlot / Math.max(16, totalLineSteps)) * 16));
+              const chunkDuration = stepsRequired * timePerStep;
+     	 const virtualMaxSteps = Math.max(16, totalLineSteps);
+              const mappedSlot = Math.min(15, Math.floor((currentSlot / virtualMaxSteps) * 16));
 
-      mappedWords.push({
-        id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-        word: chunk,
-        slot: mappedSlot,
-        startTime: localWordTime,
-        duration: chunkDuration, 
-        isWordEnd: (cIdx === entry.length - 1)
-      });
+              mappedWords.push({
+                id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+                word: chunk,
+                slot: mappedSlot,
+                startTime: localWordTime,
+                duration: chunkDuration, 
+                isWordEnd: (cIdx === entry.length - 1)
+              });
 
-      localWordTime += chunkDuration;
-      currentSlot += stepsRequired;
-    });
-  });
+              localWordTime += chunkDuration;
+              currentSlot += stepsRequired;
+            });
+          });
 
           parsed.push({ 
             id: `line-${lineIdCounter++}`,
