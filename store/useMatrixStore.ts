@@ -178,8 +178,8 @@ export const useMatrixStore = create<MatrixState>()(
       gwHustle: "",
 
       gwStrikeZone: "snare",
-      gwHookType: "auto", 
-      gwFlowEvolution: "auto",
+      gwHookType: "auto", // Default to Neural Match
+      gwFlowEvolution: "auto", // Default to Neural Match
       
       mixParams: {
         activeChain: "getnice_eq",
@@ -198,7 +198,7 @@ export const useMatrixStore = create<MatrixState>()(
       
       blueprint: [],
       generatedLyrics: null,
-      quantizedLines: [],
+      quantizedLines: [], // <-- Initialize
       vocalStems: [],
       engineeredVocal: null, 
       finalMaster: null,
@@ -211,15 +211,7 @@ export const useMatrixStore = create<MatrixState>()(
       setRadioTrack: (track) => set({ radioTrack: track }),
       setMdxJobId: (id) => set({ mdxJobId: id }),
       setMdxStatus: (status) => set({ mdxStatus: status }),
-      
-      // SURGICAL FIX: Restored the camelCase check inside grantAccess to prevent Room05 logic failure
-      grantAccess: (session) => {
-        if (session && (session as any).has_engineering_token !== undefined) {
-           session.hasEngineeringToken = (session as any).has_engineering_token;
-        }
-        set({ hasAccess: true, userSession: session });
-      },
-      
+      grantAccess: (session) => set({ hasAccess: true, userSession: session }),
       setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
       setGwTitle: (t) => set({ gwTitle: t }),
@@ -240,7 +232,7 @@ export const useMatrixStore = create<MatrixState>()(
 
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
-      setQuantizedLines: (lines) => set({ quantizedLines: lines }), 
+      setQuantizedLines: (lines) => set({ quantizedLines: lines }), // <-- Setter
 
       setEngineeredVocal: (stem) => {
         set({ engineeredVocal: stem });
@@ -350,7 +342,7 @@ export const useMatrixStore = create<MatrixState>()(
            flowDNA: state.flowDNA,
            blueprint: state.blueprint, 
            generatedLyrics: state.generatedLyrics,
-           quantizedLines: state.quantizedLines, 
+           quantizedLines: state.quantizedLines, // <-- Cloud Backup
            gwTitle: state.gwTitle, gwPrompt: state.gwPrompt, gwStyle: state.gwStyle, gwPocket: state.gwPocket, 
            gwMotive: state.gwMotive, gwStruggle: state.gwStruggle, gwHustle: state.gwHustle,
            gwStrikeZone: state.gwStrikeZone, gwHookType: state.gwHookType, gwFlowEvolution: state.gwFlowEvolution,
