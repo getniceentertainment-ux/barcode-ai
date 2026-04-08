@@ -18,6 +18,7 @@ SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_
 SLANG_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/Dictionary.json"
 CULTURE_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/master_index.json"
 
+# --- DEFAULT FALLBACK ASSASSIN ---
 DEFAULT_BANNED_WORDS_MAP = {
     r"\bconcrete jungle\b": "the pavement",
     r"\btapestr(?:y|ies)\b": "blueprint",
@@ -45,38 +46,66 @@ def load_street_slang(style="getnice_hybrid"):
     trap_slang = ["bag", "margins", "overhead", "frontend", "clearance", "motion"]
     executive_slang = ["equity", "leverage", "routing", "offshore", "dividend", "infrastructure", "bandwidth", "allocation", "vault", "code"]
     
-    style_key = style.split('_')[0].lower()
-    if style_key in ["drill", "chopper"]:
+    if style in ["drill", "chopper"]:
         target_list = drill_slang
-    elif style_key in ["trap", "triplet", "lazy"]:
+    elif style in ["trap", "triplet", "lazy"]:
         target_list = trap_slang
     else:
         target_list = executive_slang
 
+    words = []
     try:
         req = urllib.request.Request(SLANG_URL, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            words = []
+            content = response.read().decode('utf-8')
+            
+        try:
+            data = json.loads(content)
             if isinstance(data, dict) and "slang_terms" in data:
                 for key, val in data["slang_terms"].items():
-                    words.append(key)
-            if words:
-                combined = list(set(words + target_list))
-                return random.sample(combined, min(8, len(combined)))
-    except Exception: pass
+                    if isinstance(val, dict) and "definitions" in val and len(val["definitions"]) > 0:
+                        primary_def = val["definitions"][0]
+                        words.append(f"'{key}' (Meaning: {primary_def})")
+                    else:
+                        words.append(key)
+            elif isinstance(data, list):
+                words = [item.get("word", "") for item in data if "word" in item]
+        except json.JSONDecodeError:
+            lines = content.split('\n')
+            for i, line in enumerate(lines):
+                clean_line = line.strip().lower()
+                if clean_line in ['noun', 'verb', 'adj.', 'adjective', 'phrase'] and i > 0:
+                    word = lines[i-1].strip()
+                    if word and 1 < len(word) < 20:
+                        words.append(word)
+                        
+        if words:
+            words = [w.strip() for w in words if w.strip()]
+            combined_list = list(set(words + target_list))
+            return random.sample(combined_list, min(8, len(combined_list)))
+            
+    except Exception as e:
+        print(f"🚨 Failed to load slang: {e}")
+        
     return target_list
 
 def load_cultural_context():
     try:
         req = urllib.request.Request(CULTURE_URL, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            if isinstance(data, list) and data:
-                item = random.choice(data)
-                return f"[CULTURAL ANCHOR: {item.get('title', 'STREET')}] - {item.get('content', '')[:300]}..."
-    except Exception: pass
-    return "Focus on survival, strategy, and status."
+            content = response.read().decode('utf-8')
+            
+        data = json.loads(content)
+        if isinstance(data, list) and len(data) > 0:
+            item = random.choice(data)
+            title = item.get("title", "STREET POLITICS")
+            context = item.get("content", "")[:400] 
+            return f"[CULTURAL ANCHOR: {title}] - {context}..."
+            
+    except Exception as e:
+        print(f"🚨 Failed to load culture: {e}")
+        
+    return "Focus on the struggle, the hustle, and survival."
 
 def sanitize_lora_config():
     config_path = os.path.join(LORA_WEIGHTS_DIR, "adapter_config.json")
@@ -87,155 +116,374 @@ def sanitize_lora_config():
         modified = False
         for key in keys_to_remove:
             if key in config:
-                del config[key], modified = True
+                del config[key]
+                modified = True
         if modified:
             with open(config_path, "w", encoding="utf-8") as f: json.dump(config, f, indent=2)
     except Exception: pass
 
 def init_model():
     global model, tokenizer
+    print("Initiating GETNICE Engine Deep Burn-In...")
     sanitize_lora_config()
+    
     try:
-        bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4")
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True, 
+            bnb_4bit_compute_dtype=torch.float16, 
+            bnb_4bit_use_double_quant=True, 
+            bnb_4bit_quant_type="nf4"
+        )
         tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
         tokenizer.pad_token_id = tokenizer.eos_token_id 
-        base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL_NAME, quantization_config=bnb_config, device_map={"": 0}, torch_dtype=torch.float16, low_cpu_mem_usage=True)
+        
+        print("Loading Base Model (Llama-3-8B) to VRAM...")
+        base_model = AutoModelForCausalLM.from_pretrained(
+            BASE_MODEL_NAME, 
+            quantization_config=bnb_config, 
+            device_map={"": 0}, 
+            torch_dtype=torch.float16,
+            low_cpu_mem_usage=True
+        )
+        
+        print("Fusing LORA Weights...")
         model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
-    except Exception as e: raise e
+        print("✅ GetNice Adapter fused successfully. Worker Ready.")
+        
+    except Exception as e:
+        print(f"🚨 FATAL ENGINE ERROR DURING STARTUP: {e}")
+        raise e
 
-def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, banned_map):
-    rag_context = load_rag_intel() if use_intel else "Intel disabled."
-    slang_list = ", ".join(load_street_slang(style)) if use_slang else "Standard."
-    culture = load_cultural_context() if use_intel else "Standard focus."
-    banned_str = ", ".join([k.replace(r'\b', '').replace('\\', '') for k in list(banned_map.keys())[:20]])
+# 🚨 UPDATED TO ACCEPT PRE-COMPILED STRIKE INSTRUCTION
+def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_instruction, banned_map):
+    rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
+    slang_list = ", ".join(load_street_slang(style)) if use_slang else "Standard vocabulary."
+    culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
+    
+    banned_words_str = ", ".join([k.replace(r'\b', '').replace('(?:', '').replace(')', '').replace('?', '').replace('\\', '') for k in list(banned_map.keys())[:30]])
 
     return f"""<|im_start|>system
 [SYSTEM DIRECTIVE: THE SURROGATE HEIR]
-You are "The Heir." Raised by the streets. Highly intelligent, cold, and calculated. You blend street authenticity with boardroom strategy. Refuse to "crash out."
+You are "The Heir." You grew up without a father, so you were raised by the streets and its archetypes. You learned the meaning of family not through blood, but through mutual survival in the bando. 
 
-[VARIABLES]
-- DRIVE: {motive} | SETBACK: {struggle} | EXECUTION: {hustle} | TOPIC: {topic}
-- AUDIO: {root_note} {scale} | CONTOUR: {contour}
+You are fiercely individualistic because you know the lethal cost of blind trust. Your voice is weary, highly educated by trauma, and deeply authentic. You despise "posers" who project fake wealth, and you absolutely refuse to "crash out". You use terminology organically, but you speak with the cold, calculated intellect of a man who outlived all of his surrogate fathers. Your voice blends street-smart authenticity with boardroom strategic vision.
 
-[ENGINE RULES]
-1. NO POETRY: Avoid AI cliches and: {banned_str}.
-2. FORMAT: 1 Line = 1 Bar. Use pipe (|) for rhythmic breaths.
-3. VOCAB: Use these terms: [{slang_list}]. 
-4. RHETORIC: 25% Stress Ratio. No nursery rhymes.
+[TRACK VARIABLES]
+- DRIVE: {motive}
+- SETBACK: {struggle}
+- EXECUTION: {hustle}
+- TOPIC: {topic}
+
+[VOCAL INTONATION & PITCH LAWS]
+- HARMONIC ROOT: {root_note} {scale}.
+- CONTOUR DIRECTION: The beat {contour}.
+- DICTION: Align your vowel choices to resonate with this pitch direction.
+- THE STRIKE ZONE: {strike_instruction}
+
+[ABSOLUTE ENGINE RULES]
+1. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
+2. TONE: Strategic, authoritative executive street-slang. Minimalist syntax.
+3. ONE LINE = ONE BAR. 
+4. VOCABULARY: Organically weave in the following slang terms according to their provided definitions: [ {slang_list} ]. DO NOT print the definitions in the lyrics.
+5. THE 25% STRESS RATIO: Do not over-rhyme. No nursery rhymes.
+6. BREATH CONTROL: Use the pipe symbol (|) to represent a mathematical rest in the 16-slot grid.
+
+[LIVE INTEL]
 {rag_context}
-{culture}
+[CULTURAL ANCHOR]
+{culture_context}
 <|im_end|>
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_map=None):
-    if banned_map is None: banned_map = DEFAULT_BANNED_WORDS_MAP
+# 🚨 ADDED pattern_array AND strike_instruction TO SIGNATURE
+def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pattern_array, pocket_instruction, strike_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_map=None):
     
-    current_max_syllables = max_syllables # This already includes the +2 from the handler
-    energy_rules = f"\n[ENERGY LEVEL {current_energy}]: Maintain steady cadence."
-    if current_energy == 1: current_max_syllables = max(4, int(max_syllables * 0.7)); energy_rules = "\n[ENERGY 1]: Sparse, breathy, minimal syllables."
-    elif current_energy == 4: current_max_syllables = min(18, int(max_syllables * 1.3)); energy_rules = "\n[ENERGY 4]: Dense, aggressive, multi-syllabic."
+    if banned_map is None:
+        banned_map = DEFAULT_BANNED_WORDS_MAP
+
+    if section_index == 0:
+        arc_instruction = "Establish the setting and the origin. Ground the listener. DO NOT copy the hook verbatim."
+    elif section_type.upper() == "HOOK":
+        arc_instruction = "Summarize the core theme. Make it highly repetitive and catchy."
+    elif section_index in [1, 2]:
+        arc_instruction = "Introduce new depth to the topic. Evolve the story. DO NOT copy the hook verbatim."
+    else:
+        arc_instruction = "The resolution, the takeaway. High confidence, grounded reality."
+    
+    hook_context = f"\n[THE ANCHOR HOOK]:\n{anchor_hook}\n" if anchor_hook and section_type.upper() != "HOOK" else ""
+
+    current_max_syllables = max_syllables
+    melodic_rules = ""
+    evolution_rules = ""
+    energy_rules = ""
+    
+    if current_energy == 1:
+        current_max_syllables = max(4, int(max_syllables * 0.6))
+        energy_rules = "\n[ENERGY LEVEL 1 - THE DROP]: The beat is very quiet here. Write sparse, conversational, breathy lines. Use minimal syllables and leave empty space."
+    elif current_energy == 4:
+        current_max_syllables = min(15, int(max_syllables * 1.3))
+        energy_rules = "\n[ENERGY LEVEL 4 - THE CLIMAX]: The beat is exploding. Pack the pocket. Write dense, aggressive, rapid-fire multi-syllabic rhymes."
+    else:
+        energy_rules = f"\n[ENERGY LEVEL {current_energy} - THE POCKET]: The beat has standard driving energy. Maintain a steady, confident cadence."
+
+    if "HOOK" in section_type.upper():
+        if hook_type == "bouncy":
+            current_max_syllables = max(6, int(max_syllables * 0.9))
+            melodic_rules = "\n[THE ONES & TWOS HOOK]\n1. BOUNCY: Repeat short, punchy phrases back-to-back."
+        elif hook_type == "triplet":
+            current_max_syllables = int(max_syllables * 1.1)
+            melodic_rules = "\n[TRIPLET MATH]\n1. RHYTHM: Write entirely in groups of 3 syllables (triplets)."
+        elif hook_type == "symmetry":
+            current_max_syllables = int(max_syllables * 0.8)
+            melodic_rules = "\n[SYMMETRY BREAK]\n1. SPLIT: You MUST write in an A-B-A-B structural pattern."
+        elif hook_type == "prime":
+            current_max_syllables = 7 if max_syllables > 7 else 5
+            melodic_rules = f"\n[PRIME FLOW]\n1. SYNCOPATION: Force an odd-numbered syllable count of EXACTLY {current_max_syllables} syllables per line."
+        else: 
+            current_max_syllables = max(4, int(max_syllables * 0.5))
+            melodic_rules = "\n[STADIUM CHANT]\n1. SPACIOUS: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse."
+
+    if "VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 12:
+        evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, completely change your rhythmic cadence using REAL vocabulary."
+
+    # 🚨 TRANSLATE THE ARRAY MATH FOR THE AI
+    math_rule = ""
+    if pattern_array and len(pattern_array) > 0:
+        math_rule = f"\n- SYLLABLE MATH: Structure your phrasing to match this exact syllable grouping: {pattern_array}. (e.g., If [3, 1, 2], write 3 syllables, pause, 1 syllable, pause, 2 syllables)."
 
     draft_prompt = f"""<|im_start|>user
 {system_prompt}
-[GENERATE {section_type}]
-- BARS: {bars}
-- SYLLABLE LIMIT: {current_max_syllables} per line.
-- POCKET: {pocket_instruction}
-- NARRATIVE: {pattern_desc}
+
+[GENERATE {section_type.upper()}]
+- REQUIRED: {bars} bars.
+- TOPIC: '{prompt_topic}'
+- NARRATIVE ARC: {arc_instruction}
+- RHYTHMIC CADENCE: {pattern_desc}{math_rule}
+- THE POCKET: {pocket_instruction}
+- SYLLABLE LIMIT: Strictly {current_max_syllables} or less per line.
+- BREATH CONTROL: Use the pipe symbol (|) to indicate a rhythmic breath or mathematical rest (e.g., "BOSS | IN THE CAGE").
+- FORMATTING: Use normal English. Do NOT spell out words with dots.
 {energy_rules}
-{f"[HOOK CONTEXT]: {anchor_hook}" if anchor_hook else ""}
+{hook_context}
+{melodic_rules}
+{evolution_rules}
+
+[PREVIOUS CONTEXT]
+{previous_lyrics if previous_lyrics else 'Start of track.'}
+
+Write the draft now.
 <|im_end|>
 <|im_start|>assistant
 """
-    # PASS 1
     inputs = tokenizer(draft_prompt, return_tensors="pt").to("cuda")
-    outputs = model.generate(**inputs, max_new_tokens=80 * bars, temperature=0.8, top_p=0.9)
+    outputs = model.generate(**inputs, max_new_tokens=60 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15)
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
-    
-    # PASS 2: FINAL POLISH (The critical line-matching step)
-    refine_prompt = f"""<|im_start|>user
-[REFINEMENT]
-Rewrite these bars to be exactly {bars} lines.
-- SYLLABLE LIMIT: {current_max_syllables} (STRICT)
-- FORMAT: ONE BAR PER LINE. No intro/outro text.
-- BREATHING: Use '|' for rests.
-- TAIL-END WEIGHT: Ensure the final 3-4 syllables of every line are multi-syllabic and dense.
-- POCKET FILL: Do not leave the end of the bar empty; use the full {current_max_syllables} syllable limit to trigger the UI bleed-over effect.
--RHYTHMIC OVERLAP: If POCKET is chainlink, force the last word to physically feel like it belongs to the next measure.
 
-Bars: "{draft_text}"
+    draft_text = execute_banned_word_assassin(draft_text, banned_map)
+
+    # 🚨 UPDATED SECOND PASS: INJECTED TAIL-END, BLEED RULES, AND STRIKE ZONE
+    refine_prompt = f"""<|im_start|>user
+[THE SECOND PASS - FINAL POLISH]
+You drafted this {bars}-bar {section_type.upper()}:
+"{draft_text}"
+
+CRITICAL REFINEMENT COMMANDS:
+1. Every line MUST be {current_max_syllables} syllables or less. Rewrite long lines to be minimalist.
+2. OBEY THE POCKET: {pocket_instruction}
+3. THE STRIKE ZONE: {strike_instruction}
+4. BREATH CONTROL: Use the pipe symbol (|) for mathematical rests.
+5. Output EXACTLY {bars} lines.
+6. NO HEADERS. NO TIMESTAMPS. NO STAGE DIRECTIONS. 
+7. NO ACRONYM GLITCHING: Use standard natural English. Do NOT spell out words with dots.
+8. TAIL-END WEIGHT: Ensure the final 3-4 syllables of every line are multi-syllabic and dense.
+9. POCKET FILL: Do not leave the end of the bar empty; use the full {current_max_syllables} limit to trigger the UI bleed-over effect.
+10. RHYTHMIC OVERLAP: If POCKET is chainlink, force the last word to physically feel like it belongs to the next measure.
+{energy_rules}
+{melodic_rules}
+
+Rewrite the final {bars} lines now. Output ONLY the lyrics.
 <|im_end|>
 <|im_start|>assistant
 """
     inputs_refine = tokenizer(refine_prompt, return_tensors="pt").to("cuda")
-    outputs_refine = model.generate(**inputs_refine, max_new_tokens=128 * bars, temperature=0.5)
+    # 🚨 INCREASED MAX NEW TOKENS TO 120 TO PREVENT "RIDE THE POCKET" CUTOFFS
+    outputs_refine = model.generate(**inputs_refine, max_new_tokens=120 * bars, temperature=0.55, top_p=0.9, repetition_penalty=1.1)
     final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
     final_text = execute_banned_word_assassin(final_text, banned_map)
+
+    final_text = final_text.replace("<|im_end|>", "").strip()
+    final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL)
+    final_text = final_text.replace("```", "")
+    final_text = re.sub(r'\[.*?\]', '', final_text)
+    final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE)
     
-    # Cleaning for Teleprompter Sync
-    clean_lines = [l.strip() for l in final_text.split('\n') if len(l.strip()) > 5 and not l.startswith('[')]
-    if len(clean_lines) > bars: clean_lines = clean_lines[:bars]
-    while len(clean_lines) < bars: clean_lines.append("... [Locked in the pocket] ...")
+    clean_lines = []
+    for line in final_text.split('\n'):
+        l = line.strip()
+        if not l or len(l) < 3: continue
+        if l.startswith(('+', '-')): continue
+        if l.lower().startswith("here are"): continue
+        if l.startswith('(') and l.endswith(')') and len(l.split()) <= 4: continue
+        clean_lines.append(l)
     
-    return clean_lines
+    if len(clean_lines) > bars:
+        clean_lines = clean_lines[:bars]
+        
+    while len(clean_lines) < bars:
+        clean_lines.append("... [Ride the pocket] ...")
+        
+    return clean_lines[:bars]
 
 def handler(event):
     job_input = event.get("input", {})
-    banned_map = job_input.get("bannedWordsMap", DEFAULT_BANNED_WORDS_MAP)
     
-    # Task: Generate
+    print("\n" + "="*50)
+    print("🔥 NEW JOB INITIATED - CHECKING PAYLOAD VARIABLES")
+    print(f"Incoming Keys: {list(job_input.keys())}")
+    print(f"dynamic_array caught: {job_input.get('dynamic_array', 'MISSING!')}")
+    print(f"contour caught: {job_input.get('contour', 'MISSING!')}")
+    print("="*50 + "\n")
+    
+    banned_map = job_input.get("bannedWordsMap", DEFAULT_BANNED_WORDS_MAP)
+    task_type = job_input.get("task_type", "generate")
+    
+    if task_type == "refine":
+        original_line = job_input.get("originalLine", "")
+        instruction = job_input.get("instruction", "Make it hit harder.")
+        
+        refine_prompt = f"""<|im_start|>system
+[SYSTEM DIRECTIVE: THE MOGUL POLISH]
+You are an elite hip-hop ghostwriter. Surgically refine a specific bar of lyrics.
+Follow instructions. Output ONLY the new final line. No quotes, no explanations.
+<|im_end|>
+<|im_start|>user
+Original Line: "{original_line}"
+Instruction: {instruction}
+<|im_end|>
+<|im_start|>assistant
+"""
+        inputs = tokenizer(refine_prompt, return_tensors="pt").to("cuda")
+        outputs = model.generate(**inputs, max_new_tokens=60, temperature=0.55, top_p=0.9, repetition_penalty=1.1)
+        refined_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
+        refined_text = execute_banned_word_assassin(refined_text, banned_map)
+        return {"refinedLine": refined_text.replace("<|im_end|>", "").strip()}
+
+    topic = job_input.get("prompt", "Securing the legacy")
+    motive = job_input.get("motive", "Ownership")
+    struggle = job_input.get("struggle", "Resistance")
+    hustle = job_input.get("hustle", "Execution")
     bpm = float(job_input.get("bpm", 120))
     style = job_input.get("style", "getnice_hybrid")
     blueprint = job_input.get("blueprint", [])
-    dynamic_array = job_input.get("dynamic_array", [2]*8)
     
+    use_slang = job_input.get("useSlang", True)
+    use_intel = job_input.get("useIntel", True)
+
+    root_note = job_input.get("root_note", "C")
+    scale = job_input.get("scale", "minor")
+    contour = job_input.get("contour", "drops into a lower register")
+    
+    strike_zone = job_input.get("strikeZone", "snare")
+    
+    # 🚨 EVALUATING STRIKE INSTRUCTION GLOBALLY
+    strike_instruction = "Ensure your multi-syllabic rhyme endings land precisely on the 2-count and 4-count (the snare drum)."
+    if strike_zone == "downbeat":
+        strike_instruction = "Force aggressive, heavy emphasis on the 1-count (the downbeat/kick drum). Hit the first beat hard."
+    elif strike_zone == "spillover":
+        strike_instruction = "Delay the rhymes so they land on the 'and' of the 4. Create a lazy, dragging, off-beat spillover effect."
+
+    hook_type = job_input.get("hookType", "chant")
+    flow_evolution = job_input.get("flowEvolution", "static")
+    pocket = job_input.get("pocket", "standard")
+
+    dynamic_array = job_input.get("dynamic_array", [2, 2, 2, 2, 2, 2, 2, 2])
+    total_blueprint_bars = sum(sec.get("bars", 16) for sec in blueprint)
+    if total_blueprint_bars == 0: total_blueprint_bars = 1
+
     seconds_per_bar = (60.0 / bpm) * 4.0
     style_limits = {
-        "lazy": (4, 7), "heartbeat": (7, 10), "getnice": (8, 12), "triplet": (9, 13), "chopper": (12, 18)
+        "lazy": {"min": 4, "max": 7},              
+        "heartbeat": {"min": 7, "max": 10},        
+        "getnice_hybrid": {"min": 8, "max": 12},   
+        "triplet": {"min": 9, "max": 12},          
+        "chopper": {"min": 12, "max": 16}          
     }
-    low, high = style_limits.get(style.split('_')[0], style_limits["getnice"])
-    # CALC SYLLABLES WITH +2 BUFFER
-    max_syllables = int(low + (high - low) * min(1.0, max(0.0, (seconds_per_bar - 1.5) / 2.0))) + 2
 
-    system_prompt = construct_system_prompt(
-        style, job_input.get("useSlang", True), job_input.get("useIntel", True),
-        job_input.get("motive", ""), job_input.get("struggle", ""), job_input.get("hustle", ""),
-        job_input.get("prompt", ""), job_input.get("root_note", "C"), job_input.get("scale", "minor"),
-        job_input.get("contour", "low"), job_input.get("strikeZone", "snare"), banned_map
-    )
+    limits = style_limits.get(style.split(' ')[0], style_limits["getnice_hybrid"])
+    # 🚨 ADDED THE + 2 BUFFER TO PREVENT AI TRUNCATION
+    max_syllables = int(limits["min"] + (limits["max"] - limits["min"]) * min(1.0, max(0.0, (seconds_per_bar - 1.5) / 2.0))) + 2
 
+    pocket_instruction = "End every line with a period (.). You MUST hit Enter/Return to create a new line."
+    if pocket == "chainlink":
+        pocket_instruction = "CHAIN-LINK MODE: End every single line with a comma (,) for spillover."
+    elif pocket == "pickup":
+        pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.)."
+    elif pocket == "cascade":
+        pocket_instruction = "THE GETNICE CASCADE MODE: Use heavy enjambment. End lines mid-phrase with no punctuation."
+    elif pocket == "matrix_pivot":
+        pocket_instruction = "THE MATRIX PIVOT: Execute a cascading rhyme shift using the rhythmic array."
+
+    # 🚨 PASSING strike_instruction INSTEAD OF strike_zone
+    system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_instruction, banned_map)
+    
     final_lyrics = ""
-    current_cum_bar = 0
-    saved_hook = None
-    total_blueprint_bars = sum(s.get("bars", 0) for s in blueprint) or 1
+    context_lyrics = ""
+    current_cumulative_bar = 0
+    saved_hook_lines = None 
+    anchor_hook_text = None
 
-    for section in blueprint:
+    for index, section in enumerate(blueprint):
         sec_type = section.get("type", "VERSE").upper()
         bars = section.get("bars", 16)
+        start_bar = section.get("startBar", current_cumulative_bar)
+        pattern_desc = section.get("patternDesc", "Standard Score Card")
         
-        energy = dynamic_array[min(7, int((current_cum_bar / total_blueprint_bars) * 8))]
+        # 🚨 CATCHING THE ARRAY FROM ROOM 03
+        pattern_array = section.get("patternArray", [])
         
-        final_lyrics += f"\n[{sec_type} - {bars} BARS | ENERGY: {energy}]\n"
+        progress_ratio = start_bar / total_blueprint_bars
+        array_index = min(7, int(progress_ratio * 8))
+        current_energy = dynamic_array[array_index]
+        
+        final_lyrics += f"\n[{sec_type} - {bars} BARS | BAR {start_bar} | ENERGY: {current_energy}/4]\n"
         
         if sec_type == "INSTRUMENTAL":
-            lines = ["[Instrumental Break]"] * bars
-        elif "HOOK" in sec_type and saved_hook:
-            lines = (saved_hook * (bars // len(saved_hook) + 1))[:bars]
+            section_lines = ["[Instrumental Break]" for _ in range(bars)]
+        elif "HOOK" in sec_type and saved_hook_lines is not None:
+            section_lines = []
+            while len(section_lines) < bars:
+                section_lines.extend(saved_hook_lines)
+            section_lines = section_lines[:bars]
         else:
-            lines = generate_section(
-                system_prompt, "", sec_type, bars, max_syllables, 
-                section.get("patternDesc", "Standard"), "End with period.",
-                job_input.get("prompt", ""), 0, saved_hook, 
-                job_input.get("hookType", "chant"), "static", energy, banned_map
+            section_lines = generate_section(
+                system_prompt=system_prompt, 
+                previous_lyrics=context_lyrics, 
+                section_type=sec_type, 
+                bars=bars, 
+                max_syllables=max_syllables, 
+                pattern_desc=pattern_desc, 
+                pattern_array=pattern_array,  # 🚨 PASSING THE ARRAY
+                pocket_instruction=pocket_instruction,
+                strike_instruction=strike_instruction, # 🚨 PASSING STRIKE INSTRUCTION
+                prompt_topic=topic,
+                section_index=index,
+                anchor_hook=anchor_hook_text,
+                hook_type=hook_type,            
+                flow_evolution=flow_evolution,
+                current_energy=current_energy,
+                banned_map=banned_map
             )
-            if "HOOK" in sec_type: saved_hook = lines
-            
-        for i, line in enumerate(lines):
-            t = (current_cum_bar + i) * seconds_per_bar
-            final_lyrics += f"({int(t // 60)}:{int(t % 60):02d}) {line}\n"
+            if "HOOK" in sec_type:
+                saved_hook_lines = section_lines
+                anchor_hook_text = "\n".join(section_lines)
+            context_lyrics = "\n".join(section_lines[-4:])
         
-        current_cum_bar += bars
+        for i, line in enumerate(section_lines):
+            line_time = (start_bar + i) * seconds_per_bar
+            final_lyrics += f"({int(line_time // 60)}:{int(line_time % 60):02d}) {line}\n"
+        
+        current_cumulative_bar = start_bar + bars
 
     return {"lyrics": final_lyrics.strip()}
 
