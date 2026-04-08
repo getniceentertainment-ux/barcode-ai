@@ -794,9 +794,9 @@ export default function Room04_Booth() {
           if (cleanTextEnd === '.') totalLineSteps += 4;
           else if (cleanTextEnd === ',') totalLineSteps += 1;
 
-          // 🚨 RESTORED DYNAMIC PROPORTIONAL COMPRESSION
-          // Smoothly stretches/squishes whatever the AI wrote to fit perfectly into exactly 1 bar
-          const timePerStep = totalLineSteps > 0 ? secondsPerBar / totalLineSteps : 0;
+          /// 🚨 ABSOLUTE GRID SNAPPING
+          // Locks the visual bounce to the exact BPM of the instrumental.
+          const timePerStep = secondsPerSlot; 
           
           let localWordTime = lineStartTime;
           let currentSlot = 0;
@@ -816,7 +816,7 @@ export default function Room04_Booth() {
               const chunkDuration = stepsRequired * timePerStep;
               
               // Map slot proportionately across the grid (0 to 15) so they never stack
-              const mappedSlot = totalLineSteps > 0 ? Math.min(15, Math.floor((currentSlot / totalLineSteps) * 16)) : 0;
+              const mappedSlot = currentSlot % 16;
 
               mappedWords.push({
                 id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
