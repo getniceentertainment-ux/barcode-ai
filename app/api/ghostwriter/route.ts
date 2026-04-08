@@ -155,7 +155,7 @@ export async function POST(req: Request) {
     if (!success) return NextResponse.json({ error: "Rate Limit Exceeded. Please hold." }, { status: 429 });
 
     const body = await req.json();
-    const { prompt, title, bpm, key, stageName, tag, style, blueprint, motive, struggle, hustle, useSlang, useIntel, flowReference, systemConstraint, pocket, strikeZone, hookType, flowEvolution } = body;
+    const { prompt, title, bpm, key, stageName, tag, style, blueprint, motive, struggle, hustle, useSlang, useIntel, flowReference, systemConstraint, pocket, strikeZone, hookType, flowEvolution, dynamic_array, contour // <--- JUST ADD THESE TWO WORDS HERE } = body;
 
     let profileTier = 'Free Loader';
     let cost = 1;
