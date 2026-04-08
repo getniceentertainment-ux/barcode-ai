@@ -5,7 +5,7 @@ import {
   Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, ToggleLeft, ToggleRight, Crosshair, ListVideo
 } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
-import { useMatrixStore, QuantizedLine, QuantizedSyllable } from "../../store/useMatrixStore";
+import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase"; 
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
@@ -14,25 +14,28 @@ type WordMapping = { id: string; word: string; startTime: number; duration: numb
 type LyricLine = { id: string; text: string; originalText: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[]; barIndex: number };
 
 // --- THE MACRO-RHYTHMIC NEURAL ENGINE ---
-// Transforms textual directives (from Room 3) into mathematical arrays for the visualizer
-function determineRhythmicPattern(style: string, pocket: string, patternDesc: string): number[] {
-  const desc = (patternDesc || "").toLowerCase();
+// Translates your exact Topline Directives into the visual metronome matrix
+function determineRhythmicPattern(style: string, pocket: string, strikeZone: string, hookType: string, flowEvolution: string, isHook: boolean): number[] {
   const st = (style || "").toLowerCase();
   const p = (pocket || "").toLowerCase();
+  const sz = (strikeZone || "").toLowerCase();
+  const ht = (hookType || "").toLowerCase();
 
-  // 1. Hook Architecture
-  if (desc.includes("stadium") || desc.includes("spacious")) return [6, 2, 8];
-  if (desc.includes("double-up") || desc.includes("dense")) return [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 4];
-  if (desc.includes("triplet") || desc.includes("12-beat")) return [3, 3, 2, 3, 3, 2];
-  if (desc.includes("symmetry") || desc.includes("a-b-a-b")) return [4, 2, 2, 4, 4];
-  if (desc.includes("switch-up")) return [2, 1, 1, 2, 1, 1, 4];
-  
+  // 1. Hook Architecture Overrides
+  if (isHook) {
+    if (ht.includes("bouncy")) return [2, 1, 1, 2, 2];
+    if (ht.includes("triplet")) return [3, 3, 2, 3, 3, 2];
+    if (ht.includes("symmetry")) return [4, 2, 2, 4, 4];
+    if (ht.includes("prime")) return [5, 3, 5, 3];
+    return [6, 2, 8]; // stadium/chant
+  }
+
   // 2. Topline & Pocket Directives
-  if (desc.includes("strike zone") || p.includes("strike")) return [1, 1, 2, 1, 1, 2, 1, 1, 2]; // Fast 16th clusters
-  if (desc.includes("2 & 4") || desc.includes("snare")) return [4, 2, 2, 4, 2, 2]; // Hits the 2 & 4 snap
-  if (desc.includes("downbeat") || p.includes("downbeat")) return [4, 4, 4, 4]; // Heavy quarters
-  if (p.includes("chainlink") || p.includes("chain-link") || desc.includes("spillover")) return [2, 2, 2, 2, 2, 2, 1, 1, 1, 1]; // Bleeds at the end
-  if (p.includes("drag") || p.includes("pickup") || desc.includes("drag")) return [6, 2, 2, 2, 2, 2]; // Delays the 1 count
+  if (sz.includes("strike zone") || sz.includes("strike")) return [1, 1, 2, 1, 1, 2, 1, 1, 2]; // Fast 16th clusters
+  if (sz.includes("snare") || sz.includes("2 & 4")) return [4, 2, 2, 4, 2, 2]; // Hits the 2 & 4 snap
+  if (sz.includes("downbeat")) return [4, 4, 4, 4]; // Heavy quarters
+  if (p.includes("chainlink") || p.includes("chain-link")) return [2, 2, 2, 2, 2, 2, 1, 1, 1, 1]; // Bleeds at the end
+  if (p.includes("drag") || p.includes("pickup")) return [6, 2, 2, 2, 2, 2]; // Delays the 1 count
 
   // 3. Fallback to Style DNA
   if (st.includes("chopper")) return [1, 1, 1, 1, 1, 1, 1, 1];
@@ -229,36 +232,11 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
-// --- THE MACRO-RHYTHMIC FLOW VAULT ---
-const FLOW_VAULT: Record<string, number[][]> = {
-  "getnice_hybrid": [
-    [4, 2, 2,  3, 1, 4,  2, 2, 2, 2,  4, 4], 
-    [3, 1, 2, 2],
-    [6, 2, 4, 2, 2] 
-  ],
-  "chopper": [
-    [1, 1, 1, 1], 
-    [2, 1, 1, 1, 1, 2] 
-  ],
-  "heartbeat": [
-    [2, 2, 2, 2], 
-    [4, 2, 2, 4, 4] 
-  ],
-  "triplet": [
-    [3, 3, 2], 
-    [2, 2, 2, 3, 3, 4] 
-  ],
-  "lazy": [
-    [4, 2, 2], 
-    [6, 2, 8] 
-  ]
-};
-
 export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
     updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, 
-    addToast, gwStyle, gwPocket, quantizedLines, setQuantizedLines 
+    addToast, gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution
   } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -338,7 +316,6 @@ export default function Room04_Booth() {
 
         const newWords = [...line.words];
 
-        // DYNAMIC SNAKING: Move the targeted word AND all subsequent words by the exact delta
         for (let i = targetIndex; i < newWords.length; i++) {
            let newSlot = newWords[i].slot + delta;
            newSlot = Math.max(0, Math.min(15, newSlot)); 
@@ -346,7 +323,6 @@ export default function Room04_Booth() {
            newWords[i] = {
              ...newWords[i],
              slot: newSlot,
-             // RE-CALCULATE AUDIO SYNC TIME
              startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot)
            };
         }
@@ -883,7 +859,6 @@ export default function Room04_Booth() {
 
   const lastParsedLyricsRef = useRef<string>("");
 
-  // 🚨 1. FRONTEND ARMOR (Vaporizes Ghost Metadata without re-rendering the LLM)
   useEffect(() => {
     if (!generatedLyrics) return;
     if (lyricLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
@@ -893,29 +868,19 @@ export default function Room04_Booth() {
     
     const sanitizedLines = lines.map(l => {
       let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
-      
       if (text.startsWith('[') && text.includes(']')) return { text, isHeader: true }; 
       
-      // VAPORIZE AI METADATA HALLUCINATIONS
+      // VAPORIZE METADATA (But keep the pipe symbols | for grid routing!)
       text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
                  .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
                  .replace(/pipe\s*symbol/gi, '') 
-                 .replace(/\|/g, '') 
                  .replace(/\(\d+\s*syllables?.*?\)/gi, '') 
-                 .replace(/\[\d+\s*syllables?.*?\]/gi, '')
-                 // Explict stage-dir killer
-                 .replace(/\((Chorus|Verse|Drill|Setback|Execution|Hook|Intro|Outro|Drop|Bridge|Motive|Theme)\)/gi, '') 
+                 .replace(/\[\d+\s*syllables?.*?\]/gi, '') 
                  .replace(/\s+/g, ' ').trim();
 
       text = text.replace(/,/g, ', ').replace(/\s+/g, ' ').trim();
       return { text, isHeader: false };
-    }).filter(obj => {
-        if (obj.isHeader) return true;
-        if (obj.text.length < 2) return false;
-        // Kill stray short commands wrapped in parentheses on their own line (e.g. "(Drop)")
-        if (obj.text.match(/^\([A-Za-z\s_-]+\)$/)) return false; 
-        return true;
-    });
+    }).filter(obj => obj.text.length > 0);
 
     const llmBlocks: { header: string, lines: typeof sanitizedLines }[] = [];
     let currentLlmBlock = { header: "", lines: [] as typeof sanitizedLines };
@@ -952,28 +917,25 @@ export default function Room04_Booth() {
         const timeForThisLine = blockDurationSecs / numLines; 
         let currentFlowTime = blockStartTime;
 
-        // 🚨 USING DYNAMIC NEURAL PATTERN ENGINE
-        const activePattern = determineRhythmicPattern(gwStyle, gwPocket, (bp as any).patternDesc);
+        // 🚨 PASSING THE MISSING STORE VARIABLES TO THE NEURAL ENGINE
+        const isHook = bp.type.toUpperCase().includes("HOOK");
+        let activePattern = determineRhythmicPattern(gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution, isHook);
 
-        blockData.lines.forEach((lineObj, lineIndex) => {
+        blockData.lines.forEach((lineObj) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: WordMapping[] = [];
 
-          const lineStartTime = blockStartBar * secondsPerBar + (lineIndex * secondsPerBar);
-          const actualBarIndex = blockStartBar + lineIndex;
-
-          let currentSlot = 0;
-          let patternIndex = 0;
-
-          if (lineObj.text.trim().startsWith('...')) currentSlot += 4; 
-
           let totalLineSteps = 0;
           let tempPatternIndex = 0;
-          
+
+          if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
+
+          // 🚨 IF THE AI PASSED A PIPE, WE USE IT TO CHUNK THE GRID PROPERLY
           const wordChunksArray = rawWords.map(w => {
-            const chunks = chunkWordForVisuals(w); 
+            const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
             chunks.forEach(() => {
-              totalLineSteps += Number(activePattern[tempPatternIndex % activePattern.length]) || 2;
+              const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
+              totalLineSteps += isNaN(stepVal) ? 2 : stepVal; 
               tempPatternIndex++;
             });
             return chunks;
@@ -985,8 +947,11 @@ export default function Room04_Booth() {
 
           const timePerStep = totalLineSteps > 0 ? timeForThisLine / totalLineSteps : 0;
           let localWordTime = currentFlowTime;
+          const lineStartTime = currentFlowTime;
 
           if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
+
+          let patternIndex = 0;
 
           wordChunksArray.forEach((chunks) => {
             chunks.forEach((chunk, cIdx) => {
@@ -994,28 +959,24 @@ export default function Room04_Booth() {
               patternIndex++;
 
               const chunkDuration = stepsRequired * timePerStep;
-              
-              // PERFECT PROPORTIONAL VISUAL UI MAPPING
-              const mappedSlot = totalLineSteps > 0 ? Math.min(15, Math.floor((currentSlot / totalLineSteps) * 16)) : 0;
+              const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForThisLine) * 16)));
 
               mappedWords.push({
                 id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-                word: chunk,
+                word: chunk.replace(/\|/g, ''), // Strip pipe for the UI display only
                 slot: mappedSlot,
                 startTime: localWordTime,
                 duration: chunkDuration, 
                 isWordEnd: (cIdx === chunks.length - 1)
               });
-
               localWordTime += chunkDuration;
-              currentSlot += stepsRequired;
             });
           });
 
           parsed.push({ 
             id: `line-${lineIdCounter++}`,
-            barIndex: actualBarIndex,
-            text: lineObj.text, 
+            barIndex: Math.floor(lineStartTime / secondsPerBar),
+            text: lineObj.text.replace(/\|/g, ''), // Strip pipe for the UI display only
             originalText: lineObj.text,
             startTime: lineStartTime, 
             lineDuration: timeForThisLine, 
@@ -1024,14 +985,32 @@ export default function Room04_Booth() {
             words: mappedWords 
           });
 
-          currentFlowTime += timeForThisLine;
+          currentFlowTime += timeForThisLine; 
         });
       }
       runningBlockStartBar = blockStartBar + bars;
     });
     
     setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, gwPocket, lyricLines, setLyricLines]);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution, lyricLines, setLyricLines]);
+
+  useEffect(() => {
+    if (trimmingStem && trimWaveformRef.current) {
+      trimWavesurferRef.current = WaveSurfer.create({
+        container: trimWaveformRef.current, waveColor: '#555', progressColor: '#E60000', cursorColor: '#fff', barWidth: 2, barGap: 1, height: 100, normalize: true,
+      });
+      trimWavesurferRef.current.on('error', (err) => console.warn("Trim WaveSurfer Soft-fail:", err));
+      
+      const safeUrl = trimmingStem.blob ? URL.createObjectURL(trimmingStem.blob) : trimmingStem.url;
+      trimWavesurferRef.current.load(safeUrl).catch(e => console.warn("Trim Load Aborted:", e.message));
+      
+      trimWavesurferRef.current.on('ready', () => {
+        const dur = trimWavesurferRef.current?.getDuration() || 0;
+        setTrimDuration(dur); setTrimStart(0); setTrimEnd(dur);
+      });
+    }
+    return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
+  }, [trimmingStem]);
 
   if (!audioData) {
     return (

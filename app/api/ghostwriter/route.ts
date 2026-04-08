@@ -155,7 +155,7 @@ export async function POST(req: Request) {
     if (!success) return NextResponse.json({ error: "Rate Limit Exceeded. Please hold." }, { status: 429 });
 
     const body = await req.json();
-    const { prompt, title, bpm, key, stageName, tag, style, blueprint, motive, struggle, hustle, useSlang, useIntel, flowReference, systemConstraint, pocket } = body;
+    const { prompt, title, bpm, key, stageName, tag, style, blueprint, motive, struggle, hustle, useSlang, useIntel, flowReference, systemConstraint, pocket, strikeZone, hookType, flowEvolution } = body;
 
     let profileTier = 'Free Loader';
     let cost = 1;
@@ -241,7 +241,10 @@ export async function POST(req: Request) {
           useSlang: useSlang, 
           useIntel: useIntel, 
           blueprint: blueprint,
-          // 🚨 PASSING THE ASSASSIN PAYLOAD TO THE WORKER
+          pocket: pocket,
+          strikeZone: strikeZone,
+          hookType: hookType,
+          flowEvolution: flowEvolution,
           bannedWordsMap: BANNED_WORDS_MAP
         }
       })
