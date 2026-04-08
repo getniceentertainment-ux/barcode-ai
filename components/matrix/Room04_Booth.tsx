@@ -239,7 +239,6 @@ export default function Room04_Booth() {
   const [autoScroll, setAutoScroll] = useState(true);
   const [teleprompterEnabled, setTeleprompterEnabled] = useState(true);
 
-  const [currentTimeDisplay, setCurrentTimeDisplay] = useState(0);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
 
@@ -269,6 +268,9 @@ export default function Room04_Booth() {
   const recordedChunksRef = useRef<Float32Array[]>([]);
   const workletLoadedRef = useRef(false);
   const teleprompterRef = useRef<HTMLDivElement>(null);
+
+  // 🚨 THE FIX: A dedicated ref to update the clock without triggering React Re-renders
+  const timeDisplayRef = useRef<HTMLDivElement>(null);
 
   // --- HIGH-PERFORMANCE rAF SYNC REFS ---
   const animationFrameRef = useRef<number>();
@@ -510,7 +512,13 @@ export default function Room04_Booth() {
     if (!wavesurferRef.current) return;
     
     const time = wavesurferRef.current.getCurrentTime();
-    setCurrentTimeDisplay(time); // Display clock updates smoothly
+    
+    // 🚨 ESCAPING THE REACT TRAP: Update the clock without forcing a component re-render
+    if (timeDisplayRef.current) {
+        const mins = Math.floor(time / 60).toString().padStart(2, '0');
+        const secs = Math.floor(time % 60).toString().padStart(2, '0');
+        timeDisplayRef.current.innerText = `${mins}:${secs}`;
+    }
 
     const visualTime = time + 0.08; 
 
@@ -698,7 +706,7 @@ export default function Room04_Booth() {
       } finally { setIsUploading(false); }
     }
     
-    setCurrentTimeDisplay(0);
+    if (timeDisplayRef.current) timeDisplayRef.current.innerText = "00:00";
     updateVisualsRef.current(); 
   };
 
@@ -846,9 +854,6 @@ export default function Room04_Booth() {
 
   const lastParsedLyricsRef = useRef<string>("");
 
-  // 🚨 THE FIX: AGGRESSIVE AI METADATA SCRUBBER
-  // This physically destroys hallucinations like "|", "(4 syllables total)", or "[4 syllables]" 
-  // BEFORE the Quantize Engine calculates the logic. The ball will only ride pure lyrics.
   useEffect(() => {
     if (!generatedLyrics) return;
     if (quantizedLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
@@ -861,13 +866,12 @@ export default function Room04_Booth() {
       
       if (text.startsWith('[') && text.includes(']')) return { text, isHeader: true }; 
       
-      // VAPORIZE AI METADATA HALLUCINATIONS
-      text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') // Strips (1:08)
-                 .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') // Strips (Bar 1-4)
+      text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
+                 .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
                  .replace(/pipe\s*symbol/gi, '') 
-                 .replace(/\|/g, '') // STRIPS LITERAL PIPES
-                 .replace(/\(\d+\s*syllables?.*?\)/gi, '') // STRIPS (4 syllables total)
-                 .replace(/\[\d+\s*syllables?.*?\]/gi, '') // STRIPS [4 syllables]
+                 .replace(/\|/g, '') 
+                 .replace(/\(\d+\s*syllables?.*?\)/gi, '') 
+                 .replace(/\[\d+\s*syllables?.*?\]/gi, '') 
                  .replace(/\s+/g, ' ').trim();
 
       text = text.replace(/,/g, ', ').replace(/\s+/g, ' ').trim();
@@ -923,7 +927,7 @@ export default function Room04_Booth() {
           if (lineObj.text.trim().startsWith('...')) currentSlot += 4; 
 
           rawWords.forEach(w => {
-            const chunks = chunkWordForVisuals(w); // Pipes were stripped globally above
+            const chunks = chunkWordForVisuals(w); 
             
             chunks.forEach((chunk, cIdx) => {
               const stepDelta = activePattern[patternIndex % activePattern.length];
@@ -1082,8 +1086,10 @@ export default function Room04_Booth() {
                     <span className="flex-1 leading-loose">
                       {line.words?.map((wObj, wIdx) => (
                         <span key={wIdx} className={`syllable-chunk relative inline-block text-[#444] transition-colors duration-100 ${wObj.isWordEnd ? 'mr-2' : ''}`}>
-                          {/* 🚨 BALL VISIBILITY ENSURED: z-50 and absolute positioning */}
-                          <span className="bouncing-ball hidden absolute -top-4 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50 animate-bounce"></span>
+                          {/* 🚨 TAILWIND ANIMATION PROTECTED: Bouncing ball is placed in a pure positioning container */}
+                          <span className="absolute -top-4 left-1/2 -translate-x-1/2 z-50">
+                            <span className="bouncing-ball hidden w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] animate-bounce block"></span>
+                          </span>
                           {wObj.word}
                         </span>
                       ))}
@@ -1133,8 +1139,8 @@ export default function Room04_Booth() {
                  <span className="font-mono text-[9px] uppercase tracking-widest font-bold">Syncing storage node...</span>
                </div>
             )}
-            <div className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
-              {Math.floor(currentTimeDisplay / 60).toString().padStart(2, '0')}:{Math.floor(currentTimeDisplay % 60).toString().padStart(2, '0')}
+            <div ref={timeDisplayRef} className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
+              00:00
             </div>
           </div>
 
