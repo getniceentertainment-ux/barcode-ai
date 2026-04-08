@@ -88,7 +88,6 @@ export default function Room03_Ghostwriter() {
           
           if(addToast) addToast("High-tier artifact synthesized.", "success");
           
-          // SURGICAL FIX: Force a cloud sync after generation so data isn't lost if they refresh
           setTimeout(() => {
             pushToCloud();
           }, 1000);
@@ -126,14 +125,11 @@ export default function Room03_Ghostwriter() {
     return () => clearInterval(interval);
   }, [jobId, pollingAttempts, setGeneratedLyrics, addToast, audioData, gwStyle, credits, userSession, pushToCloud, blueprint]);
 
-  // --- SURGICAL LOGIC: Lock Bouncers for Pocket/Zone/Style Matrix ---
   useEffect(() => {
-    // 1. Lazy Flow cannot handle Cascade Pocket (Syllable starvation)
     if (gwStyle === "lazy" && gwPocket === "cascade") {
        setGwPocket("syncopated");
        if (addToast) addToast("Style Override: 'Lazy' flow cannot support 'Cascade' pocket.", "info");
     }
-    // 2. Pickup Pocket clashes with Downbeat Strike Zone
     if (gwPocket === "pickup" && gwStrikeZone === "downbeat") {
        setGwStrikeZone("late");
        if (addToast) addToast("Grid Override: 'Pickup' pocket forces a 'Late' strike zone.", "info");
@@ -209,7 +205,8 @@ export default function Room03_Ghostwriter() {
       });
       const data = await res.json();
       if (data.newLine) {
-        setGeneratedLyrics(generatedLyrics.replace(selectedLine, data.newLine));
+        // 🚨 SURGICAL FIX: (generatedLyrics || "") explicitly satisfies the TypeScript string | null requirement
+        setGeneratedLyrics((generatedLyrics || "").replace(selectedLine, data.newLine));
         setSelectedLine("");
         setRefineInstruction("");
         if(addToast) addToast("Micro-Refinement Applied.", "success");
@@ -248,7 +245,7 @@ export default function Room03_Ghostwriter() {
              </div>
 
              <button onClick={() => setShowAdvanced(!showAdvanced)} className="w-full flex items-center justify-between text-[#888] hover:text-white border-b border-[#222] pb-2 mb-4">
-               <span className="font-oswald text-xs uppercase tracking-widest font-bold flex items-center gap-2"><Sliders size={14} /> Advanced Parameters</span>
+               <span className="font-oswald text-xs uppercase tracking-widest font-bold flex items-center gap-2"><Layout size={14} /> Advanced Parameters</span>
                {showAdvanced ? <Minus size={14} /> : <Plus size={14} />}
              </button>
 
@@ -357,7 +354,7 @@ export default function Room03_Ghostwriter() {
           
           {/* TERMINAL HEADER */}
           <div className="h-40 border-b border-[#222] bg-[#050505] p-6 relative overflow-hidden flex flex-col justify-end">
-             <div className="absolute top-6 left-6 text-[#333] opacity-20"><Terminal size={64} /></div>
+             <div className="absolute top-6 left-6 text-[#333] opacity-20"><Activity size={64} /></div>
              <div className="relative z-10 flex flex-col gap-1">
                {terminalLogs.map((log, i) => (
                  <div key={i} className="font-mono text-[10px] text-green-500 uppercase tracking-wider opacity-80">{log}</div>
