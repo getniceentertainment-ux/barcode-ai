@@ -766,17 +766,17 @@ export default function Room04_Booth() {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: WordMapping[] = [];
 
-          // 🚨 RESTORED EXACT 1-BAR-PER-LINE MATH: Forces absolute bar alignment
+          // Force absolute alignment to the beat
           const lineStartTime = blockStartBar * secondsPerBar + (lineIndex * secondsPerBar);
           const actualBarIndex = blockStartBar + lineIndex;
 
           let totalLineSteps = 0;
           let tempPatternIndex = 0;
 
+          // Pickup Handle
           if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4; 
 
           const wordChunksArray: string[][] = [];
-          
           rawWords.forEach(w => {
             const cleanW = w.replace(/\|/g, '').replace(/,/g, '').trim();
             if (cleanW) {
@@ -794,9 +794,9 @@ export default function Room04_Booth() {
           if (cleanTextEnd === '.') totalLineSteps += 4;
           else if (cleanTextEnd === ',') totalLineSteps += 1;
 
-          /// 🚨 ABSOLUTE GRID SNAPPING
-          // Locks the visual bounce to the exact BPM of the instrumental.
-          const timePerStep = secondsPerSlot; 
+          // 🚨 CRITICAL: Ensure totalLineSteps never short-circuits the grid
+          const barStepLimit = 16; 
+          const timePerStep = secondsPerSlot; // Fixed mathematical sync
           
           let localWordTime = lineStartTime;
           let currentSlot = 0;
@@ -807,7 +807,6 @@ export default function Room04_Booth() {
           }
 
           let patternIndex = 0;
-
           wordChunksArray.forEach((chunks) => {
             chunks.forEach((chunk, cIdx) => {
               const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
@@ -815,8 +814,9 @@ export default function Room04_Booth() {
 
               const chunkDuration = stepsRequired * timePerStep;
               
-              // Map slot proportionately across the grid (0 to 15) so they never stack
-              const mappedSlot = currentSlot % 16;
+              // Map slot proportionately to the 16-slot grid
+              // This prevents words from bunching at the start or breaking early
+              const mappedSlot = Math.min(15, Math.floor((currentSlot / Math.max(barStepLimit, totalLineSteps)) * 16));
 
               mappedWords.push({
                 id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
@@ -832,13 +832,13 @@ export default function Room04_Booth() {
             });
           });
 
-          parsed.push({ 
+         parsed.push({ 
             id: `line-${lineIdCounter++}`,
             barIndex: actualBarIndex,
-            text: lineObj.text.replace(/\|/g, ''), 
+            text: lineObj.text,
             originalText: lineObj.text,
             startTime: lineStartTime, 
-            lineDuration: secondsPerBar, 
+            lineDuration: secondsPerBar, // 🚨 FORCES BREATH: Holds the UI on this row for the full bar duration
             isHeader: false, 
             timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
