@@ -14,39 +14,34 @@ type WordMapping = { id: string; word: string; startTime: number; duration: numb
 type LyricLine = { id: string; text: string; originalText: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[]; barIndex: number };
 
 // --- THE MACRO-RHYTHMIC NEURAL ENGINE ---
-// Translates your exact Topline Directives into the visual metronome matrix
 function determineRhythmicPattern(style: string, pocket: string, strikeZone: string, hookType: string, flowEvolution: string, isHook: boolean): number[] {
   const st = (style || "").toLowerCase();
   const p = (pocket || "").toLowerCase();
   const sz = (strikeZone || "").toLowerCase();
   const ht = (hookType || "").toLowerCase();
 
-  // 1. Hook Architecture Overrides
   if (isHook) {
     if (ht.includes("bouncy")) return [2, 1, 1, 2, 2];
     if (ht.includes("triplet")) return [3, 3, 2, 3, 3, 2];
     if (ht.includes("symmetry")) return [4, 2, 2, 4, 4];
     if (ht.includes("prime")) return [5, 3, 5, 3];
-    return [6, 2, 8]; // stadium/chant
+    return [6, 2, 8]; 
   }
 
-  // 2. Topline & Pocket Directives
-  if (sz.includes("strike zone") || sz.includes("strike")) return [1, 1, 2, 1, 1, 2, 1, 1, 2]; // Fast 16th clusters
-  if (sz.includes("snare") || sz.includes("2 & 4")) return [4, 2, 2, 4, 2, 2]; // Hits the 2 & 4 snap
-  if (sz.includes("downbeat")) return [4, 4, 4, 4]; // Heavy quarters
-  if (p.includes("chainlink") || p.includes("chain-link")) return [2, 2, 2, 2, 2, 2, 1, 1, 1, 1]; // Bleeds at the end
-  if (p.includes("drag") || p.includes("pickup")) return [6, 2, 2, 2, 2, 2]; // Delays the 1 count
+  if (sz.includes("strike zone") || sz.includes("strike")) return [1, 1, 2, 1, 1, 2, 1, 1, 2];
+  if (sz.includes("snare") || sz.includes("2 & 4")) return [4, 2, 2, 4, 2, 2];
+  if (sz.includes("downbeat")) return [4, 4, 4, 4];
+  if (p.includes("chainlink") || p.includes("chain-link")) return [2, 2, 2, 2, 2, 2, 1, 1, 1, 1];
+  if (p.includes("drag") || p.includes("pickup")) return [6, 2, 2, 2, 2, 2];
 
-  // 3. Fallback to Style DNA
   if (st.includes("chopper")) return [1, 1, 1, 1, 1, 1, 1, 1];
   if (st.includes("heartbeat")) return [2, 2, 2, 2];
   if (st.includes("triplet")) return [3, 3, 2];
   if (st.includes("lazy")) return [4, 4, 2, 6];
   
-  return [4, 2, 2, 3, 1, 4, 2, 2, 2, 2]; // getnice_hybrid standard default
+  return [4, 2, 2, 3, 1, 4, 2, 2, 2, 2];
 }
 
-// --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR (FALLBACK ONLY) ---
 function estimateSyllables(word: string): number {
   const w = word.toLowerCase().replace(/[^a-z]/g, '');
   if (!w) return 1;
@@ -56,7 +51,6 @@ function estimateSyllables(word: string): number {
   return Math.max(1, count);
 }
 
-// --- THE VISUAL SYLLABLE CHUNKER (FALLBACK ONLY) ---
 function chunkWordForVisuals(word: string): string[] {
   const match = word.match(/^([^a-zA-Z]*)([a-zA-Z\']+)([^a-zA-Z]*)$/);
   if (!match || match[2].length <= 3) return [word];
@@ -96,7 +90,6 @@ function chunkWordForVisuals(word: string): string[] {
   return chunks.filter(c => c.length > 0);
 }
 
-// --- TTS SILENCE TRIMMER (Kills Dead Air) ---
 function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
   let startOffset = 0;
   let endOffset = buffer.length;
@@ -134,7 +127,6 @@ function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
   return trimmed;
 }
 
-// --- BULLETPROOF AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const numChannels = buffer.numberOfChannels;
   const sampleRate = buffer.sampleRate;
@@ -261,7 +253,7 @@ export default function Room04_Booth() {
   const [trimDuration, setTrimDuration] = useState(0);
   const [isProcessingTrim, setIsProcessingTrim] = useState(false);
 
-  const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
+  const [trackDuration, setTrackDuration] = useState<number>(audioData?.duration || 128);
 
   const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
   const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
@@ -284,7 +276,6 @@ export default function Room04_Booth() {
 
   const timeDisplayRef = useRef<HTMLDivElement>(null);
 
-  // --- HIGH-PERFORMANCE rAF SYNC REFS ---
   const animationFrameRef = useRef<number>();
   const lastActiveLineRef = useRef<number>(-1);
   const isPlayingRef = useRef(false);
@@ -293,7 +284,6 @@ export default function Room04_Booth() {
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
-  // --- 1. THE SNAKING DRAG & DROP LOGIC ---
   const handleDragStart = (e: React.DragEvent, lineId: string, syllableId: string, originalSlot: number) => {
     e.dataTransfer.setData("application/json", JSON.stringify({ lineId, syllableId, originalSlot }));
   };
@@ -377,7 +367,6 @@ export default function Room04_Booth() {
                 const mappedWords = line.words;
                 if (!mappedWords || mappedWords.length === 0) continue;
 
-                // Proportional Crossfade Audio Logic
                 const ttsDuration = audioBuffer.duration;
                 const mathLineDuration = line.lineDuration || 2;
 
@@ -497,7 +486,6 @@ export default function Room04_Booth() {
     } finally { setIsProcessingTrim(false); }
   };
 
-  // --- THE HIGH-PERFORMANCE VISUAL SYNC ENGINE ---
   const updateVisualsRef = useRef<() => void>(() => {});
   
   updateVisualsRef.current = () => {
@@ -546,6 +534,7 @@ export default function Room04_Booth() {
                 
                 let progress = (visualTime - wObj.startTime) / wObj.duration;
                 progress = Math.max(0, Math.min(1, progress)); 
+                
                 const maxBounce = Math.min(16, wObj.duration * 50); 
                 const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
                 
@@ -870,7 +859,6 @@ export default function Room04_Booth() {
       let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
       if (text.startsWith('[') && text.includes(']')) return { text, isHeader: true }; 
       
-      // VAPORIZE METADATA (But keep the pipe symbols | for grid routing!)
       text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
                  .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
                  .replace(/pipe\s*symbol/gi, '') 
@@ -917,7 +905,6 @@ export default function Room04_Booth() {
         const timeForThisLine = blockDurationSecs / numLines; 
         let currentFlowTime = blockStartTime;
 
-        // 🚨 PASSING THE MISSING STORE VARIABLES TO THE NEURAL ENGINE
         const isHook = bp.type.toUpperCase().includes("HOOK");
         let activePattern = determineRhythmicPattern(gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution, isHook);
 
@@ -930,7 +917,6 @@ export default function Room04_Booth() {
 
           if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
 
-          // 🚨 IF THE AI PASSED A PIPE, WE USE IT TO CHUNK THE GRID PROPERLY
           const wordChunksArray = rawWords.map(w => {
             const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
             chunks.forEach(() => {
@@ -947,11 +933,12 @@ export default function Room04_Booth() {
 
           const timePerStep = totalLineSteps > 0 ? timeForThisLine / totalLineSteps : 0;
           let localWordTime = currentFlowTime;
-          const lineStartTime = currentFlowTime;
 
           if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
 
           let patternIndex = 0;
+          let sylIndex = 0;
+          const totalSyllables = wordChunksArray.reduce((acc, chunks) => acc + chunks.length, 0);
 
           wordChunksArray.forEach((chunks) => {
             chunks.forEach((chunk, cIdx) => {
@@ -959,24 +946,27 @@ export default function Room04_Booth() {
               patternIndex++;
 
               const chunkDuration = stepsRequired * timePerStep;
-              const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForThisLine) * 16)));
+              
+              const mappedSlot = totalSyllables > 0 ? Math.min(15, Math.floor((sylIndex / totalSyllables) * 16)) : 0;
 
               mappedWords.push({
                 id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-                word: chunk.replace(/\|/g, ''), // Strip pipe for the UI display only
+                word: chunk,
                 slot: mappedSlot,
                 startTime: localWordTime,
                 duration: chunkDuration, 
                 isWordEnd: (cIdx === chunks.length - 1)
               });
+
               localWordTime += chunkDuration;
+              sylIndex++;
             });
           });
 
           parsed.push({ 
             id: `line-${lineIdCounter++}`,
             barIndex: Math.floor(lineStartTime / secondsPerBar),
-            text: lineObj.text.replace(/\|/g, ''), // Strip pipe for the UI display only
+            text: lineObj.text, 
             originalText: lineObj.text,
             startTime: lineStartTime, 
             lineDuration: timeForThisLine, 
@@ -985,7 +975,7 @@ export default function Room04_Booth() {
             words: mappedWords 
           });
 
-          currentFlowTime += timeForThisLine; 
+          currentFlowTime += timeForThisLine;
         });
       }
       runningBlockStartBar = blockStartBar + bars;
@@ -1026,7 +1016,6 @@ export default function Room04_Booth() {
     <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500 relative flex-col">
       
       <div className="flex-1 flex overflow-hidden">
-        {/* LEFT SIDEBAR: HUD TOGGLE (PROMPTER VS QUANTIZER) */}
         <div className="w-1/2 lg:w-5/12 border-r border-[#222] bg-[#020202] flex flex-col relative shadow-[inset_-10px_0_30px_rgba(0,0,0,0.5)]">
           <div className="p-8 pb-4 border-b border-[#111] flex justify-between items-center relative flex-wrap gap-4">
              <div className="flex items-center gap-4">
@@ -1061,7 +1050,6 @@ export default function Room04_Booth() {
              )}
           </div>
           
-          {/* CONTENT TOGGLE */}
           {isReviewMode ? (
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-[#020202]">
                 <div className="mb-6 flex justify-between items-end border-b border-[#222] pb-4">
@@ -1185,7 +1173,6 @@ export default function Room04_Booth() {
           )}
         </div>
 
-        {/* RIGHT PANEL: MIXER & RECORDER */}
         <div className="flex-1 flex flex-col relative bg-black">
           <div className="h-24 bg-black border-b border-[#222] flex items-center justify-between px-10 relative">
             <div className="flex items-center gap-4">
@@ -1281,7 +1268,6 @@ export default function Room04_Booth() {
         </div>
       </div>
 
-      {/* OVERLAYS: TRIMMING STEM */}
       {trimmingStem && (
         <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-8 animate-in zoom-in duration-300">
           <div className="bg-[#050505] border border-[#E60000] rounded-lg w-full max-w-2xl p-8 shadow-[0_0_50px_rgba(230,0,0,0.2)]">
