@@ -14,57 +14,47 @@ type WordMapping = { id: string; word: string; startTime: number; duration: numb
 type LyricLine = { id: string; text: string; originalText: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[]; barIndex: number };
 
 // --- THE MACRO-RHYTHMIC NEURAL ENGINE ---
-// Translates your exact Topline Directives into the visual metronome matrix
 function determineRhythmicPattern(style: string, pocket: string, strikeZone: string, hookType: string, flowEvolution: string, isHook: boolean): number[] {
   const st = (style || "").toLowerCase();
   const p = (pocket || "").toLowerCase();
   const sz = (strikeZone || "").toLowerCase();
   const ht = (hookType || "").toLowerCase();
 
-  // 1. Hook Architecture Overrides
   if (isHook) {
     if (ht.includes("bouncy")) return [2, 1, 1, 2, 2];
     if (ht.includes("triplet")) return [3, 3, 2, 3, 3, 2];
     if (ht.includes("symmetry")) return [4, 2, 2, 4, 4];
     if (ht.includes("prime")) return [5, 3, 5, 3];
-    return [6, 2, 8]; // stadium/chant
+    return [6, 2, 8]; 
   }
 
-  // 2. Topline & Pocket Directives
-  if (sz.includes("strike zone") || sz.includes("strike")) return [1, 1, 2, 1, 1, 2, 1, 1, 2]; // Fast 16th clusters
-  if (sz.includes("snare") || sz.includes("2 & 4")) return [4, 2, 2, 4, 2, 2]; // Hits the 2 & 4 snap
-  if (sz.includes("downbeat")) return [4, 4, 4, 4]; // Heavy quarters
-  if (p.includes("chainlink") || p.includes("chain-link")) return [2, 2, 2, 2, 2, 2, 1, 1, 1, 1]; // Bleeds at the end
-  if (p.includes("drag") || p.includes("pickup")) return [6, 2, 2, 2, 2, 2]; // Delays the 1 count
+  if (sz.includes("strike zone") || sz.includes("strike")) return [1, 1, 2, 1, 1, 2, 1, 1, 2];
+  if (sz.includes("snare") || sz.includes("2 & 4")) return [4, 2, 2, 4, 2, 2];
+  if (sz.includes("downbeat")) return [4, 4, 4, 4];
+  if (p.includes("chainlink") || p.includes("chain-link")) return [2, 2, 2, 2, 2, 2, 1, 1, 1, 1];
+  if (p.includes("drag") || p.includes("pickup")) return [6, 2, 2, 2, 2, 2];
 
-  // 3. Fallback to Style DNA
   if (st.includes("chopper")) return [1, 1, 1, 1, 1, 1, 1, 1];
   if (st.includes("heartbeat")) return [2, 2, 2, 2];
   if (st.includes("triplet")) return [3, 3, 2];
   if (st.includes("lazy")) return [4, 4, 2, 6];
   
-  return [4, 2, 2, 3, 1, 4, 2, 2, 2, 2]; // getnice_hybrid standard default
+  return [4, 2, 2, 3, 1, 4, 2, 2, 2, 2];
 }
 
 function chunkWordForVisuals(word: string): string[] {
   const match = word.match(/^([^a-zA-Z]*)([a-zA-Z\']+)([^a-zA-Z]*)$/);
   if (!match || match[2].length <= 3) return [word];
-  
-  const pre = match[1];
   const alpha = match[2];
-  const post = match[3];
-  
   const vowelClusters = alpha.match(/[aeiouy]+/gi);
   if (!vowelClusters || vowelClusters.length <= 1) return [word];
   
   const chunks = [];
   let currentChunk = "";
-  
   for (let i = 0; i < alpha.length; i++) {
     currentChunk += alpha[i];
     const isVowel = /[aeiouy]/i.test(alpha[i]);
     const nextIsVowel = i + 1 < alpha.length ? /[aeiouy]/i.test(alpha[i+1]) : false;
-    
     if (isVowel && !nextIsVowel && i + 2 < alpha.length) {
       const remaining = alpha.slice(i + 1);
       if (/[aeiouy]/i.test(remaining)) {
@@ -76,12 +66,6 @@ function chunkWordForVisuals(word: string): string[] {
     }
   }
   if (currentChunk) chunks.push(currentChunk);
-  
-  if (chunks.length > 0) {
-    chunks[0] = pre + chunks[0];
-    chunks[chunks.length - 1] = chunks[chunks.length - 1] + post;
-  }
-  
   return chunks.filter(c => c.length > 0);
 }
 
@@ -94,14 +78,11 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const blockAlign = numChannels * bytesPerSample;
   const byteRate = sampleRate * blockAlign;
   const dataSize = buffer.length * blockAlign;
-
   const wavBuffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(wavBuffer);
-
-  const writeString = (view: DataView, offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+  const writeString = (v: DataView, o: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
   };
-
   writeString(view, 0, 'RIFF'); view.setUint32(4, 36 + dataSize, true);
   writeString(view, 8, 'WAVE'); writeString(view, 12, 'fmt ');
   view.setUint32(16, 16, true); view.setUint16(20, format, true);
@@ -109,11 +90,9 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   view.setUint32(28, byteRate, true); view.setUint16(32, blockAlign, true);
   view.setUint16(34, bitDepth, true); writeString(view, 36, 'data');
   view.setUint32(40, dataSize, true);
-
   let offset = 44;
   const channels = [];
   for (let i = 0; i < numChannels; i++) channels.push(buffer.getChannelData(i));
-
   for (let i = 0; i < buffer.length; i++) {
     for (let channel = 0; channel < numChannels; channel++) {
       let sample = Math.max(-1, Math.min(1, channels[channel][i]));
@@ -128,18 +107,14 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
 async function trimAudioBlob(originalBlob: Blob, startSec: number, endSec: number): Promise<Blob> {
   const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
   if (audioContext.state === 'suspended') await audioContext.resume();
-  
   const arrayBuffer = await originalBlob.arrayBuffer();
-  
   const audioBuffer = await new Promise<AudioBuffer>((resolve, reject) => {
     audioContext.decodeAudioData(arrayBuffer, resolve, (err) => reject(new Error("Unable to decode audio format.")));
   });
-  
   const sampleRate = audioBuffer.sampleRate;
   const startOffset = Math.floor(startSec * sampleRate);
   const endOffset = Math.floor(endSec * sampleRate);
   const frameCount = Math.max(1, endOffset - startOffset);
-
   const trimmedBuffer = audioContext.createBuffer(audioBuffer.numberOfChannels, frameCount, sampleRate);
   for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
     const channelData = audioBuffer.getChannelData(channel);
@@ -157,14 +132,11 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
   const blockAlign = numChannels * bytesPerSample;
   const byteRate = sampleRate * blockAlign;
   const dataSize = samples.length * blockAlign;
-
   const buffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(buffer);
-  
-  const writeString = (view: DataView, offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+  const writeString = (v: DataView, o: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
   };
-
   writeString(view, 0, 'RIFF'); view.setUint32(4, 36 + dataSize, true);
   writeString(view, 8, 'WAVE'); writeString(view, 12, 'fmt '); 
   view.setUint32(16, 16, true); view.setUint16(20, format, true); 
@@ -172,7 +144,6 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
   view.setUint32(28, byteRate, true); view.setUint16(32, blockAlign, true); 
   view.setUint16(34, bitDepth, true); writeString(view, 36, 'data'); 
   view.setUint32(40, dataSize, true);
-  
   let offset = 44;
   for (let i = 0; i < samples.length; i++) {
     let s = Math.max(-1, Math.min(1, samples[i]));
@@ -186,53 +157,41 @@ export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
     updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, 
-    addToast, gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution,
-    gwGender 
+    addToast, gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution, gwGender
   } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isReviewMode, setIsReviewMode] = useState(false); 
-  
   const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
   const [guideProgress, setGuideProgress] = useState(0); 
-  
   const [autoScroll, setAutoScroll] = useState(true);
   const [teleprompterEnabled, setTeleprompterEnabled] = useState(true);
-
   const [currentTimeDisplay, setCurrentTimeDisplay] = useState(0);
   const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
   const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
-
   const [trimmingStem, setTrimmingStem] = useState<any | null>(null);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
   const [trimDuration, setTrimDuration] = useState(0);
   const [isProcessingTrim, setIsProcessingTrim] = useState(false);
+  const [trackDuration, setTrackDuration] = useState<number>(audioData?.duration || 128);
 
-  const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
-
-  const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
-  const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
-  const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
-  const secondsPerSlot = secondsPerBar / 16; 
-
+  const waveformRef = useRef<HTMLDivElement>(null);
   const trimWaveformRef = useRef<HTMLDivElement>(null);
+  const wavesurferRef = useRef<WaveSurfer | null>(null);
   const trimWavesurferRef = useRef<WaveSurfer | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const stemBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
-  const waveformRef = useRef<HTMLDivElement>(null);
-  const wavesurferRef = useRef<WaveSurfer | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const recordedChunksRef = useRef<Float32Array[]>([]);
   const workletLoadedRef = useRef(false);
   const teleprompterRef = useRef<HTMLDivElement>(null);
-
   const timeDisplayRef = useRef<HTMLDivElement>(null);
 
   const animationFrameRef = useRef<number>();
@@ -243,6 +202,11 @@ export default function Room04_Booth() {
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true || (userSession as any)?.hasEngineeringToken === true;
 
+  const actualBeatBars = audioData?.totalBars || 64;
+  const preciseBpm = audioData?.bpm || 120;
+  const secondsPerBar = (60 / preciseBpm) * 4;
+  const secondsPerSlot = secondsPerBar / 16; 
+
   const handleDragStart = (e: React.DragEvent, lineId: string, syllableId: string, originalSlot: number) => {
     e.dataTransfer.setData("application/json", JSON.stringify({ lineId, syllableId, originalSlot }));
   };
@@ -251,10 +215,8 @@ export default function Room04_Booth() {
     e.preventDefault();
     const dataString = e.dataTransfer.getData("application/json");
     if (!dataString) return;
-    
     const { lineId, syllableId, originalSlot } = JSON.parse(dataString);
     if (lineId !== targetLineId) return; 
-
     const delta = targetSlot - originalSlot;
     if (delta === 0) return;
 
@@ -262,20 +224,17 @@ export default function Room04_Booth() {
       if (line.id === targetLineId && !line.isHeader && line.words) {
         const targetIndex = line.words.findIndex(w => w.id === syllableId);
         if (targetIndex === -1) return line;
-
         const newWords = [...line.words];
 
         for (let i = targetIndex; i < newWords.length; i++) {
            let newSlot = newWords[i].slot + delta;
            newSlot = Math.max(0, Math.min(15, newSlot)); 
-           
-           newWords[i] = {
-             ...newWords[i],
-             slot: newSlot,
-             startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot)
+           newWords[i] = { 
+             ...newWords[i], 
+             slot: newSlot, 
+             startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot) 
            };
         }
-
         return { ...line, words: newWords };
       }
       return line;
@@ -283,221 +242,92 @@ export default function Room04_Booth() {
   };
 
   const handleGenerateGuide = async () => {
-    if (!lyricLines || lyricLines.length === 0) {
-      if (addToast) addToast("No valid lyrics found to generate guide.", "error");
-      return;
-    }
-    
-    setIsGeneratingGuide(true);
-    setGuideProgress(0);
-    
+    if (!lyricLines || lyricLines.length === 0) return;
+    setIsGeneratingGuide(true); setGuideProgress(0);
     try {
       const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
-      if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
-
-      const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
+      const renderDuration = trackDuration > 0 ? trackDuration + 10 : 300;
       const sampleRate = 44100;
-      
       const OfflineCtxClass = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
       const offlineCtx = new OfflineCtxClass(1, Math.ceil(sampleRate * renderDuration), sampleRate);
 
       for (let i = 0; i < parsedLines.length; i++) {
-              const line = parsedLines[i];
-              
-              setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
+        const line = parsedLines[i];
+        setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
+        try {
+          const res = await fetch('/api/audio/generate-guide', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lyrics: line.text.replace(/\|/g, ''), bpm: preciseBpm, gender: gwGender || "male", pitch: "low" })
+          });
+          const arrayBuffer = await res.arrayBuffer();
+          const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+          const mappedWords = line.words;
+          if (!mappedWords || mappedWords.length === 0) continue;
 
-              try {
-                const res = await fetch('/api/audio/generate-guide', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ 
-                    lyrics: line.text.replace(/\|/g, ''), 
-                    bpm: preciseBpm,
-                    gender: gwGender || "male",
-                    pitch: "low"
-                  })
-                });
-                
-                if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
-
-                const arrayBuffer = await res.arrayBuffer();
-                const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-                
-                const mappedWords = line.words;
-                if (!mappedWords || mappedWords.length === 0) continue;
-
-                const ttsDuration = audioBuffer.duration;
-                const mathLineDuration = line.lineDuration || 2;
-
-                mappedWords.forEach((wObj) => {
-                  if (!wObj.word.trim()) return;
-
-                  const relativeWordStart = wObj.startTime - line.startTime;
-                  const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
-                  const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
-
-                  const tailBleed = 0.35; 
-                  const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
-
-                  const source = offlineCtx.createBufferSource();
-                  source.buffer = audioBuffer;
-                  source.playbackRate.value = 1.0; 
-
-                  const gainNode = offlineCtx.createGain();
-                  gainNode.gain.setValueAtTime(0, wObj.startTime);
-                  gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
-                  gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-                  gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
-
-                  source.connect(gainNode);
-                  gainNode.connect(offlineCtx.destination);
-                  
-                  source.start(wObj.startTime, ttsOffset, safeExtractDuration);
-                });
-
-              } catch (lineErr) {
-                console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
-              }
-            }
-
+          const ttsDuration = audioBuffer.duration;
+          const mathLineDuration = line.lineDuration || 2;
+          mappedWords.forEach((wObj) => {
+            const relativeWordStart = wObj.startTime - line.startTime;
+            const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
+            const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
+            const source = offlineCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            const gainNode = offlineCtx.createGain();
+            
+            gainNode.gain.setValueAtTime(0, wObj.startTime);
+            gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01);
+            gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
+            gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + 0.35);
+            
+            source.connect(gainNode); gainNode.connect(offlineCtx.destination);
+            source.start(wObj.startTime, ttsOffset, Math.min(ttsWordDuration + 0.35, ttsDuration - ttsOffset));
+          });
+        } catch (lineErr) { console.warn("TTS Error", lineErr); }
+      }
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);
       const url = URL.createObjectURL(blob);
-      const takeId = `GUIDE_${Date.now()}`;
-
-      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.3, offsetBars: 0 });
-      if (addToast) addToast("High-fidelity audio glued to visual metronome.", "success");
-    } catch (err: any) {
-      console.error(err);
-      if (addToast) addToast("Guide Error: " + err.message, "error");
-    } finally {
-      setIsGeneratingGuide(false);
-      setGuideProgress(0);
-    }
+      addVocalStem({ id: `GUIDE_${Date.now()}`, type: "Guide", url, blob, volume: 0.3, offsetBars: 0 });
+    } catch (err: any) { addToast("Guide failed", "error"); } finally { setIsGeneratingGuide(false); }
   };
 
-  const handleUpdateTakeType = (id: string, newType: string) => {
-    const updatedStems = vocalStems.map(stem => stem.id === id ? { ...stem, type: newType as TrackType } : stem);
-    useMatrixStore.setState({ vocalStems: updatedStems } as any);
-  };
-
-  const handlePurchaseEngineering = async () => {
-    if (!userSession?.id) return;
-    if(addToast) addToast("Routing to Secure Checkout...", "info");
-    try {
-      const res = await fetch('/api/stripe/engineering-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: userSession.id }) });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-      else throw new Error(data.error || "Failed to route to checkout.");
-    } catch (err: any) {
-      if(addToast) addToast("Checkout failed: " + err.message, "error");
-    }
-  };
-
-  const handleProceedToEngineering = () => {
-    if (vocalStems.length === 0) {
-      if(addToast) addToast("You must record at least one take to enter Engineering.", "error");
-      return;
-    }
-    stopEverything();
-    if (isFreeLoader && !hasEngToken) handlePurchaseEngineering();
-    else setActiveRoom("05");
-  };
-
-  const toggleMute = (id: string) => {
-    setMutedStems(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const applyTrim = async () => {
-    if (!trimmingStem) return;
-    setIsProcessingTrim(true);
-    try {
-      let originalBlob = trimmingStem.blob;
-      if (!originalBlob && trimmingStem.url) {
-        const resp = await fetch(trimmingStem.url);
-        if (!resp.ok) throw new Error(`Storage Access Denied (HTTP ${resp.status}).`);
-        originalBlob = await resp.blob();
-        if (originalBlob.type.includes('text/html') || originalBlob.type.includes('application/json')) throw new Error("Invalid audio payload received.");
-      }
-      if (!originalBlob) throw new Error("Audio payload missing entirely");
-
-      const newBlob = await trimAudioBlob(originalBlob, trimStart, trimEnd);
-      const trimId = `TRIM_${Date.now()}`;
-      const fileName = `${userSession?.id || 'anon'}/${trimId}.wav`;
-
-      const { error } = await supabase.storage.from('raw-audio').upload(fileName, newBlob, { contentType: 'audio/wav', upsert: true });
-      if (error) throw error;
-
-      const { data: publicData } = supabase.storage.from('raw-audio').getPublicUrl(fileName);
-
-      removeVocalStem(trimmingStem.id);
-      addVocalStem({ id: trimId, type: trimmingStem.type, url: publicData.publicUrl, blob: newBlob, volume: trimmingStem.volume, offsetBars: trimmingStem.offsetBars });
-      
-      setTrimmingStem(null);
-      if (addToast) addToast("Trimmed audio successfully synced to vault.", "success");
-    } catch (err: any) {
-      console.error("Trim math failed:", err);
-      if (addToast) addToast(err.message || "Failed to slice audio.", "error");
-    } finally { setIsProcessingTrim(false); }
-  };
-
-  // --- THE HIGH-PERFORMANCE VISUAL SYNC ENGINE ---
   const updateVisualsRef = useRef<() => void>(() => {});
-  
   updateVisualsRef.current = () => {
     if (!wavesurferRef.current) return;
-    
     const time = wavesurferRef.current.getCurrentTime();
-    
-    if (timeDisplayRef.current) {
-        const mins = Math.floor(time / 60).toString().padStart(2, '0');
-        const secs = Math.floor(time % 60).toString().padStart(2, '0');
-        timeDisplayRef.current.innerText = `${mins}:${secs}`;
-    }
-
+    setCurrentTimeDisplay(time); 
     const visualTime = time + 0.08; 
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
       let currentLineIndex = -1;
-
       for (let i = 0; i < lyricLines.length; i++) {
         const line = lyricLines[i];
         if (line.isHeader) continue;
-
-        const nextLine = lyricLines.slice(i + 1).find(l => !l.isHeader);
-        const endTime = nextLine ? nextLine.startTime : (line.startTime + (line.lineDuration || 2));
-
         const lineNode = lineNodes[i] as HTMLElement;
         if (!lineNode) continue;
+        const nextLine = lyricLines.slice(i+1).find(l => !l.isHeader);
+        const endTime = nextLine ? nextLine.startTime : (line.startTime + (line.lineDuration || 2));
 
         if (visualTime >= line.startTime && visualTime < endTime) {
           currentLineIndex = i;
           lineNode.classList.add('bg-[#E60000]/10', 'border-[#E60000]');
-          lineNode.classList.remove('border-transparent');
-
           const chunks = lineNode.querySelectorAll('.syllable-chunk');
+          
           line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             
             if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
-              
-              // 🚨 RESTORED: Working CSS drop shadow
               chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
               chunkNode.classList.remove('text-[#444]', 'text-[#888]');
               
               if (ballNode) {
-                // 🚨 RESTORED: Opacity Toggling instead of hidden (Smooth Transitions)
                 ballNode.classList.remove('opacity-0');
                 ballNode.classList.add('opacity-100');
                 
-                // 🚨 RESTORED: True Mathematical Arc Logic
                 let progress = (visualTime - wObj.startTime) / wObj.duration;
                 progress = Math.max(0, Math.min(1, progress)); 
                 const maxBounce = Math.min(16, wObj.duration * 50); 
@@ -525,35 +355,21 @@ export default function Room04_Booth() {
           });
         } else {
           lineNode.classList.remove('bg-[#E60000]/10', 'border-[#E60000]');
-          lineNode.classList.add('border-transparent');
-          
           const chunks = lineNode.querySelectorAll('.syllable-chunk');
-          line.words?.forEach((wObj, wIdx) => {
-            const chunkNode = chunks[wIdx] as HTMLElement;
-            if (!chunkNode) return;
-            const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
-            if (ballNode) {
-              ballNode.classList.add('opacity-0');
-              ballNode.classList.remove('opacity-100');
-              ballNode.style.transform = `translateX(-50%) translateY(0px)`;
-            }
-
-            if (visualTime >= wObj.startTime + wObj.duration) {
-              chunkNode.classList.add('text-[#888]');
-              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
-            } else {
-              chunkNode.classList.add('text-[#444]');
-              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
-            }
+          chunks.forEach(c => {
+             const ball = c.querySelector('.bouncing-ball') as HTMLElement;
+             if (ball) {
+               ball.classList.add('opacity-0');
+               ball.classList.remove('opacity-100');
+               ball.style.transform = `translateX(-50%) translateY(0px)`;
+             }
+             c.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
           });
         }
       }
-
       if (autoScroll && currentLineIndex !== -1 && currentLineIndex !== lastActiveLineRef.current) {
         const activeNode = lineNodes[currentLineIndex] as HTMLElement;
-        if (activeNode) {
-          teleprompterRef.current.scrollTo({ top: activeNode.offsetTop - 150, behavior: 'smooth' });
-        }
+        if (activeNode) teleprompterRef.current.scrollTo({ top: activeNode.offsetTop - 150, behavior: 'smooth' });
         lastActiveLineRef.current = currentLineIndex;
       }
     }
@@ -668,7 +484,7 @@ export default function Room04_Booth() {
       } finally { setIsUploading(false); }
     }
     
-    if (timeDisplayRef.current) timeDisplayRef.current.innerText = "00:00";
+    setCurrentTimeDisplay(0);
     updateVisualsRef.current(); 
   };
 
@@ -744,6 +560,75 @@ export default function Room04_Booth() {
     } catch (err) { 
       alert("Hardware microphone access required for Worklet processing."); 
     }
+  };
+
+  const handleUpdateTakeType = (id: string, newType: string) => {
+    const updatedStems = vocalStems.map(stem => stem.id === id ? { ...stem, type: newType as TrackType } : stem);
+    useMatrixStore.setState({ vocalStems: updatedStems } as any);
+  };
+
+  const handlePurchaseEngineering = async () => {
+    if (!userSession?.id) return;
+    if(addToast) addToast("Routing to Secure Checkout...", "info");
+    try {
+      const res = await fetch('/api/stripe/engineering-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: userSession.id }) });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else throw new Error(data.error || "Failed to route to checkout.");
+    } catch (err: any) {
+      if(addToast) addToast("Checkout failed: " + err.message, "error");
+    }
+  };
+
+  const handleProceedToEngineering = () => {
+    if (vocalStems.length === 0) {
+      if(addToast) addToast("You must record at least one take to enter Engineering.", "error");
+      return;
+    }
+    stopEverything();
+    if (isFreeLoader && !hasEngToken) handlePurchaseEngineering();
+    else setActiveRoom("05");
+  };
+
+  const toggleMute = (id: string) => {
+    setMutedStems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const applyTrim = async () => {
+    if (!trimmingStem) return;
+    setIsProcessingTrim(true);
+    try {
+      let originalBlob = trimmingStem.blob;
+      if (!originalBlob && trimmingStem.url) {
+        const resp = await fetch(trimmingStem.url);
+        if (!resp.ok) throw new Error(`Storage Access Denied (HTTP ${resp.status}).`);
+        originalBlob = await resp.blob();
+        if (originalBlob.type.includes('text/html') || originalBlob.type.includes('application/json')) throw new Error("Invalid audio payload received.");
+      }
+      if (!originalBlob) throw new Error("Audio payload missing entirely");
+
+      const newBlob = await trimAudioBlob(originalBlob, trimStart, trimEnd);
+      const trimId = `TRIM_${Date.now()}`;
+      const fileName = `${userSession?.id || 'anon'}/${trimId}.wav`;
+
+      const { error } = await supabase.storage.from('raw-audio').upload(fileName, newBlob, { contentType: 'audio/wav', upsert: true });
+      if (error) throw error;
+
+      const { data: publicData } = supabase.storage.from('raw-audio').getPublicUrl(fileName);
+
+      removeVocalStem(trimmingStem.id);
+      addVocalStem({ id: trimId, type: trimmingStem.type, url: publicData.publicUrl, blob: newBlob, volume: trimmingStem.volume, offsetBars: trimmingStem.offsetBars });
+      
+      setTrimmingStem(null);
+      if (addToast) addToast("Trimmed audio successfully synced to vault.", "success");
+    } catch (err: any) {
+      console.error("Trim math failed:", err);
+      if (addToast) addToast(err.message || "Failed to slice audio.", "error");
+    } finally { setIsProcessingTrim(false); }
   };
 
   useEffect(() => {
@@ -827,7 +712,6 @@ export default function Room04_Booth() {
       let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
       if (text.startsWith('[') && text.includes(']')) return { text, isHeader: true }; 
       
-      // 🚨 AGGRESSIVE METADATA SCRUBBER
       text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '') 
                  .replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '') 
                  .replace(/\(\d+\s*syllables?.*?\)/gi, '') 
@@ -871,44 +755,75 @@ export default function Room04_Booth() {
         const isHook = bp.type.toUpperCase().includes("HOOK");
         let activePattern = determineRhythmicPattern(gwStyle, gwPocket, gwStrikeZone, gwHookType, gwFlowEvolution, isHook);
         
-        // 🚨 PREVENT OVERLAP: If AI hallucinates extra lines, trim them to fit the allocated bars perfectly
         const safeLines = blockData.lines.slice(0, bars);
 
         safeLines.forEach((lineObj, lineIndex) => {
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: WordMapping[] = [];
 
-          // 🚨 RESTORED 1-BAR-PER-LINE MATH: Forces absolute bar alignment perfectly
+          // 🚨 RESTORED EXACT 1-BAR-PER-LINE MATH: Forces absolute bar alignment
           const lineStartTime = blockStartBar * secondsPerBar + (lineIndex * secondsPerBar);
           const actualBarIndex = blockStartBar + lineIndex;
 
+          let totalLineSteps = 0;
+          let tempPatternIndex = 0;
+
+          if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4; 
+
+          const wordChunksArray: string[][] = [];
+          
+          rawWords.forEach(w => {
+            const cleanW = w.replace(/\|/g, '').replace(/,/g, '').trim();
+            if (cleanW) {
+              const chunks = chunkWordForVisuals(cleanW);
+              chunks.forEach(() => {
+                const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]) || 2;
+                totalLineSteps += stepVal; 
+                tempPatternIndex++;
+              });
+              wordChunksArray.push(chunks);
+            }
+          });
+
+          const cleanTextEnd = lineObj.text.trim().slice(-1);
+          if (cleanTextEnd === '.') totalLineSteps += 4;
+          else if (cleanTextEnd === ',') totalLineSteps += 1;
+
+          // 🚨 RESTORED DYNAMIC PROPORTIONAL COMPRESSION
+          // Smoothly stretches/squishes whatever the AI wrote to fit perfectly into exactly 1 bar
+          const timePerStep = totalLineSteps > 0 ? secondsPerBar / totalLineSteps : 0;
+          
+          let localWordTime = lineStartTime;
           let currentSlot = 0;
+
+          if (lineObj.text.trim().startsWith('...')) {
+             localWordTime += (4 * timePerStep);
+             currentSlot += 4;
+          }
+
           let patternIndex = 0;
 
-          if (lineObj.text.trim().startsWith('...')) currentSlot += 4; 
-
-          rawWords.forEach(w => {
-            // Strip the pipe purely for display chunking, keep strict math
-            const cleanW = w.replace(/\|/g, '').replace(/,/g, ''); 
-            if(!cleanW) return;
-            const chunks = chunkWordForVisuals(cleanW); 
-            
+          wordChunksArray.forEach((chunks) => {
             chunks.forEach((chunk, cIdx) => {
-              const stepVal = Number(activePattern[patternIndex % activePattern.length]) || 2;
+              const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
               patternIndex++;
 
-              const mappedSlot = Math.min(15, currentSlot);
+              const chunkDuration = stepsRequired * timePerStep;
+              
+              // Map slot proportionately across the grid (0 to 15) so they never stack
+              const mappedSlot = totalLineSteps > 0 ? Math.min(15, Math.floor((currentSlot / totalLineSteps) * 16)) : 0;
 
               mappedWords.push({
                 id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
                 word: chunk,
                 slot: mappedSlot,
-                startTime: lineStartTime + (mappedSlot * secondsPerSlot),
-                duration: stepVal * secondsPerSlot,
+                startTime: localWordTime,
+                duration: chunkDuration, 
                 isWordEnd: (cIdx === chunks.length - 1)
               });
 
-              currentSlot += stepVal;
+              localWordTime += chunkDuration;
+              currentSlot += stepsRequired;
             });
           });
 
@@ -1086,7 +1001,6 @@ export default function Room04_Booth() {
                             {group.map((wObj, wIdx) => {
                               return (
                                 <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
-                                  {/* 🚨 RESTORED: Original Hover CSS to prevent transition breaking */}
                                   <span className="bouncing-ball opacity-0 absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50 pointer-events-none transition-opacity duration-150"></span>
                                   {wObj.word}
                                 </span>
