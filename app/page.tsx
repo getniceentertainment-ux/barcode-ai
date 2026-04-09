@@ -633,7 +633,18 @@ export default function MatrixController() {
             <span className="text-[9px] font-mono text-[#444]">{formatTime(duration)}</span>
           </div>
         </div>
-        
+
+        <div className="flex flex-col space-y-2">
+         <span className="font-mono text-xs text-[#888] uppercase tracking-widest">Compare</span>
+         {/* The keyword-rich anchor text is crucial for SEO */}
+         <Link href="/rapchat-alternative" className="text-[#555] hover:text-[#E60000] text-sm font-mono uppercase transition-colors">
+           Rapchat Alternative
+         </Link>
+       <Link href="/bandlab-alternative" className="text-[#555] hover:text-[#E60000] text-sm font-mono uppercase transition-colors">
+         Bandlab Alternative
+        </Link>
+         </div>        
+
         <div className="hidden md:flex w-1/3 justify-end items-center gap-3">
           <Volume2 size={14} className="text-[#444]" />
           <input type="range" min="0" max="1" step="0.01" value={volume} onChange={(e) => { setVolume(parseFloat(e.target.value)); if(audioRef.current) audioRef.current.volume = parseFloat(e.target.value); }} className="w-24 h-1 accent-[#E60000] bg-[#222] rounded-full appearance-none cursor-pointer" />
