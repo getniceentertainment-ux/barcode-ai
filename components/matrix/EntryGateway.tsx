@@ -430,6 +430,17 @@ export default function EntryGateway() {
              </button>
           </div>
 
+        <div className="flex flex-col space-y-2">
+         <span className="font-mono text-xs text-[#888] uppercase tracking-widest">Compare</span>
+         {/* The keyword-rich anchor text is crucial for SEO */}
+         <Link href="/rapchat-alternative" className="text-[#555] hover:text-[#E60000] text-sm font-mono uppercase transition-colors">
+           Rapchat Alternative
+         </Link>
+       <Link href="/bandlab-alternative" className="text-[#555] hover:text-[#E60000] text-sm font-mono uppercase transition-colors">
+         Bandlab Alternative
+        </Link>
+         </div>        
+
           <form onSubmit={handleEmailAuth} className="space-y-4">
             {authMode === "signup" && (
               <input type="text" required value={stageName} onChange={(e) => setStageName(e.target.value)} placeholder="STAGE NAME" className="w-full bg-black border border-[#333] px-4 py-3 text-xs outline-none focus:border-[#E60000]" />
