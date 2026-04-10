@@ -219,9 +219,10 @@ export default function EntryGateway() {
     document.body.removeChild(textArea);
   };
 
-  const tiers: { name: AccessTier; price: string; features: string[]; isPro?: boolean }[] = },
-    { name: "The Artist", price: "39", features: },
-    { name: "The Mogul", price: "99", isPro: true, features: }
+  const tiers: { name: AccessTier; price: string; features: string[]; isPro?: boolean }[] = [
+    { name: "Free Loader", price: "0", features: ["5 Artifact Generations", "Standard Audio Processing"] },
+    { name: "The Artist", price: "39", features: ["100 Artifact Generations", "Zero-Latency Priority", "AI Ghostwriter Access"] },
+    { name: "The Mogul", price: "99", isPro: true, features: ["Unlimited Processing", "Commercial Rights", "$1,500 Advance Eligibility"] }
   ];
 
   const roomsInfo = [
