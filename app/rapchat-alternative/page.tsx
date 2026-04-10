@@ -69,7 +69,7 @@ export default function RapchatAlternativePage() {
           <div className="text-center">
             <h1 className="text-5xl font-extrabold tracking-tight text-white sm:text-6xl uppercase">
               Stop Fighting <span className="text-red-500 line-through">Rapchat Lag</span>.<br />
-              <span className="text-green-400">Enter the Matrix.</span>
+              <span className="text-green-400">Join Bar-Code.ai!</span>
             </h1>
             <p className="max-w-2xl mx-auto mt-6 text-lg leading-8 text-gray-300">
               The ultimate alternative is here. No more Bluetooth delay. No more beat block. Bar-Code.ai is the first AI-powered browser studio that tracks perfectly to the grid and acts as your record label.
