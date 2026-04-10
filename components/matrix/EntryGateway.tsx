@@ -13,21 +13,22 @@ import Link from "next/link";
 export default function EntryGateway() {
   const { grantAccess, addToast, setActiveRoom } = useMatrixStore();
   
-  const = useState("");
-  const = useState("");
-  const = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [stageName, setStageName] = useState("");
   
-  const = useState(false);
-  const = useState(false);
-  const = useState<"login" | "signup">("login");
+  const [loading, setLoading] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   
-  const = useState<"landing" | "auth" | "verify_email" | "select_tier">("landing");
-  const = useState<any>(null);
+  // Note: "waitlist" is officially removed from this type definition
+  const [authStep, setAuthStep] = useState<"landing" | "auth" | "verify_email" | "select_tier">("landing");
+  const [userProfile, setUserProfile] = useState<any>(null);
   
-  // URL Query State for Referrals
-  const = useState<string | null>(null);
-  const = useState(false);
-  const = useState(false);
+  // URL Query State for Referrals & UI
+  const [referredBy, setReferredBy] = useState<string | null>(null);
+  const [scrolled, setScrolled] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // --- SURGICAL FIX: THE STRIPE RETURN INTERCEPTOR ---
   // Catches the user returning from Stripe and instantly re-authenticates them to unlock the doors
