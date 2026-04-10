@@ -76,7 +76,7 @@ export default function RapchatAlternativePage() {
             </p>
             <div className="flex items-center justify-center mt-10 gap-x-6">
               <Link 
-                href="/waitlist" 
+                href="/" 
                 className="px-8 py-4 text-sm font-bold text-black uppercase transition-all bg-green-500 rounded-sm hover:bg-green-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-400"
               >
                 Initialize Node (Bypass Waitlist)
@@ -165,7 +165,7 @@ export default function RapchatAlternativePage() {
             
             <div className="mt-8 flex justify-center">
               <Link 
-                href="/waitlist" 
+                href="/" 
                 className="px-10 py-4 text-sm font-bold text-black uppercase transition-all bg-green-500 rounded-sm hover:bg-green-400 shadow-[0_0_20px_rgba(34,197,94,0.3)]"
               >
                 Claim Node
