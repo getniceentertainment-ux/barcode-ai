@@ -242,7 +242,7 @@ export default function EntryGateway() {
     { id: "05", name: "Engineering", desc: "Proprietary Mix rack. Dynamic EQ and compression to glue your vocals directly in the pocket.", icon: <Layers size={24} /> },
     { id: "06", name: "Mastering", desc: "Commercial Render engine. Analog LUFS metering for Spotify and Brickwall club standards.", icon: <Sliders size={24} /> },
     { id: "07", name: "Distribution", desc: "Algorithmic A&R. Calculates Hit Scores and extracts viral snippets for TikTok.", icon: <Send size={24} /> },
-    { id: "08", name: "The Bank", desc: "Royalty ledger. High scores trigger automated $1,500 marketing advances. Withdraw via Stripe.", icon: <Wallet size={24} /> },
+    { id: "08", name: "The Bank", desc: "Royalty ledger. High scores trigger automated $1,500 marketing advances. Use in-House to run a 30-day Marketing Campaign. Completely Automated and Guarenteed to bring thousands of fans.", icon: <Wallet size={24} /> },
     { id: "09", name: "The Radio", desc: "GetNice Nation FM. A 24/7 global syndication of the platform's highest-scoring tracks.", icon: <Radio size={24} /> },
     { id: "10", name: "Social Syndicate", desc: "Open Verse Economy. Book top-tier nodes for features using secure, programmatic fiat escrows.", icon: <Users size={24} /> },
     { id: "11", name: "Active Contracts", desc: "Active Contract Matrix. Monitor live escrow statuses and manage your B2B pipeline.", icon: <FileAudio size={24} /> },
