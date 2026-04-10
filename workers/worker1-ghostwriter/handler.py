@@ -145,11 +145,18 @@ def init_model():
 
 # --- SURGICAL UPGRADE: INJECT TOPLINE DIRECTIVES ---
 # --- REVERTED: Strict adherence to the global `use_intel` variable ---
-def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone):
+def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, banned_words_map=None):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
     slang_list = ", ".join(load_street_slang(style)) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
-    banned_words_str = ", ".join(BAN_LIST)
+    
+    # --- SURGICAL REPAIR: USE FRONTEND DICTIONARY ---
+    if banned_words_map and isinstance(banned_words_map, dict):
+        # Clean regex characters from the frontend map keys for the AI prompt
+        clean_words = [k.replace("\\b", "").replace("?", "").replace("(?:y|ies)", "y") for k in banned_words_map.keys()]
+        banned_words_str = ", ".join(clean_words)
+    else:
+        banned_words_str = ", ".join(BAN_LIST)
     
     # 1. TRANSLATE THE STRIKE ZONE INTO A PROMPT RULE
     strike_rule = "Ensure your multi-syllabic rhyme endings land precisely on the 2-count and 4-count (the snare drum)."
@@ -339,8 +346,10 @@ def handler(event):
     blueprint = job_input.get("blueprint", [])
     
     use_slang = job_input.get("useSlang", True)
-    # --- REVERTED: Back to the original single `use_intel` variable ---
     use_intel = job_input.get("useIntel", True)
+    
+    # --- SURGICAL REPAIR: EXTRACT BANNED WORDS MAP ---
+    banned_words_map = job_input.get("bannedWordsMap", None)
 
     root_note = job_input.get("root_note", "C")
     scale = job_input.get("scale", "minor")
@@ -355,35 +364,10 @@ def handler(event):
     total_blueprint_bars = sum(sec.get("bars", 16) for sec in blueprint)
     if total_blueprint_bars == 0: total_blueprint_bars = 1
 
-    seconds_per_bar = (60.0 / bpm) * 4.0
+    # ... [KEEP YOUR SYLLABLE MATH & POCKET LOGIC] ...
 
-    style_limits = {
-        "lazy": {"min": 4, "max": 7},              
-        "heartbeat": {"min": 7, "max": 10},        
-        "getnice_hybrid": {"min": 8, "max": 12},   
-        "triplet": {"min": 9, "max": 12},          
-        "chopper": {"min": 12, "max": 16}          
-    }
-
-    limits = style_limits.get(style, style_limits["getnice_hybrid"])
-
-    bpm_ratio = min(1.0, max(0.0, (seconds_per_bar - 1.5) / (3.5 - 1.5))) 
-    
-    max_syllables = int(limits["min"] + (limits["max"] - limits["min"]) * bpm_ratio)
-
-    pocket_instruction = "End every line with a period (.). You MUST hit Enter/Return to create a new line."
-    
-    if pocket == "chainlink":
-        pocket_instruction = "CHAIN-LINK MODE: End every single line with a comma (,) for spillover. You MUST still hit Enter/Return after the comma to create a distinct new line on the page."
-    elif pocket == "pickup":
-        pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.). You MUST hit Enter/Return to create a new line."
-    elif pocket == "cascade":
-        pocket_instruction = "THE GETNICE CASCADE MODE (INTERNAL CARRY-OVER): Use heavy enjambment. End lines mid-phrase with no punctuation. You MUST rhyme the END of one line with the BEGINNING or MIDDLE of the very next line (e.g., Line 1 ends with 'rough', Line 2 starts with 'tough'). Create a relentless internal rhyme chain. You MUST hit Enter/Return to create a distinct new line."
-    elif pocket == "matrix_pivot":
-        pocket_instruction = "THE MATRIX PIVOT (INTERNAL HINGE): Execute a cascading rhyme shift using the rhythmic array. Take the exact end-rhyme of the previous line, and place a matching rhyme on the 3rd spoken word (the 3rd rhythmic cluster) of the current line to link them. Then, immediately pivot the topic and end the current line with a completely NEW rhyme sound. You MUST hit Enter/Return to create a distinct new line."
-
-    # --- REVERTED: Passing original variables ---
-    system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone)
+    # Pass the banned words map to the prompt builder
+    system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, banned_words_map)
     
     final_lyrics = ""
     context_lyrics = ""
@@ -392,20 +376,30 @@ def handler(event):
     saved_hook_lines = None 
     anchor_hook_text = None
 
+    # --- SURGICAL REPAIR IN HANDLER LOOP ---
     for index, section in enumerate(blueprint):
         sec_type = section.get("type", "VERSE").upper()
         bars = section.get("bars", 16)
         start_bar = section.get("startBar", current_cumulative_bar)
-        pattern_desc = section.get("patternDesc", "Standard Score Card")
         
-        progress_ratio = start_bar / total_blueprint_bars
-        array_index = min(7, int(progress_ratio * 8))
-        current_energy = dynamic_array[array_index]
+        # Include the pattern array so Neural Match can be passed down
+        pattern_desc = section.get("patternDesc", "Standard Score Card")
+        pattern_array = section.get("patternArray", [])
+        
+        # 1. Direct Mapping Fix
+        base_energy = dynamic_array[index % len(dynamic_array)]
+
+        # 2. Section Type Override
+        if "HOOK" in sec_type:
+            current_energy = max(3, base_energy) # Hooks should never be Energy 1 or 2
+        elif "INSTRUMENTAL" in sec_type:
+            current_energy = 1
+        else:
+            current_energy = base_energy
         
         final_lyrics += f"\n[{sec_type} - {bars} BARS | BAR {start_bar} | ENERGY: {current_energy}/4]\n"
         
         if sec_type == "INSTRUMENTAL":
-            # SURGICAL FIX: Remove "Mmm." so it doesn't poison the context window!
             section_lines = ["[Instrumental Break]" for _ in range(bars)]
             
         elif "HOOK" in sec_type and saved_hook_lines is not None:
@@ -415,13 +409,16 @@ def handler(event):
             section_lines = section_lines[:bars]
             
         else:
+            # We append the actual pattern array DNA to the pattern description
+            combined_pattern_desc = f"{pattern_desc}. Rhythmic DNA Map: {pattern_array}" if pattern_array else pattern_desc
+
             section_lines = generate_section(
                 system_prompt=system_prompt, 
                 previous_lyrics=context_lyrics, 
                 section_type=sec_type, 
                 bars=bars, 
                 max_syllables=max_syllables, 
-                pattern_desc=pattern_desc, 
+                pattern_desc=combined_pattern_desc, # <-- Now using the injected Neural DNA
                 pocket_instruction=pocket_instruction,
                 prompt_topic=topic,
                 section_index=index,

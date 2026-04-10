@@ -110,6 +110,8 @@ export default function Room03_Ghostwriter() {
       if (block.type === 'HOOK') {
           activeName = hookLabels[gwHookType as string] || "Custom Hook";
           activeDesc = `Topline Override Active: ${activeName}`;
+          // --- SURGICAL REPAIR: Ensure Hooks pull a baseline rhythmic array ---
+          activeArray = variations[0].array; 
       } else if (block.type === 'VERSE') {
           const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
           
@@ -150,6 +152,7 @@ export default function Room03_Ghostwriter() {
           needsUpdate = true;
       }
       
+      // --- COMPLETING YOUR CUT-OFF CODE HERE ---
       const updated = { 
         ...block, 
         startBar: start,
@@ -157,6 +160,7 @@ export default function Room03_Ghostwriter() {
         patternName: activeName,
         patternDesc: activeDesc
       };
+      
       cursor = start + block.bars;
       return updated;
     });
