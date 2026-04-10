@@ -28,6 +28,7 @@ export default function EntryGateway() {
   const [referredBy, setReferredBy] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [copied, setCopied] = useState(false); // Restored copy state
+  const [hasBypassedPaywall, setHasBypassedPaywall] = useState(false);
 
   // --- SURGICAL FIX: THE STRIPE RETURN INTERCEPTOR ---
   // Catches the user returning from Stripe and instantly re-authenticates them to unlock the doors
