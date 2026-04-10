@@ -13,6 +13,7 @@ import Link from "next/link";
 export default function EntryGateway() {
   const { grantAccess, addToast, setActiveRoom } = useMatrixStore();
   
+  // FIXED: State Variables Restored
   const = useState("");
   const = useState("");
   const = useState("");
@@ -24,10 +25,10 @@ export default function EntryGateway() {
   const = useState<"landing" | "auth" | "verify_email" | "select_tier">("landing");
   const = useState<any>(null);
   
-  // URL Query State for Referrals
+  // URL Query State for Referrals & Paywall
   const = useState<string | null>(null);
   const = useState(false);
-  const = useState(false); // Restored copy state
+  const = useState(false);
   const = useState(false);
 
   // --- SURGICAL FIX: THE STRIPE RETURN INTERCEPTOR ---
@@ -230,6 +231,7 @@ export default function EntryGateway() {
     document.body.removeChild(textArea);
   };
 
+  // FIXED: Tiers Array Restored
   const tiers: { name: AccessTier; price: string; features: string[]; isPro?: boolean }[] = },
     { name: "The Artist", price: "39", features: },
     { name: "The Mogul", price: "99", isPro: true, features: }
