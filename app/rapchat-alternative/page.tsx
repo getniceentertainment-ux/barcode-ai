@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     canonical: 'https://bar-code.ai/rapchat-alternative',
   },
   openGraph: {
-    title: 'Stop Fighting Rapchat Lag. Enter the Matrix.',
+    title: 'Stop Fighting Rapchat Lag. Join Bar-Code.ai!',
     description: 'The ultimate Rapchat alternative is here. Zero-latency vocal tracking, AI ghostwriting, and $1,500 advances.',
     url: 'https://bar-code.ai/rapchat-alternative',
     siteName: 'Bar-Code.ai',
