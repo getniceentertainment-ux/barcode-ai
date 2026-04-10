@@ -72,7 +72,7 @@ export default function RapchatAlternativePage() {
               <span className="text-green-400">Join Bar-Code.ai!</span>
             </h1>
             <p className="max-w-2xl mx-auto mt-6 text-lg leading-8 text-gray-300">
-              The ultimate alternative is here. ZERO Lag. ZERO Beat Block. Bar-Code.ai is the first AI-powered studio that tracks perfectly to the grid and Lets YOU, be your own Label.
+              The ultimate alternative is here. Zero lag. Zero beat block. Bar-Code.ai is the first fully autonomous AI studio, ghostwriter, and record label. Using the <span className="font-bold text-white">Brain Train</span>, the Matrix analyzes your transients to build your unique Flow DNA. When you step into <span className="font-bold text-white">The Booth</span>, our AI Ghostwriter feeds you authentic lyrics mathematically locked to the beat via a zero-latency, synced teleprompter. Your cadence tracks perfectly to the grid, every single time. Lay down your track and let our proprietary engines Engineer and Master it to commercial club standards. Here is where the industry changes: Our Algorithmic A&R scores your record. Hit the metric, and we automatically trigger a $1,500 fiat marketing advance, deploying your track to viral social reels and global syndication on <span className="font-bold text-white">GetNice Nation FM</span>. Stop fighting Bluetooth delay. Enter the Matrix, drop your track, and become your own label.
             </p>
             <div className="flex items-center justify-center mt-10 gap-x-6">
               <Link 
