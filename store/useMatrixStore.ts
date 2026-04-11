@@ -209,7 +209,13 @@ export const useMatrixStore = create<MatrixState>()(
       setRadioTrack: (track) => set({ radioTrack: track }),
       setMdxJobId: (id) => set({ mdxJobId: id }),
       setMdxStatus: (status) => set({ mdxStatus: status }),
-      grantAccess: (session) => set({ hasAccess: true, userSession: session }),
+      
+      // 🚨 SURGICAL FIX: Automatically pull the saved cloud session when user logs in
+      grantAccess: (session) => { 
+        set({ hasAccess: true, userSession: session });
+        get().pullFromCloud(session.id);
+      },
+      
       setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
       setGwTitle: (t) => set({ gwTitle: t }),
