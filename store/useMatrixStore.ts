@@ -351,8 +351,15 @@ export const useMatrixStore = create<MatrixState>()(
 
         set({ syncStatus: "saving" });
         
+        // 🚨 SURGICAL FIX: Strictly strip out the massive Blob objects using ES6 destructuring.
+        // Postgres JSONB rejects 'undefined' values, so we completely remove the keys.
+        const safeVocalStems = state.vocalStems.map(({ blob, ...rest }) => rest);
+        const safeEngineeredVocal = state.engineeredVocal ? (({ blob, ...rest }) => rest)(state.engineeredVocal) : null;
+        const safeFinalMaster = state.finalMaster ? (({ blob, ...rest }) => rest)(state.finalMaster) : null;
+        const safeAudioData = state.audioData ? (({ blob, ...rest }: any) => rest)(state.audioData) : null;
+
         const session_state = {
-           audioData: state.audioData,                     
+           audioData: safeAudioData,                     
            flowDNA: state.flowDNA,
            blueprint: state.blueprint, 
            generatedLyrics: state.generatedLyrics,
@@ -362,9 +369,11 @@ export const useMatrixStore = create<MatrixState>()(
            gwStrikeZone: state.gwStrikeZone, gwHookType: state.gwHookType, gwFlowEvolution: state.gwFlowEvolution,
            mixParams: state.mixParams, anrData: state.anrData, activeProjectId: state.activeProjectId,
            isProjectFinalized: state.isProjectFinalized, activeRoom: state.activeRoom,
-           vocalStems: state.vocalStems.map(s => ({ ...s, blob: undefined })),
-           engineeredVocal: state.engineeredVocal ? { ...state.engineeredVocal, blob: undefined } : null,
-           finalMaster: state.finalMaster ? { ...state.finalMaster, blob: undefined } : null,
+           
+           // The safe, blob-free audio ledgers
+           vocalStems: safeVocalStems,
+           engineeredVocal: safeEngineeredVocal,
+           finalMaster: safeFinalMaster
         };
 
         try {
@@ -376,7 +385,7 @@ export const useMatrixStore = create<MatrixState>()(
                 session_state, 
                 updated_at: new Date().toISOString() 
               }, 
-              { onConflict: 'user_id' } 
+              { onConflict: 'user_id' } // Target the unique constraint
             );
 
           if (error) throw error;
