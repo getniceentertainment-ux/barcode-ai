@@ -228,7 +228,7 @@ const FLOW_VAULT: Record<string, number[][]> = {
 export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
-    updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, 
+    updateStemOffset, updateStemVolume, toggleStemMute, setActiveRoom, blueprint, userSession, 
     addToast, gwStyle, quantizedLines, setQuantizedLines 
   } = useMatrixStore();
 
@@ -245,7 +245,6 @@ export default function Room04_Booth() {
 
   const [currentTimeDisplay, setCurrentTimeDisplay] = useState(0);
   const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
-  const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
 
   const [trimmingStem, setTrimmingStem] = useState<any | null>(null);
@@ -450,15 +449,7 @@ export default function Room04_Booth() {
     else setActiveRoom("05");
   };
 
-  const toggleMute = (id: string) => {
-    setMutedStems(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const applyTrim = async () => {
+   const applyTrim = async () => {
     if (!trimmingStem) return;
     setIsProcessingTrim(true);
     try {
@@ -628,7 +619,7 @@ export default function Room04_Booth() {
       activeSourcesRef.current = [];
 
       vocalStems.forEach(stem => {
-        if (mutedStems.has(stem.id)) return;
+        if (stem.isMuted) return; // <-- SURGICAL FIX
         const buffer = stemBuffersRef.current.get(stem.id);
         if (buffer) {
           const source = audioCtxRef.current!.createBufferSource();
@@ -1208,7 +1199,7 @@ export default function Room04_Booth() {
             <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Timeline Layers</h4>
             <div className="space-y-3">
               {vocalStems.map(s => {
-                const isMuted = mutedStems.has(s.id);
+                const isMuted = s.isMuted; // <-- SURGICAL FIX
                 return (
                 <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
                   <div className="flex justify-between items-center mb-3">
@@ -1224,7 +1215,7 @@ export default function Room04_Booth() {
                     <div className="flex items-center gap-4">
                       <div className="flex items-center gap-2 mr-4">
                         <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors"><Scissors size={14} /></button>
-                        <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>{isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>
+                        <button onClick={() => toggleStemMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>{isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>
                       </div>
                       <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
                     </div>
