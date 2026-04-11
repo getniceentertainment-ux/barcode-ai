@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Sliders, PlayCircle, Loader2, CheckCircle2, Waves, Settings2, ArrowRight, Volume2, ListMusic, Play, Pause, Lock, DollarSign } from "lucide-react";
+import { Sliders, PlayCircle, Loader2, CheckCircle2, Waves, Settings2, ArrowRight, Volume2, ListMusic, Play, Pause, Lock, DollarSign, Trash2, VolumeX, Scissors } from "lucide-react";
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
+
+type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
 const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
@@ -39,9 +41,8 @@ function audioBufferToWav(buffer: AudioBuffer) {
 }
 
 export default function Room05_VocalSuite() {
-  const { audioData, vocalStems, engineeredVocal, setEngineeredVocal, setActiveRoom, addToast, userSession, mixParams, updateMixParams } = useMatrixStore();
+  const { audioData, vocalStems, engineeredVocal, setEngineeredVocal, setActiveRoom, addToast, userSession, mixParams, updateMixParams, toggleStemMute, updateStemVolume, removeVocalStem } = useMatrixStore();
   
-  // --- STATE INITIALIZED WITH MIXPARAMS FOR PERSISTENCE ---
   const [activeChain, setActiveChain] = useState(mixParams?.activeChain || VOCAL_CHAINS[0].id);
   const [presenceIntensity, setPresenceIntensity] = useState(mixParams?.presenceIntensity ?? VOCAL_CHAINS[0].presence);
   const [reverbMix, setReverbMix] = useState(mixParams?.reverbMix ?? VOCAL_CHAINS[0].reverb);
@@ -55,15 +56,20 @@ export default function Room05_VocalSuite() {
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const beatAudioRef = useRef<HTMLAudioElement>(null);
+  
   const wetGainRef = useRef<GainNode | null>(null);
   const dryGainRef = useRef<GainNode | null>(null);
   const eqBandsRef = useRef<BiquadFilterNode[]>([]);
   const compRef = useRef<DynamicsCompressorNode | null>(null);
   const saturationRef = useRef<WaveShaperNode | null>(null);
 
+  // 🚨 NEW REFS: Pure Mathematical AudioBuffer playback engine
+  const stemBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
+  const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const stemGainNodesRef = useRef<Map<string, GainNode>>(new Map());
+
   const isNonMogul = userSession?.tier !== "The Mogul";
 
-  // --- RECOVERY LOGIC ---
   useEffect(() => {
     if (engineeredVocal) {
       setStatus("success");
@@ -71,7 +77,6 @@ export default function Room05_VocalSuite() {
     }
   }, [engineeredVocal]);
 
-  // --- TOKEN SECURITY GATE ---
   useEffect(() => {
     const checkTokenStatus = async () => {
       if (engineeredVocal) {
@@ -95,7 +100,6 @@ export default function Room05_VocalSuite() {
     checkTokenStatus();
   }, [userSession, engineeredVocal]);
 
-  // --- AUTO-SAVE MIX TWEAKS ---
   useEffect(() => {
     updateMixParams({
       activeChain,
@@ -121,7 +125,6 @@ export default function Room05_VocalSuite() {
     }
   };
 
-  // --- UI HANDLER: SELECT CHAIN ---
   const handleChainSelect = (chainId: string) => {
     setActiveChain(chainId);
     const preset = VOCAL_CHAINS.find(c => c.id === chainId) || VOCAL_CHAINS[0];
@@ -130,42 +133,81 @@ export default function Room05_VocalSuite() {
     setReverbMix(preset.reverb);
   };
 
-  // --- AUDIO GRAPH INIT ---
+  // --- 1. RIGID AUDIO GRAPH INIT ---
   useEffect(() => {
-    if (!vocalStems.length) return;
-    const ctx = new window.AudioContext(); 
-    audioCtxRef.current = ctx;
-    const masterGain = ctx.createGain(); 
-    const convolver = ctx.createConvolver(); 
-    convolver.buffer = createReverb(ctx, 2.5, 2.0);
-    const wetGain = ctx.createGain(); 
-    const dryGain = ctx.createGain(); 
-    wetGainRef.current = wetGain; dryGainRef.current = dryGain;
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioContextClass(); 
+      audioCtxRef.current = ctx;
+      
+      const masterGain = ctx.createGain(); 
+      const convolver = ctx.createConvolver(); 
+      convolver.buffer = createReverb(ctx, 2.5, 2.0);
+      const wetGain = ctx.createGain(); 
+      const dryGain = ctx.createGain(); 
+      wetGainRef.current = wetGain; dryGainRef.current = dryGain;
 
-    eqBandsRef.current = FREQUENCIES.map((freq, i) => { 
-      const band = ctx.createBiquadFilter(); 
-      band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; 
-      band.frequency.value = freq; return band; 
-    });
-    const compressor = ctx.createDynamicsCompressor(); compRef.current = compressor;
-    const saturation = ctx.createWaveShaper(); saturation.curve = makeDistortionCurve(presenceIntensity / 2); saturation.oversample = '4x'; saturationRef.current = saturation;
-    
-    masterGain.connect(dryGain); 
-    let prevNode: AudioNode = dryGain; 
-    eqBandsRef.current.forEach(band => { prevNode.connect(band); prevNode = band; }); 
-    prevNode.connect(compressor); compressor.connect(saturation); saturation.connect(ctx.destination);
-    masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(ctx.destination);
-    
-    vocalStems.forEach(stem => {
-      const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
-      if (el) {
-        el.volume = Math.min(1, Math.max(0, stem.volume ?? 1));
-        el.muted = !!stem.isMuted;
+      eqBandsRef.current = FREQUENCIES.map((freq, i) => { 
+        const band = ctx.createBiquadFilter(); 
+        band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; 
+        band.frequency.value = freq; return band; 
+      });
+      const compressor = ctx.createDynamicsCompressor(); compRef.current = compressor;
+      const saturation = ctx.createWaveShaper(); saturation.curve = makeDistortionCurve(presenceIntensity / 2); saturation.oversample = '4x'; saturationRef.current = saturation;
+      
+      masterGain.connect(dryGain); 
+      let prevNode: AudioNode = dryGain; 
+      eqBandsRef.current.forEach(band => { prevNode.connect(band); prevNode = band; }); 
+      prevNode.connect(compressor); compressor.connect(saturation); saturation.connect(ctx.destination);
+      masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(ctx.destination);
+      
+      (ctx as any)._masterGain = masterGain;
+    }
+  }, []); 
+
+  // --- 2. MEMORY BUFFER LOADING (Bypasses Blob URL bugs) ---
+  useEffect(() => {
+    let isMounted = true;
+    const loadBuffers = async () => {
+      if (!audioCtxRef.current) return;
+      for (const stem of vocalStems) {
+        if (!stemBuffersRef.current.has(stem.id)) {
+          try {
+            let arrayBuf: ArrayBuffer;
+            if (stem.blob) { arrayBuf = await stem.blob.arrayBuffer(); } 
+            else {
+               const controller = new AbortController();
+               const timeoutId = setTimeout(() => controller.abort(), 10000); 
+               const resp = await fetch(stem.url, { signal: controller.signal });
+               clearTimeout(timeoutId);
+               if (!resp.ok) continue;
+               const contentType = resp.headers.get('content-type') || '';
+               if (contentType.includes('text/html') || contentType.includes('application/json')) continue;
+               arrayBuf = await resp.arrayBuffer();
+            }
+            if (!isMounted) return;
+            const audioBuf = await new Promise<AudioBuffer>((resolve, reject) => {
+               audioCtxRef.current!.decodeAudioData(arrayBuf, resolve, reject);
+            });
+            if (isMounted) stemBuffersRef.current.set(stem.id, audioBuf);
+          } catch (e: any) { 
+            if (e.name !== 'AbortError') console.warn(`Soft-fail decoding stem ${stem.id}:`, e); 
+          }
+        }
       }
-    });
+    };
+    loadBuffers();
+    return () => { isMounted = false; };
   }, [vocalStems]);
 
-  // --- REAL-TIME AUDIO UPDATES ---
+  // Clean up AudioContext strictly on unmount
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close();
+    }
+  }, []);
+
+  // --- MIX BUS REAL-TIME UPDATES ---
   useEffect(() => {
     if (wetGainRef.current && dryGainRef.current) { wetGainRef.current.gain.value = reverbMix / 100; dryGainRef.current.gain.value = 1 - (reverbMix / 100); }
     if (eqBandsRef.current.length === 10) eqBandsRef.current.forEach((band, i) => { band.gain.value = eqGains[i]; });
@@ -174,15 +216,76 @@ export default function Room05_VocalSuite() {
     if (saturationRef.current) saturationRef.current.curve = makeDistortionCurve(presenceIntensity / 2);
   }, [reverbMix, presenceIntensity, eqGains, activeChain]);
 
-  const togglePreviewPlayback = () => {
-    if (audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume();
-    const willPlay = !isPreviewPlaying; setIsPreviewPlaying(willPlay);
+  // 🚨 REAL-TIME VOLUME/MUTE LISTENER (Adjusts instantly without stopping playback)
+  useEffect(() => {
+    vocalStems.forEach(stem => {
+       const gainNode = stemGainNodesRef.current.get(stem.id);
+       if (gainNode) {
+          gainNode.gain.value = stem.isMuted ? 0 : (stem.volume ?? 1);
+       }
+    });
+  }, [vocalStems]);
+
+  // --- 3. HIGH FIDELITY BUFFER SCHEDULER ---
+  const startVocalBuffers = (playheadTime: number) => {
+    const ctx = audioCtxRef.current;
+    if (!ctx || !(ctx as any)._masterGain) return;
+    
+    const scheduleTime = ctx.currentTime + 0.05;
+    const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
+
+    // Purge old sources
+    activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
+    activeSourcesRef.current = [];
+    stemGainNodesRef.current.clear();
+
+    vocalStems.forEach(stem => {
+       if (stem.isMuted) return; // Muted stems don't even get scheduled
+       
+       const buffer = stemBuffersRef.current.get(stem.id);
+       if (buffer) {
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          
+          const gainNode = ctx.createGain();
+          gainNode.gain.value = stem.volume ?? 1;
+          stemGainNodesRef.current.set(stem.id, gainNode); // Save reference for real-time slider sliding
+
+          source.connect(gainNode);
+          gainNode.connect((ctx as any)._masterGain); // Force into EQ chain
+
+          const offsetSecs = (stem.offsetBars || 0) * secondsPerBar;
+          if (playheadTime < offsetSecs) {
+             source.start(scheduleTime + (offsetSecs - playheadTime));
+          } else {
+             const bufOffset = playheadTime - offsetSecs;
+             if (bufOffset < buffer.duration) {
+                source.start(scheduleTime, bufOffset);
+             }
+          }
+          activeSourcesRef.current.push(source);
+       }
+    });
+  };
+
+  const togglePreviewPlayback = async () => {
+    if (!audioCtxRef.current) return;
+    if (audioCtxRef.current.state === 'suspended') await audioCtxRef.current.resume();
+    
+    const willPlay = !isPreviewPlaying; 
+    setIsPreviewPlaying(willPlay);
+    
     if (willPlay) {
-      if (beatAudioRef.current) beatAudioRef.current.play().catch(()=>{});
-      vocalStems.forEach(stem => (document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement)?.play().catch(()=>{}));
+      const playheadTime = beatAudioRef.current?.currentTime || 0;
+      if (beatAudioRef.current) {
+        beatAudioRef.current.currentTime = playheadTime;
+        beatAudioRef.current.play().catch(()=>{});
+      }
+      startVocalBuffers(playheadTime);
     } else {
       if (beatAudioRef.current) beatAudioRef.current.pause();
-      vocalStems.forEach(stem => (document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement)?.pause());
+      activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
+      activeSourcesRef.current = [];
     }
   };
 
@@ -194,7 +297,8 @@ export default function Room05_VocalSuite() {
 
     setIsPreviewPlaying(false);
     if (beatAudioRef.current) beatAudioRef.current.pause();
-    vocalStems.forEach(stem => (document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement)?.pause());
+    activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
+    activeSourcesRef.current = [];
     
     setStatus("processing");
     try {
@@ -224,19 +328,19 @@ export default function Room05_VocalSuite() {
       const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
 
       decodedBuffers.forEach((buf, i) => { 
-        const stem = vocalStems[i];
-        if (stem.isMuted) return; // <-- SURGICAL FIX: Skip muted stems in mixdown entirely
+        // 🚨 SKIP RENDERING IF STEM WAS MUTED
+        if (vocalStems[i].isMuted) return;
 
         const source = offlineCtx.createBufferSource(); 
         source.buffer = buf; 
         
         const stemGain = offlineCtx.createGain();
-        stemGain.gain.value = stem.volume ?? 1; // Existing volume logic works perfectly here
+        stemGain.gain.value = vocalStems[i].volume ?? 1;
         
         source.connect(stemGain);
         stemGain.connect(masterGain); 
         
-        const startTime = (stem.offsetBars || 0) * secondsPerBar;
+        const startTime = (vocalStems[i].offsetBars || 0) * secondsPerBar;
         source.start(startTime); 
       });
       
@@ -289,11 +393,19 @@ export default function Room05_VocalSuite() {
       )}
 
       {audioData && (
-        <audio ref={beatAudioRef} src={audioData.url} onTimeUpdate={() => setCurrentTime(beatAudioRef.current?.currentTime || 0)} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onEnded={() => setIsPreviewPlaying(false)} className="hidden" />
+        <audio 
+          ref={beatAudioRef} 
+          src={audioData.url} 
+          onTimeUpdate={() => setCurrentTime(beatAudioRef.current?.currentTime || 0)} 
+          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} 
+          onEnded={() => {
+             setIsPreviewPlaying(false);
+             activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
+             activeSourcesRef.current = [];
+          }} 
+          className="hidden" 
+        />
       )}
-      {vocalStems.map((s, idx) => (
-        <audio key={s.id} id={`audio-stem-${s.id}`} src={s.url} crossOrigin="anonymous" className="hidden" onEnded={() => { if (idx === 0) setIsPreviewPlaying(false); }} />
-      ))}
       
       {/* SIDEBAR PRESETS */}
       <div className="w-full md:w-1/3 border-r border-[#222] flex flex-col bg-black">
@@ -309,6 +421,28 @@ export default function Room05_VocalSuite() {
               <span className="font-mono text-[9px] text-[#888] block mt-1">{c.desc}</span>
             </button>
           ))}
+        </div>
+        
+        {/* ROOM 4 TIMELINE SLIDERS ADDED FOR QUICK ACCESS */}
+        <div className="border-t border-[#222] bg-[#050505] p-4">
+           <h3 className="text-[10px] font-mono text-[#888] uppercase tracking-widest font-bold mb-3 flex items-center gap-2"><ListMusic size={14}/> Stem Console</h3>
+           <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+             {vocalStems.map(s => (
+                <div key={s.id} className="bg-black border border-[#111] p-3 rounded-sm flex items-center justify-between gap-3">
+                   <div className="flex flex-col">
+                     <span className="font-mono text-[9px] text-white uppercase">{s.type}</span>
+                     <span className="font-mono text-[8px] text-[#555]">{s.id.substring(5, 12)}</span>
+                   </div>
+                   <div className="flex-1 flex items-center gap-2">
+                     <input type="range" min="0" max="2" step="0.05" value={s.volume ?? 1} onChange={(e) => updateStemVolume(s.id, parseFloat(e.target.value))} className="w-full accent-[#E60000] h-1 bg-[#222] rounded-full appearance-none cursor-pointer" />
+                   </div>
+                   <div className="flex gap-2">
+                     <button onClick={() => toggleStemMute(s.id)} className={`transition-colors ${s.isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>{s.isMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}</button>
+                     <button onClick={() => removeVocalStem(s.id)} className="text-[#333] hover:text-red-600 transition-colors"><Trash2 size={12}/></button>
+                   </div>
+                </div>
+             ))}
+           </div>
         </div>
       </div>
 
@@ -327,7 +461,20 @@ export default function Room05_VocalSuite() {
                 </div>
                 <div className="text-right"><span className="font-mono text-sm font-bold text-[#E60000] bg-black px-3 py-1 border border-[#333]">{Math.floor(currentTime/60)}:{Math.floor(currentTime%60).toString().padStart(2,'0')}</span></div>
              </div>
-             <div className="w-full flex items-center gap-3"><input type="range" min="0" max={duration || 100} step="0.1" value={currentTime} onChange={(e) => { const nt = parseFloat(e.target.value); setCurrentTime(nt); if(beatAudioRef.current) beatAudioRef.current.currentTime = nt; vocalStems.forEach(st => { const el = document.getElementById(`audio-stem-${st.id}`) as HTMLAudioElement; if(el) el.currentTime = nt; }); }} className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" /></div>
+             
+             {/* 🚨 SCRUBBER SYNC FIX */}
+             <div className="w-full flex items-center gap-3">
+               <input 
+                 type="range" min="0" max={duration || 100} step="0.1" value={currentTime} 
+                 onChange={(e) => { 
+                   const nt = parseFloat(e.target.value); 
+                   setCurrentTime(nt); 
+                   if(beatAudioRef.current) beatAudioRef.current.currentTime = nt; 
+                   if(isPreviewPlaying) { startVocalBuffers(nt); }
+                 }} 
+                 className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" 
+               />
+             </div>
           </div>
 
           <div className="bg-black/80 backdrop-blur-sm border border-[#222] p-6 lg:p-8 rounded-sm">
