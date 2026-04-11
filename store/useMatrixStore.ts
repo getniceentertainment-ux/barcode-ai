@@ -359,21 +359,18 @@ export const useMatrixStore = create<MatrixState>()(
         }));
 
         const session_state = {
-           audioData: state.audioData,                     
+           audioData: state.audioData ? { ...state.audioData, blob: undefined } : null,                     
            flowDNA: state.flowDNA,
            blueprint: state.blueprint, 
            generatedLyrics: state.generatedLyrics,
            quantizedLines: state.quantizedLines,
+           vocalStems: safeStemsForCloud, 
            gwTitle: state.gwTitle, gwPrompt: state.gwPrompt, gwStyle: state.gwStyle, gwPocket: state.gwPocket, 
            gwMotive: state.gwMotive, gwStruggle: state.gwStruggle, gwHustle: state.gwHustle,
            gwStrikeZone: state.gwStrikeZone, gwHookType: state.gwHookType, gwFlowEvolution: state.gwFlowEvolution,
            mixParams: state.mixParams, anrData: state.anrData, activeProjectId: state.activeProjectId,
            isProjectFinalized: state.isProjectFinalized, activeRoom: state.activeRoom,
-           
-           // 🚨 THESE 3 LINES ARE MANDATORY TO SAVE AUDIO TO THE CLOUD
-           vocalStems: state.vocalStems.map(s => ({ ...s, blob: undefined })),
-           engineeredVocal: state.engineeredVocal ? { ...state.engineeredVocal, blob: undefined } : null,
-           finalMaster: state.finalMaster ? { ...state.finalMaster, blob: undefined } : null,
+        };
 
         try {
           const { error } = await supabase
@@ -413,44 +410,47 @@ export const useMatrixStore = create<MatrixState>()(
           await get().syncLedger();
           const state = get();
           
-          const savedBeat = await loadAudioFromDisk('matrix_audio_data');
-          const savedStems = await loadAudioFromDisk('matrix_vocal_stems');
-          const savedEngineered = await loadAudioFromDisk('matrix_engineered_vocal'); 
-          const savedMaster = await loadAudioFromDisk('matrix_final_master'); 
+          let savedBeat = await loadAudioFromDisk('matrix_audio_data');
+          let savedStems = await loadAudioFromDisk('matrix_vocal_stems');
+          let savedEngineered = await loadAudioFromDisk('matrix_engineered_vocal'); 
+          let savedMaster = await loadAudioFromDisk('matrix_final_master'); 
 
-          // 🚨 SURGICAL FIX: Directly restore objects from disk WITHOUT overwriting canonical URLs
+          // --- 🚨 SURGICAL FIX: THE BLOB REBUILDER ---
+          // If the local disk corrupted the Blob into a simple object {}, this intercepts it, 
+          // downloads the raw audio from Supabase ONE TIME during boot, and permanently 
+          // locks it into the Zustand store as a true Blob instance. Zero latency across rooms.
+          const enforceBlob = async (item: any) => {
+            if (!item) return item;
+            if (item.blob instanceof Blob) return item; 
+            if (!item.url || item.url.startsWith('blob:')) return item;
+            try {
+                const resp = await fetch(item.url);
+                if (resp.ok) item.blob = await resp.blob();
+            } catch(e) {}
+            return item;
+          };
+
           if (savedBeat) {
+             savedBeat = await enforceBlob(savedBeat);
              set({ audioData: savedBeat as ExtendedAudioAnalysis });
           }
 
-          if (savedStems && Array.isArray(savedStems) && savedStems.length > 0) {
-            // Local DB has the blobs, restore them natively
-            set({ vocalStems: savedStems });
-          } else if (state.vocalStems.length > 0) {
-            // Local DB wiped, but Cloud Sync has the permanent URLs. 
-            // Rebuild the blobs by dynamically downloading them from the Supabase URLs.
-            console.log("Local blobs missing. Hydrating stems from Cloud URLs...");
-            const revivedStems = await Promise.all(state.vocalStems.map(async (stem: any) => {
-                if (!stem.url || stem.url.startsWith('blob:')) return stem; 
-                try {
-                    const resp = await fetch(stem.url);
-                    if (!resp.ok) return stem;
-                    const blob = await resp.blob();
-                    return { ...stem, blob: blob };
-                } catch(e) {
-                    return stem;
-                }
-            }));
-            set({ vocalStems: revivedStems });
-            saveAudioToDisk('matrix_vocal_stems', revivedStems); 
+          const targetStems = (savedStems && Array.isArray(savedStems) && savedStems.length > 0) ? savedStems : state.vocalStems;
+          if (targetStems && targetStems.length > 0) {
+             const rebuiltStems = await Promise.all(targetStems.map(enforceBlob));
+             set({ vocalStems: rebuiltStems });
+             // Resecure the mathematically repaired blobs back to the local disk
+             saveAudioToDisk('matrix_vocal_stems', rebuiltStems); 
           }
 
           if (savedEngineered && Array.isArray(savedEngineered) && savedEngineered.length > 0) {
-            set({ engineeredVocal: savedEngineered[0] });
+            const engStem = await enforceBlob(savedEngineered[0]);
+            set({ engineeredVocal: engStem });
           }
 
           if (savedMaster) {
-             set({ finalMaster: savedMaster as FinalMaster });
+             const rebuiltMaster = await enforceBlob(savedMaster);
+             set({ finalMaster: rebuiltMaster as FinalMaster });
           }
         } catch (e) { console.error("Failed to hydrate audio from disk", e); }
       }
