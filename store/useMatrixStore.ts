@@ -9,6 +9,7 @@ let cloudSaveTimeout: number | undefined;
 export type ExtendedAudioAnalysis = AudioAnalysis & {
   dynamic_array?: number[];
   contour?: string;
+  blob?: Blob;
 };
 
 export interface QuantizedSyllable {
