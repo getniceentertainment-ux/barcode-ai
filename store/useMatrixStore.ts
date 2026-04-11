@@ -4,6 +4,8 @@ import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession, Final
 import { saveAudioToDisk, loadAudioFromDisk } from '../lib/dawStorage';
 import { supabase } from '../lib/supabase';
 
+let cloudSaveTimeout: number | undefined;
+
 export type ExtendedAudioAnalysis = AudioAnalysis & {
   dynamic_array?: number[];
   contour?: string;
@@ -348,48 +350,65 @@ export const useMatrixStore = create<MatrixState>()(
 
         set({ syncStatus: "saving" });
         
-        // 🚨 SURGICAL FIX: We safely upload the canonical URLs to Supabase.
-        const safeStemsForCloud = state.vocalStems.map(s => ({
-            id: s.id,
-            type: s.type,
-            url: s.url, 
-            volume: s.volume,
-            offsetBars: s.offsetBars,
-            isMuted: s.isMuted
-        }));
-
-        const session_state = {
-           audioData: state.audioData ? { ...state.audioData, blob: undefined } : null,                     
-           flowDNA: state.flowDNA,
-           blueprint: state.blueprint, 
-           generatedLyrics: state.generatedLyrics,
-           quantizedLines: state.quantizedLines,
-           vocalStems: safeStemsForCloud, 
-           gwTitle: state.gwTitle, gwPrompt: state.gwPrompt, gwStyle: state.gwStyle, gwPocket: state.gwPocket, 
-           gwMotive: state.gwMotive, gwStruggle: state.gwStruggle, gwHustle: state.gwHustle,
-           gwStrikeZone: state.gwStrikeZone, gwHookType: state.gwHookType, gwFlowEvolution: state.gwFlowEvolution,
-           mixParams: state.mixParams, anrData: state.anrData, activeProjectId: state.activeProjectId,
-           isProjectFinalized: state.isProjectFinalized, activeRoom: state.activeRoom,
-        };
-
-        try {
-            const { error } = await supabase
-              .from('matrix_sessions')
-              .upsert({ 
-                  user_id: userId, 
-                  session_state, 
-                  updated_at: new Date().toISOString() 
-              });
-
-          if (error) throw error;
-
-          set({ syncStatus: "saved" });
-          setTimeout(() => set({ syncStatus: "idle" }), 3000);
-        } catch (err) {
-          console.error("Matrix Cloud Save Failed:", err);
-          set({ syncStatus: "error" });
-          setTimeout(() => set({ syncStatus: "idle" }), 5000);
+        // 🚨 1. RAPID-FIRE LOCK (Wait 1.5s before hitting the database)
+        if (cloudSaveTimeout) {
+          window.clearTimeout(cloudSaveTimeout);
         }
+
+        cloudSaveTimeout = window.setTimeout(async () => {
+          const latestState = get(); // Grab the exact state AFTER the timer finishes
+
+          // 🚨 2. SAFELY MAP URLS (Strip heavy Blobs to prevent JSONB crashes)
+          const safeStemsForCloud = latestState.vocalStems.map(s => ({
+              id: s.id, type: s.type, url: s.url, volume: s.volume, offsetBars: s.offsetBars, isMuted: s.isMuted
+          }));
+
+          const safeEngineeredVocal = latestState.engineeredVocal ? {
+              id: latestState.engineeredVocal.id, type: latestState.engineeredVocal.type, url: latestState.engineeredVocal.url, volume: latestState.engineeredVocal.volume, offsetBars: latestState.engineeredVocal.offsetBars
+          } : null;
+
+          const safeFinalMaster = latestState.finalMaster ? {
+              id: latestState.finalMaster.id, url: latestState.finalMaster.url
+          } : null;
+
+          // 🚨 3. THE COMPLETE PAYLOAD
+          const session_state = {
+             audioData: latestState.audioData ? { ...latestState.audioData, blob: undefined } : null,                     
+             flowDNA: latestState.flowDNA,
+             blueprint: latestState.blueprint, 
+             generatedLyrics: latestState.generatedLyrics,
+             quantizedLines: latestState.quantizedLines,
+             gwTitle: latestState.gwTitle, gwPrompt: latestState.gwPrompt, gwStyle: latestState.gwStyle, gwPocket: latestState.gwPocket, 
+             gwMotive: latestState.gwMotive, gwStruggle: latestState.gwStruggle, gwHustle: latestState.gwHustle,
+             gwStrikeZone: latestState.gwStrikeZone, gwHookType: latestState.gwHookType, gwFlowEvolution: latestState.gwFlowEvolution,
+             mixParams: latestState.mixParams, anrData: latestState.anrData, activeProjectId: latestState.activeProjectId,
+             isProjectFinalized: latestState.isProjectFinalized, activeRoom: latestState.activeRoom,
+             
+             // THESE MUST BE HERE TO SURVIVE LOGOUT!
+             vocalStems: safeStemsForCloud, 
+             engineeredVocal: safeEngineeredVocal,
+             finalMaster: safeFinalMaster
+          };
+
+          try {
+              const { error } = await supabase
+                .from('matrix_sessions')
+                .upsert({ 
+                    user_id: userId, 
+                    session_state, 
+                    updated_at: new Date().toISOString() 
+                });
+
+            if (error) throw error;
+
+            set({ syncStatus: "saved" });
+            setTimeout(() => set({ syncStatus: "idle" }), 3000);
+          } catch (err) {
+            console.error("Matrix Cloud Save Failed:", err);
+            set({ syncStatus: "error" });
+            setTimeout(() => set({ syncStatus: "idle" }), 5000);
+          }
+        }, 1500); // End of timer
       },
 
       pullFromCloud: async (userId: string) => {
