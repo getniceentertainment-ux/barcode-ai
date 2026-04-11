@@ -7,32 +7,6 @@ import { supabase } from "../../lib/supabase";
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
 
-// --- PROPRIETARY DSP CONSTANTS IMPORTED FROM ROOM 05 ---
-// 🚨 NOTE: These are just the 10 fixed bands of the graphic equalizer. 
-// The actual "boosts and cuts" come dynamically from your Room 05 sliders.
-const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-
-const VOCAL_CHAINS = [
-  { id: "getnice_eq", name: "GetNice EQ", desc: "Signature Introspective, Vocal-Forward", color: "text-[#E60000]", comp: { ratio: 2, attack: 0.030, release: 0.125, knee: 40, threshold: -24 }, eq: [2, 1, -1, -2, 0, 1.5, 2, 1, 2, 1.5], presence: 30, reverb: 25 },
-  { id: "foundation_eq", name: "Foundation EQ", desc: "Boom Bap / Golden Age Gritty Punch", color: "text-yellow-500", comp: { ratio: 4, attack: 0.012, release: 0.045, knee: 0, threshold: -28 }, eq: [3, 3, 0, 0, 0, 0, 0, -1, -2, -4], presence: 10, reverb: 15 },
-  { id: "gangsta_eq", name: "Gangsta EQ", desc: "Trap / Southern 808 Heavy", color: "text-purple-500", comp: { ratio: 3, attack: 0.035, release: 0.100, knee: 0, threshold: -26 }, eq: [4, 0, 0, -3, 0, 0, 0, 0, 1.5, 3], presence: 60, reverb: 30 },
-  { id: "modern_eq", name: "Modern EQ", desc: "Drill / Hyper-Controlled & Scooped", color: "text-blue-500", comp: { ratio: 5, attack: 0.003, release: 0.050, knee: 0, threshold: -30 }, eq: [0, 2, 0, 0, -2, 0, 0, 2, 0, 0], presence: 40, reverb: 45 },
-];
-
-function createReverb(audioCtx: BaseAudioContext, duration: number, decay: number) {
-  const length = audioCtx.sampleRate * duration;
-  const impulse = audioCtx.createBuffer(2, length, audioCtx.sampleRate);
-  const left = impulse.getChannelData(0); const right = impulse.getChannelData(1);
-  for (let i = 0; i < length; i++) { const n = 1 - i / length; left[i] = (Math.random() * 2 - 1) * Math.pow(n, decay); right[i] = (Math.random() * 2 - 1) * Math.pow(n, decay); }
-  return impulse;
-}
-
-function makeDistortionCurve(amount: number) {
-  const k = amount, n_samples = 44100, curve = new Float32Array(n_samples), deg = Math.PI / 180;
-  for (let i = 0; i < n_samples; ++i) { const x = (i * 2) / n_samples - 1; curve[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x)); }
-  return curve;
-}
-
 // --- BULLETPROOF PCM 16-BIT WAV ENCODER ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const numChannels = buffer.numberOfChannels;
@@ -75,7 +49,7 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
 }
 
 export default function Room06_Mastering() {
-  const { audioData, vocalStems, generatedLyrics, setActiveRoom, addToast, finalMaster, setFinalMaster, userSession, clearMatrix, mixParams } = useMatrixStore();
+  const { audioData, vocalStems, generatedLyrics, setActiveRoom, addToast, finalMaster, setFinalMaster, userSession, clearMatrix } = useMatrixStore();
   
   // --- STATE DECLARATIONS ---
   const [lufs, setLufs] = useState(-14); 
@@ -148,14 +122,6 @@ export default function Room06_Mastering() {
 
       const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
 
-      // 🚨 1. PULL DYNAMIC MIX PARAMS FROM GLOBAL STORE
-      // This retrieves the EXACT slider positions you set in Room 5
-      const preset = VOCAL_CHAINS.find(c => c.id === mixParams?.activeChain) || VOCAL_CHAINS[0];
-      const eqGains = (mixParams?.eqGains && mixParams.eqGains.length === 10) ? mixParams.eqGains : preset.eq;
-      const presenceIntensity = mixParams?.presenceIntensity ?? preset.presence;
-      const reverbMix = mixParams?.reverbMix ?? preset.reverb;
-
-      // 2. MASTER 2-BUS LIMITER
       const limiter = ctx.createDynamicsCompressor();
       limiter.threshold.value = lufs; limiter.knee.value = 0.0; limiter.ratio.value = 20.0;
       limiter.attack.value = 0.005; limiter.release.value = 0.050;
@@ -169,39 +135,11 @@ export default function Room06_Mastering() {
 
       limiter.connect(makeupGain); makeupGain.connect(analyser); analyser.connect(ctx.destination);
 
-      // 3. VOCAL CHAIN RACK (Recreated in Room 06 to enforce dynamic settings)
-      const vocalBus = ctx.createGain(); 
-      const convolver = ctx.createConvolver(); convolver.buffer = createReverb(ctx, 2.5, 2.0);
-      const wetGain = ctx.createGain(); wetGain.gain.value = reverbMix / 100;
-      const dryGain = ctx.createGain(); dryGain.gain.value = 1 - (reverbMix / 100);
-
-      const comp = ctx.createDynamicsCompressor();
-      comp.ratio.value = preset.comp.ratio; comp.attack.value = preset.comp.attack; comp.release.value = preset.comp.release; comp.knee.value = preset.comp.knee; comp.threshold.value = preset.comp.threshold;
-      const saturation = ctx.createWaveShaper(); saturation.curve = makeDistortionCurve(presenceIntensity / 2);
-
-      vocalBus.connect(dryGain);
-      let prevNode: AudioNode = dryGain;
-      
-      // APPLY CUSTOM EQ GAINS TO THE 10 BANDS
-      FREQUENCIES.forEach((freq, i) => {
-          const band = ctx.createBiquadFilter();
-          band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking";
-          band.frequency.value = freq; 
-          band.gain.value = eqGains[i]; // <--- Your custom sliders from Room 5 hit the signal right here
-          prevNode.connect(band); prevNode = band;
-      });
-      
-      // Route processed vocals into the Master Limiter
-      prevNode.connect(comp); comp.connect(saturation); saturation.connect(limiter); 
-      vocalBus.connect(convolver); convolver.connect(wetGain); wetGain.connect(limiter); 
-
-      // Decode Beat
       let beatBlob = (audioData as any)?.blob;
       if (!beatBlob && audioData.url) { const r = await fetch(audioData.url); beatBlob = await r.blob(); }
       const beatArrayBuf = await beatBlob.arrayBuffer();
       const beatBuffer = await new Promise<AudioBuffer>((res, rej) => ctx.decodeAudioData(beatArrayBuf, res, rej));
       
-      // Decode Vocals & Catch Global Mute Status
       const decodedVocals = [];
       for (const stem of vocalStems) {
           let vBlob = (stem as any).blob;
@@ -209,12 +147,11 @@ export default function Room06_Mastering() {
           if (!vBlob) continue;
           const vArrayBuf = await vBlob.arrayBuffer();
           const vBuf = await new Promise<AudioBuffer>((resolve, reject) => { ctx.decodeAudioData(vArrayBuf, resolve, reject); });
-          decodedVocals.push({ buffer: vBuf, offset: (stem.offsetBars || 0) * secondsPerBar, volume: stem.volume ?? 1, isMuted: stem.isMuted });
+          decodedVocals.push({ buffer: vBuf, offset: (stem.offsetBars || 0) * secondsPerBar, volume: stem.volume ?? 1 });
       }
 
       const syncTime = ctx.currentTime + 0.1;
 
-      // Connect Beat to Master Limiter
       const beatSource = ctx.createBufferSource();
       beatSource.buffer = beatBuffer;
       const beatGain = ctx.createGain(); beatGain.gain.value = beatVolume;
@@ -222,12 +159,10 @@ export default function Room06_Mastering() {
       beatSource.start(syncTime);
       activeSourcesRef.current.push(beatSource);
 
-      // Connect Vocals to VocalBus
       decodedVocals.forEach(v => {
-          if (v.isMuted) return; // 🚨 STRICT MUTE ENFORCEMENT: Skips muted stems entirely
           const vSource = ctx.createBufferSource(); vSource.buffer = v.buffer;
           const vGain = ctx.createGain(); vGain.gain.value = vocalVolume * v.volume;
-          vSource.connect(vGain); vGain.connect(vocalBus);
+          vSource.connect(vGain); vGain.connect(limiter);
           vSource.start(syncTime + v.offset);
           activeSourcesRef.current.push(vSource);
       });
@@ -273,64 +208,33 @@ export default function Room06_Mastering() {
           if (!vBlob) continue;
           const vArrayBuf = await vBlob.arrayBuffer();
           const vBuf = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(vArrayBuf, res, rej));
-          vocalBuffers.push({ buffer: vBuf, offset: (stem.offsetBars || 0) * secondsPerBar, volume: stem.volume ?? 1, isMuted: stem.isMuted });
+          vocalBuffers.push({ buffer: vBuf, offset: (stem.offsetBars || 0) * secondsPerBar, volume: stem.volume ?? 1 });
       }
 
       const offlineCtx = new OfflineAudioContext(2, beatBuffer.length, beatBuffer.sampleRate);
       
-      // 🚨 PULL DYNAMIC MIX PARAMS FOR THE OFFLINE RENDER
-      const preset = VOCAL_CHAINS.find(c => c.id === mixParams?.activeChain) || VOCAL_CHAINS[0];
-      const eqGains = (mixParams?.eqGains && mixParams.eqGains.length === 10) ? mixParams.eqGains : preset.eq;
-      const presenceIntensity = mixParams?.presenceIntensity ?? preset.presence;
-      const reverbMix = mixParams?.reverbMix ?? preset.reverb;
-
-      // MASTER LIMITER
       const limiter = offlineCtx.createDynamicsCompressor();
       limiter.threshold.value = lufs; limiter.knee.value = 0.0; limiter.ratio.value = 20.0;
       limiter.attack.value = 0.005; limiter.release.value = 0.050;
       const makeupGain = offlineCtx.createGain(); makeupGain.gain.value = Math.pow(10, (Math.abs(lufs) - 6) / 20); 
       limiter.connect(makeupGain); makeupGain.connect(offlineCtx.destination);
 
-      // VOCAL CHAIN BUS
-      const vocalBus = offlineCtx.createGain();
-      const convolver = offlineCtx.createConvolver(); convolver.buffer = createReverb(offlineCtx, 2.5, 2.0);
-      const wetGain = offlineCtx.createGain(); wetGain.gain.value = reverbMix / 100;
-      const dryGain = offlineCtx.createGain(); dryGain.gain.value = 1 - (reverbMix / 100);
-
-      const comp = offlineCtx.createDynamicsCompressor();
-      comp.ratio.value = preset.comp.ratio; comp.attack.value = preset.comp.attack; comp.release.value = preset.comp.release; comp.knee.value = preset.comp.knee; comp.threshold.value = preset.comp.threshold;
-      const saturation = offlineCtx.createWaveShaper(); saturation.curve = makeDistortionCurve(presenceIntensity / 2);
-
-      vocalBus.connect(dryGain); let prevNode: AudioNode = dryGain;
-      FREQUENCIES.forEach((freq, i) => { 
-        const band = offlineCtx.createBiquadFilter(); 
-        band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; 
-        band.frequency.value = freq; 
-        band.gain.value = eqGains[i]; // <--- Custom Room 5 Sliders 
-        prevNode.connect(band); 
-        prevNode = band; 
-      });
-      prevNode.connect(comp); comp.connect(saturation); saturation.connect(limiter);
-      vocalBus.connect(convolver); convolver.connect(wetGain); wetGain.connect(limiter);
-
-      // RENDER BEAT
       const beatSource = offlineCtx.createBufferSource(); beatSource.buffer = beatBuffer;
       const beatGainNode = offlineCtx.createGain(); beatGainNode.gain.value = beatVolume;
       beatSource.connect(beatGainNode); beatGainNode.connect(limiter);
       beatSource.start(0);
 
-      // RENDER VOCALS
       vocalBuffers.forEach(v => {
-          if (v.isMuted) return; // 🚨 STRICT MUTE ENFORCEMENT
           const vSource = offlineCtx.createBufferSource(); vSource.buffer = v.buffer;
           const vGainNode = offlineCtx.createGain(); vGainNode.gain.value = vocalVolume * v.volume;
-          vSource.connect(vGainNode); vGainNode.connect(vocalBus);
+          vSource.connect(vGainNode); vGainNode.connect(limiter);
           vSource.start(v.offset);
       });
 
       const renderedBuffer = await offlineCtx.startRendering();
       const finalWavBlob = audioBufferToWavBlob(renderedBuffer);
       
+      // --- SURGICAL FIX: UPLOAD DIRECTLY TO MASTERED-AUDIO BUCKET ---
       const safeStageName = (userSession?.stageName || 'UnknownNode').replace(/[^a-zA-Z0-9_-]/g, '_');
       const fileName = `${safeStageName}_${userSession?.id}/MASTER_${Date.now()}.wav`;
 
@@ -342,6 +246,7 @@ export default function Room06_Mastering() {
 
       const { data: publicData } = supabase.storage.from('mastered-audio').getPublicUrl(fileName);
       const outputUrl = publicData.publicUrl;
+      // --------------------------------------------------------------
       
       setFinalMaster({ url: outputUrl, blob: finalWavBlob } as any);
       useMatrixStore.setState({ isProjectFinalized: true });
@@ -384,49 +289,19 @@ export default function Room06_Mastering() {
             const vBuf = await new Promise<AudioBuffer>((res, rej) => tmpCtx.decodeAudioData(vArrayBuf, res, rej));
             const endTime = ((s.offsetBars || 0) * secondsPerBar) + vBuf.duration;
             if (endTime > maxDuration) maxDuration = endTime;
-            return { buffer: vBuf, offset: (s.offsetBars || 0) * secondsPerBar, volume: s.volume ?? 1, isMuted: s.isMuted };
+            return { buffer: vBuf, offset: (s.offsetBars || 0) * secondsPerBar, volume: s.volume ?? 1 };
           }));
 
           const validVocals = decodedVocals.filter(v => v !== null);
 
           if (maxDuration > 0 && validVocals.length > 0) {
             const offlineAcapellaCtx = new OfflineAudioContext(2, tmpCtx.sampleRate * maxDuration, tmpCtx.sampleRate);
-            
-            // 🚨 PULL DYNAMIC MIX PARAMS FOR ACAPELLA ZIP EXPORT
-            const preset = VOCAL_CHAINS.find(c => c.id === mixParams?.activeChain) || VOCAL_CHAINS[0];
-            const eqGains = (mixParams?.eqGains && mixParams.eqGains.length === 10) ? mixParams.eqGains : preset.eq;
-            const presenceIntensity = mixParams?.presenceIntensity ?? preset.presence;
-            const reverbMix = mixParams?.reverbMix ?? preset.reverb;
-
-            const vocalBus = offlineAcapellaCtx.createGain();
-            const convolver = offlineAcapellaCtx.createConvolver(); convolver.buffer = createReverb(offlineAcapellaCtx, 2.5, 2.0);
-            const wetGain = offlineAcapellaCtx.createGain(); wetGain.gain.value = reverbMix / 100;
-            const dryGain = offlineAcapellaCtx.createGain(); dryGain.gain.value = 1 - (reverbMix / 100);
-
-            const comp = offlineAcapellaCtx.createDynamicsCompressor();
-            comp.ratio.value = preset.comp.ratio; comp.attack.value = preset.comp.attack; comp.release.value = preset.comp.release; comp.knee.value = preset.comp.knee; comp.threshold.value = preset.comp.threshold;
-            const saturation = offlineAcapellaCtx.createWaveShaper(); saturation.curve = makeDistortionCurve(presenceIntensity / 2);
-
-            vocalBus.connect(dryGain); let prevNode: AudioNode = dryGain;
-            FREQUENCIES.forEach((freq, i) => { 
-              const band = offlineAcapellaCtx.createBiquadFilter(); 
-              band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; 
-              band.frequency.value = freq; 
-              band.gain.value = eqGains[i]; // <--- Custom Room 5 Sliders 
-              prevNode.connect(band); 
-              prevNode = band; 
-            });
-            prevNode.connect(comp); comp.connect(saturation); saturation.connect(offlineAcapellaCtx.destination);
-            vocalBus.connect(convolver); convolver.connect(wetGain); wetGain.connect(offlineAcapellaCtx.destination);
-
             validVocals.forEach(v => {
-                if (v!.isMuted) return; // 🚨 STRICT MUTE ENFORCEMENT
                 const source = offlineAcapellaCtx.createBufferSource(); source.buffer = v!.buffer;
                 const gainNode = offlineAcapellaCtx.createGain(); gainNode.gain.value = vocalVolume * v!.volume;
-                source.connect(gainNode); gainNode.connect(vocalBus);
+                source.connect(gainNode); gainNode.connect(offlineAcapellaCtx.destination);
                 source.start(v!.offset);
             });
-            
             const renderedAcapella = await offlineAcapellaCtx.startRendering();
             const acapellaBlob = audioBufferToWavBlob(renderedAcapella);
             zip.file(`${audioData?.fileName || "ARTIFACT"}_Acapella_Stem.wav`, acapellaBlob);
