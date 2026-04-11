@@ -351,15 +351,8 @@ export const useMatrixStore = create<MatrixState>()(
 
         set({ syncStatus: "saving" });
         
-        // 🚨 SURGICAL FIX: Strictly strip out the massive Blob objects using ES6 destructuring.
-        // Postgres JSONB rejects 'undefined' values, so we completely remove the keys.
-        const safeVocalStems = state.vocalStems.map(({ blob, ...rest }) => rest);
-        const safeEngineeredVocal = state.engineeredVocal ? (({ blob, ...rest }) => rest)(state.engineeredVocal) : null;
-        const safeFinalMaster = state.finalMaster ? (({ blob, ...rest }) => rest)(state.finalMaster) : null;
-        const safeAudioData = state.audioData ? (({ blob, ...rest }: any) => rest)(state.audioData) : null;
-
         const session_state = {
-           audioData: safeAudioData,                     
+           audioData: state.audioData,                     
            flowDNA: state.flowDNA,
            blueprint: state.blueprint, 
            generatedLyrics: state.generatedLyrics,
@@ -368,12 +361,10 @@ export const useMatrixStore = create<MatrixState>()(
            gwMotive: state.gwMotive, gwStruggle: state.gwStruggle, gwHustle: state.gwHustle,
            gwStrikeZone: state.gwStrikeZone, gwHookType: state.gwHookType, gwFlowEvolution: state.gwFlowEvolution,
            mixParams: state.mixParams, anrData: state.anrData, activeProjectId: state.activeProjectId,
+           vocalStems: state.vocalStems.map(s => ({ ...s, blob: undefined })),
+           engineeredVocal: state.engineeredVocal ? { ...state.engineeredVocal, blob: undefined } : null,
+           finalMaster: state.finalMaster ? { ...state.finalMaster, blob: undefined } : null,
            isProjectFinalized: state.isProjectFinalized, activeRoom: state.activeRoom,
-           
-           // The safe, blob-free audio ledgers
-           vocalStems: safeVocalStems,
-           engineeredVocal: safeEngineeredVocal,
-           finalMaster: safeFinalMaster
         };
 
         try {
@@ -385,7 +376,7 @@ export const useMatrixStore = create<MatrixState>()(
                 session_state, 
                 updated_at: new Date().toISOString() 
               }, 
-              { onConflict: 'user_id' } // Target the unique constraint
+              { onConflict: 'user_id' } 
             );
 
           if (error) throw error;
