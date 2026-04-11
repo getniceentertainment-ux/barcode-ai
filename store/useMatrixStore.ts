@@ -4,17 +4,15 @@ import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession, Final
 import { saveAudioToDisk, loadAudioFromDisk } from '../lib/dawStorage';
 import { supabase } from '../lib/supabase';
 
-// --- SURGICAL ADDITION: EXTENDED DSP TRUTH ---
 export type ExtendedAudioAnalysis = AudioAnalysis & {
   dynamic_array?: number[];
   contour?: string;
 };
 
-// --- NEW: THE QUANTIZER DATA STRUCTURES ---
 export interface QuantizedSyllable {
   id: string;
   word: string;
-  slot: number; // 0 to 15 (16th notes)
+  slot: number; 
   startTime: number;
   duration: number;
   isWordEnd?: boolean;
@@ -122,7 +120,6 @@ interface MatrixState {
   generatedLyrics: string | null;
   setGeneratedLyrics: (lyrics: string) => void;
 
-  // --- NEW: THE QUANTIZER HUD ---
   quantizedLines: QuantizedLine[];
   setQuantizedLines: (lines: QuantizedLine[]) => void;
 
@@ -131,6 +128,7 @@ interface MatrixState {
   removeVocalStem: (id: string) => void;
   updateStemVolume: (id: string, volume: number) => void;
   updateStemOffset: (id: string, offsetBars: number) => void;
+  toggleStemMute: (id: string) => void; // 🚨 ADDED GLOBAL MUTE
 
   engineeredVocal: VocalStem | null;
   setEngineeredVocal: (stem: VocalStem | null) => void;
@@ -178,8 +176,8 @@ export const useMatrixStore = create<MatrixState>()(
       gwHustle: "",
 
       gwStrikeZone: "snare",
-      gwHookType: "auto", // Default to Neural Match
-      gwFlowEvolution: "auto", // Default to Neural Match
+      gwHookType: "auto", 
+      gwFlowEvolution: "auto", 
       
       mixParams: {
         activeChain: "getnice_eq",
@@ -198,7 +196,7 @@ export const useMatrixStore = create<MatrixState>()(
       
       blueprint: [],
       generatedLyrics: null,
-      quantizedLines: [], // <-- Initialize
+      quantizedLines: [], 
       vocalStems: [],
       engineeredVocal: null, 
       finalMaster: null,
@@ -232,7 +230,7 @@ export const useMatrixStore = create<MatrixState>()(
 
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
-      setQuantizedLines: (lines) => set({ quantizedLines: lines }), // <-- Setter
+      setQuantizedLines: (lines) => set({ quantizedLines: lines }), 
 
       setEngineeredVocal: (stem) => {
         set({ engineeredVocal: stem });
@@ -275,6 +273,12 @@ export const useMatrixStore = create<MatrixState>()(
       }),
       updateStemOffset: (id, offsetBars) => set((state) => {
         const newStems = state.vocalStems.map(s => s.id === id ? { ...s, offsetBars } : s);
+        saveAudioToDisk('matrix_vocal_stems', newStems);
+        return { vocalStems: newStems };
+      }),
+      // 🚨 GLOBAL MUTE ACTION ADDED
+      toggleStemMute: (id) => set((state) => {
+        const newStems = state.vocalStems.map(s => s.id === id ? { ...s, isMuted: !s.isMuted } : s);
         saveAudioToDisk('matrix_vocal_stems', newStems);
         return { vocalStems: newStems };
       }),
@@ -352,7 +356,6 @@ export const useMatrixStore = create<MatrixState>()(
         };
 
         try {
-          // 🚨 SURGICAL FIX: Using UPSERT to prevent primary key conflicts (409 Conflict)
           const { error } = await supabase
             .from('matrix_sessions')
             .upsert(
@@ -361,7 +364,7 @@ export const useMatrixStore = create<MatrixState>()(
                 session_state, 
                 updated_at: new Date().toISOString() 
               }, 
-              { onConflict: 'user_id' } // Target the unique constraint
+              { onConflict: 'user_id' } 
             );
 
           if (error) throw error;

@@ -41,7 +41,6 @@ function audioBufferToWav(buffer: AudioBuffer) {
 export default function Room05_VocalSuite() {
   const { audioData, vocalStems, engineeredVocal, setEngineeredVocal, setActiveRoom, addToast, userSession, mixParams, updateMixParams } = useMatrixStore();
   
-  // --- STATE INITIALIZED WITH MIXPARAMS FOR PERSISTENCE ---
   const [activeChain, setActiveChain] = useState(mixParams?.activeChain || VOCAL_CHAINS[0].id);
   const [presenceIntensity, setPresenceIntensity] = useState(mixParams?.presenceIntensity ?? VOCAL_CHAINS[0].presence);
   const [reverbMix, setReverbMix] = useState(mixParams?.reverbMix ?? VOCAL_CHAINS[0].reverb);
@@ -63,7 +62,6 @@ export default function Room05_VocalSuite() {
 
   const isNonMogul = userSession?.tier !== "The Mogul";
 
-  // --- RECOVERY LOGIC ---
   useEffect(() => {
     if (engineeredVocal) {
       setStatus("success");
@@ -71,7 +69,6 @@ export default function Room05_VocalSuite() {
     }
   }, [engineeredVocal]);
 
-  // --- TOKEN SECURITY GATE ---
   useEffect(() => {
     const checkTokenStatus = async () => {
       if (engineeredVocal) {
@@ -95,7 +92,6 @@ export default function Room05_VocalSuite() {
     checkTokenStatus();
   }, [userSession, engineeredVocal]);
 
-  // --- AUTO-SAVE MIX TWEAKS ---
   useEffect(() => {
     updateMixParams({
       activeChain,
@@ -121,7 +117,6 @@ export default function Room05_VocalSuite() {
     }
   };
 
-  // --- UI HANDLER: SELECT CHAIN ---
   const handleChainSelect = (chainId: string) => {
     setActiveChain(chainId);
     const preset = VOCAL_CHAINS.find(c => c.id === chainId) || VOCAL_CHAINS[0];
@@ -130,42 +125,78 @@ export default function Room05_VocalSuite() {
     setReverbMix(preset.reverb);
   };
 
-  // --- AUDIO GRAPH INIT ---
+  // --- AUDIO GRAPH INIT & STEM ROUTING ---
   useEffect(() => {
     if (!vocalStems.length) return;
-    const ctx = new window.AudioContext(); 
-    audioCtxRef.current = ctx;
-    const masterGain = ctx.createGain(); 
-    const convolver = ctx.createConvolver(); 
-    convolver.buffer = createReverb(ctx, 2.5, 2.0);
-    const wetGain = ctx.createGain(); 
-    const dryGain = ctx.createGain(); 
-    wetGainRef.current = wetGain; dryGainRef.current = dryGain;
+    
+    // Only init the context once
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      const ctx = new window.AudioContext(); 
+      audioCtxRef.current = ctx;
+      const masterGain = ctx.createGain(); 
+      const convolver = ctx.createConvolver(); 
+      convolver.buffer = createReverb(ctx, 2.5, 2.0);
+      const wetGain = ctx.createGain(); 
+      const dryGain = ctx.createGain(); 
+      wetGainRef.current = wetGain; dryGainRef.current = dryGain;
 
-    eqBandsRef.current = FREQUENCIES.map((freq, i) => { 
-      const band = ctx.createBiquadFilter(); 
-      band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; 
-      band.frequency.value = freq; return band; 
-    });
-    const compressor = ctx.createDynamicsCompressor(); compRef.current = compressor;
-    const saturation = ctx.createWaveShaper(); saturation.curve = makeDistortionCurve(presenceIntensity / 2); saturation.oversample = '4x'; saturationRef.current = saturation;
+      eqBandsRef.current = FREQUENCIES.map((freq, i) => { 
+        const band = ctx.createBiquadFilter(); 
+        band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; 
+        band.frequency.value = freq; return band; 
+      });
+      const compressor = ctx.createDynamicsCompressor(); compRef.current = compressor;
+      const saturation = ctx.createWaveShaper(); saturation.curve = makeDistortionCurve(presenceIntensity / 2); saturation.oversample = '4x'; saturationRef.current = saturation;
+      
+      masterGain.connect(dryGain); 
+      let prevNode: AudioNode = dryGain; 
+      eqBandsRef.current.forEach(band => { prevNode.connect(band); prevNode = band; }); 
+      prevNode.connect(compressor); compressor.connect(saturation); saturation.connect(ctx.destination);
+      masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(ctx.destination);
+      
+      // Store masterGain reference to allow dynamic stem connection
+      (ctx as any)._masterGain = masterGain;
+    }
     
-    masterGain.connect(dryGain); 
-    let prevNode: AudioNode = dryGain; 
-    eqBandsRef.current.forEach(band => { prevNode.connect(band); prevNode = band; }); 
-    prevNode.connect(compressor); compressor.connect(saturation); saturation.connect(ctx.destination);
-    masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(ctx.destination);
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
     
+    const masterGain = (ctx as any)._masterGain;
+
     vocalStems.forEach(stem => { 
       const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement; 
-      if (el && !(el as any)._routed) { 
-        try { ctx.createMediaElementSource(el).connect(masterGain); (el as any)._routed = true; } catch(e) {}
+      if (el) {
+        // 🚨 NEW STEM SETUP: Create MediaElementSource and custom Stem GainNode
+        if (!(el as any)._routed) { 
+          try { 
+            const source = ctx.createMediaElementSource(el);
+            const stemGain = ctx.createGain();
+            stemGain.gain.value = stem.isMuted ? 0 : (stem.volume ?? 1);
+            source.connect(stemGain);
+            stemGain.connect(masterGain);
+            
+            (el as any)._routed = true; 
+            (el as any)._gainNode = stemGain;
+          } catch(e) {}
+        } else {
+          // 🚨 EXISTING STEM: Dynamically update volume/mute if it changed in Room 4
+          if ((el as any)._gainNode) {
+            (el as any)._gainNode.gain.value = stem.isMuted ? 0 : (stem.volume ?? 1);
+          }
+        }
       }
     });
-    return () => { if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close(); };
-  }, [vocalStems]);
 
-  // --- REAL-TIME AUDIO UPDATES ---
+  }, [vocalStems]); // Re-run when vocalStems state changes from store
+
+  // Clean up AudioContext strictly on unmount
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close();
+    }
+  }, []);
+
+  // --- MIX BUS REAL-TIME UPDATES ---
   useEffect(() => {
     if (wetGainRef.current && dryGainRef.current) { wetGainRef.current.gain.value = reverbMix / 100; dryGainRef.current.gain.value = 1 - (reverbMix / 100); }
     if (eqBandsRef.current.length === 10) eqBandsRef.current.forEach((band, i) => { band.gain.value = eqGains[i]; });
@@ -224,6 +255,9 @@ export default function Room05_VocalSuite() {
       const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
 
       decodedBuffers.forEach((buf, i) => { 
+        // 🚨 SKIP RENDERING IF STEM WAS MUTED
+        if (vocalStems[i].isMuted) return;
+
         const source = offlineCtx.createBufferSource(); 
         source.buffer = buf; 
         

@@ -44,6 +44,7 @@ export interface VocalStem {
   blob?: Blob;
   volume: number; 
   offsetBars?: number;
+  isMuted?: boolean; // <-- SURGICAL ADDITION: Global Mute Tracking
 }
 
 export interface FinalMaster {
