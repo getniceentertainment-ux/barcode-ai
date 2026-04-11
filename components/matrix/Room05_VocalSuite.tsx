@@ -156,10 +156,13 @@ export default function Room05_VocalSuite() {
     prevNode.connect(compressor); compressor.connect(saturation); saturation.connect(ctx.destination);
     masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(ctx.destination);
     
+    useEffect(() => {
     vocalStems.forEach(stem => {
       const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
       if (el) {
-        el.volume = stem.volume ?? 1;
+        // DOM elements strictly require [0, 1]. Clamp it here to prevent the crash.
+        // The actual OfflineAudioContext mixdown will still respect the un-clamped >1.0 gain.
+        el.volume = Math.min(1, Math.max(0, stem.volume ?? 1));
         el.muted = !!stem.isMuted;
       }
     });
