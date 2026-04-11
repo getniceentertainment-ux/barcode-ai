@@ -128,7 +128,7 @@ interface MatrixState {
   removeVocalStem: (id: string) => void;
   updateStemVolume: (id: string, volume: number) => void;
   updateStemOffset: (id: string, offsetBars: number) => void;
-  toggleStemMute: (id: string) => void; // 🚨 ADDED GLOBAL MUTE
+  toggleStemMute: (id: string) => void;
 
   engineeredVocal: VocalStem | null;
   setEngineeredVocal: (stem: VocalStem | null) => void;
@@ -210,15 +210,10 @@ export const useMatrixStore = create<MatrixState>()(
       setMdxJobId: (id) => set({ mdxJobId: id }),
       setMdxStatus: (status) => set({ mdxStatus: status }),
       
-      // 🚨 SURGICAL FIX: The Race Condition Blocker
       grantAccess: async (session) => { 
-        // 1. Await the Cloud and Disk hydration BEFORE unlocking the UI.
-        // This prevents the React components from mounting, calling setActiveRoom, 
-        // and instantly overwriting the cloud vault with a blank state.
         await get().pullFromCloud(session.id);
         await get().hydrateDiskAudio();
         
-        // 2. Safely unlock the UI with all data populated
         set({ hasAccess: true, userSession: session });
       },
       
@@ -288,7 +283,6 @@ export const useMatrixStore = create<MatrixState>()(
         saveAudioToDisk('matrix_vocal_stems', newStems);
         return { vocalStems: newStems };
       }),
-      // 🚨 GLOBAL MUTE ACTION ADDED
       toggleStemMute: (id) => set((state) => {
         const newStems = state.vocalStems.map(s => s.id === id ? { ...s, isMuted: !s.isMuted } : s);
         saveAudioToDisk('matrix_vocal_stems', newStems);
@@ -354,29 +348,32 @@ export const useMatrixStore = create<MatrixState>()(
 
         set({ syncStatus: "saving" });
         
-        // 🚨 SURGICAL FIX: Strip blobs before cloud sync, but KEEP the Supabase URLs
+        // 🚨 SURGICAL FIX: We safely upload the canonical URLs to Supabase.
         const safeStemsForCloud = state.vocalStems.map(s => ({
             id: s.id,
             type: s.type,
-            url: s.url, // This must be the public Supabase URL
+            url: s.url, 
             volume: s.volume,
             offsetBars: s.offsetBars,
             isMuted: s.isMuted
         }));
 
         const session_state = {
-           audioData: state.audioData ? { ...state.audioData, blob: undefined } : null,                     
+           audioData: state.audioData,                     
            flowDNA: state.flowDNA,
            blueprint: state.blueprint, 
            generatedLyrics: state.generatedLyrics,
            quantizedLines: state.quantizedLines,
-           vocalStems: safeStemsForCloud, // <-- Safely injected into cloud payload
            gwTitle: state.gwTitle, gwPrompt: state.gwPrompt, gwStyle: state.gwStyle, gwPocket: state.gwPocket, 
            gwMotive: state.gwMotive, gwStruggle: state.gwStruggle, gwHustle: state.gwHustle,
            gwStrikeZone: state.gwStrikeZone, gwHookType: state.gwHookType, gwFlowEvolution: state.gwFlowEvolution,
            mixParams: state.mixParams, anrData: state.anrData, activeProjectId: state.activeProjectId,
            isProjectFinalized: state.isProjectFinalized, activeRoom: state.activeRoom,
-        };
+           
+           // 🚨 THESE 3 LINES ARE MANDATORY TO SAVE AUDIO TO THE CLOUD
+           vocalStems: state.vocalStems.map(s => ({ ...s, blob: undefined })),
+           engineeredVocal: state.engineeredVocal ? { ...state.engineeredVocal, blob: undefined } : null,
+           finalMaster: state.finalMaster ? { ...state.finalMaster, blob: undefined } : null,
 
         try {
           const { error } = await supabase
@@ -421,43 +418,39 @@ export const useMatrixStore = create<MatrixState>()(
           const savedEngineered = await loadAudioFromDisk('matrix_engineered_vocal'); 
           const savedMaster = await loadAudioFromDisk('matrix_final_master'); 
 
-          if (savedBeat && (savedBeat as any).blob) {
-            set({ audioData: { ...(savedBeat as any), url: URL.createObjectURL((savedBeat as any).blob) } });
-          } else if (savedBeat) {
+          // 🚨 SURGICAL FIX: Directly restore objects from disk WITHOUT overwriting canonical URLs
+          if (savedBeat) {
              set({ audioData: savedBeat as ExtendedAudioAnalysis });
           }
 
-          // 🚨 SURGICAL FIX: The Blob Fallback Pipeline
           if (savedStems && Array.isArray(savedStems) && savedStems.length > 0) {
-            // Local DB has the blobs
-            const revivedStems = savedStems.map((stem: any) => ({ ...stem, url: stem.blob ? URL.createObjectURL(stem.blob) : stem.url }));
-            set({ vocalStems: revivedStems });
+            // Local DB has the blobs, restore them natively
+            set({ vocalStems: savedStems });
           } else if (state.vocalStems.length > 0) {
-            // Local DB failed, but Cloud Sync has the URLs. 
-            // Rebuild the blobs by downloading them from the Supabase URLs.
+            // Local DB wiped, but Cloud Sync has the permanent URLs. 
+            // Rebuild the blobs by dynamically downloading them from the Supabase URLs.
             console.log("Local blobs missing. Hydrating stems from Cloud URLs...");
             const revivedStems = await Promise.all(state.vocalStems.map(async (stem: any) => {
-                if (!stem.url || stem.url.startsWith('blob:')) return stem; // Invalid or temporary URL
+                if (!stem.url || stem.url.startsWith('blob:')) return stem; 
                 try {
                     const resp = await fetch(stem.url);
                     if (!resp.ok) return stem;
                     const blob = await resp.blob();
-                    return { ...stem, blob: blob, url: URL.createObjectURL(blob) };
+                    return { ...stem, blob: blob };
                 } catch(e) {
                     return stem;
                 }
             }));
             set({ vocalStems: revivedStems });
-            saveAudioToDisk('matrix_vocal_stems', revivedStems); // Resecure them to local disk
+            saveAudioToDisk('matrix_vocal_stems', revivedStems); 
           }
 
           if (savedEngineered && Array.isArray(savedEngineered) && savedEngineered.length > 0) {
-            const engStem = savedEngineered[0];
-            set({ engineeredVocal: { ...engStem, url: engStem.blob ? URL.createObjectURL(engStem.blob) : engStem.url }});
+            set({ engineeredVocal: savedEngineered[0] });
           }
 
-          if (savedMaster && (savedMaster as any).blob) {
-             set({ finalMaster: { ...(savedMaster as any), url: URL.createObjectURL((savedMaster as any).blob) } });
+          if (savedMaster) {
+             set({ finalMaster: savedMaster as FinalMaster });
           }
         } catch (e) { console.error("Failed to hydrate audio from disk", e); }
       }
