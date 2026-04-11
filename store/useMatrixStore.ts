@@ -416,9 +416,6 @@ export const useMatrixStore = create<MatrixState>()(
           let savedMaster = await loadAudioFromDisk('matrix_final_master'); 
 
           // --- 🚨 SURGICAL FIX: THE BLOB REBUILDER ---
-          // If the local disk corrupted the Blob into a simple object {}, this intercepts it, 
-          // downloads the raw audio from Supabase ONE TIME during boot, and permanently 
-          // locks it into the Zustand store as a true Blob instance. Zero latency across rooms.
           const enforceBlob = async (item: any) => {
             if (!item) return item;
             if (item.blob instanceof Blob) return item; 
@@ -430,26 +427,29 @@ export const useMatrixStore = create<MatrixState>()(
             return item;
           };
 
-          if (savedBeat) {
-             savedBeat = await enforceBlob(savedBeat);
-             set({ audioData: savedBeat as ExtendedAudioAnalysis });
+          // 🚨 SURGICAL FIX: Apply Cloud Fallbacks to EVERYTHING before enforcing blobs
+          const targetBeat = savedBeat || state.audioData;
+          if (targetBeat) {
+             const rebuiltBeat = await enforceBlob(targetBeat);
+             set({ audioData: rebuiltBeat as ExtendedAudioAnalysis });
           }
 
           const targetStems = (savedStems && Array.isArray(savedStems) && savedStems.length > 0) ? savedStems : state.vocalStems;
           if (targetStems && targetStems.length > 0) {
              const rebuiltStems = await Promise.all(targetStems.map(enforceBlob));
              set({ vocalStems: rebuiltStems });
-             // Resecure the mathematically repaired blobs back to the local disk
              saveAudioToDisk('matrix_vocal_stems', rebuiltStems); 
           }
 
-          if (savedEngineered && Array.isArray(savedEngineered) && savedEngineered.length > 0) {
-            const engStem = await enforceBlob(savedEngineered[0]);
+          const targetEngineered = (savedEngineered && Array.isArray(savedEngineered) && savedEngineered.length > 0) ? savedEngineered[0] : state.engineeredVocal;
+          if (targetEngineered) {
+            const engStem = await enforceBlob(targetEngineered);
             set({ engineeredVocal: engStem });
           }
 
-          if (savedMaster) {
-             const rebuiltMaster = await enforceBlob(savedMaster);
+          const targetMaster = savedMaster || state.finalMaster;
+          if (targetMaster) {
+             const rebuiltMaster = await enforceBlob(targetMaster);
              set({ finalMaster: rebuiltMaster as FinalMaster });
           }
         } catch (e) { console.error("Failed to hydrate audio from disk", e); }
