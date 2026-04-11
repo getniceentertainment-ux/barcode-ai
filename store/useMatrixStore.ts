@@ -4,14 +4,12 @@ import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession, Final
 import { saveAudioToDisk, loadAudioFromDisk } from '../lib/dawStorage';
 import { supabase } from '../lib/supabase';
 
-// 🚨 GLOBALLY PREVENTS RAPID-FIRE DATABASE WIPES
 let cloudSaveTimeout: number | undefined;
 
-// --- SURGICAL ADDITION: EXTENDED DSP TRUTH ---
 export type ExtendedAudioAnalysis = AudioAnalysis & {
   dynamic_array?: number[];
   contour?: string;
-  blob?: any; // 🚨 TS FIX: Allows the beat to temporarily hold the Blob in memory
+  blob?: Blob;
 };
 
 export interface QuantizedSyllable {
@@ -352,14 +350,14 @@ export const useMatrixStore = create<MatrixState>()(
         if (!userId) return;
 
         set({ syncStatus: "saving" });
-
+        
         // 🚨 1. RAPID-FIRE LOCK (Wait 1.5s before hitting the database)
         if (cloudSaveTimeout) {
           window.clearTimeout(cloudSaveTimeout);
         }
 
         cloudSaveTimeout = window.setTimeout(async () => {
-          const latestState = get(); 
+          const latestState = get(); // Grab the exact state AFTER the timer finishes
 
           // 🚨 2. SAFELY MAP URLS (Strip heavy Blobs to prevent JSONB crashes)
           const safeStemsForCloud = latestState.vocalStems.map(s => ({
@@ -386,6 +384,8 @@ export const useMatrixStore = create<MatrixState>()(
              gwStrikeZone: latestState.gwStrikeZone, gwHookType: latestState.gwHookType, gwFlowEvolution: latestState.gwFlowEvolution,
              mixParams: latestState.mixParams, anrData: latestState.anrData, activeProjectId: latestState.activeProjectId,
              isProjectFinalized: latestState.isProjectFinalized, activeRoom: latestState.activeRoom,
+             
+             // THESE MUST BE HERE TO SURVIVE LOGOUT!
              vocalStems: safeStemsForCloud, 
              engineeredVocal: safeEngineeredVocal,
              finalMaster: safeFinalMaster
@@ -409,7 +409,7 @@ export const useMatrixStore = create<MatrixState>()(
             set({ syncStatus: "error" });
             setTimeout(() => set({ syncStatus: "idle" }), 5000);
           }
-        }, 1500); 
+        }, 1500); // End of timer
       },
 
       pullFromCloud: async (userId: string) => {
@@ -427,12 +427,12 @@ export const useMatrixStore = create<MatrixState>()(
           await get().syncLedger();
           const state = get();
           
-          let savedBeat = await loadAudioFromDisk('matrix_audio_data');
-          let savedStems = await loadAudioFromDisk('matrix_vocal_stems');
-          let savedEngineered = await loadAudioFromDisk('matrix_engineered_vocal'); 
-          let savedMaster = await loadAudioFromDisk('matrix_final_master'); 
+          const savedBeat = await loadAudioFromDisk('matrix_audio_data');
+          const savedStems = await loadAudioFromDisk('matrix_vocal_stems');
+          const savedEngineered = await loadAudioFromDisk('matrix_engineered_vocal'); 
+          const savedMaster = await loadAudioFromDisk('matrix_final_master'); 
 
-          // --- 🚨 THE UPGRADED BLOB ENFORCER ---
+
           const enforceBlob = async (item: any) => {
             if (!item) return item;
             try {
@@ -457,52 +457,86 @@ export const useMatrixStore = create<MatrixState>()(
             return item;
           };
 
-          // --- 1. BEAT MERGE ---
-          let mergedBeat = state.audioData || savedBeat;
-          if (mergedBeat) {
-             const rebuiltBeat = await enforceBlob(mergedBeat);
-             set({ audioData: rebuiltBeat as ExtendedAudioAnalysis });
+          // --- 1. BEAT MERGE (Strictly local, needs a fresh valid Blob URL) ---
+          let targetBeat = state.audioData;
+          if (savedBeat && (savedBeat as any).blob) {
+             targetBeat = { 
+                 ...(state.audioData || savedBeat as any), 
+                 blob: (savedBeat as any).blob,
+                 url: URL.createObjectURL((savedBeat as any).blob) // Fresh URL so WaveSurfer doesn't crash
+             };
+          } else if (targetBeat && targetBeat.url && !targetBeat.url.startsWith('blob:')) {
+             try {
+                 const resp = await fetch(targetBeat.url);
+                 if (resp.ok) targetBeat.blob = await resp.blob();
+             } catch(e) {}
           }
+          if (targetBeat) set({ audioData: targetBeat });
 
-          // --- 2. STEMS MERGE ---
+          // --- 2. STEMS MERGE (Preserve Supabase URLs, inject local Blobs silently) ---
           const cloudStems = state.vocalStems || [];
           const localStems = (savedStems && Array.isArray(savedStems)) ? savedStems : [];
 
-          let mergedStems = cloudStems.length > 0 ? cloudStems.map((cStem: any) => {
-            const localMatch = localStems.find((l: any) => l.id === cStem.id);
-            return { ...cStem, blob: localMatch?.blob }; 
-          }) : localStems;
-
-          if (mergedStems.length > 0) {
-             const rebuiltStems = await Promise.all(mergedStems.map(enforceBlob));
+          if (cloudStems.length > 0) {
+             const rebuiltStems = await Promise.all(cloudStems.map(async (cStem: any) => {
+                 let finalStem = { ...cStem };
+                 const localMatch = localStems.find((l: any) => l.id === cStem.id);
+                 
+                 if (localMatch && localMatch.blob) {
+                     finalStem.blob = localMatch.blob;
+                 } else if (finalStem.url && !finalStem.url.startsWith('blob:')) {
+                     try {
+                         const resp = await fetch(finalStem.url);
+                         if (resp.ok) finalStem.blob = await resp.blob();
+                     } catch(e) {}
+                 }
+                 // 🚨 CRITICAL FIX: We DO NOT overwrite finalStem.url with a blob: URL here.
+                 // It must stay the Supabase URL so pushToCloud doesn't poison the database.
+                 return finalStem;
+             }));
              set({ vocalStems: rebuiltStems });
              saveAudioToDisk('matrix_vocal_stems', rebuiltStems); 
+          } else if (localStems.length > 0) {
+             // Fallback recovery if cloud array was wiped
+             set({ vocalStems: localStems });
           }
 
           // --- 3. ENGINEERED MERGE ---
           const cloudEng = state.engineeredVocal;
           const localEng = (savedEngineered && Array.isArray(savedEngineered) && savedEngineered.length > 0) ? savedEngineered[0] : null;
           
-          let mergedEng = cloudEng || localEng;
-          if (cloudEng && localEng && cloudEng.id === localEng.id) {
-             mergedEng = { ...cloudEng, blob: localEng.blob };
-          }
-          if (mergedEng) {
-            const rebuiltEng = await enforceBlob(mergedEng);
-            set({ engineeredVocal: rebuiltEng });
+          if (cloudEng) {
+             let finalEng = { ...cloudEng };
+             if (localEng && localEng.id === cloudEng.id && localEng.blob) {
+                 finalEng.blob = localEng.blob;
+             } else if (finalEng.url && !finalEng.url.startsWith('blob:')) {
+                 try {
+                     const resp = await fetch(finalEng.url);
+                     if (resp.ok) finalEng.blob = await resp.blob();
+                 } catch(e) {}
+             }
+             set({ engineeredVocal: finalEng });
+          } else if (localEng) {
+             set({ engineeredVocal: localEng });
           }
 
           // --- 4. MASTER MERGE ---
           const cloudMaster = state.finalMaster;
           const localMaster = savedMaster as any;
           
-          let mergedMaster = cloudMaster || localMaster;
-          if (cloudMaster && localMaster && cloudMaster.id === localMaster.id) {
-             mergedMaster = { ...cloudMaster, blob: localMaster.blob };
-          }
-          if (mergedMaster) {
-             const rebuiltMaster = await enforceBlob(mergedMaster);
-             set({ finalMaster: rebuiltMaster as FinalMaster });
+          if (cloudMaster) {
+             let finalMaster = { ...cloudMaster };
+             if (localMaster && localMaster.id === cloudMaster.id && localMaster.blob) {
+                 finalMaster.blob = localMaster.blob;
+             } else if (finalMaster.url && !finalMaster.url.startsWith('blob:')) {
+                 try {
+                     const resp = await fetch(finalMaster.url);
+                     if (resp.ok) finalMaster.blob = await resp.blob();
+                 } catch(e) {}
+             }
+             set({ finalMaster: finalMaster as FinalMaster });
+          } else if (localMaster) {
+             set({ finalMaster: localMaster as FinalMaster });
           }
 
         } catch (e) { console.error("Failed to hydrate audio from disk", e); }
