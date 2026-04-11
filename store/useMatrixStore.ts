@@ -4,17 +4,15 @@ import { AudioAnalysis, FlowDNA, BlueprintSection, VocalStem, UserSession, Final
 import { saveAudioToDisk, loadAudioFromDisk } from '../lib/dawStorage';
 import { supabase } from '../lib/supabase';
 
-// --- SURGICAL ADDITION: EXTENDED DSP TRUTH ---
 export type ExtendedAudioAnalysis = AudioAnalysis & {
   dynamic_array?: number[];
   contour?: string;
 };
 
-// --- NEW: THE QUANTIZER DATA STRUCTURES ---
 export interface QuantizedSyllable {
   id: string;
   word: string;
-  slot: number; // 0 to 15 (16th notes)
+  slot: number; 
   startTime: number;
   duration: number;
   isWordEnd?: boolean;
@@ -122,7 +120,6 @@ interface MatrixState {
   generatedLyrics: string | null;
   setGeneratedLyrics: (lyrics: string) => void;
 
-  // --- NEW: THE QUANTIZER HUD ---
   quantizedLines: QuantizedLine[];
   setQuantizedLines: (lines: QuantizedLine[]) => void;
 
@@ -131,7 +128,7 @@ interface MatrixState {
   removeVocalStem: (id: string) => void;
   updateStemVolume: (id: string, volume: number) => void;
   updateStemOffset: (id: string, offsetBars: number) => void;
-  toggleStemMute: (id: string) => void;
+  toggleStemMute: (id: string) => void; // 🚨 ADDED GLOBAL MUTE
 
   engineeredVocal: VocalStem | null;
   setEngineeredVocal: (stem: VocalStem | null) => void;
@@ -179,8 +176,8 @@ export const useMatrixStore = create<MatrixState>()(
       gwHustle: "",
 
       gwStrikeZone: "snare",
-      gwHookType: "auto", // Default to Neural Match
-      gwFlowEvolution: "auto", // Default to Neural Match
+      gwHookType: "auto", 
+      gwFlowEvolution: "auto", 
       
       mixParams: {
         activeChain: "getnice_eq",
@@ -199,7 +196,7 @@ export const useMatrixStore = create<MatrixState>()(
       
       blueprint: [],
       generatedLyrics: null,
-      quantizedLines: [], // <-- Initialize
+      quantizedLines: [], 
       vocalStems: [],
       engineeredVocal: null, 
       finalMaster: null,
@@ -212,6 +209,19 @@ export const useMatrixStore = create<MatrixState>()(
       setRadioTrack: (track) => set({ radioTrack: track }),
       setMdxJobId: (id) => set({ mdxJobId: id }),
       setMdxStatus: (status) => set({ mdxStatus: status }),
+      
+      // 🚨 SURGICAL FIX: The Race Condition Blocker
+      grantAccess: async (session) => { 
+        // 1. Await the Cloud and Disk hydration BEFORE unlocking the UI.
+        // This prevents the React components from mounting, calling setActiveRoom, 
+        // and instantly overwriting the cloud vault with a blank state.
+        await get().pullFromCloud(session.id);
+        await get().hydrateDiskAudio();
+        
+        // 2. Safely unlock the UI with all data populated
+        set({ hasAccess: true, userSession: session });
+      },
+      
       setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
       setGwTitle: (t) => set({ gwTitle: t }),
@@ -232,22 +242,13 @@ export const useMatrixStore = create<MatrixState>()(
 
       setBlueprint: (blueprint) => set({ blueprint }),
       setGeneratedLyrics: (lyrics) => set({ generatedLyrics: lyrics }),
-      setQuantizedLines: (lines) => set({ quantizedLines: lines }), // <-- Setter
+      setQuantizedLines: (lines) => set({ quantizedLines: lines }), 
 
       setEngineeredVocal: (stem) => {
         set({ engineeredVocal: stem });
         saveAudioToDisk('matrix_engineered_vocal', stem ? [stem] : []); 
       },   
       
-      // 🚨 SURGICAL FIX: The 1-2 Punch. Cloud restores metadata, Disk restores the heavy Audio Blobs
-      grantAccess: (session) => { 
-        set({ hasAccess: true, userSession: session });
-        (async () => {
-          await get().pullFromCloud(session.id);
-          await get().hydrateDiskAudio();
-        })();
-      },
-
       setActiveRoom: (roomId) => {
         set((state) => {
           if (state.isProjectFinalized && ["01", "02", "03", "04", "05"].includes(roomId)) {
@@ -287,6 +288,7 @@ export const useMatrixStore = create<MatrixState>()(
         saveAudioToDisk('matrix_vocal_stems', newStems);
         return { vocalStems: newStems };
       }),
+      // 🚨 GLOBAL MUTE ACTION ADDED
       toggleStemMute: (id) => set((state) => {
         const newStems = state.vocalStems.map(s => s.id === id ? { ...s, isMuted: !s.isMuted } : s);
         saveAudioToDisk('matrix_vocal_stems', newStems);
@@ -352,14 +354,8 @@ export const useMatrixStore = create<MatrixState>()(
 
         set({ syncStatus: "saving" });
         
-        // 🚨 REPAIRED: Strictly strip blobs using ES6 destructuring to satisfy PostgreSQL JSONB
-        const safeAudioData = state.audioData ? (({ blob, ...rest }: any) => rest)(state.audioData) : null;
-        const safeVocalStems = state.vocalStems.map(({ blob, ...rest }) => rest);
-        const safeEngineeredVocal = state.engineeredVocal ? (({ blob, ...rest }) => rest)(state.engineeredVocal) : null;
-        const safeFinalMaster = state.finalMaster ? (({ blob, ...rest }) => rest)(state.finalMaster) : null;
-
         const session_state = {
-           audioData: safeAudioData,                     
+           audioData: state.audioData,                     
            flowDNA: state.flowDNA,
            blueprint: state.blueprint, 
            generatedLyrics: state.generatedLyrics,
@@ -369,10 +365,6 @@ export const useMatrixStore = create<MatrixState>()(
            gwStrikeZone: state.gwStrikeZone, gwHookType: state.gwHookType, gwFlowEvolution: state.gwFlowEvolution,
            mixParams: state.mixParams, anrData: state.anrData, activeProjectId: state.activeProjectId,
            isProjectFinalized: state.isProjectFinalized, activeRoom: state.activeRoom,
-           // Safely serialized audio ledgers
-           vocalStems: safeVocalStems,
-           engineeredVocal: safeEngineeredVocal,
-           finalMaster: safeFinalMaster
         };
 
         try {
@@ -416,45 +408,24 @@ export const useMatrixStore = create<MatrixState>()(
           const savedEngineered = await loadAudioFromDisk('matrix_engineered_vocal'); 
           const savedMaster = await loadAudioFromDisk('matrix_final_master'); 
 
-          // 🚨 REPAIRED: Race condition fixed. Grab state AFTER pullFromCloud might have run.
-          const state = get();
-
           if (savedBeat && (savedBeat as any).blob) {
-            set({ audioData: { ...(state.audioData || savedBeat as any), url: URL.createObjectURL((savedBeat as any).blob) } });
+            set({ audioData: { ...(savedBeat as any), url: URL.createObjectURL((savedBeat as any).blob) } });
           } else if (savedBeat) {
-             set({ audioData: (state.audioData || savedBeat as ExtendedAudioAnalysis) });
+             set({ audioData: savedBeat as ExtendedAudioAnalysis });
           }
 
-          // Merge cloud truth (URLs/Metadata) with local IndexedDB (Zero-latency Blobs)
-          const cloudStems = state.vocalStems || [];
-          const localStems = (savedStems && Array.isArray(savedStems)) ? savedStems : [];
-
-          if (cloudStems.length > 0 || localStems.length > 0) {
-            const mergedStems = cloudStems.length > 0 ? cloudStems.map((cloudStem: any) => {
-              const localMatch = localStems.find((l: any) => l.id === cloudStem.id);
-              return {
-                ...cloudStem,
-                blob: localMatch?.blob, 
-                url: localMatch?.blob ? URL.createObjectURL(localMatch.blob) : cloudStem.url 
-              };
-            }) : localStems.map((stem: any) => ({ ...stem, url: stem.blob ? URL.createObjectURL(stem.blob) : stem.url }));
-
-            set({ vocalStems: mergedStems });
+          if (savedStems && Array.isArray(savedStems)) {
+            const revivedStems = savedStems.map((stem: any) => ({ ...stem, url: stem.blob ? URL.createObjectURL(stem.blob) : stem.url }));
+            set({ vocalStems: revivedStems });
           }
 
-          const cloudEng = state.engineeredVocal;
-          const localEng = (savedEngineered && Array.isArray(savedEngineered) && savedEngineered.length > 0) ? savedEngineered[0] : null;
-          
-          if (cloudEng || localEng) {
-            if (cloudEng) {
-              set({ engineeredVocal: { ...cloudEng, blob: localEng?.blob, url: localEng?.blob ? URL.createObjectURL(localEng.blob) : cloudEng.url }});
-            } else if (localEng) {
-              set({ engineeredVocal: { ...localEng, url: localEng.blob ? URL.createObjectURL(localEng.blob) : localEng.url }});
-            }
+          if (savedEngineered && Array.isArray(savedEngineered) && savedEngineered.length > 0) {
+            const engStem = savedEngineered[0];
+            set({ engineeredVocal: { ...engStem, url: engStem.blob ? URL.createObjectURL(engStem.blob) : engStem.url }});
           }
 
           if (savedMaster && (savedMaster as any).blob) {
-             set({ finalMaster: { ...(state.finalMaster || savedMaster as any), url: URL.createObjectURL((savedMaster as any).blob) } });
+             set({ finalMaster: { ...(savedMaster as any), url: URL.createObjectURL((savedMaster as any).blob) } });
           }
         } catch (e) { console.error("Failed to hydrate audio from disk", e); }
       }
