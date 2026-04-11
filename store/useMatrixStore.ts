@@ -362,6 +362,9 @@ export const useMatrixStore = create<MatrixState>()(
            gwStrikeZone: state.gwStrikeZone, gwHookType: state.gwHookType, gwFlowEvolution: state.gwFlowEvolution,
            mixParams: state.mixParams, anrData: state.anrData, activeProjectId: state.activeProjectId,
            isProjectFinalized: state.isProjectFinalized, activeRoom: state.activeRoom,
+           vocalStems: state.vocalStems.map(s => ({ ...s, blob: undefined })),
+           engineeredVocal: state.engineeredVocal ? { ...state.engineeredVocal, blob: undefined } : null,
+           finalMaster: state.finalMaster ? { ...state.finalMaster, blob: undefined } : null,
         };
 
         try {
