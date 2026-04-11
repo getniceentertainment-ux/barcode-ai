@@ -7,9 +7,8 @@ import { supabase } from "../../lib/supabase";
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
 
-// --- PROPRIETARY DSP CONSTANTS IMPORTED FROM ROOM 05 ---
-// 🚨 NOTE: These are just the 10 fixed bands of the graphic equalizer. 
-// The actual "boosts and cuts" come dynamically from your Room 05 sliders.
+// --- 🚨 SURGICAL FIX: PROPRIETARY DSP CONSTANTS IMPORTED FROM ROOM 05 ---
+// Room 6 MUST know how to build the EQ and Reverb to apply your Room 5 settings
 const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
 const VOCAL_CHAINS = [
@@ -149,7 +148,7 @@ export default function Room06_Mastering() {
       const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
 
       // 🚨 1. PULL DYNAMIC MIX PARAMS FROM GLOBAL STORE
-      // This retrieves the EXACT slider positions you set in Room 5
+      // This pulls the exact EQ, Reverb, and Saturation settings you locked in Room 5
       const preset = VOCAL_CHAINS.find(c => c.id === mixParams?.activeChain) || VOCAL_CHAINS[0];
       const eqGains = (mixParams?.eqGains && mixParams.eqGains.length === 10) ? mixParams.eqGains : preset.eq;
       const presenceIntensity = mixParams?.presenceIntensity ?? preset.presence;
@@ -182,7 +181,7 @@ export default function Room06_Mastering() {
       vocalBus.connect(dryGain);
       let prevNode: AudioNode = dryGain;
       
-      // APPLY CUSTOM EQ GAINS TO THE 10 BANDS
+      // 🚨 APPLY CUSTOM EQ GAINS TO THE 10 BANDS
       FREQUENCIES.forEach((freq, i) => {
           const band = ctx.createBiquadFilter();
           band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking";
