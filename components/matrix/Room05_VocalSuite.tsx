@@ -304,34 +304,44 @@ export default function Room05_VocalSuite() {
     try {
       if (isNonMogul && userSession?.id) {
         const { error } = await supabase.from('profiles').update({ has_engineering_token: false }).eq('id', userSession.id);
-        if (error) throw error;
-        setHasToken(false); 
-      }
+      if (error) throw error;
+      setHasToken(false); 
+    }
 
-      const tmpCtx = new window.AudioContext(); const decodedBuffers: AudioBuffer[] = []; let maxDuration = 0;
-      for (const stem of vocalStems) { const resp = await fetch(stem.url); const audioBuf = await tmpCtx.decodeAudioData(await resp.arrayBuffer()); decodedBuffers.push(audioBuf); if (audioBuf.duration > maxDuration) maxDuration = audioBuf.duration; }
-      
-      const offlineCtx = new OfflineAudioContext(2, tmpCtx.sampleRate * maxDuration, tmpCtx.sampleRate);
-      const masterGain = offlineCtx.createGain(); const convolver = offlineCtx.createConvolver(); convolver.buffer = createReverb(offlineCtx, 2.5, 2.0);
-      const wetGain = offlineCtx.createGain(); const dryGain = offlineCtx.createGain(); 
-      wetGain.gain.value = reverbMix / 100; dryGain.gain.value = 1 - (reverbMix / 100);
-      
-      const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
-      const offlineComp = offlineCtx.createDynamicsCompressor(); offlineComp.ratio.value = preset.comp.ratio; offlineComp.attack.value = preset.comp.attack; offlineComp.release.value = preset.comp.release; offlineComp.knee.value = preset.comp.knee; offlineComp.threshold.value = preset.comp.threshold;
-      const offlineSaturation = offlineCtx.createWaveShaper(); offlineSaturation.curve = makeDistortionCurve(presenceIntensity / 2);
-      
-      masterGain.connect(dryGain); let prevOfflineNode: AudioNode = dryGain; 
-      FREQUENCIES.forEach((freq, i) => { const band = offlineCtx.createBiquadFilter(); band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; band.frequency.value = freq; band.gain.value = eqGains[i]; prevOfflineNode.connect(band); prevOfflineNode = band; });
-      prevOfflineNode.connect(offlineComp); offlineComp.connect(offlineSaturation); offlineSaturation.connect(offlineCtx.destination);
-      masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(offlineCtx.destination);
-      
-      // 🚨 ALIGN EXACT MATH FOR RENDER
-      const trackDuration = audioData?.duration || duration || 128;
-      const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
-      const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
-      const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
+    // 🚨 SURGICAL FIX: Calculate precise math BEFORE rendering so we can size the engine properly
+    const trackDuration = audioData?.duration || duration || 128;
+    const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
+    const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
+    const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
 
-      decodedBuffers.forEach((buf, i) => { 
+    const tmpCtx = new window.AudioContext(); const decodedBuffers: AudioBuffer[] = []; let maxDuration = 0;
+    for (const stem of vocalStems) { 
+      const resp = await fetch(stem.url); 
+      const audioBuf = await tmpCtx.decodeAudioData(await resp.arrayBuffer()); 
+      decodedBuffers.push(audioBuf); 
+      
+      // 🚨 SURGICAL FIX: Size the render canvas to include the offset, plus 3 seconds for reverb tails
+      const endTime = ((stem.offsetBars || 0) * secondsPerBar) + audioBuf.duration;
+      if (endTime > maxDuration) maxDuration = endTime; 
+    }
+    
+    maxDuration += 3.0; // Let the reverb naturally decay
+
+    const offlineCtx = new OfflineAudioContext(2, tmpCtx.sampleRate * maxDuration, tmpCtx.sampleRate);
+    const masterGain = offlineCtx.createGain(); const convolver = offlineCtx.createConvolver(); convolver.buffer = createReverb(offlineCtx, 2.5, 2.0);
+    const wetGain = offlineCtx.createGain(); const dryGain = offlineCtx.createGain(); 
+    wetGain.gain.value = reverbMix / 100; dryGain.gain.value = 1 - (reverbMix / 100);
+    
+    const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
+    const offlineComp = offlineCtx.createDynamicsCompressor(); offlineComp.ratio.value = preset.comp.ratio; offlineComp.attack.value = preset.comp.attack; offlineComp.release.value = preset.comp.release; offlineComp.knee.value = preset.comp.knee; offlineComp.threshold.value = preset.comp.threshold;
+    const offlineSaturation = offlineCtx.createWaveShaper(); offlineSaturation.curve = makeDistortionCurve(presenceIntensity / 2);
+    
+    masterGain.connect(dryGain); let prevOfflineNode: AudioNode = dryGain; 
+    FREQUENCIES.forEach((freq, i) => { const band = offlineCtx.createBiquadFilter(); band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; band.frequency.value = freq; band.gain.value = eqGains[i]; prevOfflineNode.connect(band); prevOfflineNode = band; });
+    prevOfflineNode.connect(offlineComp); offlineComp.connect(offlineSaturation); offlineSaturation.connect(offlineCtx.destination);
+    masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(offlineCtx.destination);
+    
+    decodedBuffers.forEach((buf, i) => { 
         if (vocalStems[i].isMuted) return;
 
         const source = offlineCtx.createBufferSource(); 
