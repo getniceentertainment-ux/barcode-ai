@@ -210,10 +210,13 @@ export const useMatrixStore = create<MatrixState>()(
       setMdxJobId: (id) => set({ mdxJobId: id }),
       setMdxStatus: (status) => set({ mdxStatus: status }),
       
-      // 🚨 SURGICAL FIX: Automatically pull the saved cloud session when user logs in
+      // 🚨 SURGICAL FIX: The 1-2 Punch. Cloud restores metadata, Disk restores the heavy Audio Blobs
       grantAccess: (session) => { 
         set({ hasAccess: true, userSession: session });
-        get().pullFromCloud(session.id);
+        (async () => {
+          await get().pullFromCloud(session.id);
+          await get().hydrateDiskAudio();
+        })();
       },
       
       setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
