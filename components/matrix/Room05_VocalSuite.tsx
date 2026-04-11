@@ -156,13 +156,13 @@ export default function Room05_VocalSuite() {
     prevNode.connect(compressor); compressor.connect(saturation); saturation.connect(ctx.destination);
     masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(ctx.destination);
     
-    vocalStems.forEach(stem => { 
-      const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement; 
-      if (el && !(el as any)._routed) { 
-        try { ctx.createMediaElementSource(el).connect(masterGain); (el as any)._routed = true; } catch(e) {}
+    vocalStems.forEach(stem => {
+      const el = document.getElementById(`audio-stem-${stem.id}`) as HTMLAudioElement;
+      if (el) {
+        el.volume = stem.volume ?? 1;
+        el.muted = !!stem.isMuted;
       }
     });
-    return () => { if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close(); };
   }, [vocalStems]);
 
   // --- REAL-TIME AUDIO UPDATES ---
@@ -224,16 +224,19 @@ export default function Room05_VocalSuite() {
       const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
 
       decodedBuffers.forEach((buf, i) => { 
+        const stem = vocalStems[i];
+        if (stem.isMuted) return; // <-- SURGICAL FIX: Skip muted stems in mixdown entirely
+
         const source = offlineCtx.createBufferSource(); 
         source.buffer = buf; 
         
         const stemGain = offlineCtx.createGain();
-        stemGain.gain.value = vocalStems[i].volume ?? 1;
+        stemGain.gain.value = stem.volume ?? 1; // Existing volume logic works perfectly here
         
         source.connect(stemGain);
         stemGain.connect(masterGain); 
         
-        const startTime = (vocalStems[i].offsetBars || 0) * secondsPerBar;
+        const startTime = (stem.offsetBars || 0) * secondsPerBar;
         source.start(startTime); 
       });
       
