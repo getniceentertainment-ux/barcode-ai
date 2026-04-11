@@ -55,7 +55,6 @@ export default function Room05_VocalSuite() {
   const [hasToken, setHasToken] = useState(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const beatAudioRef = useRef<HTMLAudioElement>(null);
   
   const wetGainRef = useRef<GainNode | null>(null);
   const dryGainRef = useRef<GainNode | null>(null);
@@ -63,10 +62,15 @@ export default function Room05_VocalSuite() {
   const compRef = useRef<DynamicsCompressorNode | null>(null);
   const saturationRef = useRef<WaveShaperNode | null>(null);
 
-  // 🚨 NEW REFS: Pure Mathematical AudioBuffer playback engine
+  // 🚨 NEW REFS: Pure Mathematical AudioBuffer playback engine (NO HTML5 AUDIO LATENCY)
+  const beatBufferRef = useRef<AudioBuffer | null>(null);
   const stemBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const stemGainNodesRef = useRef<Map<string, GainNode>>(new Map());
+  
+  const playbackStartCtxTimeRef = useRef<number>(0);
+  const playbackStartOffsetRef = useRef<number>(0);
+  const animationRef = useRef<number>();
 
   const isNonMogul = userSession?.tier !== "The Mogul";
 
@@ -101,12 +105,7 @@ export default function Room05_VocalSuite() {
   }, [userSession, engineeredVocal]);
 
   useEffect(() => {
-    updateMixParams({
-      activeChain,
-      presenceIntensity,
-      reverbMix,
-      eqGains
-    });
+    updateMixParams({ activeChain, presenceIntensity, reverbMix, eqGains });
   }, [activeChain, presenceIntensity, reverbMix, eqGains, updateMixParams]);
 
   const handlePurchaseToken = async () => {
@@ -114,8 +113,7 @@ export default function Room05_VocalSuite() {
     if(addToast) addToast("Routing to Secure Checkout...", "info");
     try {
       const res = await fetch('/api/stripe/engineering-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: userSession.id })
       });
       const data = await res.json();
@@ -165,10 +163,32 @@ export default function Room05_VocalSuite() {
     }
   }, []); 
 
-  // --- 2. MEMORY BUFFER LOADING (Bypasses Blob URL bugs) ---
+  // --- 2. MEMORY BUFFER LOADING (Bypasses Blob URL bugs & Latency) ---
   useEffect(() => {
     let isMounted = true;
-    const loadBuffers = async () => {
+    
+    // Load Beat Buffer
+    const loadBeatBuffer = async () => {
+      if (!audioCtxRef.current || !audioData) return;
+      try {
+        let beatBlob = (audioData as any)?.blob;
+        if (!beatBlob && audioData.url) {
+           const r = await fetch(audioData.url);
+           if (r.ok) beatBlob = await r.blob();
+        }
+        if (!beatBlob) return;
+        const arrayBuf = await beatBlob.arrayBuffer();
+        const audioBuf = await new Promise<AudioBuffer>((res, rej) => audioCtxRef.current!.decodeAudioData(arrayBuf, res, rej));
+        if (isMounted) {
+          beatBufferRef.current = audioBuf;
+          setDuration(audioBuf.duration);
+        }
+      } catch(e) { console.warn("Failed loading beat to buffer", e); }
+    };
+    loadBeatBuffer();
+
+    // Load Vocal Buffers
+    const loadVocalBuffers = async () => {
       if (!audioCtxRef.current) return;
       for (const stem of vocalStems) {
         if (!stemBuffersRef.current.has(stem.id)) {
@@ -196,13 +216,16 @@ export default function Room05_VocalSuite() {
         }
       }
     };
-    loadBuffers();
+    loadVocalBuffers();
+    
     return () => { isMounted = false; };
-  }, [vocalStems]);
+  }, [vocalStems, audioData]);
 
   // Clean up AudioContext strictly on unmount
   useEffect(() => {
     return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
       if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close();
     }
   }, []);
@@ -216,7 +239,7 @@ export default function Room05_VocalSuite() {
     if (saturationRef.current) saturationRef.current.curve = makeDistortionCurve(presenceIntensity / 2);
   }, [reverbMix, presenceIntensity, eqGains, activeChain]);
 
-  // 🚨 REAL-TIME VOLUME/MUTE LISTENER (Adjusts instantly without stopping playback)
+  // 🚨 REAL-TIME MUTE/VOLUME LISTENER
   useEffect(() => {
     vocalStems.forEach(stem => {
        const gainNode = stemGainNodesRef.current.get(stem.id);
@@ -226,21 +249,51 @@ export default function Room05_VocalSuite() {
     });
   }, [vocalStems]);
 
-  // --- 3. HIGH FIDELITY BUFFER SCHEDULER ---
-  const startVocalBuffers = (playheadTime: number) => {
+  // --- 3. HIGH FIDELITY BUFFER SCHEDULER & MATH ALIGNMENT ---
+  const tick = () => {
+      if (!audioCtxRef.current) return;
+      const elapsed = audioCtxRef.current.currentTime - playbackStartCtxTimeRef.current;
+      setCurrentTime(playbackStartOffsetRef.current + elapsed);
+      animationRef.current = requestAnimationFrame(tick);
+  };
+
+  const startAllBuffers = (playheadTime: number) => {
     const ctx = audioCtxRef.current;
     if (!ctx || !(ctx as any)._masterGain) return;
     
     const scheduleTime = ctx.currentTime + 0.05;
-    const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
+
+    // 🚨 EXACT ROOM 4 MATH RESTORED: Prevents gradual floating-point drift
+    const trackDuration = audioData?.duration || duration || 128;
+    const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
+    const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
+    const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
 
     // Purge old sources
     activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
     activeSourcesRef.current = [];
     stemGainNodesRef.current.clear();
 
+    // Schedule Beat
+    if (beatBufferRef.current) {
+        const beatSource = ctx.createBufferSource();
+        beatSource.buffer = beatBufferRef.current;
+        beatSource.connect(ctx.destination); 
+        if (playheadTime < beatBufferRef.current.duration) {
+            beatSource.start(scheduleTime, playheadTime);
+            activeSourcesRef.current.push(beatSource);
+        }
+        beatSource.onended = () => {
+            if (activeSourcesRef.current.includes(beatSource)) {
+                setIsPreviewPlaying(false);
+                if (animationRef.current) cancelAnimationFrame(animationRef.current);
+            }
+        };
+    }
+
+    // Schedule Vocals
     vocalStems.forEach(stem => {
-       if (stem.isMuted) return; // Muted stems don't even get scheduled
+       if (stem.isMuted) return; 
        
        const buffer = stemBuffersRef.current.get(stem.id);
        if (buffer) {
@@ -249,10 +302,10 @@ export default function Room05_VocalSuite() {
           
           const gainNode = ctx.createGain();
           gainNode.gain.value = stem.volume ?? 1;
-          stemGainNodesRef.current.set(stem.id, gainNode); // Save reference for real-time slider sliding
+          stemGainNodesRef.current.set(stem.id, gainNode); 
 
           source.connect(gainNode);
-          gainNode.connect((ctx as any)._masterGain); // Force into EQ chain
+          gainNode.connect((ctx as any)._masterGain); 
 
           const offsetSecs = (stem.offsetBars || 0) * secondsPerBar;
           if (playheadTime < offsetSecs) {
@@ -276,16 +329,14 @@ export default function Room05_VocalSuite() {
     setIsPreviewPlaying(willPlay);
     
     if (willPlay) {
-      const playheadTime = beatAudioRef.current?.currentTime || 0;
-      if (beatAudioRef.current) {
-        beatAudioRef.current.currentTime = playheadTime;
-        beatAudioRef.current.play().catch(()=>{});
-      }
-      startVocalBuffers(playheadTime);
+      playbackStartCtxTimeRef.current = audioCtxRef.current.currentTime + 0.05;
+      playbackStartOffsetRef.current = currentTime; 
+      startAllBuffers(currentTime);
+      animationRef.current = requestAnimationFrame(tick);
     } else {
-      if (beatAudioRef.current) beatAudioRef.current.pause();
       activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
       activeSourcesRef.current = [];
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
     }
   };
 
@@ -296,9 +347,9 @@ export default function Room05_VocalSuite() {
     }
 
     setIsPreviewPlaying(false);
-    if (beatAudioRef.current) beatAudioRef.current.pause();
     activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
     activeSourcesRef.current = [];
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
     
     setStatus("processing");
     try {
@@ -325,10 +376,13 @@ export default function Room05_VocalSuite() {
       prevOfflineNode.connect(offlineComp); offlineComp.connect(offlineSaturation); offlineSaturation.connect(offlineCtx.destination);
       masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(offlineCtx.destination);
       
-      const secondsPerBar = audioData?.bpm ? (60 / audioData.bpm) * 4 : 2.5;
+      // 🚨 ALIGN EXACT MATH FOR RENDER
+      const trackDuration = audioData?.duration || duration || 128;
+      const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
+      const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
+      const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
 
       decodedBuffers.forEach((buf, i) => { 
-        // 🚨 SKIP RENDERING IF STEM WAS MUTED
         if (vocalStems[i].isMuted) return;
 
         const source = offlineCtx.createBufferSource(); 
@@ -390,21 +444,6 @@ export default function Room05_VocalSuite() {
             </button>
           </div>
         </div>
-      )}
-
-      {audioData && (
-        <audio 
-          ref={beatAudioRef} 
-          src={audioData.url} 
-          onTimeUpdate={() => setCurrentTime(beatAudioRef.current?.currentTime || 0)} 
-          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} 
-          onEnded={() => {
-             setIsPreviewPlaying(false);
-             activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
-             activeSourcesRef.current = [];
-          }} 
-          className="hidden" 
-        />
       )}
       
       {/* SIDEBAR PRESETS */}
@@ -469,8 +508,11 @@ export default function Room05_VocalSuite() {
                  onChange={(e) => { 
                    const nt = parseFloat(e.target.value); 
                    setCurrentTime(nt); 
-                   if(beatAudioRef.current) beatAudioRef.current.currentTime = nt; 
-                   if(isPreviewPlaying) { startVocalBuffers(nt); }
+                   if(isPreviewPlaying) { 
+                       playbackStartCtxTimeRef.current = audioCtxRef.current!.currentTime + 0.05;
+                       playbackStartOffsetRef.current = nt;
+                       startAllBuffers(nt); 
+                   }
                  }} 
                  className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" 
                />
