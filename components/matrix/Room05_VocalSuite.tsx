@@ -275,7 +275,7 @@ export default function Room05_VocalSuite() {
     if (willPlay) {
       // 🚨 HTML5 Beat Drives the Time, WebAudio follows exactly 50ms behind (Identical to Room 4)
       const playheadTime = beatAudioRef.current?.currentTime || 0;
-      const scheduleTime = audioCtxRef.current.currentTime + 0.05;
+      const scheduleTime = audioCtxRef.current.currentTime;
       
       if (beatAudioRef.current) {
         beatAudioRef.current.play().catch(()=>{});
