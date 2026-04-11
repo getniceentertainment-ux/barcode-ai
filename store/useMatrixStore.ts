@@ -373,16 +373,13 @@ export const useMatrixStore = create<MatrixState>()(
         };
 
         try {
-          const { error } = await supabase
-            .from('matrix_sessions')
-            .upsert(
-              { 
-                user_id: userId, 
-                session_state, 
-                updated_at: new Date().toISOString() 
-              }, 
-              { onConflict: 'user_id' } 
-            );
+            const { error } = await supabase
+              .from('matrix_sessions')
+              .upsert({ 
+                  user_id: userId, 
+                  session_state, 
+                  updated_at: new Date().toISOString() 
+              });
 
           if (error) throw error;
 
