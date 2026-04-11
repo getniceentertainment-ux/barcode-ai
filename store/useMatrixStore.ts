@@ -415,43 +415,72 @@ export const useMatrixStore = create<MatrixState>()(
           let savedEngineered = await loadAudioFromDisk('matrix_engineered_vocal'); 
           let savedMaster = await loadAudioFromDisk('matrix_final_master'); 
 
-          // --- 🚨 SURGICAL FIX: THE BLOB REBUILDER ---
+          // --- 🚨 THE UPGRADED BLOB ENFORCER ---
           const enforceBlob = async (item: any) => {
             if (!item) return item;
-            if (item.blob instanceof Blob) return item; 
-            if (!item.url || item.url.startsWith('blob:')) return item;
             try {
+              // 1. If it has no blob, download it from Supabase URL
+              if (!item.blob && item.url && !item.url.startsWith('blob:')) {
                 const resp = await fetch(item.url);
                 if (resp.ok) item.blob = await resp.blob();
-            } catch(e) {}
+              }
+              // 2. If it HAS a blob, guarantee it's using a fast local URL
+              if (item.blob instanceof Blob && (!item.url || !item.url.startsWith('blob:'))) {
+                item.url = URL.createObjectURL(item.blob);
+              }
+            } catch(e) { console.warn("Blob enforcement failed:", e); }
             return item;
           };
 
-          // 🚨 SURGICAL FIX: Apply Cloud Fallbacks to EVERYTHING before enforcing blobs
-          const targetBeat = savedBeat || state.audioData;
-          if (targetBeat) {
-             const rebuiltBeat = await enforceBlob(targetBeat);
+          // --- 1. BEAT MERGE ---
+          let mergedBeat = state.audioData || savedBeat;
+          if (mergedBeat) {
+             const rebuiltBeat = await enforceBlob(mergedBeat);
              set({ audioData: rebuiltBeat as ExtendedAudioAnalysis });
           }
 
-          const targetStems = (savedStems && Array.isArray(savedStems) && savedStems.length > 0) ? savedStems : state.vocalStems;
-          if (targetStems && targetStems.length > 0) {
-             const rebuiltStems = await Promise.all(targetStems.map(enforceBlob));
+          // --- 2. STEMS MERGE (Restoring your robust ID-based merge) ---
+          const cloudStems = state.vocalStems || [];
+          const localStems = (savedStems && Array.isArray(savedStems)) ? savedStems : [];
+
+          // Map over cloud truth, inject local zero-latency blob if IDs match
+          let mergedStems = cloudStems.length > 0 ? cloudStems.map((cStem: any) => {
+            const localMatch = localStems.find((l: any) => l.id === cStem.id);
+            return { ...cStem, blob: localMatch?.blob }; 
+          }) : localStems;
+
+          if (mergedStems.length > 0) {
+             const rebuiltStems = await Promise.all(mergedStems.map(enforceBlob));
              set({ vocalStems: rebuiltStems });
              saveAudioToDisk('matrix_vocal_stems', rebuiltStems); 
           }
 
-          const targetEngineered = (savedEngineered && Array.isArray(savedEngineered) && savedEngineered.length > 0) ? savedEngineered[0] : state.engineeredVocal;
-          if (targetEngineered) {
-            const engStem = await enforceBlob(targetEngineered);
-            set({ engineeredVocal: engStem });
+          // --- 3. ENGINEERED MERGE ---
+          const cloudEng = state.engineeredVocal;
+          const localEng = (savedEngineered && Array.isArray(savedEngineered) && savedEngineered.length > 0) ? savedEngineered[0] : null;
+          
+          let mergedEng = cloudEng || localEng;
+          if (cloudEng && localEng && cloudEng.id === localEng.id) {
+             mergedEng = { ...cloudEng, blob: localEng.blob };
+          }
+          if (mergedEng) {
+            const rebuiltEng = await enforceBlob(mergedEng);
+            set({ engineeredVocal: rebuiltEng });
           }
 
-          const targetMaster = savedMaster || state.finalMaster;
-          if (targetMaster) {
-             const rebuiltMaster = await enforceBlob(targetMaster);
+          // --- 4. MASTER MERGE (Fixing the Missing Artifact) ---
+          const cloudMaster = state.finalMaster;
+          const localMaster = savedMaster as any;
+          
+          let mergedMaster = cloudMaster || localMaster;
+          if (cloudMaster && localMaster && cloudMaster.id === localMaster.id) {
+             mergedMaster = { ...cloudMaster, blob: localMaster.blob };
+          }
+          if (mergedMaster) {
+             const rebuiltMaster = await enforceBlob(mergedMaster);
              set({ finalMaster: rebuiltMaster as FinalMaster });
           }
+
         } catch (e) { console.error("Failed to hydrate audio from disk", e); }
       }
     }),
