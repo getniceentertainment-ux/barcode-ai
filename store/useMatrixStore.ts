@@ -359,18 +359,16 @@ export const useMatrixStore = create<MatrixState>()(
         cloudSaveTimeout = window.setTimeout(async () => {
           const latestState = get(); // Grab the exact state AFTER the timer finishes
 
-          // 🚨 2. SAFELY MAP URLS (Strip heavy Blobs to prevent JSONB crashes)
-          const safeStemsForCloud = latestState.vocalStems.map(s => ({
-              id: s.id, type: s.type, url: s.url, volume: s.volume, offsetBars: s.offsetBars, isMuted: s.isMuted
-          }));
+          / 🚨 2. SAFELY MAP URLS (Dynamically strip Blobs but keep ALL other metadata)
+          const safeStemsForCloud = latestState.vocalStems.map(({ blob, ...rest }) => rest);
 
-          const safeEngineeredVocal = latestState.engineeredVocal ? {
-              id: latestState.engineeredVocal.id, type: latestState.engineeredVocal.type, url: latestState.engineeredVocal.url, volume: latestState.engineeredVocal.volume, offsetBars: latestState.engineeredVocal.offsetBars
-          } : null;
+          const safeEngineeredVocal = latestState.engineeredVocal 
+              ? (({ blob, ...rest }) => rest)(latestState.engineeredVocal) 
+              : null;
 
-          const safeFinalMaster = latestState.finalMaster ? {
-              id: latestState.finalMaster.id, url: latestState.finalMaster.url
-          } : null;
+          const safeFinalMaster = latestState.finalMaster 
+              ? (({ blob, ...rest }) => rest)(latestState.finalMaster) 
+              : null;
 
           // 🚨 3. THE COMPLETE PAYLOAD
           const session_state = {
