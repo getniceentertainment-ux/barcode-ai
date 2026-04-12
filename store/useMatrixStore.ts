@@ -359,7 +359,7 @@ export const useMatrixStore = create<MatrixState>()(
         cloudSaveTimeout = window.setTimeout(async () => {
           const latestState = get(); // Grab the exact state AFTER the timer finishes
 
-          / 🚨 2. SAFELY MAP URLS (Dynamically strip Blobs but keep ALL other metadata)
+          // 🚨 2. SAFELY MAP URLS (Dynamically strip Blobs but keep ALL other metadata)
           const safeStemsForCloud = latestState.vocalStems.map(({ blob, ...rest }) => rest);
 
           const safeEngineeredVocal = latestState.engineeredVocal 
