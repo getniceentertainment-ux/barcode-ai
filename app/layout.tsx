@@ -20,7 +20,7 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Oswald:wght@400;700&family=Roboto+Mono&display=swap" rel="stylesheet" />
         
         {/* 🚨 SURGICAL FIX: The Global Watcher lives unconditionally at the root of the app */}
-        <Script strategy="afterInteractive" src={`https://www.googletagmanager.com/gtag/js?id=AW-XXXXXXXXX`} /> {/* ⚠️ REPLACE AW- ID HERE */}
+        <Script strategy="afterInteractive" src={`https://www.googletagmanager.com/gtag/js?id=AW-18074669646`} /> {/* ⚠️ REPLACE AW- ID HERE */}
         <Script id="google-ads-init" strategy="afterInteractive" dangerouslySetInnerHTML={{ __html: `
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
