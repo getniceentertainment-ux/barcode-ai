@@ -9,7 +9,6 @@ import { useMatrixStore } from "../../store/useMatrixStore";
 import { AccessTier, UserSession } from "../../lib/types";
 import { supabase } from "../../lib/supabase";
 import Link from "next/link"; 
-import Script from "next/script"; // 🚨 SURGICAL FIX: Imported Next.js Script component
 
 export default function EntryGateway() {
   const { grantAccess, addToast, setActiveRoom } = useMatrixStore();
@@ -161,16 +160,16 @@ export default function EntryGateway() {
             } 
           }
         });
-        if (error) throw error;
 
-        // 🚨 SURGICAL FIX: FIRE GOOGLE ADS CONVERSION IMMEDIATELY UPON SUCCESSFUL SIGNUP
+      // 🚨 SURGICAL FIX: FIRE GOOGLE ADS CONVERSION (Using Library loaded in Root Layout)
         if (typeof window !== 'undefined' && (window as any).gtag) {
           (window as any).gtag('event', 'conversion', {
-              'send_to': 'AW-18074669646/f5ZQCNXOuZscEM6k1qpD' // ⚠️ REPLACE THIS WITH YOUR EXACT CONVERSION LABEL
+              'send_to': 'AW-18074669646/f5ZQCNXOuZscEM6k1qpD'
           });
           console.log("TALON: Google Ads Artist Signup Conversion Fired.");
         }
 
+        if (error) throw error;
         if (data.user && !data.session) setAuthStep("verify_email");
         else if (data.session) await processUserSession(data.user);
       } else {
@@ -418,64 +417,52 @@ export default function EntryGateway() {
   // ==========================================
   if (authStep === "auth") {
     return (
-      <>
-        {/* 🚨 SURGICAL FIX: Inject Google Ads Base Scripts securely into Next.js */}
-        <Script strategy="afterInteractive" src={`https://www.googletagmanager.com/gtag/js?id=AW-18074669646`} /> {/* ⚠️ REPLACE AW- ID HERE */}
-        <Script id="google-ads-init" strategy="afterInteractive" dangerouslySetInnerHTML={{ __html: `
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-            gtag('config', 'AW-18074669646'); // ⚠️ REPLACE AW- ID HERE
-          `}} 
-        />
-        
-        <div className="min-h-screen bg-[#000] text-white flex flex-col items-center justify-center p-6 font-mono relative">
-          <button 
-            onClick={() => setAuthStep("landing")} 
-            className="absolute top-8 left-8 text-[#555] hover:text-white flex items-center gap-2 text-xs uppercase tracking-widest transition-colors relative group"
-          >
-            ← Abort Login
-          </button>
+      <div className="min-h-screen bg-[#000] text-white flex flex-col items-center justify-center p-6 font-mono relative">
+        <button 
+          onClick={() => setAuthStep("landing")} 
+          className="absolute top-8 left-8 text-[#555] hover:text-white flex items-center gap-2 text-xs uppercase tracking-widest transition-colors relative group"
+        >
+          ← Abort Login
+        </button>
 
-          <div className="text-center mb-12 animate-in fade-in duration-700 mt-12">
-            <div className="w-16 h-16 border-2 border-[#E60000] flex items-center justify-center mx-auto mb-6">
-              <span className="font-oswald text-2xl text-[#E60000] font-bold">BC</span>
-            </div>
-            <h1 className="font-oswald text-5xl uppercase tracking-[0.2em] font-bold">Bar-Code<span className="text-[#E60000]">.ai</span></h1>
+        <div className="text-center mb-12 animate-in fade-in duration-700 mt-12">
+          <div className="w-16 h-16 border-2 border-[#E60000] flex items-center justify-center mx-auto mb-6">
+            <span className="font-oswald text-2xl text-[#E60000] font-bold">BC</span>
           </div>
-
-          <div className="w-full max-w-md bg-[#050505] border border-[#222] p-8 shadow-2xl">
-            <div className="flex gap-4 mb-8 border-b border-[#222] pb-4">
-              <button onClick={() => setAuthMode("login")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold relative group ${authMode === 'login' ? 'text-[#E60000]' : 'text-[#a8aba6]'}`}>
-                Login
-              </button>
-              
-              <button onClick={() => setAuthMode("signup")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold relative group ${authMode === 'signup' ? 'text-[#E60000]' : 'text-[#a8aba6]'}`}>
-                Register
-              </button>
-            </div>
-
-            <form onSubmit={handleEmailAuth} className="space-y-4">
-              {authMode === "signup" && (
-                <input type="text" required value={stageName} onChange={(e) => setStageName(e.target.value)} placeholder="STAGE NAME" className="w-full bg-black border border-[#333] px-4 py-3 text-xs outline-none focus:border-[#E60000]" />
-              )}
-              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="EMAIL" className="w-full bg-black border border-[#333] px-4 py-3 text-xs outline-none focus:border-[#E60000]" />
-              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="PASSWORD" className="w-full bg-black border border-[#333] px-4 py-3 text-xs outline-none focus:border-[#E60000]" />
-
-              <div className="bg-[#111] border border-[#333] p-3 flex items-center gap-3">
-                {isScanning ? <Loader2 size={14} className="animate-spin text-[#E60000]" /> : <ShieldCheck size={14} className="text-green-500" />}
-                <span className="text-[9px] uppercase tracking-widest text-[#888]">
-                  {isScanning ? "Fingerprinting..." : "Device Signature Active"}
-                </span>
-              </div>
-
-              <button type="submit" disabled={loading} className="w-full bg-[#948e8e] text-white py-4 text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2 relative group">
-                {loading ? <Loader2 size={16} className="animate-spin" /> : authMode === "login" ? "Enter Studio" : "Register"}
-              </button>
-            </form>
-          </div>
+          <h1 className="font-oswald text-5xl uppercase tracking-[0.2em] font-bold">Bar-Code<span className="text-[#E60000]">.ai</span></h1>
         </div>
-      </>
+
+        <div className="w-full max-w-md bg-[#050505] border border-[#222] p-8 shadow-2xl">
+          <div className="flex gap-4 mb-8 border-b border-[#222] pb-4">
+             <button onClick={() => setAuthMode("login")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold relative group ${authMode === 'login' ? 'text-[#E60000]' : 'text-[#a8aba6]'}`}>
+               Login
+             </button>
+             
+             <button onClick={() => setAuthMode("signup")} className={`flex-1 text-[10px] uppercase tracking-widest font-bold relative group ${authMode === 'signup' ? 'text-[#E60000]' : 'text-[#a8aba6]'}`}>
+               Register
+             </button>
+          </div>
+
+          <form onSubmit={handleEmailAuth} className="space-y-4">
+            {authMode === "signup" && (
+              <input type="text" required value={stageName} onChange={(e) => setStageName(e.target.value)} placeholder="STAGE NAME" className="w-full bg-black border border-[#333] px-4 py-3 text-xs outline-none focus:border-[#E60000]" />
+            )}
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="EMAIL" className="w-full bg-black border border-[#333] px-4 py-3 text-xs outline-none focus:border-[#E60000]" />
+            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="PASSWORD" className="w-full bg-black border border-[#333] px-4 py-3 text-xs outline-none focus:border-[#E60000]" />
+
+            <div className="bg-[#111] border border-[#333] p-3 flex items-center gap-3">
+              {isScanning ? <Loader2 size={14} className="animate-spin text-[#E60000]" /> : <ShieldCheck size={14} className="text-green-500" />}
+              <span className="text-[9px] uppercase tracking-widest text-[#888]">
+                {isScanning ? "Fingerprinting..." : "Device Signature Active"}
+              </span>
+            </div>
+
+            <button type="submit" disabled={loading} className="w-full bg-[#948e8e] text-white py-4 text-xs font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-2 relative group">
+              {loading ? <Loader2 size={16} className="animate-spin" /> : authMode === "login" ? "Enter Studio" : "Register"}
+            </button>
+          </form>
+        </div>
+      </div>
     );
   }
 
