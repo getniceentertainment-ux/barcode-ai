@@ -161,12 +161,17 @@ export default function EntryGateway() {
           }
         });
 
-      // 🚨 SURGICAL FIX: FIRE GOOGLE ADS CONVERSION (Using Library loaded in Root Layout)
-        if (typeof window !== 'undefined' && (window as any).gtag) {
-          (window as any).gtag('event', 'conversion', {
-              'send_to': 'AW-18074669646/f5ZQCNXOuZscEM6k1qpD'
-          });
-          console.log("TALON: Google Ads Artist Signup Conversion Fired.");
+        // 🚨 SURGICAL FIX: FIRE GOOGLE ADS CONVERSION WITH ERROR BOUNDARY
+        // This ensures aggressive ad-blockers don't crash the entire registration process
+        try {
+          if (typeof window !== 'undefined' && (window as any).gtag) {
+            (window as any).gtag('event', 'conversion', {
+                'send_to': 'AW-18074669646/f5ZQCNXOuZscEM6k1qpD'
+            });
+            console.log("TALON: Google Ads Artist Signup Conversion Fired.");
+          }
+        } catch (gtagErr) {
+          console.warn("TALON: Google Ads conversion blocked by browser security. Proceeding with registration.");
         }
 
         if (error) throw error;
