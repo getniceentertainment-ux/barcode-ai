@@ -352,14 +352,23 @@ export default function Room04_Booth() {
               setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
 
               try {
+                // 🚨 SURGICAL FIX: The Aggressive Delivery Override
+                // Stripping soft punctuation and forcing exclamation marks triggers maximum vocal projection in Neural TTS models.
+                let rawText = line.text.replace(/\|/g, '').trim();
+                if (rawText.endsWith('.') || rawText.endsWith(',')) {
+                    rawText = rawText.slice(0, -1);
+                }
+                const aggressiveText = rawText + "!";
+
                 const res = await fetch('/api/audio/generate-guide', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ 
-                    lyrics: line.text.replace(/\|/g, ''), 
+                    lyrics: aggressiveText, 
                     bpm: preciseBpm,
                     gender: useMatrixStore.getState().gwGender || "male",
-                    pitch: "low"
+                    pitch: "low",
+                    style: "aggressive" // Hint for the backend if applicable
                   })
                 });
                 
@@ -411,8 +420,9 @@ export default function Room04_Booth() {
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
 
-      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.3, offsetBars: 0 });
-      if (addToast) addToast("High-fidelity audio glued to visual metronome.", "success");
+      // 🚨 SURGICAL FIX: Bumped the default TTS guide track volume from 0.3 up to 0.85 for massive projection punch
+      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.85, offsetBars: 0 });
+      if (addToast) addToast("High-fidelity aggressive audio glued to visual metronome.", "success");
     } catch (err: any) {
       console.error(err);
       if (addToast) addToast("Guide Error: " + err.message, "error");
@@ -615,7 +625,7 @@ export default function Room04_Booth() {
     const playheadTime = wavesurferRef.current.getCurrentTime();
 
     if (willPlay) {
-      const scheduleTime = audioCtxRef.current.currentTime; 
+      const scheduleTime = audioCtxRef.current.currentTime + 0.05; 
       wavesurferRef.current.play();
       
       if (!animationFrameRef.current) {
