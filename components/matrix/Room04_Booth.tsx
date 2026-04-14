@@ -625,7 +625,7 @@ export default function Room04_Booth() {
     const playheadTime = wavesurferRef.current.getCurrentTime();
 
     if (willPlay) {
-      const scheduleTime = audioCtxRef.current.currentTime + 0.05; 
+      const scheduleTime = audioCtxRef.current.currentTime; 
       wavesurferRef.current.play();
       
       if (!animationFrameRef.current) {
