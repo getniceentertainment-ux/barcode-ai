@@ -15,8 +15,8 @@ import { supabase } from "../lib/supabase";
 import EntryGateway from "../components/matrix/EntryGateway";
 import GlobalSyncIndicator from "../components/matrix/GlobalSyncIndicator";
 import HelpOverlay from "../components/matrix/HelpOverlay";
-import RoomDirectives from "../components/matrix/RoomDirectives"; // FIXED IMPORT PATH
-import MatrixAutoSave from "../components/matrix/MatrixAutoSave"; // <-- SURGICAL ADDITION
+import RoomDirectives from "../components/matrix/RoomDirectives"; 
+import MatrixAutoSave from "../components/matrix/MatrixAutoSave"; 
 
 // The 11 Matrix Rooms
 import Room01_Lab from "../components/matrix/Room01_Lab";
@@ -34,6 +34,10 @@ import Room11_Exec from "../components/matrix/Room11_Exec";
 import SecurityShield from "../components/matrix/SecurityShield";
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID; 
+
+// --- SURGICAL ADDITION 1: THE DISCORD BRIDGE ---
+// Paste your permanent Discord Invite Link here.
+const DISCORD_INVITE_LINK = "PASTE_YOUR_COPIED_LINK_HERE";
 
 export default function MatrixController() {
   const { 
@@ -57,7 +61,11 @@ export default function MatrixController() {
   // --- UI STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showLandscapeTip, setShowLandscapeTip] = useState(false);
-  const [showHelp, setShowHelp] = useState(false); // NEW: Help Overlay State
+  const [showHelp, setShowHelp] = useState(false); 
+  
+  // --- SURGICAL ADDITION 2: BANNER DISMISS STATE ---
+  const [showDiscordBanner, setShowDiscordBanner] = useState(true);
+
   const formatTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- GOOGLE CHROME AUTO-SCALER (5-SECOND DELAY FIX) ---
@@ -228,7 +236,7 @@ export default function MatrixController() {
     window.dispatchEvent(new CustomEvent('matrix-global-sys-seek', { detail: newTime }));
   };
 
-  // --- NEW: AUTO-DJ ENDLESS RADIO LOGIC ---
+  // --- AUTO-DJ ENDLESS RADIO LOGIC ---
   const handleTrackEnd = async () => {
     setIsPlaying(false);
     if (playbackMode === 'radio') {
@@ -271,12 +279,15 @@ export default function MatrixController() {
 
   const toggleRadioMode = async () => {
     setIsPlaying(false);
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
+    if (audioRef.current) { 
+      audioRef.current.pause(); 
+      audioRef.current.currentTime = 0; 
+    }
     
     if (playbackMode === 'radio') {
       setPlaybackMode('session');
     } else {
-      // --- NEW: DYNAMIC FIRST-TRACK FETCHER ---
+      // --- DYNAMIC FIRST-TRACK FETCHER ---
       if (!radioTrack || radioTrack.title === "GETNICE FM LIVE") {
         try {
           const { data: subs } = await supabase
@@ -435,6 +446,7 @@ export default function MatrixController() {
     <div className="flex h-screen bg-[#050505] text-white overflow-hidden pb-0 md:pb-24 font-mono">
       {/* INVISIBLE SYSTEM GUARDS */}
       <SecurityShield />      
+      
       {/* --- EDUCATIONAL UX NOTIFICATION (PRE-FORMAT DELAY OVERLAY) --- */}
       {showLandscapeTip && (
         <div className="fixed inset-0 z-[9999] bg-[#050505] flex flex-col items-center justify-center text-center px-8 animate-in fade-in duration-300">
@@ -507,8 +519,12 @@ export default function MatrixController() {
                   }}
                   className={`w-full flex items-center gap-3 px-5 py-4 text-left transition-all rounded-lg group relative ${activeRoom === room.id ? "bg-[#E60000] text-white shadow-[0_4px_15px_rgba(230,0,0,0.2)]" : "text-[#444] hover:bg-[#0a0a0a] hover:text-white"}`}
                 >
-                  <span className={`${activeRoom === room.id ? 'text-white' : 'text-[#888]'} ${(isLockedByProject || isLockedByTier) ? 'opacity-30' : ''}`}>{room.icon}</span>
-                  <span className={`font-oswald text-sm uppercase tracking-widest font-bold ${(isLockedByProject || isLockedByTier) ? 'opacity-30' : ''}`}>R{room.id} - {room.name}</span>
+                  <span className={`${activeRoom === room.id ? 'text-white' : 'text-[#888]'} ${(isLockedByProject || isLockedByTier) ? 'opacity-30' : ''}`}>
+                    {room.icon}
+                  </span>
+                  <span className={`font-oswald text-sm uppercase tracking-widest font-bold ${(isLockedByProject || isLockedByTier) ? 'opacity-30' : ''}`}>
+                    R{room.id} - {room.name}
+                  </span>
                   {isLockedByTier && <ShieldCheck size={12} className="absolute right-4 text-yellow-600" />}
                   {isLockedByProject && !isLockedByTier && <Lock size={10} className="absolute right-4 text-[#E60000]" />}
                 </button>
@@ -530,7 +546,7 @@ export default function MatrixController() {
               </>
             )}
 
-            {/* NEW: COMM-LINK / HELP BUTTON (Visible to everyone) */}
+            {/* COMM-LINK / HELP BUTTON (Visible to everyone) */}
             <button onClick={() => setShowHelp(true)} className="w-full flex items-center gap-3 px-5 py-4 text-left text-[#555] hover:text-white hover:bg-[#0a0a0a] transition-all rounded-lg font-oswald text-sm uppercase tracking-widest font-bold border-t border-[#111] mt-4">
               <HelpCircle size={16} /> Comm-Link / Help
             </button>
@@ -563,7 +579,9 @@ export default function MatrixController() {
                  
                  <div className="flex items-center gap-2 bg-[#110000] border border-[#330000] pl-3 pr-1 py-1 rounded-full shadow-[inset_0_0_10px_rgba(230,0,0,0.1)]">
                    <Zap size={12} className={userSession.creditsRemaining === 0 ? "text-[#555]" : "text-yellow-500"} />
-                   <span className="font-mono text-[10px] text-white uppercase tracking-widest font-bold">{userSession.creditsRemaining} <span className="hidden sm:inline">CRD</span></span>
+                   <span className="font-mono text-[10px] text-white uppercase tracking-widest font-bold">
+                     {userSession.creditsRemaining} <span className="hidden sm:inline">CRD</span>
+                   </span>
                    {userSession.tier !== "The Mogul" && (
                      <button onClick={handleBoostPack} disabled={isBoosting} className="ml-2 bg-[#E60000] text-white px-2 md:px-3 py-1 text-[9px] font-bold uppercase tracking-widest hover:bg-red-700 transition-colors rounded-full">
                        {isBoosting ? <Loader2 size={10} className="animate-spin" /> : "Top Up"}
@@ -576,10 +594,52 @@ export default function MatrixController() {
         </div>
         
         <div className="flex-1 overflow-y-auto p-4 md:p-10 relative">
-          <div className="absolute inset-0 pointer-events-none opacity-5" style={{ backgroundImage: 'linear-gradient(#222 1px, transparent 1px), linear-gradient(90deg, #222 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+          {/* Subtle grid background */}
+          <div 
+            className="absolute inset-0 pointer-events-none opacity-5" 
+            style={{ backgroundImage: 'linear-gradient(#222 1px, transparent 1px), linear-gradient(90deg, #222 1px, transparent 1px)', backgroundSize: '40px 40px' }} 
+          />
           
+          {/* --- SURGICAL ADDITION 3: THE DISCORD BANNER --- */}
+          {showDiscordBanner && (
+            <div className="relative z-10 max-w-5xl mx-auto w-full mb-6 animate-in fade-in slide-in-from-top-4">
+              <div className="bg-[#110000] border border-[#E60000]/50 p-4 rounded-lg flex flex-col md:flex-row items-center justify-between shadow-[0_0_20px_rgba(230,0,0,0.15)]">
+                
+                <div className="flex items-center gap-4 mb-4 md:mb-0 w-full md:w-auto">
+                  <div className="w-12 h-12 bg-black border border-[#E60000] text-[#E60000] flex items-center justify-center rounded-full shrink-0 shadow-[0_0_15px_rgba(230,0,0,0.3)]">
+                    <Users size={24} />
+                  </div>
+                  <div>
+                    <h3 className="font-oswald text-lg uppercase tracking-widest font-bold text-white leading-tight">Join The Syndicate</h3>
+                    <p className="font-mono text-[10px] text-[#888] uppercase tracking-wider mt-1">
+                      The studio is open. Drop tracks and access 24/7 Support in Discord.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
+                  <a 
+                    href={DISCORD_INVITE_LINK} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="flex-1 md:flex-none bg-[#E60000] text-white px-8 py-3 font-oswald text-sm uppercase tracking-widest font-bold hover:bg-white hover:text-black transition-colors text-center rounded-sm"
+                  >
+                    Enter Discord
+                  </a>
+                  <button 
+                    onClick={() => setShowDiscordBanner(false)}
+                    className="text-[#555] hover:text-white transition-colors p-3 bg-black border border-[#333] hover:border-[#E60000] rounded-sm shrink-0"
+                    title="Dismiss Banner"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          )}
+
           {/* --- SURGICAL ADDITION: UNIVERSAL ROOM DIRECTIVES --- */}
-          {/* This ensures the instructions stay pinned to the top of every room automatically */}
           <div className="relative z-10 max-w-5xl mx-auto w-full">
             <RoomDirectives roomId={activeRoom} />
           </div>
@@ -587,12 +647,12 @@ export default function MatrixController() {
           {renderActiveRoom()}
         </div>
 
-        {/* NEW: HELP OVERLAY */}
+        {/* HELP OVERLAY */}
         {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
       </main>
 
       <GlobalSyncIndicator />
-      <MatrixAutoSave /> {/* <-- SURGICAL ADDITION */}
+      <MatrixAutoSave /> 
 
       {/* --- LANDSCAPE LOCK (MOBILE PORTRAIT OVERLAY) --- */}
       <div className="fixed inset-0 z-[9999] bg-[#050505] flex-col items-center justify-center text-center px-8 hidden portrait:flex lg:!hidden">
@@ -604,24 +664,43 @@ export default function MatrixController() {
         </p>
       </div>
 
-      {/* RESPONSIVE FOOTER PLAYER (Hidden on mobile to reclaim screen real estate) */}
+      {/* RESPONSIVE FOOTER PLAYER */}
       <div className="hidden md:flex fixed bottom-0 left-0 right-0 h-24 bg-[#0a0a0a] border-t border-[#222] z-50 items-center px-4 md:px-10 justify-between shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
-        {/* FIX: Injected handleTrackEnd into the onEnded event listener */}
-        <audio ref={audioRef} src={playbackMode === 'radio' && radioTrack ? radioTrack.url : audioData?.url || ""} onTimeUpdate={handleTimeUpdate} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onEnded={handleTrackEnd} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} className="hidden" />
+        <audio 
+          ref={audioRef} 
+          src={playbackMode === 'radio' && radioTrack ? radioTrack.url : audioData?.url || ""} 
+          onTimeUpdate={handleTimeUpdate} 
+          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} 
+          onEnded={handleTrackEnd} 
+          onPlay={() => setIsPlaying(true)} 
+          onPause={() => setIsPlaying(false)} 
+          className="hidden" 
+        />
         
         <div className="w-auto md:w-1/3 flex items-center gap-2 md:gap-4">
-          <button onClick={toggleRadioMode} className={`w-10 h-10 md:w-12 md:h-12 flex shrink-0 items-center justify-center border transition-all ${playbackMode === 'radio' ? 'bg-[#E60000] border-[#E60000] shadow-[0_0_15px_rgba(230,0,0,0.4)]' : 'bg-black border-[#333] hover:bg-white hover:text-black hover:border-white'}`}>
+          <button 
+            onClick={toggleRadioMode} 
+            className={`w-10 h-10 md:w-12 md:h-12 flex shrink-0 items-center justify-center border transition-all ${playbackMode === 'radio' ? 'bg-[#E60000] border-[#E60000] shadow-[0_0_15px_rgba(230,0,0,0.4)]' : 'bg-black border-[#333] hover:bg-white hover:text-black hover:border-white'}`}
+          >
             <Radio size={16} className={playbackMode === 'radio' ? "text-white animate-pulse" : "text-[#555]"} />
           </button>
+          
           <div className="overflow-hidden hidden sm:block">
-            <p className="font-oswald text-xs md:text-sm uppercase tracking-widest font-bold text-white truncate">{playbackMode === 'radio' && radioTrack ? radioTrack.title : (audioData?.fileName || "IDLE")}</p>
-            <p className="font-mono text-[8px] md:text-[9px] uppercase tracking-widest mt-1 text-[#E60000]">{playbackMode === 'radio' ? `FM BROADCAST` : `STUDIO SESSION`}</p>
+            <p className="font-oswald text-xs md:text-sm uppercase tracking-widest font-bold text-white truncate">
+              {playbackMode === 'radio' && radioTrack ? radioTrack.title : (audioData?.fileName || "IDLE")}
+            </p>
+            <p className="font-mono text-[8px] md:text-[9px] uppercase tracking-widest mt-1 text-[#E60000]">
+              {playbackMode === 'radio' ? `FM BROADCAST` : `STUDIO SESSION`}
+            </p>
           </div>
         </div>
         
         <div className="flex-1 flex flex-col items-center max-w-xl px-2 md:px-10">
           <div className="flex items-center gap-4 md:gap-6 mb-2">
-            <button onClick={togglePlay} className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:bg-[#E60000] hover:text-white transition-all">
+            <button 
+              onClick={togglePlay} 
+              className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:bg-[#E60000] hover:text-white transition-all"
+            >
               {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-1" />}
             </button>
           </div>
@@ -636,7 +715,18 @@ export default function MatrixController() {
 
         <div className="hidden md:flex w-1/3 justify-end items-center gap-3">
           <Volume2 size={14} className="text-[#444]" />
-          <input type="range" min="0" max="1" step="0.01" value={volume} onChange={(e) => { setVolume(parseFloat(e.target.value)); if(audioRef.current) audioRef.current.volume = parseFloat(e.target.value); }} className="w-24 h-1 accent-[#E60000] bg-[#222] rounded-full appearance-none cursor-pointer" />
+          <input 
+            type="range" 
+            min="0" 
+            max="1" 
+            step="0.01" 
+            value={volume} 
+            onChange={(e) => { 
+              setVolume(parseFloat(e.target.value)); 
+              if(audioRef.current) audioRef.current.volume = parseFloat(e.target.value); 
+            }} 
+            className="w-24 h-1 accent-[#E60000] bg-[#222] rounded-full appearance-none cursor-pointer" 
+          />
         </div>
       </div>
     </div>
