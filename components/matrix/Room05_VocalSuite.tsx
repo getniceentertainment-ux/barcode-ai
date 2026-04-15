@@ -484,7 +484,7 @@ export default function Room05_VocalSuite() {
                    setCurrentTime(nt); 
                    if(beatAudioRef.current) beatAudioRef.current.currentTime = nt; 
                    if(isPreviewPlaying) { 
-                       const scheduleTime = audioCtxRef.current!.currentTime + 0.05;
+                       const scheduleTime = audioCtxRef.current!.currentTime;
                        startVocalBuffers(nt, scheduleTime); 
                    }
                  }} 
