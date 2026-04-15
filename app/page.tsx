@@ -37,7 +37,7 @@ const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID;
 
 // --- SURGICAL ADDITION 1: THE DISCORD BRIDGE ---
 // Paste your permanent Discord Invite Link here.
-const DISCORD_INVITE_LINK = "PASTE_YOUR_COPIED_LINK_HERE";
+const DISCORD_INVITE_LINK = "https://discord.gg/GE7gqXD223";
 
 export default function MatrixController() {
   const { 
