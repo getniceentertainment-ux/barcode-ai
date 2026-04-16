@@ -238,7 +238,8 @@ Catch a body in the boardroom | keep the paperwork air-tight.
 # =====================================================================
 # --- THE 2-PASS LYRICAL GRINDER (MATH + REFINEMENT) ---
 # =====================================================================
-def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2):
+# 🚨 ADDED banned_words_map TO SIGNATURE
+def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
     
     if section_index == 0: arc_instruction = "Establish the setting and the origin. Ground the listener. DO NOT copy the hook verbatim."
     elif section_type.upper() == "HOOK": arc_instruction = "Summarize the core theme. Make it highly repetitive and catchy."
@@ -282,6 +283,13 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     if "VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 12:
         evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast.\nCRITICAL COMMAND: You must achieve this rhythm change using REAL vocabulary. DO NOT stretch letters, hum, or use sound effects."
 
+    # 🚨 DYNAMIC KILL LIST FOR PASS 2
+    if banned_words_map and isinstance(banned_words_map, dict):
+        clean_words = [k.replace("\\b", "").replace("?", "").replace("(?:y|ies)", "y") for k in banned_words_map.keys()]
+        banned_words_str = ", ".join(clean_words[:15])
+    else:
+        banned_words_str = "tapestry, delve, testament, beacon, journey, myriad, landscape, whisper, shadows, dancing"
+
     # PASS 1: THE DRAFT
     draft_prompt = f"""<|im_start|>user
 [GENERATE {section_type.upper()}]
@@ -318,7 +326,7 @@ CRITICAL REFINEMENT COMMANDS:
 1. SYLLABLE MATH: Every line MUST be {current_max_syllables} syllables or less. Rewrite long lines to be minimalist.
 2. OBEY THE POCKET: {pocket_instruction}
 3. 🚨 THE PIPE REQUIREMENT: YOU MUST INSERT EXACTLY ONE PIPE SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE TO MARK THE BREATH. 
-4. KILL LIST: Delete any banned AI poetry words (e.g., testament, myriad, beacon, journey). Replace generic "warrior/depths" talk with strategic boardroom-street metaphors.
+4. KILL LIST: Delete any banned AI poetry words (e.g., {banned_words_str}). Replace generic "warrior/depths" talk with strategic boardroom-street metaphors.
 5. NO HEADERS. NO TIMESTAMPS. NO METADATA. Just the raw lyrics.
 {energy_rules}
 {melodic_rules}
@@ -340,7 +348,36 @@ Output ONLY the final {bars} lines now.
     final_text = re.sub(r'\[.*?\]', '', final_text) # Kills headers like [Verse 1]
     final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE) # Kills AI timestamps
     
-    clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and len(line.strip()) > 5 and not line.strip().startswith(('+', '-')) and not line.lower().startswith("here are")]
+    raw_lines = [line.strip() for line in final_text.split('\n') if line.strip() and len(line.strip()) > 5 and not line.strip().startswith(('+', '-')) and not line.lower().startswith("here are")]
+    
+    # 🚨 SURGICAL FIX: PYTHON-LAYER HARD ENFORCEMENT
+    # If the LLM drops constraints, Python intercepts and forces the formatting mathematically.
+    clean_lines = []
+    for line in raw_lines:
+        # Strip lingering hallucinations like `[Test our mettle`
+        line = line.replace('[', '').replace(']', '')
+        
+        # 1. The Pipe Enforcer (Finds the middle space and injects the breath marker)
+        if '|' not in line:
+            words = line.split()
+            if len(words) > 2:
+                mid = len(words) // 2
+                line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
+            else:
+                line = line + " |"
+        
+        # 2. The Vocabulary Scrubber (100% Kill Rate)
+        if banned_words_map and isinstance(banned_words_map, dict):
+            for bad_pattern, replacement in banned_words_map.items():
+                try:
+                    py_pattern = bad_pattern.replace('\\b', r'\b')
+                    line = re.sub(py_pattern, replacement, line, flags=re.IGNORECASE)
+                except: pass
+        else:
+            for bad_word in ["concrete jungle", "tapestry", "delve", "testament", "navigate"]:
+                line = re.sub(r'\b' + bad_word + r'\b', "the pavement", line, flags=re.IGNORECASE)
+                
+        clean_lines.append(line)
     
     while len(clean_lines) < bars:
         clean_lines.append("... | [Ride the pocket] ...")
@@ -484,7 +521,8 @@ Output ONLY the rewritten line. Do not explain yourself.
                     anchor_hook=anchor_hook_text,
                     hook_type=hook_type,            
                     flow_evolution=flow_evolution,
-                    current_energy=current_energy
+                    current_energy=current_energy,
+                    banned_words_map=banned_map # 🚨 PASSES MAP TO RENDERER
                 )
                 
                 if "HOOK" in sec_type:
