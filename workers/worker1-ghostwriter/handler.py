@@ -14,9 +14,10 @@ LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
 
 SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_briefing.txt")
 
-# --- SUPABASE INTEL ENDPOINTS ---
-SLANG_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/Dictionary.json"
-CULTURE_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/master_index.json"
+# --- 🚨 SUPABASE INTEL ENDPOINTS (CORRECTED PATHS) ---
+DAILY_BRIEFING_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/matrix_intel/daily_briefing.txt"
+SLANG_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/matrix_intel/dictionary.json"
+CULTURE_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/matrix_intel/master_index.json"
 
 # --- THE CONCENTRATED KILL LIST (KILLS AI POETRY) ---
 BAN_LIST = [
@@ -39,11 +40,24 @@ BAN_LIST = [
 model = None
 tokenizer = None
 
+# 3. FIXED THE FETCH LOGIC (User's Dual-Fetch Protocol)
 def load_rag_intel():
+    # First, attempt to fetch live from Supabase
+    try:
+        req = urllib.request.Request(DAILY_BRIEFING_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            content = response.read().decode('utf-8')
+            if content.strip():
+                return f"[LATEST MARKET DISPATCH]: {content.strip()}"
+    except Exception as e:
+        print(f"🚨 Failed to fetch daily briefing from Supabase: {e}")
+
+    # Fallback to local volume if network fails
     if os.path.exists(SHARED_VOLUME_PATH):
         with open(SHARED_VOLUME_PATH, "r", encoding="utf-8") as f:
             return f.read()
-    return "No live intel available."
+            
+    return "Market Intel: Focus on node growth and independent street equity."
 
 def load_street_slang(style="getnice_hybrid"):
     drill_slang = ["opp", "spin", "motion", "clear the board", "tactical", "steppin'"]
@@ -76,7 +90,7 @@ def load_street_slang(style="getnice_hybrid"):
         if words:
             words = [w.strip() for w in words if w.strip()]
             combined_list = list(set(words + target_list))
-            return random.sample(combined_list, min(8, len(combined_list)))
+            return random.sample(combined_list, min(10, len(combined_list)))
             
     except Exception as e:
         print(f"🚨 Failed to load slang: {e}")
@@ -99,7 +113,7 @@ def load_cultural_context():
     except Exception as e:
         print(f"🚨 Failed to load culture: {e}")
         
-    return "Focus on the struggle, the hustle, and survival."
+    return "Focus on the struggle, algorithmic survival, and ownership."
 
 def sanitize_lora_config():
     config_path = os.path.join(LORA_WEIGHTS_DIR, "adapter_config.json")
@@ -123,7 +137,15 @@ def init_model():
     bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4")
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
     tokenizer.pad_token_id = tokenizer.eos_token_id 
-    base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL_NAME, quantization_config=bnb_config, device_map="auto", torch_dtype=torch.float16)
+    
+    # 🚨 SURGICAL FIX: Strict GPU Memory Binding to prevent container crashes
+    base_model = AutoModelForCausalLM.from_pretrained(
+        BASE_MODEL_NAME, 
+        quantization_config=bnb_config, 
+        device_map={"": 0}, 
+        torch_dtype=torch.float16,
+        low_cpu_mem_usage=True
+    )
     try:
         model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
         print("✅ GetNice Adapter fused successfully.")
@@ -135,7 +157,6 @@ def init_model():
 # =====================================================================
 # --- THE UNIFIED SYSTEM PROMPT ---
 # =====================================================================
-# 🚨 SURGICAL FIX: Added `is_explicit` to parameters
 def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, bpm, flow_reference="", banned_words_map=None, is_explicit=True):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
     slang_list = ", ".join(load_street_slang(style)) if use_slang else "Standard vocabulary."
@@ -143,9 +164,9 @@ def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustl
     
     if banned_words_map and isinstance(banned_words_map, dict):
         clean_words = [k.replace("\\b", "").replace("?", "").replace("(?:y|ies)", "y") for k in banned_words_map.keys()]
-        banned_words_str = ", ".join(clean_words)
+        banned_words_str = ", ".join(clean_words[:15]) # Only load the top 15 to save attention heads
     else:
-        banned_words_str = ", ".join(BAN_LIST)
+        banned_words_str = "tapestry, delve, testament, beacon, journey, myriad, landscape, whisper, shadows, dancing"
     
     strike_rule = "Ensure your multi-syllabic rhyme endings land precisely on the 2-count and 4-count (the snare drum)."
     if strike_zone == "downbeat": strike_rule = "Force aggressive, heavy emphasis on the 1-count (the downbeat/kick drum)."
@@ -162,7 +183,6 @@ def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustl
 "{flow_reference}"
 -> CRITICAL INSTRUCTION: Analyze the syllable density and internal rhyme placement of that quote. You MUST format your generated lyrics to perfectly match that specific rhythmic bounce."""
 
-    # 🚨 SURGICAL FIX: EXPLICIT LOGIC
     explicit_directive = ""
     if is_explicit:
         explicit_directive = "6. EXPLICIT CONTENT RATING: This is a raw, uncensored street track. You MUST organically use harsh profanity (e.g., fuck, shit, motherfucker, bitch) to emphasize aggression and raw authenticity. Do not hold back or censor yourself."
@@ -173,6 +193,12 @@ def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustl
 [SYSTEM DIRECTIVE: THE SURROGATE HEIR]
 You are "The Heir." You grew up without a father, raised by the streets and its archetypes. You speak with the cold, calculated intellect of a man who outlived all of his surrogate fathers. Your voice blends street-smart authenticity with boardroom strategic vision. You value equity over a paycheck.
 
+[LIVE INTEL]
+{rag_context}
+
+[CULTURAL ANCHOR]
+{culture_context}
+
 [TRACK VARIABLES]
 - DRIVE: {motive}
 - SETBACK: {struggle}
@@ -182,23 +208,30 @@ You are "The Heir." You grew up without a father, raised by the streets and its 
 [VOCAL INTONATION & PITCH LAWS]
 - HARMONIC ROOT: {root_note} {scale}.
 - CONTOUR DIRECTION: The beat {contour}.
-- DICTION: Align your vowel choices to resonate with this pitch direction.
 - THE STRIKE ZONE: {strike_rule}
 {rhythm_logic}
 
 [ABSOLUTE ENGINE RULES]
-1. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
-2. TONE: Strategic, authoritative executive street-slang. Minimalist syntax. Use concrete nouns.
-3. ONE LINE = ONE BAR. 
-4. THE PIPE SYMBOL: You MUST place a pipe symbol (|) in the middle of EVERY line to mark the rhythmic pause/breath.
+1. ONE LINE = ONE BAR. 
+2. THE PIPE SYMBOL: You MUST place exactly one pipe symbol (|) in the exact middle of EVERY single line to mark the rhythmic pause/breath.
+3. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
+4. TONE: Strategic, authoritative executive street-slang. Minimalist syntax. Use concrete nouns. Speak from the gut.
 5. VOCABULARY: Organically weave in the following slang terms contextually: [ {slang_list} ].
 {explicit_directive}
 {flow_mimicry}
 
-[LIVE INTEL]
-{rag_context}
-[CULTURAL ANCHOR]
-{culture_context}
+[GOLD STANDARD EXAMPLES - MIMIC THIS EXACT FORMAT AND GRIT]
+Example 1 (Aggressive):
+Looked the devil in his face | told that motherfucker wait.
+I got equity to clear | I got leverage on the plate.
+Lost my brother to the system | had to turn it into rage.
+Now I'm buying out the block | put the family on the stage.
+
+Example 2 (Methodical):
+Thirty rounds inside the clip | thirty million in the bank.
+Had to cut the dead weight | had to empty out the tank.
+Every move is calculated | never moving out of spite.
+Catch a body in the boardroom | keep the paperwork air-tight.
 <|im_end|>
 """
 
@@ -229,7 +262,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     else:
         energy_rules = f"\n[ENERGY LEVEL {current_energy} - THE POCKET]: The beat has standard driving energy. Maintain a steady, confident cadence."
 
-    # --- TRANSLATE HOOK TYPE INTO SYLLABLE MATH ---
     if "HOOK" in section_type.upper():
         if hook_type == "bouncy":
             current_max_syllables = max(6, int(max_syllables * 0.9))
@@ -247,7 +279,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
             current_max_syllables = max(4, int(max_syllables * 0.5))
             melodic_rules = "[STADIUM CHANT HOOK OVERRIDE]\n1. SPACIOUS & ANTHEMIC: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse.\n2. SIMPLICITY: Highly memorable, heavily spaced out. Let the instrumental breathe between words."
 
-    # --- TRANSLATE FLOW EVOLUTION FOR VERSES ---
     if "VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 12:
         evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast.\nCRITICAL COMMAND: You must achieve this rhythm change using REAL vocabulary. DO NOT stretch letters, hum, or use sound effects."
 
@@ -273,33 +304,33 @@ Write the draft now.
 <|im_start|>assistant
 """
     inputs = tokenizer(system_prompt + draft_prompt, return_tensors="pt").to("cuda")
-    outputs = model.generate(**inputs, max_new_tokens=60 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15)
+    outputs = model.generate(**inputs, max_new_tokens=64 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15)
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    # PASS 2: THE POLISH
+    # 🚨 PASS 2: THE POETRY ASSASSIN (SURGICAL FIX APPLIED HERE)
+    # This pass forces the AI to ruthlessly clean its own draft
     refine_prompt = f"""<|im_start|>user
-{system_prompt}
-
-[THE SECOND PASS - FINAL POLISH]
+[THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
 You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
 CRITICAL REFINEMENT COMMANDS:
-1. Every line MUST be {current_max_syllables} syllables or less. Rewrite long lines to be minimalist.
+1. SYLLABLE MATH: Every line MUST be {current_max_syllables} syllables or less. Rewrite long lines to be minimalist.
 2. OBEY THE POCKET: {pocket_instruction}
-3. 🚨 OVERRIDE: YOU MUST INSERT EXACTLY ONE PIPE SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE TO MARK THE BREATH. 
-4. NO HEADERS. NO TIMESTAMPS. NO POETRY.
-5. NO ACRONYM GLITCHING: Use standard natural English. Do NOT spell out words with dots (e.g., C.O.M.P.T.O.N is strictly forbidden). DO NOT copy previous sections verbatim.
-6. THE KILL LIST: You MUST strictly obey the banned words list in the system rules above. Do not use corny poetry.
+3. 🚨 THE PIPE REQUIREMENT: YOU MUST INSERT EXACTLY ONE PIPE SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE TO MARK THE BREATH. 
+4. KILL LIST: Delete any banned AI poetry words (e.g., testament, myriad, beacon, journey). Replace generic "warrior/depths" talk with strategic boardroom-street metaphors.
+5. NO HEADERS. NO TIMESTAMPS. NO METADATA. Just the raw lyrics.
 {energy_rules}
 {melodic_rules}
 
-Rewrite the final {bars} lines now.
+Output ONLY the final {bars} lines now.
 <|im_end|>
 <|im_start|>assistant
 """
-    inputs_refine = tokenizer(refine_prompt, return_tensors="pt").to("cuda")
-    outputs_refine = model.generate(**inputs_refine, max_new_tokens=60 * bars, temperature=0.55, top_p=0.9, repetition_penalty=1.1)
+    inputs_refine = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
+    
+    # Set temperature to 0.5 to force obedience to the formatting rules
+    outputs_refine = model.generate(**inputs_refine, max_new_tokens=64 * bars, temperature=0.5, top_p=0.9, repetition_penalty=1.1)
     final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
     # AGGRESSIVE CLEANUP PIPELINE
@@ -312,7 +343,7 @@ Rewrite the final {bars} lines now.
     clean_lines = [line.strip() for line in final_text.split('\n') if line.strip() and len(line.strip()) > 5 and not line.strip().startswith(('+', '-')) and not line.lower().startswith("here are")]
     
     while len(clean_lines) < bars:
-        clean_lines.append("... [Ride the pocket] ...")
+        clean_lines.append("... | [Ride the pocket] ...")
         
     return clean_lines[:bars]
 
@@ -325,10 +356,7 @@ def handler(event):
     # 🚨 DIAGNOSTIC LOGGER: Print the exact payload from Next.js
     print(f"\n================ RUNPOD INCOMING PAYLOAD ================\n{json.dumps(job_input, indent=2)}\n=========================================================\n")
     
-    # --- TASK ROUTER (REFINEMENT VS GENERATION) ---
     task_type = job_input.get("task_type", "generate")
-    
-    # --- SAAS VARIABLES ---
     topic = job_input.get("prompt", "Securing the legacy")
     motive = job_input.get("motive", "Ownership")
     struggle = job_input.get("struggle", "Resistance")
@@ -338,7 +366,7 @@ def handler(event):
     
     use_slang = job_input.get("useSlang", True)
     use_intel = job_input.get("useIntel", True)
-    is_explicit = job_input.get("isExplicit", True) # 🚨 SURGICAL FIX: CAPTURES EXPLICIT TOGGLE
+    is_explicit = job_input.get("isExplicit", True) 
     
     banned_words_map = job_input.get("bannedWordsMap", None)
     flow_reference = job_input.get("flowReference", "")
@@ -347,7 +375,6 @@ def handler(event):
     contour = job_input.get("contour", "drops into a lower register")
     strike_zone = job_input.get("strikeZone", "snare")
 
-    # --- INJECT SAAS VARIABLES TO SYSTEM PROMPT ---
     system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, bpm, flow_reference, banned_words_map, is_explicit)
     
     # =======================================================
@@ -392,7 +419,6 @@ Output ONLY the rewritten line. Do not explain yourself.
         total_blueprint_bars = sum(sec.get("bars", 16) for sec in blueprint)
         if total_blueprint_bars == 0: total_blueprint_bars = 1
 
-        # --- SYLLABLE MATH & POCKET LOGIC ---
         seconds_per_bar = (60.0 / bpm) * 4.0
         style_limits = {
             "lazy": {"min": 4, "max": 7},              
@@ -407,8 +433,8 @@ Output ONLY the rewritten line. Do not explain yourself.
         max_syllables = int(limits["min"] + (limits["max"] - limits["min"]) * bpm_ratio)
 
         pocket_instruction = "End every line with a period (.). You MUST hit Enter/Return to create a new line."
-        if pocket == "chainlink": pocket_instruction = "CHAIN-LINK MODE: End every single line with a comma (,) for spillover."
-        elif pocket == "pickup": pocket_instruction = "THE DRAG MODE: Start every line with an ellipsis (...) and end with a period (.)."
+        if pocket == "chainlink": pocket_instruction = "SYNCOPATION OVERRIDE (CHAIN-LINK): Do not wait for the end of the bar to rhyme. Bleed across the bar lines. You MUST end lines with a comma (,) to signal no breath, spilling directly into the next bar."
+        elif pocket == "pickup": pocket_instruction = "SYNCOPATION OVERRIDE (THE DRAG/PICKUP): Start your phrases late or early. You MUST start lines with an ellipsis (...) to signal a delay or pickup note off the 1-count."
         elif pocket == "cascade": pocket_instruction = "THE CASCADE MODE: Use heavy enjambment. End lines mid-phrase with no punctuation."
         elif pocket == "matrix_pivot": pocket_instruction = "THE MATRIX PIVOT: Execute a cascading rhyme shift on the 3rd spoken word."
 
@@ -418,7 +444,6 @@ Output ONLY the rewritten line. Do not explain yourself.
         saved_hook_lines = None 
         anchor_hook_text = None
 
-        # --- GENERATION LOOP ---
         for index, section in enumerate(blueprint):
             sec_type = section.get("type", "VERSE").upper()
             bars = section.get("bars", 16)
@@ -432,7 +457,6 @@ Output ONLY the rewritten line. Do not explain yourself.
             elif "INSTRUMENTAL" in sec_type: current_energy = 1
             else: current_energy = base_energy
             
-            # The exact header formatting you requested
             final_lyrics += f"\n[{sec_type} - {bars} BARS | BAR {start_bar} | ENERGY: {current_energy}/4]\n"
             
             if sec_type == "INSTRUMENTAL":
@@ -469,7 +493,6 @@ Output ONLY the rewritten line. Do not explain yourself.
                     
                 context_lyrics = "\n".join(section_lines[-4:])
             
-            # The exact timestamp formatting you requested
             for i, line in enumerate(section_lines):
                 line_bar = start_bar + i
                 line_time = line_bar * seconds_per_bar
