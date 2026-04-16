@@ -14,10 +14,11 @@ LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
 
 SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_briefing.txt")
 
-# --- 🚨 SUPABASE INTEL ENDPOINTS (CORRECTED PATHS) ---
-DAILY_BRIEFING_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/matrix_intel/daily_briefing.txt"
-SLANG_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/matrix_intel/dictionary.json"
-CULTURE_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/matrix_intel/master_index.json"
+# --- 🚨 SUPABASE INTEL ENDPOINTS (RESTORED PATHS) ---
+# Fixed the 400 Bad Request by routing through the correct public_audio bucket
+DAILY_BRIEFING_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/daily_briefing.txt"
+SLANG_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/dictionary.json"
+CULTURE_URL = "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel/master_index.json"
 
 # --- THE CONCENTRATED KILL LIST (KILLS AI POETRY) ---
 BAN_LIST = [
@@ -40,11 +41,14 @@ BAN_LIST = [
 model = None
 tokenizer = None
 
+# --- 🚨 ROBUST USER AGENT TO BYPASS CLOUDFLARE WAF ---
+REQ_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+
 # 3. FIXED THE FETCH LOGIC (User's Dual-Fetch Protocol)
 def load_rag_intel():
     # First, attempt to fetch live from Supabase
     try:
-        req = urllib.request.Request(DAILY_BRIEFING_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(DAILY_BRIEFING_URL, headers=REQ_HEADERS)
         with urllib.request.urlopen(req, timeout=5) as response:
             content = response.read().decode('utf-8')
             if content.strip():
@@ -70,7 +74,7 @@ def load_street_slang(style="getnice_hybrid"):
 
     words = []
     try:
-        req = urllib.request.Request(SLANG_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(SLANG_URL, headers=REQ_HEADERS)
         with urllib.request.urlopen(req, timeout=5) as response:
             content = response.read().decode('utf-8')
             
@@ -99,7 +103,7 @@ def load_street_slang(style="getnice_hybrid"):
 
 def load_cultural_context():
     try:
-        req = urllib.request.Request(CULTURE_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(CULTURE_URL, headers=REQ_HEADERS)
         with urllib.request.urlopen(req, timeout=5) as response:
             content = response.read().decode('utf-8')
             
@@ -238,7 +242,6 @@ Catch a body in the boardroom | keep the paperwork air-tight.
 # =====================================================================
 # --- THE 2-PASS LYRICAL GRINDER (MATH + REFINEMENT) ---
 # =====================================================================
-# 🚨 ADDED banned_words_map TO SIGNATURE
 def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
     
     if section_index == 0: arc_instruction = "Establish the setting and the origin. Ground the listener. DO NOT copy the hook verbatim."
@@ -253,7 +256,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     evolution_rules = ""
     energy_rules = ""
     
-    # --- DYNAMIC ARRAY SYLLABLE MATH ---
     if current_energy == 1:
         current_max_syllables = max(4, int(max_syllables * 0.6))
         energy_rules = "\n[ENERGY LEVEL 1 - THE DROP]: The beat is very quiet here. Write sparse, conversational, breathy lines. Use minimal syllables and leave empty space."
@@ -283,7 +285,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     if "VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 12:
         evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast.\nCRITICAL COMMAND: You must achieve this rhythm change using REAL vocabulary. DO NOT stretch letters, hum, or use sound effects."
 
-    # 🚨 DYNAMIC KILL LIST FOR PASS 2
     if banned_words_map and isinstance(banned_words_map, dict):
         clean_words = [k.replace("\\b", "").replace("?", "").replace("(?:y|ies)", "y") for k in banned_words_map.keys()]
         banned_words_str = ", ".join(clean_words[:15])
@@ -315,8 +316,7 @@ Write the draft now.
     outputs = model.generate(**inputs, max_new_tokens=64 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15)
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    # 🚨 PASS 2: THE POETRY ASSASSIN (SURGICAL FIX APPLIED HERE)
-    # This pass forces the AI to ruthlessly clean its own draft
+    # 🚨 PASS 2: THE POETRY ASSASSIN & RHYTHM ENFORCER
     refine_prompt = f"""<|im_start|>user
 [THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
 You drafted this {bars}-bar {section_type.upper()}:
@@ -337,27 +337,21 @@ Output ONLY the final {bars} lines now.
 """
     inputs_refine = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
     
-    # Set temperature to 0.5 to force obedience to the formatting rules
     outputs_refine = model.generate(**inputs_refine, max_new_tokens=64 * bars, temperature=0.5, top_p=0.9, repetition_penalty=1.1)
     final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    # AGGRESSIVE CLEANUP PIPELINE
     final_text = final_text.replace("<|im_end|>", "").strip()
     final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL)
     final_text = final_text.replace("```", "")
-    final_text = re.sub(r'\[.*?\]', '', final_text) # Kills headers like [Verse 1]
-    final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE) # Kills AI timestamps
+    final_text = re.sub(r'\[.*?\]', '', final_text) 
+    final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE) 
     
     raw_lines = [line.strip() for line in final_text.split('\n') if line.strip() and len(line.strip()) > 5 and not line.strip().startswith(('+', '-')) and not line.lower().startswith("here are")]
     
-    # 🚨 SURGICAL FIX: PYTHON-LAYER HARD ENFORCEMENT
-    # If the LLM drops constraints, Python intercepts and forces the formatting mathematically.
     clean_lines = []
     for line in raw_lines:
-        # Strip lingering hallucinations like `[Test our mettle`
         line = line.replace('[', '').replace(']', '')
         
-        # 1. The Pipe Enforcer (Finds the middle space and injects the breath marker)
         if '|' not in line:
             words = line.split()
             if len(words) > 2:
@@ -366,7 +360,6 @@ Output ONLY the final {bars} lines now.
             else:
                 line = line + " |"
         
-        # 2. The Vocabulary Scrubber (100% Kill Rate)
         if banned_words_map and isinstance(banned_words_map, dict):
             for bad_pattern, replacement in banned_words_map.items():
                 try:
@@ -390,7 +383,6 @@ Output ONLY the final {bars} lines now.
 def handler(event):
     job_input = event.get("input", {})
     
-    # 🚨 DIAGNOSTIC LOGGER: Print the exact payload from Next.js
     print(f"\n================ RUNPOD INCOMING PAYLOAD ================\n{json.dumps(job_input, indent=2)}\n=========================================================\n")
     
     task_type = job_input.get("task_type", "generate")
@@ -414,9 +406,6 @@ def handler(event):
 
     system_prompt = construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, bpm, flow_reference, banned_words_map, is_explicit)
     
-    # =======================================================
-    # TASK 1: MICRO-REFINEMENT (ROOM 03 REWRITE BUTTON)
-    # =======================================================
     if task_type == "refine":
         original_line = job_input.get("originalLine", "")
         instruction = job_input.get("instruction", "Make it hit harder.")
@@ -443,9 +432,6 @@ Output ONLY the rewritten line. Do not explain yourself.
         
         return {"refinedLine": refined_line}
 
-    # =======================================================
-    # TASK 2: FULL BLUEPRINT GENERATION
-    # =======================================================
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [])
         hook_type = job_input.get("hookType", "chant")
@@ -522,7 +508,7 @@ Output ONLY the rewritten line. Do not explain yourself.
                     hook_type=hook_type,            
                     flow_evolution=flow_evolution,
                     current_energy=current_energy,
-                    banned_words_map=banned_map # 🚨 PASSES MAP TO RENDERER
+                    banned_words_map=banned_map 
                 )
                 
                 if "HOOK" in sec_type:
