@@ -47,22 +47,31 @@ tokenizer = None
 REQ_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
 
 def fetch_web_intel(filename):
-    """Smart resolver that hunts for the correct Supabase bucket path to avoid 400 errors."""
+    """Smart resolver that hunts for the correct Supabase bucket path and handles case-sensitivity."""
+    # 🚨 SURGICAL FIX: Automatically checks different capitalizations 
+    # to bypass Linux/Supabase case-sensitivity errors (e.g., Dictionary.json vs dictionary.json)
+    variations = list(set([
+        filename,
+        filename.lower(),
+        filename.capitalize(),
+        filename.title()
+    ]))
+
     for base_url in INTEL_BASE_URLS:
-        url = f"{base_url}/{filename}"
-        try:
-            req = urllib.request.Request(url, headers=REQ_HEADERS)
-            with urllib.request.urlopen(req, timeout=5) as response:
-                content = response.read().decode('utf-8')
-                if content.strip():
-                    return content
-        except HTTPError as e:
-            # 400 means invalid bucket, 404 means file missing. We just try the next path.
-            continue
-        except Exception:
-            continue
-            
-    print(f"🚨 Failed to fetch '{filename}' from all known Supabase buckets.")
+        for variant in variations:
+            url = f"{base_url}/{variant}"
+            try:
+                req = urllib.request.Request(url, headers=REQ_HEADERS)
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    content = response.read().decode('utf-8')
+                    if content.strip():
+                        return content
+            except HTTPError:
+                continue # 400 or 404, just move to the next variation/URL
+            except Exception:
+                continue
+                
+    print(f"🚨 Failed to fetch '{filename}' (tried variations like '{filename.capitalize()}') from all known Supabase buckets.")
     return None
 
 def load_rag_intel():

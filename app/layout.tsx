@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     title: "BAR-CODE.AI | The Matrix is Open",
     description: "The first identity-aware AI studio built for the streets. Join the Syndicate.",
     type: "website",
-    url: "https://www.bar-code.ai",
+    url: "https://bar-code.ai",
   }
 };
 

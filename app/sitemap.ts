@@ -13,7 +13,7 @@ const supabase = createClient(
  * definitive list of all valid artist nodes.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = 'https://www.bar-code.ai';
+  const baseUrl = 'https://bar-code.ai';
   
   // Base static routes
   const staticRoutes: MetadataRoute.Sitemap = [
