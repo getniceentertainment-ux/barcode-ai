@@ -344,7 +344,11 @@ Output ONLY the final {bars} lines now.
     
     clean_lines = []
     for line in raw_lines:
-        line = line.replace('[', '').replace(']', '')
+        # Nuke brackets and parentheses completely to prevent format bleeding
+        line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
+        
+        # Forcefully strip any hallucinated labels (e.g., "Chorus:", "Preface:")
+        line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         
         if '|' not in line:
             words = line.split()

@@ -267,9 +267,8 @@ export default function Room03_Ghostwriter() {
     // --- SURGICAL FIX: Removed Pipe formatting to clear Cognitive Overload ---
     const systemConstraint = `ABSOLUTE ENGINE RULES:
 1. RAW LYRICS ONLY: You must ONLY output the lyrics.
-2. NO PREFIXES: NEVER output labels like "1st Line:", "Hook:", or "Verse:" before the lyrics.
-3. COMPOUND RHYMING: Use 2- or 3-syllable compound rhymes on the structural accents.
-4. PITCH INTONATION: Align your vowel choices to the pitch contour of the beat. Use closed/heavy vowels for pitch drops, and open/elongated vowels for tension rises.`;
+2. COMPOUND RHYMING: Use 2- or 3-syllable compound rhymes on the structural accents.
+3. PITCH INTONATION: Align your vowel choices to the pitch contour of the beat. Use closed/heavy vowels for pitch drops, and open/elongated vowels for tension rises.`;
 
     const keyParts = audioData?.key ? audioData.key.split(" ") : ["C", "minor"];
     const rootNote = keyParts[0];

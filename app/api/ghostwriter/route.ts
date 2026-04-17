@@ -14,6 +14,12 @@ const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, proces
 // --- THE DYNAMIC ASSASSIN DICTIONARY (FRONTEND CONTROLLED) ---
 // Update this list anytime. Next.js will pass it to the Python worker on every request.
 const BANNED_WORDS_MAP = {
+  "\\bphoenix\\b": "hustler",
+  "\\bcinders?\\b": "ashes",
+  "\\bsweet perfume\\b": "gasoline",
+  "\\bdesert sands?\\b": "the grid",
+  "\\bnew life blooms?\\b": "the money moves",
+  "\\banonymous king\\b": "ghost",
   "\\bconcrete jungle\\b": "the pavement",
   "\\bjiggy\\b": "active",
   "\\bphat\\b": "heavy",
