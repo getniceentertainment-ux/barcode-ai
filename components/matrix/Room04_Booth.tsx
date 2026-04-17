@@ -936,10 +936,56 @@ export default function Room04_Booth() {
           : activeVariations[index % activeVariations.length];
 
       linesForThisBlock.forEach((textLine) => {
-        // --- KEEP ALL YOUR WORD MAPPING LOGIC (chunking, syllables, activePattern) ---
-        // (Insert your WordMapping logic here using textLine and timeForLine)
-        // ...
-        
+        // --- SURGICAL FIX: Move mappedWords and rhythm math into the correct scope ---
+        const rawWords = textLine.split(/\s+/).filter(w => w.length > 0);
+        const mappedWords: WordMapping[] = [];
+        let totalLineSteps = 0;
+        let tempPatternIndex = 0;
+
+        if (textLine.trim().startsWith('...')) totalLineSteps += 4;
+
+        const wordChunksArray = rawWords.map(w => {
+          const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
+          chunks.forEach(() => {
+            const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
+            totalLineSteps += isNaN(stepVal) ? 2 : stepVal; 
+            tempPatternIndex++;
+          });
+          return chunks;
+        });
+
+        const cleanTextEnd = textLine.trim().slice(-1);
+        if (cleanTextEnd === '.') totalLineSteps += 4;
+        else if (cleanTextEnd === ',') totalLineSteps += 1;
+
+        const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
+        let localWordTime = currentFlowTime;
+        const lineStartTime = currentFlowTime;
+
+        if (textLine.trim().startsWith('...')) localWordTime += (4 * timePerStep);
+
+        let patternIndex = 0;
+        wordChunksArray.forEach((chunks) => {
+          chunks.forEach((chunk, cIdx) => {
+            const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
+            patternIndex++;
+
+            const chunkDuration = stepsRequired * timePerStep;
+            const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForLine) * 16)));
+
+            mappedWords.push({
+              id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+              word: chunk.replace(/\|/g, ''),
+              slot: mappedSlot,
+              startTime: localWordTime,
+              duration: chunkDuration, 
+              isWordEnd: (cIdx === chunks.length - 1)
+            });
+            localWordTime += chunkDuration;
+          });
+        });
+
+        // SUCCESS: mappedWords is now defined and populated within this scope
         parsed.push({ 
           id: `line-${lineIdCounter++}`,
           barIndex: Math.floor(currentFlowTime / secondsPerBar),
@@ -949,9 +995,10 @@ export default function Room04_Booth() {
           lineDuration: timeForLine, 
           isHeader: false, 
           timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
-          words: mappedWords // populated by your logic
+          words: mappedWords 
         });
         currentFlowTime += timeForLine;
+      });
       });
     });
 
