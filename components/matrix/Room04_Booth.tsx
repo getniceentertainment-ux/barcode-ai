@@ -872,12 +872,17 @@ export default function Room04_Booth() {
       // Detect [HOOK], [VERSE], etc. and set the active pool
       if (trimmed.startsWith('[') && trimmed.includes(']')) {
         activePoolHeader = trimmed.split(' ')[0].replace(/[^A-Z]/g, '');
+        if (!llmPools[activePoolHeader]) llmPools[activePoolHeader] = [];
       } else if (activePoolHeader && trimmed.length > 0) {
-        // FILTER OUT METADATA & HALLUCINATIONS
-        if (trimmed.match(/^(Written:|Vocal:|Bars:|Total:|Vocal Cadence:|Vocal:)/i)) return;
-        let cleanLine = trimmed.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '')
-                               .replace(/pipe\s*symbol/gi, '')
-                               .replace(/\s+/g, ' ').trim();
+        // 🚨 CRITICAL SHIELD: Strip the timestamp FIRST, so the regex can actually "see" the metadata
+        let cleanLine = trimmed.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
+        
+        // Assassinate Hallucinations
+        if (cleanLine.match(/^(Written:|Vocal:|Bars:|Total:|Vocal Cadence:)/i)) return;
+        
+        // Strip backend pipe tags and clean spacing
+        cleanLine = cleanLine.replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
+        
         if (cleanLine && cleanLine !== "[Instrumental Break]") {
           llmPools[activePoolHeader].push(cleanLine);
         }
@@ -914,13 +919,13 @@ export default function Room04_Booth() {
         const currentPool = llmPools[bp.type] || [];
         const pointer = poolPointers[bp.type] || 0;
         
-        // 🚨 CRITICAL MATH: 
-        // We know standard rap delivery is 1 line per 2 bars.
-        // For an 8-bar block, we MUST take exactly 4 lines to stay in sync.
-        const linesToTake = bp.type === "HOOK" ? 4 : Math.max(1, Math.ceil(bp.bars / 2));
+        // 🚨 THE MASTER ALIGNMENT: 
+        // The Python backend (handler.py) enforces EXACTLY 1 line per bar.
+        // Therefore, we pull exactly 'bp.bars' lines to maintain 1:1 sync.
+        const linesToTake = bp.bars;
         linesForThisBlock = currentPool.slice(pointer, pointer + linesToTake);
         
-        // Update pointer so the NEXT segment (e.g., Verse 2) picks up where this left off
+        // Update pointer so the NEXT segment picks up exactly where this one left off
         poolPointers[bp.type] = pointer + linesForThisBlock.length;
         
         // Safety Fallback
@@ -936,7 +941,7 @@ export default function Room04_Booth() {
           : activeVariations[index % activeVariations.length];
 
       linesForThisBlock.forEach((textLine) => {
-        // --- YOUR PRESERVED SYLLABLE & WORD MAPPING LOGIC ---
+        // --- PRESERVED SYLLABLE & WORD MAPPING LOGIC ---
         const rawWords = textLine.split(/\s+/).filter(w => w.length > 0);
         const mappedWords: WordMapping[] = [];
         let totalLineSteps = 0;
