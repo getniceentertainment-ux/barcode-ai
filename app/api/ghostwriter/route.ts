@@ -208,23 +208,21 @@ export async function POST(req: Request) {
     else dspVocalInstruction = `DSP MATCH: MAJOR KEY, SLOW TEMPO. Inject massive, anthemic spelled-out words (e.g., "T to the A") and huge group-style pauses.`;
 
     const getNiceOverride = `
-    CRITICAL OVERRIDE - THE "GETNICE" DIRECTIVE:
-    1. NO SANITIZED POETRY: Do not write cheesy, generic, or polite poetry.
-    2. DO NOT repeat lines from the Hook in the Verse. Each Verse must provide new narrative progression.
-    3. RAW AUTHENTICITY: Write gritty, street-level bars. Use internal rhymes, complex syllables, and raw emotional imagery. Spit hot fire.
-    4. ENERGY FORMATTING: Output the actual lyrics in ALL CAPS to simulate an aggressive, high-energy vocal delivery.
-    5. STRUCTURAL ARCHITECTURE: Write EXACTLY the requested number of lines. Do NOT write timestamps, bar counts, or metadata. Just the lyrics.
-    6. THE DYNAMIC SYLLABLE CAP: You are writing for an AI Voice Engine. To match the exact physical cadence of the requested flow style, EVERY single line you write MUST be exactly ${maxSyllables} syllables or less. Count your syllables carefully. Do not exceed this limit or the audio pipeline will fail.
-    7. POCKET PLACEMENT: ${pocketInstruction}
-    8. THE BEAT 4 ANCHOR: Structure the syntax so the primary rhyming syllable inherently falls at the end of the phrase (simulating Beat 4 of the measure).
-    9. THE 25% STRESS RATIO: Do not over-rhyme. Only about 25% of stressed syllables should rhyme. Use internal rhymes sparingly to maintain authentic street flow and avoid sounding like a nursery rhyme.
-    10. DYNAMIC ARTICULATION (THE HUMAN ELEMENT): Break the robotic grid occasionally. Based on the instrumental's DSP analysis, you MUST inject structural anomalies:
+    CRITICAL OVERRIDE - THE "MODERN TRAP" DIRECTIVE:
+    1. NO POETRY. NO METAPHORS: Speak literally. Do not use archaic words like "cloak", "titans", "empires", or "nightmares". Talk directly about money, cars, loyalty, the plug, and the streets.
+    2. DYNAMIC BOUNCE (BALANCED REPETITION): Mix your flows. You can occasionally repeat a starting phrase for 2 lines to create a hypnotic bounce, but DO NOT do it every single time. Blend repetitive flex bars with conversational, storytelling lines to keep the cadence unpredictable and human.
+    3. SIMPLE SYNTAX: Write exactly like a modern Atlanta or Chicago trap artist. Short, punchy, direct sentences.
+    4. HEAVY END-RHYMES: Stack the same end-rhyme for 4 to 8 lines in a row (AAAA or AABB schemes) using simple, modern slang. 
+    5. ENERGY FORMATTING: Output the actual lyrics in ALL CAPS to simulate an aggressive delivery.
+    6. STRUCTURAL ARCHITECTURE: Write EXACTLY the requested number of lines. Do NOT write timestamps, bar counts, or metadata. Just the lyrics.
+    7. THE DYNAMIC SYLLABLE CAP: EVERY single line you write MUST be exactly ${maxSyllables} syllables or less. Do not exceed this limit.
+    8. POCKET PLACEMENT: ${pocketInstruction}
+    9. THE BEAT 4 ANCHOR: Structure the syntax so the primary rhyming syllable inherently falls at the end of the phrase.
+    10. DYNAMIC ARTICULATION: Based on the instrumental's DSP analysis, inject structural anomalies:
         - Rhythmic stutters on consonants (e.g., "g-g-go", "b-b-bag").
         - Spelled-out words or acronyms for bounce (e.g., "T to the A", "S-T-A-R").
-        - Isolated 1-word chants followed by commas to simulate vocal drops/pauses (e.g., "WAIT, I took the...", "YEAH, we running...").
         - ${dspVocalInstruction}
-    11. BREATH CONTROL: Use the pipe symbol (|) to insert rhythmic pauses. One pipe equals one rhythmic step of silence on the 16-slot grid. Use this to create a "Texas Drawl" or heavy syncopation.
-
+    11. BREATH CONTROL: Use the pipe symbol (|) to insert rhythmic pauses exactly in the middle of EVERY line.
     `;
 
     const thematicPrompt = `SONG TITLE: "${title || 'UNTITLED'}".\nUSER PROMPT: ${prompt}\nTHE MOTIVE (Drive): ${motive || "Mastering the craft"}\nTHE STRUGGLE (Setback): ${struggle || "Against the odds"}\nTHE HUSTLE (Execution): ${hustle || "Relentless execution"}\n${getNiceOverride}\n${systemConstraint || ''}`; 
