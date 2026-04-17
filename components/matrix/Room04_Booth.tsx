@@ -999,7 +999,6 @@ export default function Room04_Booth() {
         });
         currentFlowTime += timeForLine;
       });
-      });
     });
 
     setLyricLines(parsed);
