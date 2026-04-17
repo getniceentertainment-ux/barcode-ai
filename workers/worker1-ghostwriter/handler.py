@@ -16,8 +16,6 @@ LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
 SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_briefing.txt")
 
 # --- 🚨 SMART SUPABASE RESOLVER ---
-# Supabase throws 400 Bad Request if the bucket path is wrong. 
-# This array allows the worker to brute-force the correct path automatically.
 INTEL_BASE_URLS = [
     "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/matrix_intel",
     "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel"
@@ -238,8 +236,52 @@ Pull up in a blacked out Coupe | Step out cleaner than a whistle
 Fifty bands hid in the floorboard | Fifty bands hid in the closet
 <|im_end|>"""
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
+# --- SURGICAL INJECTION: THE TOPLINE MAPPING LAYER ---
+def translate_dna_to_topline(pattern_array, section_type, energy):
+    if not pattern_array:
+        return ""
     
+    mapping = {
+        1: "SNAP (Short, punchy word. Clip the consonant. High energy, zero sustain.)",
+        2: "STEP (Standard rhythmic weight. Conversational.)",
+        3: "GLIDE (Stretch the vowel. Elongate the phoneme.)",
+        4: "HOLD (Massive sustain. Long vocal hold.)",
+        6: "GHOST (Rest/Silence on this beat. Total silence. Internalize the beat count without speaking.)"
+    }
+    
+    sequence = [mapping.get(v, "STEP") for v in pattern_array]
+    
+    section_law = ""
+    if section_type == "HOOK":
+        section_law = "HOOK SYMMETRY LAW: Use Anaphora (repetition) but with Maximum Hold Time for anthemic feel."
+    elif section_type == "VERSE":
+        section_law = "VERSE EVOLUTION LAW: Prioritize Snaps and Steps to keep the energy moving and conversational."
+        
+    energy_directive = ""
+    if energy <= 1:
+        energy_directive = "INTONATION DIRECTIVE (Energy Drop): Use whispers and low-velocity consonants."
+    elif energy >= 4:
+        energy_directive = "INTONATION DIRECTIVE (Energy Climax): Aggressive delivery. High-velocity consonants. Push the vocal limit."
+    else:
+        energy_directive = "INTONATION DIRECTIVE (Pocket): Standard trap delivery, pocketed and confident."
+        
+    return f"""
+[TOPLINE DYNAMICS DIRECTIVE]
+You are locked to a specific rhythmic DNA for this line/section. You MUST execute this physical vocal sequence:
+Sequence: {" -> ".join(sequence)}
+
+SYLLABLE LAW: The number of primary accents in your line MUST match the number of steps in this sequence ({len(sequence)} accents).
+
+[STRUCTURAL LAWS]
+{section_law}
+{energy_directive}
+"""
+
+def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pattern_array, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
+    
+    # 🚨 UPGRADED BIBLE QUANTIZER TRANSLATION
+    dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
+
     # THE ANAPHORA LAWS: Dynamic Structural Steering
     if section_type.upper() == "HOOK": 
         arc_instruction = "THE ANAPHORA LAW (HOOK): Use heavy, hypnotic repetition. Stack the same starting phrases (Anaphora) to create a massive, catchy topline."
@@ -299,6 +341,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 - TOPIC: '{prompt_topic}'
 - NARRATIVE ARC: {arc_instruction}
 - RHYTHMIC POCKET: {pattern_desc}
+{dna_law}
 - SYLLABLE LIMIT: Strictly {current_max_syllables} or less per line.
 {energy_rules}
 {hook_context}
@@ -325,9 +368,9 @@ You drafted this {bars}-bar {section_type.upper()}:
 CRITICAL REFINEMENT COMMANDS:
 1. SYLLABLE MATH: Every line MUST be {current_max_syllables} syllables or less. Rewrite long lines to be minimalist.
 2. OBEY THE POCKET: {pocket_instruction}
-3. 🚨 THE PIPE REQUIREMENT: YOU MUST INSERT EXACTLY ONE PIPE SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE TO MARK THE BREATH. 
+3. 🚨 THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE. DO NOT WRITE THE WORD 'PIPE'. USE ONLY THE '|' SYMBOL.
 4. KILL LIST: Delete any banned AI poetry words (e.g., {banned_words_str}). Replace generic "warrior/depths" talk with strategic boardroom-street metaphors.
-5. NO HEADERS. NO METADATA. Just the raw lyrics.
+5. NO HEADERS. NO METADATA. NO INSTRUCTIONS. DO NOT output "### Instruction". Output ONLY the raw lyrics.
 
 Output ONLY the final {bars} lines now.
 <|im_end|>
@@ -343,12 +386,28 @@ Output ONLY the final {bars} lines now.
     final_text = re.sub(r'\[.*?\]', '', final_text) 
     final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE) 
     
-    raw_lines = [line.strip() for line in final_text.split('\n') if line.strip() and len(line.strip()) > 5 and not line.strip().startswith(('+', '-')) and not line.lower().startswith("here are")]
+    final_text = final_text.replace("<|im_end|>", "").strip()
+    final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
+    final_text = re.sub(r'\[.*?\]', '', final_text) 
+    final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE) 
+    
+    # 🚨 THE EXECUTIONER: Filter out polite AI filler and hallucinated instruction blocks
+    banned_starts = ('+', '-', 'here are', 'sure', 'i can', '###', 'please generate', 'output:', 'note:')
+    raw_lines = [
+        line.strip() for line in final_text.split('\n') 
+        if line.strip() and len(line.strip()) > 5 and not line.lower().strip().startswith(banned_starts)
+    ]
     
     clean_lines = []
     for line in raw_lines:
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
+        
+        # 🚨 THE PIPE ASSASSIN: Remove the literal word "pipe" if the AI hallucinates it
+        line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
+        # Clean up double pipes or weird spacing caused by the deletion
+        line = re.sub(r'\|+', '|', line)
+        line = re.sub(r'\s+\|\s+', ' | ', line)
         
         if '|' not in line:
             words = line.split()
@@ -368,6 +427,13 @@ Output ONLY the final {bars} lines now.
             for bad_word in ["concrete jungle", "tapestry", "delve", "testament", "navigate"]:
                 line = re.sub(r'\b' + bad_word + r'\b', "the pavement", line, flags=re.IGNORECASE)
                 
+        # Final cleanup for rogue trailing/leading pipes and spaces
+        line = line.strip('|').strip()
+        if '|' not in line: # Ensure we still have one if we stripped it
+            words = line.split()
+            mid = len(words) // 2
+            line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
+            
         clean_lines.append(line)
     
     while len(clean_lines) < bars:
@@ -503,6 +569,7 @@ Output ONLY the rewritten line. Do not explain yourself.
                     bars=bars, 
                     max_syllables=max_syllables, 
                     pattern_desc=combined_pattern_desc, 
+                    pattern_array=pattern_array, # <-- NEW MAPPING HOOKUP
                     pocket_instruction=pocket_instruction,
                     prompt_topic=topic,
                     section_index=index,

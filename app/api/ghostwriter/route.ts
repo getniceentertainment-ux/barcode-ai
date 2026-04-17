@@ -251,8 +251,8 @@ export async function POST(req: Request) {
           strikeZone: strikeZone,
           hookType: hookType,
           flowEvolution: flowEvolution,
-          dynamic_array: dynamic_array, // <-- ADDED
-          contour: contour,             // <-- ADDED
+          dynamic_array: dynamic_array, // <-- Safely bridging Room 1 to the backend 
+          contour: contour,             // <-- Safely bridging Room 1 to the backend
           bannedWordsMap: BANNED_WORDS_MAP
         }
       })
