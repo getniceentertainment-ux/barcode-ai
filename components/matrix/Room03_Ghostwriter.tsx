@@ -309,13 +309,33 @@ export default function Room03_Ghostwriter() {
           contour: (audioData as any)?.contour || "drops into a lower, cadential register",
           dynamic_array: (audioData as any)?.dynamic_array,
           systemConstraint: systemConstraint, 
-          blueprint: blueprint.map(b => ({ 
-            type: b.type, 
-            bars: b.bars, 
-            startBar: (b as any).startBar,
-            patternDesc: (b as any).patternDesc,
-            patternArray: (b as any).patternArray
-          }))
+          blueprint: blueprint.flatMap(b => {
+            if (b.type === "VERSE" && b.bars > 8) {
+              return [
+                { 
+                  type: b.type, 
+                  bars: 8, 
+                  startBar: (b as any).startBar,
+                  patternDesc: (b as any).patternDesc,
+                  patternArray: (b as any).patternArray
+                },
+                { 
+                  type: b.type, 
+                  bars: b.bars - 8, 
+                  startBar: (b as any).startBar + 8, 
+                  patternDesc: (b as any).patternDesc,
+                  patternArray: (b as any).patternArray
+                }
+              ];
+            }
+            return { 
+              type: b.type, 
+              bars: b.bars, 
+              startBar: (b as any).startBar,
+              patternDesc: (b as any).patternDesc,
+              patternArray: (b as any).patternArray
+            };
+          })
         })
       });
 
