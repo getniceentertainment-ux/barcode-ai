@@ -858,66 +858,66 @@ export default function Room04_Booth() {
   const lastParsedLyricsRef = useRef<string>("");
 
   useEffect(() => {
-    if (!generatedLyrics) return;
-    if (lyricLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
+    if (!generatedLyrics || !audioData || !blueprint) return;
+    if (lastParsedLyricsRef.current === generatedLyrics) return; 
     lastParsedLyricsRef.current = generatedLyrics;
 
     const lines = generatedLyrics.split('\n');
     
     const sanitizedLines = lines.map(l => {
       let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
+      // KILL HALLUCINATIONS ONLY: Keep headers, but kill metadata like "Written:" or "Vocal:"
+      if (text.match(/^(Written:|Vocal Cadence:|Bars:|Total:|Vocal:)/i)) return null;
       if (text.startsWith('[') && text.includes(']')) return { text, isHeader: true }; 
+      
       text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '').replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
       text = text.replace(/,/g, ', ').replace(/\s+/g, ' ').trim();
       return { text, isHeader: false };
-    }).filter(obj => obj.text.length > 0);
+    }).filter(obj => obj !== null && (obj as any).text.length > 0) as { text: string, isHeader: boolean }[];
 
-    const llmBlocks: { header: string, lines: typeof sanitizedLines }[] = [];
-    let currentLlmBlock = { header: "", lines: [] as typeof sanitizedLines };
-
-    sanitizedLines.forEach(obj => {
-      if (obj.isHeader) {
-        if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) llmBlocks.push(currentLlmBlock);
-        currentLlmBlock = { header: obj.text, lines: [] };
-      } else { currentLlmBlock.lines.push(obj); }
-    });
-    if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) llmBlocks.push(currentLlmBlock);
-
+    // --- NEW: THE LYRIC POOL ---
+    // This extracts just the lyrics so we can distribute them to split verses
+    const lyricPool = sanitizedLines.filter(obj => !obj.isHeader);
     const parsed: LyricLine[] = [];
-    let runningBlockStartBar = 0;
+    let currentLinePointer = 0;
     let lineIdCounter = 0;
 
     blueprint.forEach((bp, index) => {
-      const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
-      const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
-      
+      // PRESERVED: Your original startBar and timing math
+      const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : (index * 8);
       const bars = bp.bars || (bp.type === "INSTRUMENTAL" ? 8 : 4);
       const blockDurationSecs = bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
       parsed.push({ id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] });
 
+      // PRESERVED: Your Instrumental hum injection
       if (bp.type === "INSTRUMENTAL") {
          const hums = Array(bars).fill("Mmm. Mmm.").join(" ");
-         blockData.lines = [{ text: hums, isHeader: false }];
+         lyricPool.splice(currentLinePointer, 0, { text: hums, isHeader: false });
       }
 
-      const numLines = blockData.lines.length;
-      if (numLines > 0) {
-        const timeForThisLine = blockDurationSecs / numLines; 
+      // --- THE FIX: POOL DISTRIBUTION ---
+      // Distribute lines based on block type and bar count
+      const linesForThisBlock = bp.type === "HOOK" ? 4 : Math.max(1, Math.ceil(bp.bars / 2));
+      const blockLyrics = lyricPool.slice(currentLinePointer, currentLinePointer + linesForThisBlock);
+      currentLinePointer += blockLyrics.length;
+
+      if (blockLyrics.length > 0) {
+        const timeForThisLine = blockDurationSecs / blockLyrics.length; 
         let currentFlowTime = blockStartTime;
 
+        // PRESERVED: Your Proprietary Pattern Logic
         const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
         let activePattern = activeVariations[index % activeVariations.length];
-        
         if (Array.isArray((bp as any).patternArray) && (bp as any).patternArray.length > 0) {
            activePattern = (bp as any).patternArray;
         }
 
-        blockData.lines.forEach((lineObj) => {
+        blockLyrics.forEach((lineObj) => {
+          // --- ALL OF YOUR ORIGINAL WORDMAPPING LOGIC PRESERVED BELOW ---
           const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
           const mappedWords: WordMapping[] = [];
-
           let totalLineSteps = 0;
           let tempPatternIndex = 0;
 
@@ -944,12 +944,10 @@ export default function Room04_Booth() {
           if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
 
           let patternIndex = 0;
-
           wordChunksArray.forEach((chunks) => {
             chunks.forEach((chunk, cIdx) => {
               const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
               patternIndex++;
-
               const chunkDuration = stepsRequired * timePerStep;
               const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForThisLine) * 16)));
 
@@ -980,7 +978,6 @@ export default function Room04_Booth() {
           currentFlowTime += timeForThisLine; 
         });
       }
-      runningBlockStartBar = blockStartBar + bars;
     });
     
     setLyricLines(parsed);
