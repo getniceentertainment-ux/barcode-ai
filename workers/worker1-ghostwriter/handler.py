@@ -367,7 +367,11 @@ Output ONLY the final {bars} lines now.
         clean_lines.append(line)
     
     while len(clean_lines) < bars:
-        clean_lines.append("... | [Ride the pocket] ...")
+        # SURGICAL FIX: Stop Context Poisoning. 
+        # If it chokes, repeat the last valid line so the rhyme scheme survives, 
+        # or inject a safe generic rap line that won't confuse the next context window.
+        safe_fallback = clean_lines[-1] if len(clean_lines) > 0 else "Yeah | we stay in motion"
+        clean_lines.append(safe_fallback)
         
     return clean_lines[:bars]
 
