@@ -873,8 +873,8 @@ export default function Room04_Booth() {
       if (trimmed.startsWith('[') && trimmed.includes(']')) {
         activePoolHeader = trimmed.split(' ')[0].replace(/[^A-Z]/g, '');
       } else if (activePoolHeader && trimmed.length > 0) {
-        // Filter out metadata (Written:, Vocal:, etc.) and timestamps
-        if (trimmed.match(/^(Written:|Vocal:|Bars:|Total:|Vocal Cadence:)/i)) return;
+        // FILTER OUT METADATA & HALLUCINATIONS
+        if (trimmed.match(/^(Written:|Vocal:|Bars:|Total:|Vocal Cadence:|Vocal:)/i)) return;
         let cleanLine = trimmed.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '')
                                .replace(/pipe\s*symbol/gi, '')
                                .replace(/\s+/g, ' ').trim();
@@ -895,7 +895,7 @@ export default function Room04_Booth() {
       const blockDurationSecs = bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
-      // Add Header for UI
+      // Add UI Header
       parsed.push({ 
         id: `hdr-${lineIdCounter++}`, 
         barIndex: blockStartBar, 
@@ -914,17 +914,17 @@ export default function Room04_Booth() {
         const currentPool = llmPools[bp.type] || [];
         const pointer = poolPointers[bp.type] || 0;
         
-        // DYNAMIC ALLOCATION:
-        // If it's an 8-bar block (half of a split 16), take 4 lines.
-        // If it's a 16-bar block (unsplit), take 8 lines.
+        // 🚨 CRITICAL MATH: 
+        // We know standard rap delivery is 1 line per 2 bars.
+        // For an 8-bar block, we MUST take exactly 4 lines to stay in sync.
         const linesToTake = bp.type === "HOOK" ? 4 : Math.max(1, Math.ceil(bp.bars / 2));
         linesForThisBlock = currentPool.slice(pointer, pointer + linesToTake);
         
-        // Increment pointer so the NEXT block of the same type starts where this one left off
-        poolPointers[bp.type] = pointer + linesToTake;
+        // Update pointer so the NEXT segment (e.g., Verse 2) picks up where this left off
+        poolPointers[bp.type] = pointer + linesForThisBlock.length;
         
-        // Emergency Fallback if the LLM didn't give enough lines
-        if (linesForThisBlock.length === 0) linesForThisBlock = ["Yeah | we stay in motion"];
+        // Safety Fallback
+        if (linesForThisBlock.length === 0) linesForThisBlock = ["(Empty Section Cache)"];
       }
 
       const timeForLine = blockDurationSecs / linesForThisBlock.length;
@@ -936,56 +936,51 @@ export default function Room04_Booth() {
           : activeVariations[index % activeVariations.length];
 
       linesForThisBlock.forEach((textLine) => {
-        // --- SURGICAL FIX: Move mappedWords and rhythm math into the correct scope ---
+        // --- YOUR PRESERVED SYLLABLE & WORD MAPPING LOGIC ---
         const rawWords = textLine.split(/\s+/).filter(w => w.length > 0);
         const mappedWords: WordMapping[] = [];
         let totalLineSteps = 0;
         let tempPatternIndex = 0;
 
-        if (textLine.trim().startsWith('...')) totalLineSteps += 4;
-
+        if (textLine.startsWith('...')) totalLineSteps += 4;
+        
         const wordChunksArray = rawWords.map(w => {
           const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
           chunks.forEach(() => {
             const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
-            totalLineSteps += isNaN(stepVal) ? 2 : stepVal; 
+            totalLineSteps += isNaN(stepVal) ? 2 : stepVal;
             tempPatternIndex++;
           });
           return chunks;
         });
 
-        const cleanTextEnd = textLine.trim().slice(-1);
+        const cleanTextEnd = textLine.slice(-1);
         if (cleanTextEnd === '.') totalLineSteps += 4;
         else if (cleanTextEnd === ',') totalLineSteps += 1;
 
         const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
         let localWordTime = currentFlowTime;
-        const lineStartTime = currentFlowTime;
-
-        if (textLine.trim().startsWith('...')) localWordTime += (4 * timePerStep);
+        if (textLine.startsWith('...')) localWordTime += (4 * timePerStep);
 
         let patternIndex = 0;
         wordChunksArray.forEach((chunks) => {
           chunks.forEach((chunk, cIdx) => {
             const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
             patternIndex++;
-
             const chunkDuration = stepsRequired * timePerStep;
-            const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForLine) * 16)));
-
+            const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - currentFlowTime) / timeForLine) * 16)));
             mappedWords.push({
               id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
               word: chunk.replace(/\|/g, ''),
               slot: mappedSlot,
               startTime: localWordTime,
-              duration: chunkDuration, 
+              duration: chunkDuration,
               isWordEnd: (cIdx === chunks.length - 1)
             });
             localWordTime += chunkDuration;
           });
         });
 
-        // SUCCESS: mappedWords is now defined and populated within this scope
         parsed.push({ 
           id: `line-${lineIdCounter++}`,
           barIndex: Math.floor(currentFlowTime / secondsPerBar),
