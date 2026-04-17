@@ -460,8 +460,8 @@ Output ONLY the rewritten line. Do not explain yourself.
         elif pocket == "cascade": pocket_instruction = "THE CASCADE MODE: Use heavy enjambment. End lines mid-phrase with no punctuation."
 
         final_lyrics = ""
-        context_lyrics = ""
-        current_cumulative_bar = 0
+        # 🚨 INITIALIZE SEPARATE CONTEXT STREAMS
+        last_verse_context = "" 
         saved_hook_lines = None 
         anchor_hook_text = None
 
@@ -480,21 +480,34 @@ Output ONLY the rewritten line. Do not explain yourself.
             
             final_lyrics += f"\n[{sec_type} - {bars} BARS | BAR {start_bar} | ENERGY: {current_energy}/4]\n"
             
+            # --- BLOCK 1: INSTRUMENTAL HANDLING ---
             if sec_type == "INSTRUMENTAL":
                 section_lines = ["[Instrumental Break]" for _ in range(bars)]
                 
+            # --- BLOCK 2: HOOK REPETITION LOGIC ---
             elif "HOOK" in sec_type and saved_hook_lines is not None:
+                # Mathematically force the EXACT same lines from the first Hook
                 section_lines = []
                 while len(section_lines) < bars:
                     section_lines.extend(saved_hook_lines)
                 section_lines = section_lines[:bars]
                 
+            # --- BLOCK 3: GENERATION (VERSES OR FIRST HOOK) ---
             else:
+                # 🚨 STEER THE CONTEXT
+                if "HOOK" in sec_type:
+                    # First Hook should focus purely on the Topic/Motive
+                    steering_context = "" 
+                else:
+                    # Verses focus on what happened in the PREVIOUS verse
+                    # anchor_hook_text is passed separately to generate_section for theme reference
+                    steering_context = last_verse_context
+
                 combined_pattern_desc = f"{pattern_desc}. Rhythmic DNA Map: {pattern_array}" if pattern_array else pattern_desc
 
                 section_lines = generate_section(
                     system_prompt=system_prompt, 
-                    previous_lyrics=context_lyrics, 
+                    previous_lyrics=steering_context, # Use the steered stream
                     section_type=sec_type, 
                     bars=bars, 
                     max_syllables=max_syllables, 
@@ -502,20 +515,23 @@ Output ONLY the rewritten line. Do not explain yourself.
                     pocket_instruction=pocket_instruction,
                     prompt_topic=topic,
                     section_index=index,
-                    anchor_hook=anchor_hook_text,
+                    anchor_hook=anchor_hook_text, # Pass the hook for "thematic relation"
                     hook_type=hook_type,            
                     flow_evolution=flow_evolution,
                     current_energy=current_energy,
-                    # 🚨 SURGICAL FIX: The NameError has been resolved
-                    banned_words_map=banned_words_map 
+                    banned_words_map=banned_words_map
                 )
                 
-                if "HOOK" in sec_type:
+                # --- SYNC BUCKETS ---
+                if "HOOK" in sec_type and saved_hook_lines is None:
                     saved_hook_lines = section_lines
                     anchor_hook_text = "\n".join(section_lines)
                     
-                context_lyrics = "\n".join(section_lines[-4:])
+                if "VERSE" in sec_type:
+                    # Only update verse context so Verses follow Verses
+                    last_verse_context = "\n".join(section_lines[-4:])
             
+            # --- TIMESTAMP & FORMATTING ---
             for i, line in enumerate(section_lines):
                 line_bar = start_bar + i
                 line_time = line_bar * seconds_per_bar
