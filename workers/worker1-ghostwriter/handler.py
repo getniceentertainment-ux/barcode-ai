@@ -45,14 +45,7 @@ tokenizer = None
 REQ_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
 
 def fetch_web_intel(filename):
-    """Smart resolver that hunts for the correct Supabase bucket path and handles case-sensitivity."""
-    variations = list(set([
-        filename,
-        filename.lower(),
-        filename.capitalize(),
-        filename.title()
-    ]))
-
+    variations = list(set([filename, filename.lower(), filename.capitalize(), filename.title()]))
     for base_url in INTEL_BASE_URLS:
         for variant in variations:
             url = f"{base_url}/{variant}"
@@ -60,25 +53,16 @@ def fetch_web_intel(filename):
                 req = urllib.request.Request(url, headers=REQ_HEADERS)
                 with urllib.request.urlopen(req, timeout=5) as response:
                     content = response.read().decode('utf-8')
-                    if content.strip():
-                        return content
-            except HTTPError:
-                continue 
-            except Exception:
-                continue
-                
-    print(f"🚨 Failed to fetch '{filename}' (tried variations like '{filename.capitalize()}') from all known Supabase buckets.")
+                    if content.strip(): return content
+            except HTTPError: continue 
+            except Exception: continue
     return None
 
 def load_rag_intel():
     content = fetch_web_intel("daily_briefing.txt")
-    if content:
-        return f"[LATEST MARKET DISPATCH]: {content.strip()}"
-        
+    if content: return f"[LATEST MARKET DISPATCH]: {content.strip()}"
     if os.path.exists(SHARED_VOLUME_PATH):
-        with open(SHARED_VOLUME_PATH, "r", encoding="utf-8") as f:
-            return f.read()
-            
+        with open(SHARED_VOLUME_PATH, "r", encoding="utf-8") as f: return f.read()
     return "Market Intel: Focus on node growth and independent street equity."
 
 def load_street_slang(style="getnice_hybrid"):
@@ -97,18 +81,14 @@ def load_street_slang(style="getnice_hybrid"):
                 for key, val in data["slang_terms"].items():
                     if isinstance(val, dict) and "definitions" in val and len(val["definitions"]) > 0:
                         words.append(f"'{key}' (Meaning: {val['definitions'][0]})")
-                    else:
-                        words.append(key)
+                    else: words.append(key)
             elif isinstance(data, list):
                 words = [item.get("word", "") for item in data if "word" in item]
-                
             if words:
                 words = [w.strip() for w in words if w.strip()]
                 combined_list = list(set(words + target_list))
                 return random.sample(combined_list, min(10, len(combined_list)))
-        except json.JSONDecodeError:
-            pass
-            
+        except json.JSONDecodeError: pass
     return target_list
 
 def load_cultural_context():
@@ -121,8 +101,7 @@ def load_cultural_context():
                 title = item.get("title", "STREET POLITICS")
                 context_str = item.get("content", "")[:400] 
                 return f"[CULTURAL ANCHOR: {title}] - {context_str}..."
-        except:
-            pass
+        except: pass
     return "Focus on the struggle, algorithmic survival, and ownership."
 
 def sanitize_lora_config():
@@ -238,8 +217,7 @@ Fifty bands hid in the floorboard | Fifty bands hid in the closet
 
 # --- SURGICAL INJECTION: THE TOPLINE MAPPING LAYER ---
 def translate_dna_to_topline(pattern_array, section_type, energy):
-    if not pattern_array:
-        return ""
+    if not pattern_array: return ""
     
     mapping = {
         1: "SNAP (Short, punchy word. Clip the consonant. High energy, zero sustain.)",
@@ -267,11 +245,8 @@ def translate_dna_to_topline(pattern_array, section_type, energy):
         
     return f"""
 [TOPLINE DYNAMICS DIRECTIVE]
-You are locked to a specific rhythmic DNA for this line/section. You MUST execute this physical vocal sequence:
+You are locked to a specific rhythmic DNA for this section. You MUST execute this physical vocal sequence:
 Sequence: {" -> ".join(sequence)}
-
-SYLLABLE LAW: The number of primary accents in your line MUST match the number of steps in this sequence ({len(sequence)} accents).
-
 [STRUCTURAL LAWS]
 {section_law}
 {energy_directive}
@@ -282,23 +257,10 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     # 🚨 UPGRADED BIBLE QUANTIZER TRANSLATION
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
-    # 🚨 THE ULTIMATUM: DNA ACCENT LOCK 
-    if pattern_array:
-        accent_count = len(pattern_array)
-        dna_constraint = f"""
-[ULTIMATUM: DNA ACCENT LOCK]
-The 'Hybrid' style is secondary. The 'DNA Pattern' is the LAW.
-Your line MUST contain exactly {accent_count} primary rhythmic accents.
-If you use more words, they MUST be treated as rapid-fire 'ghost' syllables 
-that do not exceed the 16-slot grid.
-"""
-        dna_law += f"\n{dna_constraint}"
-
     # THE ANAPHORA LAWS: Dynamic Structural Steering
     if section_type.upper() == "HOOK": 
         arc_instruction = "THE ANAPHORA LAW (HOOK): Use heavy, hypnotic repetition. Stack the same starting phrases (Anaphora) to create a massive, catchy topline."
     elif section_index == 0: 
-        # SURGICAL FIX: Evolve narrative, kill the death loop.
         arc_instruction = "THE ANAPHORA LAW (VERSE 1): Conversational storytelling. Establish the setting. NEVER repeat the same line twice in a row. Keep the syntax unpredictable, conversational, and grounded."
     elif section_index in [1, 2]: 
         arc_instruction = "THE ANAPHORA LAW (VERSE CONTINUED): Dynamic variance. Mix conversational bars with brief 2-line repetitive flexes. NEVER repeat the same line twice in a row. Evolve the narrative."
@@ -306,7 +268,6 @@ that do not exceed the 16-slot grid.
         arc_instruction = "THE ANAPHORA LAW (RESOLUTION): High confidence. Punchy, declarative sentences. NEVER repeat the same line twice in a row. Bring the theme to a close with raw street facts."
     
     hook_context = ""
-
     current_max_syllables = max_syllables
     melodic_rules = ""
     evolution_rules = ""
@@ -341,6 +302,21 @@ that do not exceed the 16-slot grid.
     if "VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 12:
         evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast."
 
+    # 🚨 THE REVISED ULTIMATUM: ACCENTS VS SYLLABLES (Inserted exactly here so current_max_syllables is computed)
+    if pattern_array:
+        # Count only the items that require an actual vocal strike (ignore '6' which is a Rest/Ghost)
+        active_strikes = [v for v in pattern_array if v != 6]
+        accent_target = len(active_strikes)
+        
+        dna_constraint = f"""
+[ULTIMATUM: ACCENT VS. SYLLABLE MATH]
+The 'DNA Pattern' is the ABSOLUTE LAW. You must understand the difference between Total Syllables and Accented Words.
+1. TOTAL SYLLABLES (THE MEAT): You have a budget of up to {current_max_syllables} syllables per line to tell the story naturally.
+2. THE RHYTHMIC ACCENTS (THE BONES): Out of those syllables, you MUST heavily stress and anchor the line on EXACTLY {accent_target} primary words to match the instrumental's bounce.
+DO NOT just write {accent_target} words. Write a fluid, modern rap line that inherently bounces on {accent_target} heavy anchor points.
+"""
+        dna_law += f"\n{dna_constraint}"
+
     if banned_words_map and isinstance(banned_words_map, dict):
         clean_words = [k.replace("\\b", "").replace("?", "").replace("(?:y|ies)", "y") for k in banned_words_map.keys()]
         banned_words_str = ", ".join(clean_words[:15])
@@ -348,7 +324,6 @@ that do not exceed the 16-slot grid.
         banned_words_str = "tapestry, delve, testament, beacon, journey, myriad, landscape, whisper, shadows, dancing"
 
     # PASS 1: THE DRAFT
-    # SURGICAL FIX: Softened Syllable Math (Asking for a "feel" rather than strict counting)
     draft_prompt = f"""<|im_start|>user
 [GENERATE {section_type.upper()}]
 - REQUIRED: {bars} bars.
@@ -438,7 +413,7 @@ Output ONLY the final {bars} lines now.
                 
         # 🚨 SURGICAL FIX: The ALL CAPS Enforcer
         line = line.strip('|').strip().upper()
-        if '|' not in line: # Ensure we still have one if we stripped it
+        if '|' not in line: 
             words = line.split()
             mid = len(words) // 2
             line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
@@ -518,6 +493,8 @@ Output ONLY the rewritten line in ALL CAPS. Do not explain yourself.
         if total_blueprint_bars == 0: total_blueprint_bars = 1
 
         seconds_per_bar = (60.0 / bpm) * 4.0
+        
+        # Calculate max syllables organically based on style and BPM
         style_limits = {
             "lazy": {"min": 4, "max": 7},             
             "heartbeat": {"min": 7, "max": 10},        
