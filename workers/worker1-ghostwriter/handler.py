@@ -282,17 +282,30 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     # 🚨 UPGRADED BIBLE QUANTIZER TRANSLATION
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
+    # 🚨 THE ULTIMATUM: DNA ACCENT LOCK 
+    if pattern_array:
+        accent_count = len(pattern_array)
+        dna_constraint = f"""
+[ULTIMATUM: DNA ACCENT LOCK]
+The 'Hybrid' style is secondary. The 'DNA Pattern' is the LAW.
+Your line MUST contain exactly {accent_count} primary rhythmic accents.
+If you use more words, they MUST be treated as rapid-fire 'ghost' syllables 
+that do not exceed the 16-slot grid.
+"""
+        dna_law += f"\n{dna_constraint}"
+
     # THE ANAPHORA LAWS: Dynamic Structural Steering
     if section_type.upper() == "HOOK": 
         arc_instruction = "THE ANAPHORA LAW (HOOK): Use heavy, hypnotic repetition. Stack the same starting phrases (Anaphora) to create a massive, catchy topline."
     elif section_index == 0: 
-        arc_instruction = "THE ANAPHORA LAW (VERSE 1): Conversational storytelling. Establish the setting. DO NOT use heavy repetition here. Keep the syntax unpredictable, conversational, and grounded. DO NOT copy the hook verbatim."
+        # SURGICAL FIX: Evolve narrative, kill the death loop.
+        arc_instruction = "THE ANAPHORA LAW (VERSE 1): Conversational storytelling. Establish the setting. NEVER repeat the same line twice in a row. Keep the syntax unpredictable, conversational, and grounded."
     elif section_index in [1, 2]: 
-        arc_instruction = "THE ANAPHORA LAW (VERSE CONTINUED): Dynamic variance. Mix conversational bars with brief 2-line repetitive flexes. Evolve the narrative. DO NOT copy the hook verbatim."
+        arc_instruction = "THE ANAPHORA LAW (VERSE CONTINUED): Dynamic variance. Mix conversational bars with brief 2-line repetitive flexes. NEVER repeat the same line twice in a row. Evolve the narrative."
     else: 
-        arc_instruction = "THE ANAPHORA LAW (RESOLUTION): High confidence. Punchy, declarative sentences. Bring the theme to a close with raw street facts, avoiding repetitive loops."
+        arc_instruction = "THE ANAPHORA LAW (RESOLUTION): High confidence. Punchy, declarative sentences. NEVER repeat the same line twice in a row. Bring the theme to a close with raw street facts."
     
-    hook_context = f"\n[THE ANCHOR HOOK]:\n{anchor_hook}\n" if anchor_hook and section_type.upper() != "HOOK" else ""
+    hook_context = ""
 
     current_max_syllables = max_syllables
     melodic_rules = ""
@@ -335,6 +348,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         banned_words_str = "tapestry, delve, testament, beacon, journey, myriad, landscape, whisper, shadows, dancing"
 
     # PASS 1: THE DRAFT
+    # SURGICAL FIX: Softened Syllable Math (Asking for a "feel" rather than strict counting)
     draft_prompt = f"""<|im_start|>user
 [GENERATE {section_type.upper()}]
 - REQUIRED: {bars} bars.
@@ -342,7 +356,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 - NARRATIVE ARC: {arc_instruction}
 - RHYTHMIC POCKET: {pattern_desc}
 {dna_law}
-- SYLLABLE LIMIT: Strictly {current_max_syllables} or less per line.
+- SYLLABLE LIMIT: Keep phrases short and punchy, around {current_max_syllables} syllables maximum.
 {energy_rules}
 {hook_context}
 {melodic_rules}
@@ -366,11 +380,11 @@ You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
 CRITICAL REFINEMENT COMMANDS:
-1. SYLLABLE MATH: Every line MUST be {current_max_syllables} syllables or less. Rewrite long lines to be minimalist.
+1. SYLLABLE MATH: Keep phrases short and punchy, around {current_max_syllables} syllables maximum. Rewrite long lines to be minimalist.
 2. OBEY THE POCKET: {pocket_instruction}
 3. 🚨 THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE. DO NOT WRITE THE WORD 'PIPE'. USE ONLY THE '|' SYMBOL.
 4. KILL LIST: Delete any banned AI poetry words (e.g., {banned_words_str}). Replace generic "warrior/depths" talk with strategic boardroom-street metaphors.
-5. NO HEADERS. NO METADATA. NO INSTRUCTIONS. DO NOT output "### Instruction". Output ONLY the raw lyrics.
+5. NO HEADERS. NO METADATA. DO NOT separate words onto different lines. Write full, complete sentences. Output ONLY the raw lyrics.
 
 Output ONLY the final {bars} lines now.
 <|im_end|>
@@ -381,11 +395,6 @@ Output ONLY the final {bars} lines now.
     outputs_refine = model.generate(**inputs_refine, max_new_tokens=64 * bars, temperature=0.5, top_p=0.9, repetition_penalty=1.1, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id)
     final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    final_text = final_text.replace("<|im_end|>", "").strip()
-    final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
-    final_text = re.sub(r'\[.*?\]', '', final_text) 
-    final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE) 
-    
     final_text = final_text.replace("<|im_end|>", "").strip()
     final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
     final_text = re.sub(r'\[.*?\]', '', final_text) 
@@ -427,18 +436,22 @@ Output ONLY the final {bars} lines now.
             for bad_word in ["concrete jungle", "tapestry", "delve", "testament", "navigate"]:
                 line = re.sub(r'\b' + bad_word + r'\b', "the pavement", line, flags=re.IGNORECASE)
                 
-        # Final cleanup for rogue trailing/leading pipes and spaces
-        line = line.strip('|').strip()
+        # 🚨 SURGICAL FIX: The ALL CAPS Enforcer
+        line = line.strip('|').strip().upper()
         if '|' not in line: # Ensure we still have one if we stripped it
             words = line.split()
             mid = len(words) // 2
             line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
             
+        # 🚨 SURGICAL FIX: The Death Loop Catcher
+        if len(clean_lines) > 0 and clean_lines[-1] == line:
+            continue # Skip this line if it's an exact duplicate of the previous one
+            
         clean_lines.append(line)
     
     while len(clean_lines) < bars:
-        safe_fallback = clean_lines[-1] if len(clean_lines) > 0 else "Yeah | we stay in motion"
-        clean_lines.append(safe_fallback)
+        safe_fallback = clean_lines[-1] if len(clean_lines) > 0 else "YEAH | WE STAY IN MOTION"
+        clean_lines.append(safe_fallback.upper())
         
     return clean_lines[:bars]
 
@@ -479,7 +492,7 @@ Instruction: {instruction}
 
 Rewrite the line to satisfy the instruction while strictly maintaining the required persona and emotional mirror. 
 CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Do not use banned words.
-Output ONLY the rewritten line. Do not explain yourself.
+Output ONLY the rewritten line in ALL CAPS. Do not explain yourself.
 <|im_end|>
 <|im_start|>assistant
 """
@@ -490,7 +503,7 @@ Output ONLY the rewritten line. Do not explain yourself.
         )
         refined_line = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
         refined_line = refined_line.replace("<|im_end|>", "").strip()
-        refined_line = re.sub(r'^["\']|["\']$', '', refined_line) 
+        refined_line = re.sub(r'^["\']|["\']$', '', refined_line).upper() 
         
         return {"refinedLine": refined_line}
 
@@ -527,7 +540,6 @@ Output ONLY the rewritten line. Do not explain yourself.
         saved_hook_lines = None
         anchor_hook_text = None
 
-        # FIX: Initialize to 0 to perfectly match the React Frontend's 0-indexed grid
         current_cumulative_bar = 0
 
         for index, section in enumerate(blueprint):
@@ -569,7 +581,7 @@ Output ONLY the rewritten line. Do not explain yourself.
                     bars=bars, 
                     max_syllables=max_syllables, 
                     pattern_desc=combined_pattern_desc, 
-                    pattern_array=pattern_array, # <-- NEW MAPPING HOOKUP
+                    pattern_array=pattern_array, 
                     pocket_instruction=pocket_instruction,
                     prompt_topic=topic,
                     section_index=index,
