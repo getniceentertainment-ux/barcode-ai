@@ -136,7 +136,6 @@ def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle
     elif bpm_val <= 135: rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Mid). Rhythmic, steady pocket."
     else: rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Fast). Fast, staccato."
 
-    # 🚨 SURGICAL FIX: Ported Next.js DSP Logic natively into Python
     is_minor = 'm' in scale.lower()
     is_fast = bpm_val > 135
     if is_minor and is_fast: dsp_vocal_instruction = "Inject aggressive, rapid-fire stutters (e.g., 'g-g-g-get it') and sharp vocal drops."
@@ -193,10 +192,8 @@ You are a chart-topping {active_persona} artist. You do not speak in complex poe
 {flow_mimicry}
 <|im_end|>"""
 
-# --- SURGICAL INJECTION: THE TOPLINE MAPPING LAYER ---
 def translate_dna_to_topline(pattern_array, section_type, energy):
     if not pattern_array: return ""
-    
     sequence = []
     for v in pattern_array:
         if v == 1: sequence.append("SNAP")
@@ -226,9 +223,10 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         active_strikes = [v for v in pattern_array if v != 6]
         accent_target = len(active_strikes)
         
+        # 🚨 SURGICAL FIX: REMOVED SUBJECTIVE ENGLISH "extremely short" TO PREVENT CONTRADICTION
         dna_constraint = f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. SYLLABLE LIMIT: Write extremely short, concise lines. ABSOLUTELY NO MORE than {max_syllables} syllables per line.
+1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line. Check your math.
 2. RHYTHMIC ACCENTS: Anchor your line on exactly {accent_target} heavy stressed words.
 3. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
 4. POCKET PLACEMENT: {pocket_instruction}
@@ -237,7 +235,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     else:
         dna_law += f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. SYLLABLE LIMIT: ABSOLUTELY NO MORE than {max_syllables} syllables per line.
+1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line.
 2. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
 3. POCKET PLACEMENT: {pocket_instruction}
 """
@@ -249,7 +247,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     else: 
         arc_instruction = "THE ANAPHORA LAW (VERSE CONTINUED): Dynamic variance. Mix conversational bars with brief flexes. NEVER repeat the same line twice in a row. Evolve the narrative."
 
-    # 🚨 SURGICAL FIX: Restored Hook Types (Symmetry Break, Stadium Chant, etc.)
     hook_context = ""
     if "HOOK" in section_type.upper():
         if hook_type == "bouncy": hook_context = "[HOOK OVERRIDE]\nBOUNCY & REPETITIVE: Repeat short, punchy 2-word or 3-word phrases back-to-back."
@@ -261,7 +258,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast." if ("VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 12) else ""
     energy_rules = "\n[ENERGY CLIMAX]: Pack the pocket. Write dense, aggressive rhymes." if current_energy == 4 else ""
 
-    # PASS 1: THE DRAFT
     draft_prompt = f"""<|im_start|>user
 [GENERATE {section_type.upper()}]
 - REQUIRED: {bars} bars.
@@ -283,7 +279,6 @@ Write the draft now. Do not write action words like SNAP or STEP into the lyrics
     outputs = model.generate(**inputs, max_new_tokens=64 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id)
     draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    # PASS 2: THE POETRY ASSASSIN & RHYTHM ENFORCER
     refine_prompt = f"""<|im_start|>user
 [THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
 You drafted this {bars}-bar {section_type.upper()}:
@@ -315,10 +310,7 @@ Output ONLY the final {bars} lines now.
     ]
     
     clean_lines = []
-    if banned_words_map and isinstance(banned_words_map, dict):
-        clean_words = [k.replace("\\b", "").replace("?", "").replace("(?:y|ies)", "y") for k in banned_words_map.keys()]
-    else:
-        banned_words_map = {}
+    if not banned_words_map: banned_words_map = {}
 
     for line in raw_lines:
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
@@ -331,13 +323,18 @@ Output ONLY the final {bars} lines now.
         line = re.sub(r'\|+', '|', line)
         line = re.sub(r'\s+\|\s+', ' | ', line)
         
-        for bad_pattern, replacement in banned_words_map.items():
-            try:
-                py_pattern = bad_pattern.replace('\\b', r'\b')
-                line = re.sub(py_pattern, replacement, line, flags=re.IGNORECASE)
-            except: pass
+        # 🚨 SURGICAL FIX: REMOVED BANNED WORD REPLACE (NOW HANDLED IN PROMPT) TO PROTECT MATH
                 
         line = line.strip('|').strip().upper()
+
+        # 🚨 SURGICAL FIX: POCKET EXECUTIONER (FORCED PUNCTUATION)
+        if "SYNCOPATION (PICKUP)" in pocket_instruction:
+            if not line.startswith("..."): line = "..." + line
+        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
+            if not line.endswith(","): line = line + ","
+        elif "period" in pocket_instruction:
+            if not line.endswith("."): line = line + "."
+
         if '|' not in line: 
             words = line.split()
             mid = len(words) // 2
