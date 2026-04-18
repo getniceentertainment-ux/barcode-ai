@@ -145,8 +145,9 @@ def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle
 
     flow_mimicry = ""
     if flow_reference and len(flow_reference) > 5:
+        short_ref = "\n".join([line for line in flow_reference.split('\n') if line.strip()][:4])
         flow_mimicry = f"""[VOCAL CADENCE BLUEPRINT]
-"{flow_reference}"
+"{short_ref}"
 -> Use this quote ONLY for thematic vibe and rhyme placement. YOU MUST STRICTLY OBEY THE DYNAMIC SYLLABLE LIMIT FOR THE SECTION OVER THIS REFERENCE."""
 
     explicit_directive = "6. EXPLICIT CONTENT RATING: This is a raw, uncensored street track. You MUST organically use harsh profanity to emphasize aggression." if is_explicit else "6. CLEAN RATING: Keep the lyrics strictly radio-clean. Do not use profanity."
@@ -255,7 +256,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         elif hook_type == "prime": hook_context = "[HOOK OVERRIDE]\nSYNCOPATION MATH: Force an odd-numbered syllable count."
         else: hook_context = "[HOOK OVERRIDE]\nSPACIOUS & ANTHEMIC: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse."
 
-    evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast." if ("VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 12) else ""
+    evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast." if ("VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 8) else ""
     energy_rules = "\n[ENERGY CLIMAX]: Pack the pocket. Write dense, aggressive rhymes." if current_energy == 4 else ""
 
     draft_prompt = f"""<|im_start|>user

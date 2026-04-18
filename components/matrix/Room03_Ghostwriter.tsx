@@ -306,6 +306,7 @@ export default function Room03_Ghostwriter() {
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
           isExplicit: true, // 🚨 PASSED DOWN TO AI
+          bannedWordsMap: {}, // <-- SURGICAL FIX: Wired up to prevent backend fallbacks. Populate this later via your RAG Intel.
           strikeZone: gwStrikeZone,
           hookType: finalHookType,             
           flowEvolution: finalFlowEvolution,   

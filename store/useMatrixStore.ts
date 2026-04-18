@@ -224,7 +224,19 @@ export const useMatrixStore = create<MatrixState>()(
       setFlowDNA: (dna) => set({ flowDNA: dna }),
       setGwTitle: (t) => set({ gwTitle: t }),
       setGwPrompt: (p) => set({ gwPrompt: p }),
-      setGwStyle: (s) => set({ gwStyle: s }),
+      setGwStyle: (s) => set((state) => {
+        const stylesMap: Record<string, string> = {
+          "getnice_hybrid": "GetNice Hybrid [Melodic Trap]",
+          "heartbeat": "Heartbeat (Boom-Bap)",
+          "lazy": "Lazy (Wavy/Delayed)",
+          "triplet": "Triplet (Trap)",
+          "chopper": "Chopper (Fast/Tech)"
+        };
+        return { 
+          gwStyle: s, 
+          flowDNA: state.flowDNA ? { ...state.flowDNA, tag: stylesMap[s] || state.flowDNA.tag } : null 
+        };
+      }),
       setGwPocket: (p) => set({ gwPocket: p }), 
       setGwGender: (g) => set({ gwGender: g }),
       setGwUseSlang: (b) => set({ gwUseSlang: b }),
