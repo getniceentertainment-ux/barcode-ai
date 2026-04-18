@@ -11,112 +11,43 @@ const redis = new Redis({ url: process.env.UPSTASH_REDIS_REST_URL || '', token: 
 const ratelimit = new Ratelimit({ redis: redis, limiter: Ratelimit.slidingWindow(5, "1 m") });
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
-// --- THE DYNAMIC ASSASSIN DICTIONARY (FRONTEND CONTROLLED) ---
-// Update this list anytime. Next.js will pass it to the Python worker on every request.
 const BANNED_WORDS_MAP = {
-  "\\bphoenix\\b": "hustler",
-  "\\bcinders?\\b": "ashes",
-  "\\bsweet perfume\\b": "gasoline",
-  "\\bdesert sands?\\b": "the grid",
-  "\\bnew life blooms?\\b": "the money moves",
-  "\\banonymous king\\b": "ghost",
-  "\\bconcrete jungle\\b": "the pavement",
-  "\\bjiggy\\b": "active",
-  "\\bphat\\b": "heavy",
-  "\\bcheddar\\b": "capital",
-  "\\brags to riches\\b": "mud to margins",
-  "\\bno pain no gain\\b": "sweat equity",
-  "\\bweathered storms?\\b": "took the hits",
-  "\\bnaysayers?\\b": "detractors",
-  "\\bdarkest hour\\b": "bottom line",
-  "\\bspirits? took flight\\b": "numbers went up",
-  "\\bdreams? dare to breathe\\b": "vision stays clear",
-  "\\brise from our knees\\b": "stand on business",
-  "\\btime'?s arrow\\b": "the clock",
-  "\\bchatter\\b": "static",
-  "\\btapestr(?:y|ies)\\b": "blueprint",
-  "\\bdelve[sd]?\\b": "dig",
-  "\\btestaments?\\b": "proof",
-  "\\bbeacons?\\b": "target",
-  "\\bjourneys?\\b": "process",
-  "\\bmyriad\\b": "hundred",
-  "\\blandscapes?\\b": "market",
-  "\\bnavigat(?:e|ed|ing|es)\\b": "maneuver",
-  "\\bresonat(?:e|ed|ing|es)\\b": "connect",
-  "\\bfoster(?:s|ed|ing)?\\b": "build",
-  "\\bcatalysts?\\b": "spark",
-  "\\bparadigms?\\b": "model",
-  "\\bsynerg(?:y|ies)\\b": "leverage",
-  "\\bunleash(?:es|ed|ing)?\\b": "deploy",
-  "\\bplights?\\b": "risk",
-  "\\bfrights?\\b": "panic",
-  "\\bignit(?:e|es|ed|ing)\\b": "spark",
-  "\\bdivine\\b": "exact",
-  "\\bsublime\\b": "top tier",
-  "\\bmindstreams?\\b": "focus",
-  "\\bwhispers?\\b": "talk",
-  "\\bshadows?\\b": "blindspots",
-  "\\bdancing\\b": "moving",
-  "\\bembrac(?:e|es|ed|ing)\\b": "lock in",
-  "\\bsouls?\\b": "heads",
-  "\\babyss(?:es)?\\b": "the red",
-  "\\bvoids?\\b": "the red",
-  "\\bchaos\\b": "static",
-  "\\bdestin(?:y|ies)\\b": "outcome",
-  "\\bfates?\\b": "odds",
-  "\\btears\\b": "losses",
-  "\\bsorrows?\\b": "stress",
-  "\\bmelod(?:y|ies)\\b": "rhythm",
-  "\\bsymphon(?:y|ies)\\b": "system",
-  "\\bashes\\b": "dust",
-  "\\bstrife\\b": "pressure",
-  "\\byearning\\b": "starving",
-  "\\bkingdoms?\\b": "boardroom",
-  "\\bthrones?\\b": "desk",
-  "\\bcrowns?\\b": "equity",
-  "\\brealms?\\b": "zone",
-  "\\blegac(?:y|ies)\\b": "portfolio",
-  "\\bquests?\\b": "hustle",
-  "\\bvanquish(?:es|ed|ing)?\\b": "clear",
-  "\\bfortress(?:es)?\\b": "compound",
-  "\\bprophec(?:y|ies)\\b": "forecast",
-  "\\bomens?\\b": "signal",
-  "\\bcrusades?\\b": "campaign",
-  "\\bvanguards?\\b": "frontline",
-  "\\bsovereigns?\\b": "owner",
-  "\\bdominions?\\b": "territory",
-  "\\bforsaken\\b": "cut off",
-  "\\bweav(?:e|es|ed|ing)\\b": "build",
-  "\\bforg(?:e|es|ed|ing)\\b": "build",
-  "\\bcraft(?:s|ed|ing)?\\b": "build",
-  "\\bsculpt(?:s|ed|ing)?\\b": "mold",
-  "\\bflutter(?:s|ed|ing)?\\b": "shake",
-  "\\bplung(?:e|es|ed|ing)\\b": "drop",
-  "\\bunfurl(?:s|ed|ing)?\\b": "open",
-  "\\bawaken(?:s|ed|ing)?\\b": "wake",
-  "\\bslumber(?:s|ed|ing)?\\b": "sleep",
-  "\\bbeckon(?:s|ed|ing)?\\b": "call",
-  "\\bentwin(?:e|es|ed|ing)\\b": "lock",
-  "\\benchant(?:s|ed|ing)?\\b": "hook",
-  "\\bcaptivat(?:e|es|ed|ing)\\b": "trap",
-  "\\billuminat(?:e|es|ed|ing)\\b": "expose",
-  "\\btranscend(?:s|ed|ing)?\\b": "scale",
-  "\\blucre\\b": "funds",
-  "\\bserene\\b": "calm",
-  "\\buncoil(?:s|ed|ing)?\\b": "move",
-  "\\bveins\\b": "lines",
-  "\\bstains\\b": "marks",
-  "\\bplains\\b": "blocks",
-  "\\brefrains\\b": "hooks",
-  "\\bgleam(?:s|ed|ing)?\\b": "shine",
-  "\\bbeams?\\b": "lights",
-  "\\bclimb(?:s|ed|ing)?\\b": "scale",
-  "\\bmachines?\\b": "engine",
-  "\\bvisages?\\b": "face",
-  "\\bclandestine\\b": "off-books",
-  "\\bsupreme\\b": "top",
-  "\\bschemes?\\b": "play",
-  "\\bspoils?\\b": "profits"
+  "\\bphoenix\\b": "hustler", "\\bcinders?\\b": "ashes", "\\bsweet perfume\\b": "gasoline",
+  "\\bdesert sands?\\b": "the grid", "\\bnew life blooms?\\b": "the money moves",
+  "\\banonymous king\\b": "ghost", "\\bconcrete jungle\\b": "the pavement",
+  "\\bjiggy\\b": "active", "\\bphat\\b": "heavy", "\\bcheddar\\b": "capital",
+  "\\brags to riches\\b": "mud to margins", "\\bno pain no gain\\b": "sweat equity",
+  "\\bweathered storms?\\b": "took the hits", "\\bnaysayers?\\b": "detractors",
+  "\\bdarkest hour\\b": "bottom line", "\\bspirits? took flight\\b": "numbers went up",
+  "\\bdreams? dare to breathe\\b": "vision stays clear", "\\brise from our knees\\b": "stand on business",
+  "\\btime'?s arrow\\b": "the clock", "\\bchatter\\b": "static", "\\btapestr(?:y|ies)\\b": "blueprint",
+  "\\bdelve[sd]?\\b": "dig", "\\btestaments?\\b": "proof", "\\bbeacons?\\b": "target",
+  "\\bjourneys?\\b": "process", "\\bmyriad\\b": "hundred", "\\blandscapes?\\b": "market",
+  "\\bnavigat(?:e|ed|ing|es)\\b": "maneuver", "\\bresonat(?:e|ed|ing|es)\\b": "connect",
+  "\\bfoster(?:s|ed|ing)?\\b": "build", "\\bcatalysts?\\b": "spark", "\\bparadigms?\\b": "model",
+  "\\bsynerg(?:y|ies)\\b": "leverage", "\\bunleash(?:es|ed|ing)?\\b": "deploy",
+  "\\bplights?\\b": "risk", "\\bfrights?\\b": "panic", "\\bignit(?:e|es|ed|ing)\\b": "spark",
+  "\\bdivine\\b": "exact", "\\bsublime\\b": "top tier", "\\bmindstreams?\\b": "focus",
+  "\\bwhispers?\\b": "talk", "\\bshadows?\\b": "blindspots", "\\bdancing\\b": "moving",
+  "\\bembrac(?:e|es|ed|ing)\\b": "lock in", "\\bsouls?\\b": "heads", "\\babyss(?:es)?\\b": "the red",
+  "\\bvoids?\\b": "the red", "\\bchaos\\b": "static", "\\bdestin(?:y|ies)\\b": "outcome",
+  "\\bfates?\\b": "odds", "\\btears\\b": "losses", "\\bsorrows?\\b": "stress",
+  "\\bmelod(?:y|ies)\\b": "rhythm", "\\bsymphon(?:y|ies)\\b": "system", "\\bashes\\b": "dust",
+  "\\bstrife\\b": "pressure", "\\byearning\\b": "starving", "\\bkingdoms?\\b": "boardroom",
+  "\\bthrones?\\b": "desk", "\\bcrowns?\\b": "equity", "\\brealms?\\b": "zone",
+  "\\blegac(?:y|ies)\\b": "portfolio", "\\bquests?\\b": "hustle", "\\bvanquish(?:es|ed|ing)?\\b": "clear",
+  "\\bfortress(?:es)?\\b": "compound", "\\bprophec(?:y|ies)\\b": "forecast", "\\bomens?\\b": "signal",
+  "\\bcrusades?\\b": "campaign", "\\bvanguards?\\b": "frontline", "\\bsovereigns?\\b": "owner",
+  "\\bdominions?\\b": "territory", "\\bforsaken\\b": "cut off", "\\bweav(?:e|es|ed|ing)\\b": "build",
+  "\\bforg(?:e|es|ed|ing)\\b": "build", "\\bcraft(?:s|ed|ing)?\\b": "build", "\\bsculpt(?:s|ed|ing)?\\b": "mold",
+  "\\bflutter(?:s|ed|ing)?\\b": "shake", "\\bplung(?:e|es|ed|ing)\\b": "drop", "\\bunfurl(?:s|ed|ing)?\\b": "open",
+  "\\bawaken(?:s|ed|ing)?\\b": "wake", "\\bslumber(?:s|ed|ing)?\\b": "sleep", "\\bbeckon(?:s|ed|ing)?\\b": "call",
+  "\\bentwin(?:e|es|ed|ing)\\b": "lock", "\\benchant(?:s|ed|ing)?\\b": "hook", "\\bcaptivat(?:e|es|ed|ing)\\b": "trap",
+  "\\billuminat(?:e|es|ed|ing)\\b": "expose", "\\btranscend(?:s|ed|ing)?\\b": "scale", "\\blucre\\b": "funds",
+  "\\bserene\\b": "calm", "\\buncoil(?:s|ed|ing)?\\b": "move", "\\bveins\\b": "lines", "\\bstains\\b": "marks",
+  "\\bplains\\b": "blocks", "\\brefrains\\b": "hooks", "\\bgleam(?:s|ed|ing)?\\b": "shine", "\\bbeams?\\b": "lights",
+  "\\bclimb(?:s|ed|ing)?\\b": "scale", "\\bmachines?\\b": "engine", "\\bvisages?\\b": "face",
+  "\\bclandestine\\b": "off-books", "\\bsupreme\\b": "top", "\\bschemes?\\b": "play", "\\bspoils?\\b": "profits"
 };
 
 export async function GET(req: Request) {
@@ -161,7 +92,14 @@ export async function POST(req: Request) {
     if (!success) return NextResponse.json({ error: "Rate Limit Exceeded. Please hold." }, { status: 429 });
 
     const body = await req.json();
-    const { prompt, title, bpm, key, stageName, tag, style, blueprint, motive, struggle, hustle, useSlang, useIntel, flowReference, systemConstraint, pocket, strikeZone, hookType, flowEvolution, dynamic_array, contour } = body;
+    
+    // 🚨 PERFECT DATA EXTRACTION: Pulling exactly what Room 03 sends
+    const { 
+        prompt, title, bpm, root_note, scale, stageName, tag, style, 
+        blueprint, motive, struggle, hustle, useSlang, useIntel, 
+        flowReference, pocket, strikeZone, hookType, flowEvolution, 
+        dynamic_array, contour, isExplicit 
+    } = body;
 
     let profileTier = 'Free Loader';
     let cost = 1;
@@ -175,84 +113,35 @@ export async function POST(req: Request) {
       profileTier = profile.tier;
     }
 
-    // --- EMPIRICAL SYNCOPATION LIMITS ---
-    let ttsSpeedLimit = 4.5; 
-    switch (style) {
-      case "chopper": ttsSpeedLimit = 6.0; break;
-      case "triplet": ttsSpeedLimit = 5.0; break;
-      case "getnice_hybrid": ttsSpeedLimit = 4.5; break;
-      case "heartbeat": ttsSpeedLimit = 4.0; break;
-      case "lazy": ttsSpeedLimit = 3.0; break;
-    }
-
-    const activeBpm = bpm || 120;
-    const secondsPerBar = (60 / activeBpm) * 4;
-    const timePerLine = secondsPerBar; 
-    const maxSyllables = Math.max(6, Math.floor(timePerLine * ttsSpeedLimit));
-
-    let pocketInstruction = "FORMATTING: End every line with a period (.) to signify a standard hard stop exactly on the beat.";
-    if (pocket === "chainlink") {
-      pocketInstruction = "SYNCOPATION OVERRIDE (CHAIN-LINK): Do not wait for the end of the bar to rhyme. Bleed across the bar lines. You MUST end lines with a comma (,) to signal no breath, spilling directly into the next bar.";
-    } else if (pocket === "pickup") {
-      pocketInstruction = "SYNCOPATION OVERRIDE (THE DRAG/PICKUP): Start your phrases late or early. You MUST start lines with an ellipsis (...) to signal a delay or pickup note off the 1-count.";
-    }
-
-    // --- DSP VOCAL ARTICULATION ---
-    let dspVocalInstruction = "";
-    const isMinor = (key || "").toLowerCase().includes('m');
-    const isFast = activeBpm > 135;
-
-    if (isMinor && isFast) dspVocalInstruction = `DSP MATCH: MINOR KEY, FAST TEMPO. Inject aggressive, rapid-fire stutters (e.g., "g-g-g-get it", "m-m-move") and sharp, dark vocal drops.`;
-    else if (isMinor && !isFast) dspVocalInstruction = `DSP MATCH: MINOR KEY, SLOW TEMPO. Inject heavy, isolated 1-word pauses (e.g., "WAIT, ...") and dragged-out sinister spelling (e.g., "R-I-P").`;
-    else if (!isMinor && isFast) dspVocalInstruction = `DSP MATCH: MAJOR KEY, FAST TEMPO. Inject high-energy repeated chants (e.g., "go go go go") and triumphant rhythmic bouncing.`;
-    else dspVocalInstruction = `DSP MATCH: MAJOR KEY, SLOW TEMPO. Inject massive, anthemic spelled-out words (e.g., "T to the A") and huge group-style pauses.`;
-
-    const getNiceOverride = `
-    CRITICAL OVERRIDE - THE "MODERN TRAP" DIRECTIVE:
-    1. NO POETRY. NO METAPHORS: Speak literally. Do not use archaic words like "cloak", "titans", "empires", or "nightmares". Talk directly about money, cars, loyalty, the plug, and the streets.
-    2. DYNAMIC BOUNCE (BALANCED REPETITION): Mix your flows. You can occasionally repeat a starting phrase for 2 lines to create a hypnotic bounce, but DO NOT do it every single time. Blend repetitive flex bars with conversational, storytelling lines to keep the cadence unpredictable and human.
-    3. SIMPLE SYNTAX: Write exactly like a modern Atlanta or Chicago trap artist. Short, punchy, direct sentences.
-    4. HEAVY END-RHYMES: Stack the same end-rhyme for 4 to 8 lines in a row (AAAA or AABB schemes) using simple, modern slang. 
-    5. ENERGY FORMATTING: Output the actual lyrics in ALL CAPS to simulate an aggressive delivery.
-    6. STRUCTURAL ARCHITECTURE: Write EXACTLY the requested number of lines. Do NOT write timestamps, bar counts, or metadata. Just the lyrics.
-    7. THE DYNAMIC SYLLABLE CAP: EVERY single line you write MUST be exactly ${maxSyllables} syllables or less. Do not exceed this limit.
-    8. POCKET PLACEMENT: ${pocketInstruction}
-    9. THE BEAT 4 ANCHOR: Structure the syntax so the primary rhyming syllable inherently falls at the end of the phrase.
-    10. DYNAMIC ARTICULATION: Based on the instrumental's DSP analysis, inject structural anomalies:
-        - Rhythmic stutters on consonants (e.g., "g-g-go", "b-b-bag").
-        - Spelled-out words or acronyms for bounce (e.g., "T to the A", "S-T-A-R").
-        - ${dspVocalInstruction}
-    11. BREATH CONTROL: Use the pipe symbol (|) to insert rhythmic pauses exactly in the middle of EVERY line.
-    `;
-
-    const thematicPrompt = `SONG TITLE: "${title || 'UNTITLED'}".\nUSER PROMPT: ${prompt}\nTHE MOTIVE (Drive): ${motive || "Mastering the craft"}\nTHE STRUGGLE (Setback): ${struggle || "Against the odds"}\nTHE HUSTLE (Execution): ${hustle || "Relentless execution"}\n${getNiceOverride}\n${systemConstraint || ''}`; 
-    const forcedStyle = style ? `${style} (GetNice Hybrid Blueprint)` : "getnice_hybrid";
-
+    // 🚨 DUMB RELAY: No more Javascript Prompt Engineering. Pass it to Python.
     const runResponse = await fetch(`https://api.runpod.ai/v2/${process.env.RUNPOD_ENDPOINT_TALON}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RUNPOD_API_KEY}` },
       body: JSON.stringify({
         input: {
           task_type: "generate", 
-          prompt: thematicPrompt, 
+          prompt: prompt || "", 
+          title: title || "UNTITLED",
           flowReference: flowReference,
           motive: motive, 
           struggle: struggle, 
           hustle: hustle, 
-          bpm: activeBpm, 
-          key: key || "Unknown Key",            
+          bpm: bpm || 120, 
+          root_note: root_note || "C",
+          scale: scale || "minor",
           style: style || "getnice_hybrid",
           stageName: stageName || "The Artist", 
           tag: tag, 
           useSlang: useSlang, 
           useIntel: useIntel, 
+          isExplicit: isExplicit ?? true,
           blueprint: blueprint,
           pocket: pocket,
           strikeZone: strikeZone,
           hookType: hookType,
           flowEvolution: flowEvolution,
-          dynamic_array: dynamic_array, // <-- Safely bridging Room 1 to the backend 
-          contour: contour,             // <-- Safely bridging Room 1 to the backend
+          dynamic_array: dynamic_array, 
+          contour: contour,             
           bannedWordsMap: BANNED_WORDS_MAP
         }
       })

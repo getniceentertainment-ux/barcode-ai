@@ -305,6 +305,7 @@ export default function Room03_Ghostwriter() {
           tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
+          isExplicit: true, // 🚨 PASSED DOWN TO AI
           strikeZone: gwStrikeZone,
           hookType: finalHookType,             
           flowEvolution: finalFlowEvolution,   
@@ -313,7 +314,6 @@ export default function Room03_Ghostwriter() {
           scale: scale,
           contour: (audioData as any)?.contour || "drops into a lower, cadential register",
           dynamic_array: (audioData as any)?.dynamic_array,
-          systemConstraint: systemConstraint, 
           blueprint: blueprint.flatMap(b => {
             // PASSING THE VAULT DATA DOWN TO THE API
             if (b.type === "VERSE" && b.bars > 8) {
