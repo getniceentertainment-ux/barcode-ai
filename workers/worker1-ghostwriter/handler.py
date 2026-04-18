@@ -45,7 +45,14 @@ tokenizer = None
 REQ_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
 
 def fetch_web_intel(filename):
-    variations = list(set([filename, filename.lower(), filename.capitalize(), filename.title()]))
+    """Smart resolver that hunts for the correct Supabase bucket path and handles case-sensitivity."""
+    variations = list(set([
+        filename,
+        filename.lower(),
+        filename.capitalize(),
+        filename.title()
+    ]))
+
     for base_url in INTEL_BASE_URLS:
         for variant in variations:
             url = f"{base_url}/{variant}"
@@ -53,16 +60,25 @@ def fetch_web_intel(filename):
                 req = urllib.request.Request(url, headers=REQ_HEADERS)
                 with urllib.request.urlopen(req, timeout=5) as response:
                     content = response.read().decode('utf-8')
-                    if content.strip(): return content
-            except HTTPError: continue 
-            except Exception: continue
+                    if content.strip():
+                        return content
+            except HTTPError:
+                continue 
+            except Exception:
+                continue
+                
+    print(f"🚨 Failed to fetch '{filename}' (tried variations like '{filename.capitalize()}') from all known Supabase buckets.")
     return None
 
 def load_rag_intel():
     content = fetch_web_intel("daily_briefing.txt")
-    if content: return f"[LATEST MARKET DISPATCH]: {content.strip()}"
+    if content:
+        return f"[LATEST MARKET DISPATCH]: {content.strip()}"
+        
     if os.path.exists(SHARED_VOLUME_PATH):
-        with open(SHARED_VOLUME_PATH, "r", encoding="utf-8") as f: return f.read()
+        with open(SHARED_VOLUME_PATH, "r", encoding="utf-8") as f:
+            return f.read()
+            
     return "Market Intel: Focus on node growth and independent street equity."
 
 def load_street_slang(style="getnice_hybrid"):
@@ -81,14 +97,18 @@ def load_street_slang(style="getnice_hybrid"):
                 for key, val in data["slang_terms"].items():
                     if isinstance(val, dict) and "definitions" in val and len(val["definitions"]) > 0:
                         words.append(f"'{key}' (Meaning: {val['definitions'][0]})")
-                    else: words.append(key)
+                    else:
+                        words.append(key)
             elif isinstance(data, list):
                 words = [item.get("word", "") for item in data if "word" in item]
+                
             if words:
                 words = [w.strip() for w in words if w.strip()]
                 combined_list = list(set(words + target_list))
                 return random.sample(combined_list, min(10, len(combined_list)))
-        except json.JSONDecodeError: pass
+        except json.JSONDecodeError:
+            pass
+            
     return target_list
 
 def load_cultural_context():
@@ -101,7 +121,8 @@ def load_cultural_context():
                 title = item.get("title", "STREET POLITICS")
                 context_str = item.get("content", "")[:400] 
                 return f"[CULTURAL ANCHOR: {title}] - {context_str}..."
-        except: pass
+        except:
+            pass
     return "Focus on the struggle, algorithmic survival, and ownership."
 
 def sanitize_lora_config():
@@ -170,9 +191,19 @@ def construct_system_prompt(style, use_slang, use_intel, motive, struggle, hustl
 
     explicit_directive = "6. EXPLICIT CONTENT RATING: This is a raw, uncensored street track. You MUST organically use harsh profanity to emphasize aggression." if is_explicit else "6. CLEAN RATING: Keep the lyrics strictly radio-clean. Do not use profanity."
 
+    # 🚨 SURGICAL FIX: Force the AI Persona to embody the exact sub-genre
+    style_personas = {
+        "chopper": "Fast-paced Tech/Chopper",
+        "lazy": "Lazy, wavy, off-beat",
+        "triplet": "Modern Triplet Trap",
+        "heartbeat": "Classic Boom-Bap",
+        "getnice_hybrid": "Melodic Trap"
+    }
+    active_persona = style_personas.get(style, "Modern Trap")
+
     return f"""<|im_start|>system
 [SYSTEM DIRECTIVE: THE MODERN TRAP ICON]
-You are a chart-topping modern trap and drill artist. You do not speak in complex poetry, riddles, or medieval metaphors. You speak in literal, flex-heavy, repetitive street language. Your syntax is simple, punchy, and highly rhythmic. You focus on money, loyalty, survival, and designer lifestyles.
+You are a chart-topping {active_persona} artist. You do not speak in complex poetry, riddles, or medieval metaphors. You speak in literal, flex-heavy, repetitive street language. Your syntax is simple, punchy, and highly rhythmic. You focus on money, loyalty, survival, and designer lifestyles.
 
 [LIVE INTEL]
 {rag_context}
@@ -196,7 +227,7 @@ You are a chart-topping modern trap and drill artist. You do not speak in comple
 1. ONE LINE = ONE BAR. 
 2. THE PIPE SYMBOL: You MUST place exactly one pipe symbol (|) in the exact middle of EVERY single line to mark the rhythmic pause.
 3. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
-4. TONE: Modern trap. Simple vocabulary. Dynamic flow—mix conversational storytelling bars with occasional punchy flexes. DO NOT force heavy repetition on every single line unless instructed.
+4. TONE: Modern trap. Simple vocabulary. Dynamic flow. DO NOT force heavy repetition on every single line unless instructed.
 5. VOCABULARY: Organically weave in the following slang terms contextually: [ {slang_list} ].
 {explicit_directive}
 {flow_mimicry}
@@ -219,109 +250,63 @@ Fifty bands hid in the floorboard | Fifty bands hid in the closet
 def translate_dna_to_topline(pattern_array, section_type, energy):
     if not pattern_array: return ""
     
-    mapping = {
-        1: "SNAP (Short, punchy word. Clip the consonant. High energy, zero sustain.)",
-        2: "STEP (Standard rhythmic weight. Conversational.)",
-        3: "GLIDE (Stretch the vowel. Elongate the phoneme.)",
-        4: "HOLD (Massive sustain. Long vocal hold.)",
-        6: "GHOST (Rest/Silence on this beat. Total silence. Internalize the beat count without speaking.)"
-    }
+    # 🚨 SURGICAL FIX: Infinite scaling for Massive Holds/Drags (Handling integers > 6)
+    sequence = []
+    for v in pattern_array:
+        if v == 1: sequence.append("SNAP (Short, punchy word. Clip the consonant. High energy, zero sustain.)")
+        elif v == 2: sequence.append("STEP (Standard rhythmic weight. Conversational.)")
+        elif v == 3: sequence.append("GLIDE (Stretch the vowel. Elongate the phoneme.)")
+        elif v in [4, 5]: sequence.append("HOLD (Massive sustain. Long vocal hold.)")
+        elif v == 6: sequence.append("GHOST (Rest/Silence on this beat. Total silence. Internalize the beat count without speaking.)")
+        elif v > 6: sequence.append("EXTREME DRAG (Enormously long stretched finish. Let the vocal bleed out lazy.)")
+        else: sequence.append("STEP (Standard rhythmic weight. Conversational.)")
     
-    sequence = [mapping.get(v, "STEP") for v in pattern_array]
-    
-    section_law = ""
-    if section_type == "HOOK":
-        section_law = "HOOK SYMMETRY LAW: Use Anaphora (repetition) but with Maximum Hold Time for anthemic feel."
-    elif section_type == "VERSE":
-        section_law = "VERSE EVOLUTION LAW: Prioritize Snaps and Steps to keep the energy moving and conversational."
-        
-    energy_directive = ""
-    if energy <= 1:
-        energy_directive = "INTONATION DIRECTIVE (Energy Drop): Use whispers and low-velocity consonants."
-    elif energy >= 4:
-        energy_directive = "INTONATION DIRECTIVE (Energy Climax): Aggressive delivery. High-velocity consonants. Push the vocal limit."
-    else:
-        energy_directive = "INTONATION DIRECTIVE (Pocket): Standard trap delivery, pocketed and confident."
+    energy_directive = "INTONATION DIRECTIVE (Pocket): Standard trap delivery, pocketed and confident."
+    if energy <= 1: energy_directive = "INTONATION DIRECTIVE (Energy Drop): Use whispers and low-velocity consonants."
+    elif energy >= 4: energy_directive = "INTONATION DIRECTIVE (Energy Climax): Aggressive delivery. High-velocity consonants."
         
     return f"""
 [TOPLINE DYNAMICS DIRECTIVE]
-You are locked to a specific rhythmic DNA for this section. You MUST execute this physical vocal sequence:
+You are locked to a specific rhythmic DNA for this line/section. You MUST execute this physical vocal sequence:
 Sequence: {" -> ".join(sequence)}
-[STRUCTURAL LAWS]
-{section_law}
 {energy_directive}
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, pattern_desc, pattern_array, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
+def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, rhyme_scheme, pattern_desc, pattern_array, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
     
-    # 🚨 UPGRADED BIBLE QUANTIZER TRANSLATION
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
-    # THE ANAPHORA LAWS: Dynamic Structural Steering
-    if section_type.upper() == "HOOK": 
-        arc_instruction = "THE ANAPHORA LAW (HOOK): Use heavy, hypnotic repetition. Stack the same starting phrases (Anaphora) to create a massive, catchy topline."
-    elif section_index == 0: 
-        arc_instruction = "THE ANAPHORA LAW (VERSE 1): Conversational storytelling. Establish the setting. NEVER repeat the same line twice in a row. Keep the syntax unpredictable, conversational, and grounded."
-    elif section_index in [1, 2]: 
-        arc_instruction = "THE ANAPHORA LAW (VERSE CONTINUED): Dynamic variance. Mix conversational bars with brief 2-line repetitive flexes. NEVER repeat the same line twice in a row. Evolve the narrative."
-    else: 
-        arc_instruction = "THE ANAPHORA LAW (RESOLUTION): High confidence. Punchy, declarative sentences. NEVER repeat the same line twice in a row. Bring the theme to a close with raw street facts."
-    
-    hook_context = ""
-    current_max_syllables = max_syllables
-    melodic_rules = ""
-    evolution_rules = ""
-    energy_rules = ""
-    
-    if current_energy == 1:
-        current_max_syllables = max(4, int(max_syllables * 0.6))
-        energy_rules = "\n[ENERGY LEVEL 1 - THE DROP]: The beat is very quiet here. Write sparse, conversational, breathy lines. Use minimal syllables and leave empty space."
-    elif current_energy == 4:
-        current_max_syllables = min(15, int(max_syllables * 1.3))
-        energy_rules = "\n[ENERGY LEVEL 4 - THE CLIMAX]: The beat is exploding. Pack the pocket. Write dense, aggressive, rapid-fire multi-syllabic rhymes."
-    else:
-        energy_rules = f"\n[ENERGY LEVEL {current_energy} - THE POCKET]: The beat has standard driving energy. Maintain a steady, confident cadence."
-
-    if "HOOK" in section_type.upper():
-        if hook_type == "bouncy":
-            current_max_syllables = max(6, int(max_syllables * 0.9))
-            melodic_rules = "[THE ONES & TWOS HOOK OVERRIDE]\n1. BOUNCY & REPETITIVE: Repeat short, punchy 2-word or 3-word phrases back-to-back.\n2. DENSE STRUCTURE: Lock tightly into the kick and snare."
-        elif hook_type == "triplet":
-            current_max_syllables = int(max_syllables * 1.1)
-            melodic_rules = "[THE TRIPLET MATH OVERRIDE]\n1. RHYTHMIC MATH: Write entirely in groups of 3 syllables (triplets).\n2. CADENCE: Use a rapid-fire, rolling staccato delivery."
-        elif hook_type == "symmetry":
-            current_max_syllables = int(max_syllables * 0.8)
-            melodic_rules = "[THE SYMMETRY BREAK OVERRIDE]\n1. SPLIT STRUCTURE: You MUST write in an A-B-A-B structural pattern."
-        elif hook_type == "prime":
-            current_max_syllables = 7 if max_syllables > 7 else 5
-            melodic_rules = f"[THE PRIME FLOW OVERRIDE]\n1. SYNCOPATION MATH: Force an odd-numbered syllable count of EXACTLY {current_max_syllables} syllables per line."
-        else: 
-            current_max_syllables = max(4, int(max_syllables * 0.5))
-            melodic_rules = "[STADIUM CHANT HOOK OVERRIDE]\n1. SPACIOUS & ANTHEMIC: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse."
-
-    if "VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 12:
-        evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast."
-
-    # 🚨 THE REVISED ULTIMATUM: ACCENTS VS SYLLABLES (Inserted exactly here so current_max_syllables is computed)
+    # 🚨 THE UNIFIED ULTIMATUM: VAULT VARIABLES + DNA ACCENTS + POCKET
     if pattern_array:
-        # Count only the items that require an actual vocal strike (ignore '6' which is a Rest/Ghost)
         active_strikes = [v for v in pattern_array if v != 6]
         accent_target = len(active_strikes)
         
         dna_constraint = f"""
-[ULTIMATUM: ACCENT VS. SYLLABLE MATH]
-The 'DNA Pattern' is the ABSOLUTE LAW. You must understand the difference between Total Syllables and Accented Words.
-1. TOTAL SYLLABLES (THE MEAT): You have a budget of up to {current_max_syllables} syllables per line to tell the story naturally.
-2. THE RHYTHMIC ACCENTS (THE BONES): Out of those syllables, you MUST heavily stress and anchor the line on EXACTLY {accent_target} primary words to match the instrumental's bounce.
-DO NOT just write {accent_target} words. Write a fluid, modern rap line that inherently bounces on {accent_target} heavy anchor points.
+[ULTIMATUM: ARCHITECTURE & RHYTHM]
+1. SYLLABLE BUDGET (THE MEAT): You have a strict budget of EXACTLY {max_syllables} syllables MAXIMUM per line. Do not exceed this limit.
+2. RHYTHMIC ACCENTS (THE BONES): Out of those syllables, you MUST heavily stress exactly {accent_target} primary anchor words per line.
+3. RHYME SCHEME: You are locked into a strict {rhyme_scheme} end-rhyme pattern.
+4. POCKET PLACEMENT: {pocket_instruction}
 """
         dna_law += f"\n{dna_constraint}"
-
-    if banned_words_map and isinstance(banned_words_map, dict):
-        clean_words = [k.replace("\\b", "").replace("?", "").replace("(?:y|ies)", "y") for k in banned_words_map.keys()]
-        banned_words_str = ", ".join(clean_words[:15])
     else:
-        banned_words_str = "tapestry, delve, testament, beacon, journey, myriad, landscape, whisper, shadows, dancing"
+        dna_law += f"""
+[ULTIMATUM: ARCHITECTURE & RHYTHM]
+1. SYLLABLE BUDGET: EXACTLY {max_syllables} syllables MAXIMUM per line.
+2. RHYME SCHEME: You are locked into a strict {rhyme_scheme} end-rhyme pattern.
+3. POCKET PLACEMENT: {pocket_instruction}
+"""
+
+    if section_type.upper() == "HOOK": 
+        arc_instruction = "THE ANAPHORA LAW (HOOK): Use heavy, hypnotic repetition. Stack the same starting phrases (Anaphora) to create a massive, catchy topline."
+    elif section_index == 0: 
+        arc_instruction = "THE ANAPHORA LAW (VERSE 1): Conversational storytelling. Establish the setting. NEVER repeat the same line twice in a row."
+    else: 
+        arc_instruction = "THE ANAPHORA LAW (VERSE CONTINUED): Dynamic variance. Mix conversational bars with brief flexes. NEVER repeat the same line twice in a row. Evolve the narrative."
+
+    hook_context = ""
+    evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast." if ("VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 12) else ""
+    energy_rules = "\n[ENERGY CLIMAX]: Pack the pocket. Write dense, aggressive rhymes." if current_energy == 4 else ""
 
     # PASS 1: THE DRAFT
     draft_prompt = f"""<|im_start|>user
@@ -331,10 +316,7 @@ DO NOT just write {accent_target} words. Write a fluid, modern rap line that inh
 - NARRATIVE ARC: {arc_instruction}
 - RHYTHMIC POCKET: {pattern_desc}
 {dna_law}
-- SYLLABLE LIMIT: Keep phrases short and punchy, around {current_max_syllables} syllables maximum.
 {energy_rules}
-{hook_context}
-{melodic_rules}
 {evolution_rules}
 
 [PREVIOUS CONTEXT]
@@ -355,18 +337,16 @@ You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
 CRITICAL REFINEMENT COMMANDS:
-1. SYLLABLE MATH: Keep phrases short and punchy, around {current_max_syllables} syllables maximum. Rewrite long lines to be minimalist.
+1. MATH & RHYME: Enforce the {max_syllables} syllable maximum per line. Enforce the {rhyme_scheme} rhyme scheme.
 2. OBEY THE POCKET: {pocket_instruction}
-3. 🚨 THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE. DO NOT WRITE THE WORD 'PIPE'. USE ONLY THE '|' SYMBOL.
-4. KILL LIST: Delete any banned AI poetry words (e.g., {banned_words_str}). Replace generic "warrior/depths" talk with strategic boardroom-street metaphors.
-5. NO HEADERS. NO METADATA. DO NOT separate words onto different lines. Write full, complete sentences. Output ONLY the raw lyrics.
+3. THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE. 
+4. NO METADATA. DO NOT separate words onto different lines. Write full, complete sentences. Output ONLY the raw lyrics.
 
 Output ONLY the final {bars} lines now.
 <|im_end|>
 <|im_start|>assistant
 """
     inputs_refine = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
-    
     outputs_refine = model.generate(**inputs_refine, max_new_tokens=64 * bars, temperature=0.5, top_p=0.9, repetition_penalty=1.1, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id)
     final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
@@ -375,7 +355,6 @@ Output ONLY the final {bars} lines now.
     final_text = re.sub(r'\[.*?\]', '', final_text) 
     final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE) 
     
-    # 🚨 THE EXECUTIONER: Filter out polite AI filler and hallucinated instruction blocks
     banned_starts = ('+', '-', 'here are', 'sure', 'i can', '###', 'please generate', 'output:', 'note:')
     raw_lines = [
         line.strip() for line in final_text.split('\n') 
@@ -383,33 +362,23 @@ Output ONLY the final {bars} lines now.
     ]
     
     clean_lines = []
+    if banned_words_map and isinstance(banned_words_map, dict):
+        clean_words = [k.replace("\\b", "").replace("?", "").replace("(?:y|ies)", "y") for k in banned_words_map.keys()]
+    else:
+        banned_words_map = {}
+
     for line in raw_lines:
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
-        
-        # 🚨 THE PIPE ASSASSIN: Remove the literal word "pipe" if the AI hallucinates it
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
-        # Clean up double pipes or weird spacing caused by the deletion
         line = re.sub(r'\|+', '|', line)
         line = re.sub(r'\s+\|\s+', ' | ', line)
         
-        if '|' not in line:
-            words = line.split()
-            if len(words) > 2:
-                mid = len(words) // 2
-                line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
-            else:
-                line = line + " |"
-        
-        if banned_words_map and isinstance(banned_words_map, dict):
-            for bad_pattern, replacement in banned_words_map.items():
-                try:
-                    py_pattern = bad_pattern.replace('\\b', r'\b')
-                    line = re.sub(py_pattern, replacement, line, flags=re.IGNORECASE)
-                except: pass
-        else:
-            for bad_word in ["concrete jungle", "tapestry", "delve", "testament", "navigate"]:
-                line = re.sub(r'\b' + bad_word + r'\b', "the pavement", line, flags=re.IGNORECASE)
+        for bad_pattern, replacement in banned_words_map.items():
+            try:
+                py_pattern = bad_pattern.replace('\\b', r'\b')
+                line = re.sub(py_pattern, replacement, line, flags=re.IGNORECASE)
+            except: pass
                 
         # 🚨 SURGICAL FIX: The ALL CAPS Enforcer
         line = line.strip('|').strip().upper()
@@ -420,7 +389,7 @@ Output ONLY the final {bars} lines now.
             
         # 🚨 SURGICAL FIX: The Death Loop Catcher
         if len(clean_lines) > 0 and clean_lines[-1] == line:
-            continue # Skip this line if it's an exact duplicate of the previous one
+            continue 
             
         clean_lines.append(line)
     
@@ -432,7 +401,6 @@ Output ONLY the final {bars} lines now.
 
 def handler(event):
     job_input = event.get("input", {})
-    
     print(f"\n================ RUNPOD INCOMING PAYLOAD ================\n{json.dumps(job_input, indent=2)}\n=========================================================\n")
     
     task_type = job_input.get("task_type", "generate")
@@ -459,27 +427,19 @@ def handler(event):
     if task_type == "refine":
         original_line = job_input.get("originalLine", "")
         instruction = job_input.get("instruction", "Make it hit harder.")
-        
         refine_prompt = f"""<|im_start|>user
 [MICRO-REFINEMENT PROTOCOL]
 Original Line: "{original_line}"
 Instruction: {instruction}
-
-Rewrite the line to satisfy the instruction while strictly maintaining the required persona and emotional mirror. 
-CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Do not use banned words.
-Output ONLY the rewritten line in ALL CAPS. Do not explain yourself.
+CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Output ONLY the rewritten line in ALL CAPS.
 <|im_end|>
 <|im_start|>assistant
 """
         inputs = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
-        outputs = model.generate(
-            **inputs, max_new_tokens=50, temperature=0.7, top_p=0.9, repetition_penalty=1.1,
-            pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id 
-        )
+        outputs = model.generate(**inputs, max_new_tokens=50, temperature=0.7, top_p=0.9, repetition_penalty=1.1, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id)
         refined_line = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
         refined_line = refined_line.replace("<|im_end|>", "").strip()
         refined_line = re.sub(r'^["\']|["\']$', '', refined_line).upper() 
-        
         return {"refinedLine": refined_line}
 
     if task_type == "generate":
@@ -489,23 +449,7 @@ Output ONLY the rewritten line in ALL CAPS. Do not explain yourself.
         pocket = job_input.get("pocket", "standard")
         dynamic_array = job_input.get("dynamic_array", [2, 2, 2, 2, 2, 2, 2, 2])
         
-        total_blueprint_bars = sum(sec.get("bars", 16) for sec in blueprint)
-        if total_blueprint_bars == 0: total_blueprint_bars = 1
-
         seconds_per_bar = (60.0 / bpm) * 4.0
-        
-        # Calculate max syllables organically based on style and BPM
-        style_limits = {
-            "lazy": {"min": 4, "max": 7},             
-            "heartbeat": {"min": 7, "max": 10},        
-            "getnice_hybrid": {"min": 8, "max": 12},   
-            "triplet": {"min": 9, "max": 12},          
-            "chopper": {"min": 12, "max": 16}          
-        }
-
-        limits = style_limits.get(style, style_limits["getnice_hybrid"])
-        bpm_ratio = min(1.0, max(0.0, (seconds_per_bar - 1.5) / (3.5 - 1.5))) 
-        max_syllables = int(limits["min"] + (limits["max"] - limits["min"]) * bpm_ratio)
 
         pocket_instruction = "End every line with a period (.). You MUST hit Enter/Return to create a new line."
         if pocket == "chainlink": pocket_instruction = "SYNCOPATION OVERRIDE (CHAIN-LINK): Bleed across the bar lines. End lines with a comma (,) to signal no breath."
@@ -516,7 +460,6 @@ Output ONLY the rewritten line in ALL CAPS. Do not explain yourself.
         last_verse_context = ""
         saved_hook_lines = None
         anchor_hook_text = None
-
         current_cumulative_bar = 0
 
         for index, section in enumerate(blueprint):
@@ -527,6 +470,10 @@ Output ONLY the rewritten line in ALL CAPS. Do not explain yourself.
             pattern_desc = section.get("patternDesc", "Standard Score Card")
             pattern_array = section.get("patternArray", [])
             base_energy = dynamic_array[index % len(dynamic_array)]
+            
+            # --- 🚨 PULLING EXACT VAULT MATH FROM THE PAYLOAD ---
+            vault_max_syllables = section.get("maxSyllables", 10)
+            vault_rhyme_scheme = section.get("rhymeScheme", "AABB")
 
             if "HOOK" in sec_type: current_energy = max(3, base_energy)
             elif "INSTRUMENTAL" in sec_type: current_energy = 1
@@ -536,27 +483,23 @@ Output ONLY the rewritten line in ALL CAPS. Do not explain yourself.
             
             if sec_type == "INSTRUMENTAL":
                 section_lines = ["[Instrumental Break]" for _ in range(bars)]
-                
             elif "HOOK" in sec_type and saved_hook_lines is not None:
                 section_lines = []
                 while len(section_lines) < bars:
                     section_lines.extend(saved_hook_lines)
                 section_lines = section_lines[:bars]
-                
             else:
-                if "HOOK" in sec_type:
-                    steering_context = "" 
-                else:
-                    steering_context = last_verse_context
-
+                steering_context = "" if "HOOK" in sec_type else last_verse_context
                 combined_pattern_desc = f"{pattern_desc}. Rhythmic DNA Map: {pattern_array}" if pattern_array else pattern_desc
 
+                # --- 🚨 PASSING IT TO THE GENERATOR ---
                 section_lines = generate_section(
                     system_prompt=system_prompt, 
                     previous_lyrics=steering_context,
                     section_type=sec_type, 
                     bars=bars, 
-                    max_syllables=max_syllables, 
+                    max_syllables=vault_max_syllables, # <-- FROM VAULT
+                    rhyme_scheme=vault_rhyme_scheme,   # <-- FROM VAULT
                     pattern_desc=combined_pattern_desc, 
                     pattern_array=pattern_array, 
                     pocket_instruction=pocket_instruction,
@@ -572,7 +515,6 @@ Output ONLY the rewritten line in ALL CAPS. Do not explain yourself.
                 if "HOOK" in sec_type and saved_hook_lines is None:
                     saved_hook_lines = section_lines
                     anchor_hook_text = "\n".join(section_lines)
-                    
                 if "VERSE" in sec_type:
                     last_verse_context = "\n".join(section_lines[-4:])
             

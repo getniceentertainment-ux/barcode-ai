@@ -241,7 +241,7 @@ export async function POST(req: Request) {
           hustle: hustle, 
           bpm: activeBpm, 
           key: key || "Unknown Key",            
-          style: forcedStyle, 
+          style: style || "getnice_hybrid",
           stageName: stageName || "The Artist", 
           tag: tag, 
           useSlang: useSlang, 
