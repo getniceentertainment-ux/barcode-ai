@@ -229,35 +229,32 @@ export default function Room01_Lab() {
   };
 
   // HANDLE RETURNING USERS AFTER SUCCESSFUL STRIPE LEASE
-  const handlePurchasedBeatDSP = async (beatUrl: string, beatName: string) => {
+  const handlePurchasedBeatDSP = async (url: string, fileName: string) => {
     setStatus("analyzing");
-    setPollingAttempts(0);
-
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      
-      const res = await fetch('/api/dsp', {
+      // 1. Trigger the actual RunPod Worker via your Next.js API route
+      const response = await fetch('/api/dsp/process', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ file_url: beatUrl })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          url, 
+          fileName, 
+          userId: userSession?.id,
+          isFreeLease: true // Flag to tell the backend to skip Stripe checks
+        })
       });
+
+      const result = await response.json();
       
-      const initData = await res.json();
-      if (!res.ok) throw new Error(initData.error || "DSP Processing failed");
-
-      if (initData.jobId) {
-        pollDSPJob(initData.jobId, beatUrl, beatName);
+      // 2. Start polling for the ID returned by the worker
+      if (result.jobId) {
+        pollDSPJob(result.jobId); 
       } else {
-        throw new Error("No DSP Job ID returned.");
+        throw new Error("No JobID returned from DSP engine");
       }
-
-    } catch (err: any) {
-      console.error("Purchased Beat DSP Error:", err);
-      if (addToast) addToast("Failed to analyze beat: " + err.message, "error");
+    } catch (err) {
+      console.error("DSP Trigger Error:", err);
+      if (addToast) addToast("Failed to wake up the DSP worker.", "error");
       setStatus("idle");
     }
   };
