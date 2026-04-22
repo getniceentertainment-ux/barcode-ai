@@ -149,6 +149,7 @@ export default function EntryGateway() {
 
       if (authMode === "signup") {
         if (!stageName.trim()) throw new Error("Stage Name is required.");
+        
         const { data, error } = await supabase.auth.signUp({ 
           email, 
           password,
@@ -161,12 +162,16 @@ export default function EntryGateway() {
           }
         });
 
-        // 🚨 SURGICAL FIX: FIRE GOOGLE ADS CONVERSION WITH ERROR BOUNDARY
-        // This ensures aggressive ad-blockers don't crash the entire registration process
+        // 1. THE FIREWALL: Check for Supabase errors FIRST
+        // If the password fails, the code STOPS here.
+        if (error) throw error;
+
+        // 2. THE CONVERSION: Only fires if Supabase successfully wrote to the database
         try {
           if (typeof window !== 'undefined' && (window as any).gtag) {
             (window as any).gtag('event', 'conversion', {
-                'send_to': 'AW-18074669646/f5ZQCNXOuZscEM6k1qpD'
+                'send_to': 'AW-18074669646/f5ZQCNXOuZscEM6k1qpD',
+                'transaction_id': data.user?.id // Deduplicates the conversion
             });
             console.log("TALON: Google Ads Artist Signup Conversion Fired.");
           }
@@ -174,7 +179,15 @@ export default function EntryGateway() {
           console.warn("TALON: Google Ads conversion blocked by browser security. Proceeding with registration.");
         }
 
+        // 3. PROCEED TO MATRIX
+        if (data.user && !data.session) setAuthStep("verify_email");
+        else if (data.session) await processUserSession(data.user);
+        
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        if (data.user) await processUserSession(data.user);
+      }
         if (data.user && !data.session) setAuthStep("verify_email");
         else if (data.session) await processUserSession(data.user);
       } else {
