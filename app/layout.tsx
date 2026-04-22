@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+import { Analytics } from '@vercel/analytics/next';
 import "./globals.css";
 
 // 🛡️ REFINED SEO PERIMETER
@@ -47,6 +48,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased font-sans bg-[#121212] text-[#E0E0E0] overflow-x-hidden">
         {children}
+        <Analytics />
       </body>
     </html>
   );
