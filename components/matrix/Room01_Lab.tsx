@@ -38,6 +38,42 @@ export default function Room01_Lab() {
   // Hardcoded beats removed - relying purely on Supabase Fetch
   const [beats, setBeats] = useState<any[]>([]);
 
+  // --- RESTORING CORE UPLOAD LOGIC ---
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    if (e.target.files && e.target.files[0]) {
+      handleFile(e.target.files[0]);
+    }
+  };
+
+  // --- RESTORING PREVIEW LOGIC ---
+  const [previewProgress, setPreviewProgress] = useState(0);
+  const handlePreviewTimeUpdate = () => {
+    if (previewAudioRef.current) {
+      const current = previewAudioRef.current.currentTime;
+      const total = previewAudioRef.current.duration;
+      if (total > 0) setPreviewProgress((current / total) * 100);
+    }
+  };
   // Clean up polling intervals and audio on unmount
   useEffect(() => {
     return () => {
