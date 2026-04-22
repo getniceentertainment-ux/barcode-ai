@@ -99,6 +99,19 @@ export default function Room01_Lab() {
     fetchMarketplaceBeats();
   }, []);
 
+   // --- RESTORING THE MISSING PREVIEW LOGIC ---
+  const [previewProgress, setPreviewProgress] = useState(0);
+
+  const handlePreviewTimeUpdate = () => {
+    if (previewAudioRef.current) {
+      const current = previewAudioRef.current.currentTime;
+      const total = previewAudioRef.current.duration;
+      if (total > 0) {
+        setPreviewProgress((current / total) * 100);
+      }
+    }
+  };
+
   // --- GLOBAL FREE LEASE OVERRIDE (Room 01 Forge) ---
   const IS_FREE_LEASE_DAY = true;
 
