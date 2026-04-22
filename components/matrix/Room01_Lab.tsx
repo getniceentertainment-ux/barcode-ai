@@ -69,7 +69,7 @@ export default function Room01_Lab() {
               else if (bpm >= 110) calculatedLeasePrice = 49.99;
 
               const { data: urlData } = supabase.storage.from('marketplace_beats').getPublicUrl(file.name);
-              conconst IS_FREE_LEASE_DAY = true;
+              const IS_FREE_LEASE_DAY = true;
 
   // 2. DEFINE THE FULFILLMENT FUNCTION (Ensure it's inside the component)
   const handleFreeLeaseFulfillment = async (beat: any) => {
