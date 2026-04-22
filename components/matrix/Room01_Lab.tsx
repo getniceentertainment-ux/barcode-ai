@@ -69,43 +69,7 @@ export default function Room01_Lab() {
               else if (bpm >= 110) calculatedLeasePrice = 49.99;
 
               const { data: urlData } = supabase.storage.from('marketplace_beats').getPublicUrl(file.name);
-              const IS_FREE_LEASE_DAY = true;
-
-  // 2. DEFINE THE FULFILLMENT FUNCTION (Ensure it's inside the component)
-  const handleFreeLeaseFulfillment = async (beat: any) => {
-    if (addToast) addToast(`Open Market Access: ${beat.title} Lease acquired!`, "info");
-    
-    try {
-      // Log for your lead generation/analytics
-      await supabase.from('free_acquisitions').insert({
-        user_id: userSession?.id,
-        beat_id: beat.id,
-        beat_name: beat.title,
-        acquired_at: new Date().toISOString()
-      });
-    } catch (e) {
-      console.warn("Lead telemetry skipped:", e);
-    }
-
-    // This calls your existing function that handles the DSP extraction
-    handlePurchasedBeatDSP(beat.url, `${beat.title}_Lease.mp3`);
-  };
-
-  // 3. UPDATE THE SELECTION LOGIC
-  const handleMarketplaceSelect = async (beat: any, licenseType: 'lease' | 'exclusive') => {
-    if (!isDisclaimerAccepted) {
-      if (addToast) addToast("Please accept the IP & Licensing Declaration below first.", "error");
-      return;
-    }
-    
-    if (previewAudioRef.current) previewAudioRef.current.pause();
-    setPlayingPreview(null);
-
-    // --- THE BYPASS ---
-    if (licenseType === 'lease' && IS_FREE_LEASE_DAY) {
-      handleFreeLeaseFulfillment(beat); // Now it's defined in scope!
-      return;
-    cleanTitle = file.name.replace(/\.(mp3|wav)$/i, '').replace(/_?\d+\s*BPM/i, '').replace(/_/g, ' ').trim();
+              const cleanTitle = file.name.replace(/\.(mp3|wav)$/i, '').replace(/_?\d+\s*BPM/i, '').replace(/_/g, ' ').trim();
               
               return { 
                 id: `supa_${index}`, 
@@ -118,7 +82,7 @@ export default function Room01_Lab() {
                 key: "Unknown"
               };
             });
-      
+          
           if (fetchedBeats.length > 0) {
             setBeats(prev => {
               const existingUrls = new Set(prev.map(p => p.url));
@@ -135,299 +99,56 @@ export default function Room01_Lab() {
     fetchMarketplaceBeats();
   }, []);
 
-  // Catch returning Stripe redirects for purchased leases
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      
-      if (params.get('beat_purchased') === 'true') {
-        const beatUrl = params.get('beat_url');
-        let beatName = params.get('beat_name');
-        
-        if (beatUrl) {
-          // --- SUPABASE URL EXTRACTOR ---
-          if (!beatName) {
-            try {
-              const urlParts = beatUrl.split('/');
-              beatName = decodeURIComponent(urlParts[urlParts.length - 1].split('?')[0]);
-            } catch (err) {
-              beatName = "GetNice_Marketplace_Beat.mp3";
-            }
-          }
+  // --- GLOBAL FREE LEASE OVERRIDE (Room 01 Forge) ---
+  const IS_FREE_LEASE_DAY = true;
 
-          // 1. Clean the URL instantly so it doesn't double-fire if the user refreshes
-          window.history.replaceState({}, document.title, window.location.pathname);
-          
-          // 2. Visually check the disclaimer box for the user
-          setIsDisclaimerAccepted(true); 
-          
-          if (addToast) addToast(`License Acquired: ${beatName}. Booting DSP...`, "info");
-          
-          // 3. SURGICAL FIX: The Delay-Fire 
-          setTimeout(() => {
-            if (handlePurchasedBeatDSP) {
-               handlePurchasedBeatDSP(beatUrl, beatName || "GetNice_Marketplace_Beat.mp3");
-            }
-          }, 500);
-        }
-      }
-    }
-  }, []);
-
-  // --- SURGICAL FIXER: The Hydration Catcher ---
-  useEffect(() => {
-    if (audioData) {
-      if (status === "idle") {
-        setStatus("success");
-      }
-    } else {
-      if (status === "success") {
-        setStatus("idle");
-      }
-    }
-  }, [audioData, status]);
-
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!isDisclaimerAccepted) return; 
-    if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
-    else if (e.type === "dragleave") setDragActive(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
+  const handleFreeLeaseFulfillment = async (beat: any) => {
+    if (addToast) addToast(`Open Market Access: ${beat.title} Lease acquired!`, "info");
     
-    if (!isDisclaimerAccepted) {
-      if (addToast) addToast("Please accept the IP & Licensing Declaration below first.", "error");
-      return;
-    }
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processRealFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    if (e.target.files && e.target.files[0]) {
-      processRealFile(e.target.files[0]);
-    }
-  };
-
-  // --- AUDIO PREVIEW LOGIC (60s Limit) ---
-  const togglePreview = (url: string) => {
-    if (playingPreview === url) {
-      previewAudioRef.current?.pause();
-      setPlayingPreview(null);
-    } else {
-      setPlayingPreview(url);
-      if (previewAudioRef.current) {
-        previewAudioRef.current.src = url;
-        previewAudioRef.current.currentTime = 0;
-        previewAudioRef.current.play().catch(e => console.error("Preview play failed:", e));
-      }
-    }
-  };
-
-  const handlePreviewTimeUpdate = () => {
-    if (previewAudioRef.current && previewAudioRef.current.currentTime >= 60) {
-      previewAudioRef.current.pause();
-      setPlayingPreview(null);
-      if (addToast) addToast("Preview limited to 60 seconds. Secure a lease to unlock.", "info");
-    }
-  };
-
-  // --- THE ASYNC POLLING LOGIC ---
-  const pollDSPJob = (jobId: string, cloudUrl: string, fileName: string) => {
-    let attempts = 0;
-    
-    pollIntervalRef.current = setInterval(async () => {
-      attempts++;
-      setPollingAttempts(attempts);
-      
-      try {
-        const statusRes = await fetch(`/api/dsp?jobId=${jobId}&t=${Date.now()}`);
-        const statusData = await statusRes.json();
-
-        if (statusData.status === 'COMPLETED') {
-          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          
-          // --- SURGICAL EXPLOIT: Capture exact duration before saving to store ---
-          const exactDuration = await getExactAudioDuration(cloudUrl);
-
-          // SURGICAL FIX: Catch the dynamic_array and contour from the RunPod payload
-          setAudioData({
-            url: cloudUrl,
-            fileName: fileName,
-            bpm: statusData.output.bpm || 120,
-            totalBars: statusData.output.total_bars || 64,
-            key: statusData.output.key || "Unknown",
-            grid: statusData.output.grid || [],
-            dynamic_array: statusData.output.dynamic_array, // <-- CATCH IT
-            contour: statusData.output.contour,             // <-- CATCH IT
-            duration: exactDuration > 0 ? exactDuration : undefined
-          });
-
-          setStatus("success");
-          
-          // --- SURGICAL INJECTION: CLOUD STATE BACKUP ---
-          // Wait 500ms for Zustand to process the state update, then aggressively push 
-          // the entire session to the Supabase ledger so it survives logouts.
-          setTimeout(async () => {
-            const currentState = useMatrixStore.getState();
-            if (userSession?.id) {
-              try {
-                await supabase.from('matrix_sessions').upsert({
-                  user_id: userSession.id,
-                  session_state: currentState,
-                  updated_at: new Date().toISOString()
-                }, { onConflict: 'user_id' });
-              } catch (err) {
-                console.error("Failed to sync DSP extraction to cloud ledger:", err);
-              }
-            }
-          }, 500);
-          // ----------------------------------------------
-
-          if (addToast) addToast("Smart Analysis Complete. Blueprint Primed & Ledger Saved.", "success");
-
-        } else if (statusData.status === 'FAILED') {
-          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          setStatus("idle");
-          if (addToast) addToast("RunPod DSP Execution Failed.", "error");
-        }
-      } catch (pollErr) {
-        console.error("DSP Polling Error", pollErr);
-      }
-    }, 3000);
-  };
-
-  // THE LIVE DSP INGESTION PIPELINE
-  const processRealFile = async (selectedFile: File) => {
-    if (!selectedFile || !userSession?.id) return;
-
-    if (!selectedFile.type.includes("audio/")) {
-      if (addToast) addToast("Invalid artifact. Audio files only.", "error");
-      return;
-    }
-
-    if (selectedFile.size > 20 * 1024 * 1024) {
-      if (addToast) addToast("Payload Exceeds 20MB Limit. Please compress audio file.", "error");
-      return;
-    }
-    
-    setFile(selectedFile);
-    setStatus("uploading");
-
     try {
-      const filePath = `${userSession.id}/${Date.now()}_${selectedFile.name.replace(/\s+/g, '_')}`;
-      const { error: uploadError } = await supabase.storage.from('audio_raw').upload(filePath, selectedFile);
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage.from('audio_raw').getPublicUrl(filePath);
-      const currentCloudUrl = publicUrlData.publicUrl;
-
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) throw new Error("Security Exception: Valid JWT Token required.");
-
-      setStatus("analyzing");
-      setPollingAttempts(0);
-
-      const res = await fetch('/api/dsp', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ file_url: currentCloudUrl })
+      await supabase.from('free_acquisitions').insert({
+        user_id: userSession?.id,
+        beat_id: beat.id,
+        beat_name: beat.title,
+        acquired_at: new Date().toISOString()
       });
-
-      const initData = await res.json();
-
-      if (!res.ok) {
-        await supabase.storage.from('audio_raw').remove([filePath]);
-        throw new Error(initData.error || "DSP Initialization failed");
-      }
-
-      // Initiate Polling with the real Job ID
-      if (initData.jobId) {
-        pollDSPJob(initData.jobId, currentCloudUrl, selectedFile.name);
-      } else {
-        throw new Error("No DSP Job ID returned from worker.");
-      }
-
-    } catch (err: any) {
-      console.error("DSP Pipeline Error:", err);
-      if (addToast) addToast(err.message || "Error processing audio.", "error");
-      setStatus("idle");
+    } catch (e) {
+      console.warn("Lead telemetry skipped:", e);
     }
+
+    handlePurchasedBeatDSP(beat.url, `${beat.title}_Lease.mp3`);
   };
 
-  // STRIPE BEAT LEASING & BUYOUT
-  const IS_FREE_LEASE_DAY = true; // Flip to false to end the event
   const handleMarketplaceSelect = async (beat: any, licenseType: 'lease' | 'exclusive') => {
     if (!isDisclaimerAccepted) {
       if (addToast) addToast("Please accept the IP & Licensing Declaration below first.", "error");
       return;
     }
     
-    // Stop preview if it's playing
     if (previewAudioRef.current) previewAudioRef.current.pause();
     setPlayingPreview(null);
 
-    // TRIGGER FREE BYPASS FOR LEASES ONLY
-  if (licenseType === 'lease' && IS_FREE_LEASE_DAY) {
-    handleFreeLeaseFulfillment(beat);
-    return;
-  }
+    if (licenseType === 'lease' && IS_FREE_LEASE_DAY) {
+      handleFreeLeaseFulfillment(beat);
+      return;
+    }
 
-  // STANDARD STRIPE FLOW FOR EXCLUSIVES OR NON-FREE DAYS
-      const price = licenseType === 'lease' ? beat.leasePrice : beat.exclusivePrice;
-    const beatNameLabel = licenseType === 'lease' ? `${beat.title} (Lease)` : `${beat.title} (Exclusive Buyout)`;
-
+    // Standard Stripe flow for Exclusives
     setStatus("analyzing"); 
     try {
       const res = await fetch('/api/stripe/beat-lease', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          beatName: beatNameLabel,
+          beatName: licenseType === 'lease' ? `${beat.title} (Lease)` : `${beat.title} (Exclusive Buyout)`,
           beatUrl: beat.url,
-          price: price,
+          price: licenseType === 'lease' ? beat.leasePrice : beat.exclusivePrice,
           userId: userSession?.id
         })
       });
-
-      const handleFreeLeaseFulfillment = async (beat: any) => {
-  if (addToast) addToast(`Open Market Access: ${beat.title} Lease acquired!`, "success");
-  
-  // Log the free acquisition in your database for lead tracking
-  try {
-    await supabase.from('free_acquisitions').insert({
-      user_id: userSession?.id,
-      beat_id: beat.id,
-      beat_name: beat.title,
-      acquired_at: new Date().toISOString()
-    });
-  } catch (e) {
-    console.warn("Telemetry failed, but continuing download...");
-  }
-
-  // Directly trigger the DSP pipeline just like a successful purchase redirect
-  handlePurchasedBeatDSP(beat.url, `${beat.title}_Lease.mp3`);
-};
       const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url; 
-      } else {
-        throw new Error(data.error || "Failed to initialize Stripe.");
-      }
+      if (data.url) window.location.href = data.url;
     } catch (err: any) {
-      console.error("Marketplace Error:", err);
       if (addToast) addToast(err.message, "error");
       setStatus("idle");
     }
