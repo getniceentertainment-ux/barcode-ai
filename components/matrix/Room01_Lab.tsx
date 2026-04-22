@@ -105,7 +105,7 @@ export default function Room01_Lab() {
     if (licenseType === 'lease' && IS_FREE_LEASE_DAY) {
       handleFreeLeaseFulfillment(beat); // Now it's defined in scope!
       return;
-    }st cleanTitle = file.name.replace(/\.(mp3|wav)$/i, '').replace(/_?\d+\s*BPM/i, '').replace(/_/g, ' ').trim();
+    cleanTitle = file.name.replace(/\.(mp3|wav)$/i, '').replace(/_?\d+\s*BPM/i, '').replace(/_/g, ' ').trim();
               
               return { 
                 id: `supa_${index}`, 
