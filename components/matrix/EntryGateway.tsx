@@ -163,7 +163,6 @@ export default function EntryGateway() {
         });
 
         // 1. THE FIREWALL: Check for Supabase errors FIRST
-        // If the password fails, the code STOPS here.
         if (error) throw error;
 
         // 2. THE CONVERSION: Only fires if Supabase successfully wrote to the database
@@ -179,21 +178,20 @@ export default function EntryGateway() {
           console.warn("TALON: Google Ads conversion blocked by browser security. Proceeding with registration.");
         }
 
-        // 3. PROCEED TO MATRIX
-        if (data.user && !data.session) setAuthStep("verify_email");
-        else if (data.session) await processUserSession(data.user);
+        // 3. PROCEED TO MATRIX (Wrapped in brackets to prevent parser errors)
+        if (data.user && !data.session) {
+          setAuthStep("verify_email");
+        } else if (data.session) {
+          await processUserSession(data.user);
+        }
         
       } else {
+        // LOGIN FLOW
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        if (data.user) await processUserSession(data.user);
-      }
-        if (data.user && !data.session) setAuthStep("verify_email");
-        else if (data.session) await processUserSession(data.user);
-      } else {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        if (data.user) await processUserSession(data.user);
+        if (data.user) {
+          await processUserSession(data.user);
+        }
       }
     } catch (err: any) {
       if(addToast) addToast(err.message, "error");
