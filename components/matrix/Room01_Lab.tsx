@@ -69,8 +69,44 @@ export default function Room01_Lab() {
               else if (bpm >= 110) calculatedLeasePrice = 49.99;
 
               const { data: urlData } = supabase.storage.from('marketplace_beats').getPublicUrl(file.name);
-              const cleanTitle = file.name.replace(/\.(mp3|wav)$/i, '').replace(/_?\d+\s*BPM/i, '').replace(/_/g, ' ').trim();
+              conconst IS_FREE_LEASE_DAY = true;
 
+  // 2. DEFINE THE FULFILLMENT FUNCTION (Ensure it's inside the component)
+  const handleFreeLeaseFulfillment = async (beat: any) => {
+    if (addToast) addToast(`Open Market Access: ${beat.title} Lease acquired!`, "info");
+    
+    try {
+      // Log for your lead generation/analytics
+      await supabase.from('free_acquisitions').insert({
+        user_id: userSession?.id,
+        beat_id: beat.id,
+        beat_name: beat.title,
+        acquired_at: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn("Lead telemetry skipped:", e);
+    }
+
+    // This calls your existing function that handles the DSP extraction
+    handlePurchasedBeatDSP(beat.url, `${beat.title}_Lease.mp3`);
+  };
+
+  // 3. UPDATE THE SELECTION LOGIC
+  const handleMarketplaceSelect = async (beat: any, licenseType: 'lease' | 'exclusive') => {
+    if (!isDisclaimerAccepted) {
+      if (addToast) addToast("Please accept the IP & Licensing Declaration below first.", "error");
+      return;
+    }
+    
+    if (previewAudioRef.current) previewAudioRef.current.pause();
+    setPlayingPreview(null);
+
+    // --- THE BYPASS ---
+    if (licenseType === 'lease' && IS_FREE_LEASE_DAY) {
+      handleFreeLeaseFulfillment(beat); // Now it's defined in scope!
+      return;
+    }st cleanTitle = file.name.replace(/\.(mp3|wav)$/i, '').replace(/_?\d+\s*BPM/i, '').replace(/_/g, ' ').trim();
+              
               return { 
                 id: `supa_${index}`, 
                 title: cleanTitle || file.name, 
@@ -82,7 +118,7 @@ export default function Room01_Lab() {
                 key: "Unknown"
               };
             });
-          
+      
           if (fetchedBeats.length > 0) {
             setBeats(prev => {
               const existingUrls = new Set(prev.map(p => p.url));
