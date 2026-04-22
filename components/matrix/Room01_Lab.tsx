@@ -241,19 +241,30 @@ export default function Room01_Lab() {
           // Wait 500ms for Zustand to process the state update, then aggressively push 
           // the entire session to the Supabase ledger so it survives logouts.
           setTimeout(async () => {
-            const currentState = useMatrixStore.getState();
-            if (userSession?.id) {
-              try {
-                await supabase.from('matrix_sessions').upsert({
-                  user_id: userSession.id,
-                  session_state: currentState,
-                  updated_at: new Date().toISOString()
-                }, { onConflict: 'user_id' });
-              } catch (err) {
-                console.error("Failed to sync DSP extraction to cloud ledger:", err);
-              }
-            }
-          }, 500);
+            setTimeout(async () => {
+  const currentState = useMatrixStore.getState();
+  if (userSession?.id) {
+    try {
+      // Use the .upsert() with explicit conflict target
+      const { error } = await supabase.from('matrix_sessions').upsert(
+        {
+          user_id: userSession.id,
+          session_state: currentState,
+          updated_at: new Date().toISOString()
+        }, 
+        { 
+          onConflict: 'user_id', // Ensure this matches your PK in Supabase
+          ignoreDuplicates: false 
+        }
+      );
+
+      if (error) throw error;
+    } catch (err: any) {
+      // If it's still throwing 23505, it means 'user_id' isn't the only constraint
+      console.error("Cloud Ledger Sync Error:", err.message);
+    }
+  }
+}, 500);
           // ----------------------------------------------
 
           if (addToast) addToast("Smart Analysis Complete. Blueprint Primed & Ledger Saved.", "success");
