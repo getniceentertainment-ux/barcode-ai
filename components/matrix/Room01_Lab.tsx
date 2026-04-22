@@ -332,6 +332,7 @@ export default function Room01_Lab() {
   };
 
   // STRIPE BEAT LEASING & BUYOUT
+  const IS_FREE_LEASE_DAY = true; // Flip to false to end the event
   const handleMarketplaceSelect = async (beat: any, licenseType: 'lease' | 'exclusive') => {
     if (!isDisclaimerAccepted) {
       if (addToast) addToast("Please accept the IP & Licensing Declaration below first.", "error");
@@ -342,7 +343,14 @@ export default function Room01_Lab() {
     if (previewAudioRef.current) previewAudioRef.current.pause();
     setPlayingPreview(null);
 
-    const price = licenseType === 'lease' ? beat.leasePrice : beat.exclusivePrice;
+    // TRIGGER FREE BYPASS FOR LEASES ONLY
+  if (licenseType === 'lease' && IS_FREE_LEASE_DAY) {
+    handleFreeLeaseFulfillment(beat);
+    return;
+  }
+
+  // STANDARD STRIPE FLOW FOR EXCLUSIVES OR NON-FREE DAYS
+      const price = licenseType === 'lease' ? beat.leasePrice : beat.exclusivePrice;
     const beatNameLabel = licenseType === 'lease' ? `${beat.title} (Lease)` : `${beat.title} (Exclusive Buyout)`;
 
     setStatus("analyzing"); 
@@ -358,6 +366,24 @@ export default function Room01_Lab() {
         })
       });
 
+      const handleFreeLeaseFulfillment = async (beat: any) => {
+  if (addToast) addToast(`Open Market Access: ${beat.title} Lease acquired!`, "success");
+  
+  // Log the free acquisition in your database for lead tracking
+  try {
+    await supabase.from('free_acquisitions').insert({
+      user_id: userSession?.id,
+      beat_id: beat.id,
+      beat_name: beat.title,
+      acquired_at: new Date().toISOString()
+    });
+  } catch (e) {
+    console.warn("Telemetry failed, but continuing download...");
+  }
+
+  // Directly trigger the DSP pipeline just like a successful purchase redirect
+  handlePurchasedBeatDSP(beat.url, `${beat.title}_Lease.mp3`);
+};
       const data = await res.json();
       if (data.url) {
         window.location.href = data.url; 
@@ -589,13 +615,20 @@ export default function Room01_Lab() {
               
               <div className="flex flex-col gap-2 shrink-0">
                 <button 
-                  onClick={() => handleMarketplaceSelect(beat, 'lease')}
-                  disabled={status !== "idle" || !isDisclaimerAccepted}
-                  className={`w-full px-4 py-2 flex items-center justify-center font-bold text-[9px] uppercase tracking-widest transition-all disabled:cursor-not-allowed
-                    ${!isDisclaimerAccepted ? 'bg-[#111] text-[#333]' : 'bg-[#111] text-[#888] hover:bg-white hover:text-black'}`}
-                >
-                  ${beat.leasePrice.toFixed(2)} Lease
-                </button>
+  onClick={() => handleMarketplaceSelect(beat, 'lease')}
+  disabled={status !== "idle" || !isDisclaimerAccepted}
+  className={`w-full px-4 py-2 flex flex-col items-center justify-center font-bold text-[9px] uppercase tracking-widest transition-all
+    ${IS_FREE_LEASE_DAY ? 'bg-[#E60000] text-white animate-pulse' : 'bg-[#111] text-[#888] hover:bg-white hover:text-black'}`}
+>
+  {IS_FREE_LEASE_DAY ? (
+    <>
+      <span className="line-through opacity-50">${beat.leasePrice.toFixed(2)}</span>
+      <span>FREE LEASE TODAY</span>
+    </>
+  ) : (
+    `$${beat.leasePrice.toFixed(2)} Lease`
+  )}
+</button>
                 <button 
                   onClick={() => handleMarketplaceSelect(beat, 'exclusive')}
                   disabled={status !== "idle" || !isDisclaimerAccepted}
