@@ -36,10 +36,12 @@ export default function Room01_Lab() {
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const pollDSPJob = async (jobId: string) => {
     let attempts = 0;
-    const maxAttempts = 60;
+    const maxAttempts = 80; // Give it a bit more runway for AI extraction
 
     const interval = setInterval(async () => {
       attempts++;
+      setPollingAttempts(attempts); // Update the UI so they see it working
+
       if (attempts > maxAttempts) {
         clearInterval(interval);
         setStatus("idle");
@@ -47,23 +49,36 @@ export default function Room01_Lab() {
         return;
       }
 
-      const { data, error } = await supabase
-  .from('dsp_jobs')
-  .select('*')
-  .eq('id', jobId)
-  .maybeSingle();
+      try {
+        // CALL YOUR NEW API ROUTE INSTEAD OF SUPABASE DIRECTLY
+        const res = await fetch(`/api/dsp?jobId=${jobId}`);
+        const data = await res.json();
 
-      if (data?.status === 'completed') {
-        clearInterval(interval);
-        setAudioData(data.result_data); // This loads the stems into the Bar-Code.ai Forge
-        setStatus("success");
-        if (addToast) addToast("Beat processed and loaded!", "success");
-      } else if (data?.status === 'failed') {
-        clearInterval(interval);
-        setStatus("idle");
-        if (addToast) addToast("DSP Extraction failed.", "error");
+        if (data.status === 'COMPLETED') {
+          clearInterval(interval);
+          
+          // Get the exact duration for the visualizer before moving to Room 02
+          const duration = await getExactAudioDuration(data.output.stems.drums);
+          
+          setAudioData({
+            ...data.output,
+            duration: duration
+          });
+          
+          setStatus("success");
+          if (addToast) addToast("Beat processed and loaded!", "success");
+        } else if (data.status === 'FAILED' || data.status === 'CANCELLED') {
+          clearInterval(interval);
+          setStatus("idle");
+          if (addToast) addToast("DSP Extraction failed.", "error");
+        }
+        // If 'IN_QUEUE' or 'IN_PROGRESS', the loop continues...
+      } catch (err) {
+        console.error("Polling error:", err);
       }
-    }, 2000);
+    }, 3000); // 3 second intervals to respect rate limits
+    
+    pollIntervalRef.current = interval;
   };
 
   // Hardcoded beats removed - relying purely on Supabase Fetch
@@ -231,26 +246,25 @@ export default function Room01_Lab() {
   // HANDLE RETURNING USERS AFTER SUCCESSFUL STRIPE LEASE
   const handlePurchasedBeatDSP = async (url: string, fileName: string) => {
     setStatus("analyzing");
+    setPollingAttempts(0);
     try {
-      // 1. Trigger the actual RunPod Worker via your Next.js API route
-      const response = await fetch('/api/dsp/process', {
+      const response = await fetch('/api/dsp', { // Ensure this matches your route.ts location
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          url, 
-          fileName, 
+          file_url: url, 
+          task_type: 'vocal_extraction', // or your specific task
           userId: userSession?.id,
-          isFreeLease: true // Flag to tell the backend to skip Stripe checks
+          isFreeLease: true 
         })
       });
 
       const result = await response.json();
       
-      // 2. Start polling for the ID returned by the worker
       if (result.jobId) {
         pollDSPJob(result.jobId); 
       } else {
-        throw new Error("No JobID returned from DSP engine");
+        throw new Error(result.error || "No JobID returned");
       }
     } catch (err) {
       console.error("DSP Trigger Error:", err);
