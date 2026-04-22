@@ -48,10 +48,10 @@ export default function Room01_Lab() {
       }
 
       const { data, error } = await supabase
-        .from('dsp_jobs')
-        .select('*')
-        .eq('id', jobId)
-        .single();
+  .from('dsp_jobs')
+  .select('*')
+  .eq('id', jobId)
+  .maybeSingle();
 
       if (data?.status === 'completed') {
         clearInterval(interval);
