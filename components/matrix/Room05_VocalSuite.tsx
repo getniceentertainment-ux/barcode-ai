@@ -62,44 +62,72 @@ export default function Room05_VocalSuite() {
   const eqBandsRef = useRef<BiquadFilterNode[]>([]);
   const compRef = useRef<DynamicsCompressorNode | null>(null);
   const saturationRef = useRef<WaveShaperNode | null>(null);
+
+  // 🚨 STEM MEMORY BUFFERS: Bypasses Blob Latency for perfectly synced routing
   const stemBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const stemGainNodesRef = useRef<Map<string, GainNode>>(new Map());
 
   const isNonMogul = userSession?.tier !== "The Mogul";
 
-  useEffect(() => { if (engineeredVocal) { setStatus("success"); setHasToken(true); } }, [engineeredVocal]);
+  useEffect(() => {
+    if (engineeredVocal) {
+      setStatus("success");
+      setHasToken(true); 
+    }
+  }, [engineeredVocal]);
 
   useEffect(() => {
     const checkTokenStatus = async () => {
-      if (engineeredVocal) { setHasToken(true); return; }
-      if (userSession?.tier === "The Mogul") { setHasToken(true); return; }
+      if (engineeredVocal) {
+        setHasToken(true);
+        return;
+      }
+      if (userSession?.tier === "The Mogul") {
+        setHasToken(true);
+        return;
+      }
       if (userSession?.id) {
-        const { data } = await supabase.from('profiles').select('has_engineering_token').eq('id', userSession.id).single();
+        const { data } = await supabase
+          .from('profiles')
+          .select('has_engineering_token')
+          .eq('id', userSession.id)
+          .single();
+        
         if (data?.has_engineering_token) setHasToken(true);
       }
     };
     checkTokenStatus();
   }, [userSession, engineeredVocal]);
 
-  useEffect(() => { updateMixParams({ activeChain, presenceIntensity, reverbMix, eqGains }); }, [activeChain, presenceIntensity, reverbMix, eqGains, updateMixParams]);
+  useEffect(() => {
+    updateMixParams({ activeChain, presenceIntensity, reverbMix, eqGains });
+  }, [activeChain, presenceIntensity, reverbMix, eqGains, updateMixParams]);
 
   const handlePurchaseToken = async () => {
     if (!userSession?.id) return;
     if(addToast) addToast("Routing to Secure Checkout...", "info");
     try {
-      const res = await fetch('/api/stripe/engineering-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: userSession.id }) });
+      const res = await fetch('/api/stripe/engineering-token', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userSession.id })
+      });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
-    } catch (err: any) { if(addToast) addToast("Checkout failed.", "error"); }
+    } catch (err: any) {
+      if(addToast) addToast("Checkout failed.", "error");
+    }
   };
 
   const handleChainSelect = (chainId: string) => {
     setActiveChain(chainId);
     const preset = VOCAL_CHAINS.find(c => c.id === chainId) || VOCAL_CHAINS[0];
-    setEqGains([...preset.eq]); setPresenceIntensity(preset.presence); setReverbMix(preset.reverb);
+    setEqGains([...preset.eq]);
+    setPresenceIntensity(preset.presence);
+    setReverbMix(preset.reverb);
   };
 
+  // --- 1. RIGID AUDIO GRAPH INIT ---
   useEffect(() => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -107,8 +135,10 @@ export default function Room05_VocalSuite() {
       audioCtxRef.current = ctx;
       
       const masterGain = ctx.createGain(); 
-      const convolver = ctx.createConvolver(); convolver.buffer = createReverb(ctx, 2.5, 2.0);
-      const wetGain = ctx.createGain(); const dryGain = ctx.createGain(); 
+      const convolver = ctx.createConvolver(); 
+      convolver.buffer = createReverb(ctx, 2.5, 2.0);
+      const wetGain = ctx.createGain(); 
+      const dryGain = ctx.createGain(); 
       wetGainRef.current = wetGain; dryGainRef.current = dryGain;
 
       eqBandsRef.current = FREQUENCIES.map((freq, i) => { 
@@ -129,6 +159,7 @@ export default function Room05_VocalSuite() {
     }
   }, []); 
 
+  // --- 2. VOCAL MEMORY DECODING (Prevents Blob Desync) ---
   useEffect(() => {
     let isMounted = true;
     const loadVocalBuffers = async () => {
@@ -139,24 +170,39 @@ export default function Room05_VocalSuite() {
             let arrayBuf: ArrayBuffer;
             if (stem.blob) { arrayBuf = await stem.blob.arrayBuffer(); } 
             else {
-               const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 10000); 
-               const resp = await fetch(stem.url, { signal: controller.signal }); clearTimeout(timeoutId);
+               const controller = new AbortController();
+               const timeoutId = setTimeout(() => controller.abort(), 10000); 
+               const resp = await fetch(stem.url, { signal: controller.signal });
+               clearTimeout(timeoutId);
                if (!resp.ok) continue;
-               if (resp.headers.get('content-type')?.includes('text/html')) continue;
+               const contentType = resp.headers.get('content-type') || '';
+               if (contentType.includes('text/html') || contentType.includes('application/json')) continue;
                arrayBuf = await resp.arrayBuffer();
             }
             if (!isMounted) return;
-            const audioBuf = await new Promise<AudioBuffer>((resolve, reject) => { audioCtxRef.current!.decodeAudioData(arrayBuf, resolve, reject); });
+            const audioBuf = await new Promise<AudioBuffer>((resolve, reject) => {
+               audioCtxRef.current!.decodeAudioData(arrayBuf, resolve, reject);
+            });
             if (isMounted) stemBuffersRef.current.set(stem.id, audioBuf);
-          } catch (e: any) {}
+          } catch (e: any) { 
+            if (e.name !== 'AbortError') console.warn(`Soft-fail decoding stem ${stem.id}:`, e); 
+          }
         }
       }
     };
-    loadVocalBuffers(); return () => { isMounted = false; };
+    loadVocalBuffers();
+    return () => { isMounted = false; };
   }, [vocalStems]);
 
-  useEffect(() => { return () => { activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} }); if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close(); } }, []);
+  // Clean up strict unmount
+  useEffect(() => {
+    return () => {
+      activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
+      if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close();
+    }
+  }, []);
 
+  // --- MIX BUS REAL-TIME UPDATES ---
   useEffect(() => {
     if (wetGainRef.current && dryGainRef.current) { wetGainRef.current.gain.value = reverbMix / 100; dryGainRef.current.gain.value = 1 - (reverbMix / 100); }
     if (eqBandsRef.current.length === 10) eqBandsRef.current.forEach((band, i) => { band.gain.value = eqGains[i]; });
@@ -165,27 +211,55 @@ export default function Room05_VocalSuite() {
     if (saturationRef.current) saturationRef.current.curve = makeDistortionCurve(presenceIntensity / 2);
   }, [reverbMix, presenceIntensity, eqGains, activeChain]);
 
-  useEffect(() => { vocalStems.forEach(stem => { const gainNode = stemGainNodesRef.current.get(stem.id); if (gainNode) { gainNode.gain.value = stem.isMuted ? 0 : (stem.volume ?? 1); } }); }, [vocalStems]);
+  // 🚨 REAL-TIME MUTE/VOLUME LISTENER
+  useEffect(() => {
+    vocalStems.forEach(stem => {
+       const gainNode = stemGainNodesRef.current.get(stem.id);
+       if (gainNode) {
+          gainNode.gain.value = stem.isMuted ? 0 : (stem.volume ?? 1);
+       }
+    });
+  }, [vocalStems]);
 
+  // --- 3. EXACT ROOM 4 PLAYBACK MATH (1:1 Latency Match) ---
   const startVocalBuffers = (playheadTime: number, scheduleTime: number) => {
-    const ctx = audioCtxRef.current; if (!ctx || !(ctx as any)._masterGain) return;
+    const ctx = audioCtxRef.current;
+    if (!ctx || !(ctx as any)._masterGain) return;
+    
     const trackDuration = audioData?.duration || duration || 128;
     const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
     const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
     const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
 
-    activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} }); activeSourcesRef.current = []; stemGainNodesRef.current.clear();
+    // Purge old sources
+    activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
+    activeSourcesRef.current = [];
+    stemGainNodesRef.current.clear();
 
     vocalStems.forEach(stem => {
        if (stem.isMuted) return; 
+       
        const buffer = stemBuffersRef.current.get(stem.id);
        if (buffer) {
-          const source = ctx.createBufferSource(); source.buffer = buffer;
-          const gainNode = ctx.createGain(); gainNode.gain.value = stem.volume ?? 1; stemGainNodesRef.current.set(stem.id, gainNode); 
-          source.connect(gainNode); gainNode.connect((ctx as any)._masterGain); 
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          
+          const gainNode = ctx.createGain();
+          gainNode.gain.value = stem.volume ?? 1;
+          stemGainNodesRef.current.set(stem.id, gainNode); 
+
+          source.connect(gainNode);
+          gainNode.connect((ctx as any)._masterGain); 
+
           const offsetSecs = (stem.offsetBars || 0) * secondsPerBar;
-          if (playheadTime < offsetSecs) { source.start(scheduleTime + (offsetSecs - playheadTime)); } 
-          else { const bufOffset = playheadTime - offsetSecs; if (bufOffset < buffer.duration) { source.start(scheduleTime, bufOffset); } }
+          if (playheadTime < offsetSecs) {
+             source.start(scheduleTime + (offsetSecs - playheadTime));
+          } else {
+             const bufOffset = playheadTime - offsetSecs;
+             if (bufOffset < buffer.duration) {
+                source.start(scheduleTime, bufOffset);
+             }
+          }
           activeSourcesRef.current.push(source);
        }
     });
@@ -194,82 +268,137 @@ export default function Room05_VocalSuite() {
   const togglePreviewPlayback = async () => {
     if (!audioCtxRef.current) return;
     if (audioCtxRef.current.state === 'suspended') await audioCtxRef.current.resume();
-    const willPlay = !isPreviewPlaying; setIsPreviewPlaying(willPlay);
+    
+    const willPlay = !isPreviewPlaying; 
+    setIsPreviewPlaying(willPlay);
+    
     if (willPlay) {
-      const playheadTime = beatAudioRef.current?.currentTime || 0; const scheduleTime = audioCtxRef.current.currentTime;
-      if (beatAudioRef.current) beatAudioRef.current.play().catch(()=>{});
+      // 🚨 HTML5 Beat Drives the Time, WebAudio follows exactly 50ms behind (Identical to Room 4)
+      const playheadTime = beatAudioRef.current?.currentTime || 0;
+      const scheduleTime = audioCtxRef.current.currentTime;
+      
+      if (beatAudioRef.current) {
+        beatAudioRef.current.play().catch(()=>{});
+      }
+      
       startVocalBuffers(playheadTime, scheduleTime);
     } else {
       if (beatAudioRef.current) beatAudioRef.current.pause();
-      activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} }); activeSourcesRef.current = [];
+      activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
+      activeSourcesRef.current = [];
     }
   };
 
   const handleApplyEngineering = async () => {
-    if (isNonMogul && !hasToken) { if(addToast) addToast("Vocal Suite is Locked. Engineering Token required.", "error"); return; }
-    setIsPreviewPlaying(false); if (beatAudioRef.current) beatAudioRef.current.pause();
-    activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} }); activeSourcesRef.current = [];
+    if (isNonMogul && !hasToken) {
+      if(addToast) addToast("Vocal Suite is Locked. Engineering Token required.", "error");
+      return;
+    }
+
+    setIsPreviewPlaying(false);
+    if (beatAudioRef.current) beatAudioRef.current.pause();
+    activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
+    activeSourcesRef.current = [];
+    
     setStatus("processing");
     try {
-      if (isNonMogul && userSession?.id) { const { error } = await supabase.from('profiles').update({ has_engineering_token: false }).eq('id', userSession.id); if (error) throw error; setHasToken(false); }
+      if (isNonMogul && userSession?.id) {
+        const { error } = await supabase.from('profiles').update({ has_engineering_token: false }).eq('id', userSession.id);
+      if (error) throw error;
+      setHasToken(false); 
+    }
 
-      const trackDuration = audioData?.duration || duration || 128;
-      const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
-      const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
-      const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
+    // 🚨 SURGICAL FIX: Calculate precise math BEFORE rendering so we can size the engine properly
+    const trackDuration = audioData?.duration || duration || 128;
+    const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
+    const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
+    const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
 
-      const tmpCtx = new window.AudioContext(); const decodedBuffers: AudioBuffer[] = []; let maxDuration = 0;
-      for (const stem of vocalStems) { 
-        const resp = await fetch(stem.url); const audioBuf = await tmpCtx.decodeAudioData(await resp.arrayBuffer()); decodedBuffers.push(audioBuf); 
-        const endTime = ((stem.offsetBars || 0) * secondsPerBar) + audioBuf.duration; if (endTime > maxDuration) maxDuration = endTime; 
-      }
-      maxDuration += 3.0;
+    const tmpCtx = new window.AudioContext(); const decodedBuffers: AudioBuffer[] = []; let maxDuration = 0;
+    for (const stem of vocalStems) { 
+      const resp = await fetch(stem.url); 
+      const audioBuf = await tmpCtx.decodeAudioData(await resp.arrayBuffer()); 
+      decodedBuffers.push(audioBuf); 
+      
+      // 🚨 SURGICAL FIX: Size the render canvas to include the offset, plus 3 seconds for reverb tails
+      const endTime = ((stem.offsetBars || 0) * secondsPerBar) + audioBuf.duration;
+      if (endTime > maxDuration) maxDuration = endTime; 
+    }
+    
+    maxDuration += 3.0; // Let the reverb naturally decay
 
-      const offlineCtx = new OfflineAudioContext(2, tmpCtx.sampleRate * maxDuration, tmpCtx.sampleRate);
-      const masterGain = offlineCtx.createGain(); const convolver = offlineCtx.createConvolver(); convolver.buffer = createReverb(offlineCtx, 2.5, 2.0);
-      const wetGain = offlineCtx.createGain(); const dryGain = offlineCtx.createGain(); 
-      wetGain.gain.value = reverbMix / 100; dryGain.gain.value = 1 - (reverbMix / 100);
-      
-      const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
-      const offlineComp = offlineCtx.createDynamicsCompressor(); offlineComp.ratio.value = preset.comp.ratio; offlineComp.attack.value = preset.comp.attack; offlineComp.release.value = preset.comp.release; offlineComp.knee.value = preset.comp.knee; offlineComp.threshold.value = preset.comp.threshold;
-      const offlineSaturation = offlineCtx.createWaveShaper(); offlineSaturation.curve = makeDistortionCurve(presenceIntensity / 2);
-      
-      masterGain.connect(dryGain); let prevOfflineNode: AudioNode = dryGain; 
-      FREQUENCIES.forEach((freq, i) => { const band = offlineCtx.createBiquadFilter(); band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; band.frequency.value = freq; band.gain.value = eqGains[i]; prevOfflineNode.connect(band); prevOfflineNode = band; });
-      prevOfflineNode.connect(offlineComp); offlineComp.connect(offlineSaturation); offlineSaturation.connect(offlineCtx.destination);
-      masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(offlineCtx.destination);
-      
-      decodedBuffers.forEach((buf, i) => { 
-          if (vocalStems[i].isMuted) return;
-          const source = offlineCtx.createBufferSource(); source.buffer = buf; 
-          const stemGain = offlineCtx.createGain(); stemGain.gain.value = vocalStems[i].volume ?? 1;
-          source.connect(stemGain); stemGain.connect(masterGain); 
-          const startTime = (vocalStems[i].offsetBars || 0) * secondsPerBar; source.start(startTime); 
-        });
+    const offlineCtx = new OfflineAudioContext(2, tmpCtx.sampleRate * maxDuration, tmpCtx.sampleRate);
+    const masterGain = offlineCtx.createGain(); const convolver = offlineCtx.createConvolver(); convolver.buffer = createReverb(offlineCtx, 2.5, 2.0);
+    const wetGain = offlineCtx.createGain(); const dryGain = offlineCtx.createGain(); 
+    wetGain.gain.value = reverbMix / 100; dryGain.gain.value = 1 - (reverbMix / 100);
+    
+    const preset = VOCAL_CHAINS.find(c => c.id === activeChain) || VOCAL_CHAINS[0];
+    const offlineComp = offlineCtx.createDynamicsCompressor(); offlineComp.ratio.value = preset.comp.ratio; offlineComp.attack.value = preset.comp.attack; offlineComp.release.value = preset.comp.release; offlineComp.knee.value = preset.comp.knee; offlineComp.threshold.value = preset.comp.threshold;
+    const offlineSaturation = offlineCtx.createWaveShaper(); offlineSaturation.curve = makeDistortionCurve(presenceIntensity / 2);
+    
+    masterGain.connect(dryGain); let prevOfflineNode: AudioNode = dryGain; 
+    FREQUENCIES.forEach((freq, i) => { const band = offlineCtx.createBiquadFilter(); band.type = i === 0 ? "lowshelf" : i === FREQUENCIES.length - 1 ? "highshelf" : "peaking"; band.frequency.value = freq; band.gain.value = eqGains[i]; prevOfflineNode.connect(band); prevOfflineNode = band; });
+    prevOfflineNode.connect(offlineComp); offlineComp.connect(offlineSaturation); offlineSaturation.connect(offlineCtx.destination);
+    masterGain.connect(convolver); convolver.connect(wetGain); wetGain.connect(offlineCtx.destination);
+    
+    decodedBuffers.forEach((buf, i) => { 
+        if (vocalStems[i].isMuted) return;
+
+        const source = offlineCtx.createBufferSource(); 
+        source.buffer = buf; 
         
-        const renderedBuffer = await offlineCtx.startRendering();
-        setEngineeredVocal({ id: `MIXED_STEM_${Date.now()}`, type: "Lead", url: URL.createObjectURL(audioBufferToWav(renderedBuffer)), blob: audioBufferToWav(renderedBuffer), volume: 1, offsetBars: 0 });
-        setStatus("success");
-        if(addToast) addToast("Vocals Engineered & Saved to Memory.", "success");
-      } catch (err: any) { setStatus("idle"); if(addToast) addToast(err.message, "error"); }
+        const stemGain = offlineCtx.createGain();
+        stemGain.gain.value = vocalStems[i].volume ?? 1;
+        
+        source.connect(stemGain);
+        stemGain.connect(masterGain); 
+        
+        const startTime = (vocalStems[i].offsetBars || 0) * secondsPerBar;
+        source.start(startTime); 
+      });
+      
+      const renderedBuffer = await offlineCtx.startRendering();
+      
+      // THE NON-DESTRUCTIVE SAVE
+      setEngineeredVocal({ 
+        id: `MIXED_STEM_${Date.now()}`, 
+        type: "Lead", 
+        url: URL.createObjectURL(audioBufferToWav(renderedBuffer)), 
+        blob: audioBufferToWav(renderedBuffer), 
+        volume: 1, 
+        offsetBars: 0 
+      });
+
+      setStatus("success");
+      if(addToast) addToast("Vocals Engineered & Saved to Memory.", "success");
+    } catch (err: any) { 
+      setStatus("idle"); 
+      if(addToast) addToast(err.message, "error"); 
+    }
   };
 
   return (
-    // 🚨 RESPONSIVE FIX: flex-col on mobile, lg:flex-row on desktop
-    <div className="h-full flex flex-col lg:flex-row bg-[#050505] animate-in fade-in duration-500 border border-[#222] relative overflow-hidden">
+    <div className="h-full flex flex-col md:flex-row bg-[#050505] animate-in fade-in duration-500 border border-[#222] relative overflow-hidden">
       
+      {/* 1. GATED UI OVERLAY */}
       {isNonMogul && !hasToken && status !== "success" && (
-        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 lg:p-8">
-          <div className="max-w-md w-full bg-[#050505] border border-[#E60000] p-8 lg:p-10 text-center rounded-lg shadow-[0_0_50px_rgba(230,0,0,0.3)] animate-in zoom-in duration-300">
+        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-8">
+          <div className="max-w-md w-full bg-[#050505] border border-[#E60000] p-10 text-center rounded-lg shadow-[0_0_50px_rgba(230,0,0,0.3)] animate-in zoom-in duration-300">
             <Lock size={64} className="text-[#E60000] mx-auto mb-6" />
-            <h2 className="font-oswald text-3xl lg:text-4xl uppercase tracking-widest font-bold text-white mb-4">Suite Gated</h2>
-            <p className="font-mono text-[10px] lg:text-xs text-[#888] uppercase tracking-widest mb-8 leading-relaxed">
+            <h2 className="font-oswald text-4xl uppercase tracking-widest font-bold text-white mb-4">Suite Gated</h2>
+            <p className="font-mono text-xs text-[#888] uppercase tracking-widest mb-8 leading-relaxed">
               The Vocal Suite requires an <strong className="text-white">Engineering Token</strong> for access.
             </p>
-            <button onClick={handlePurchaseToken} className="w-full bg-[#E60000] text-white py-4 lg:py-5 font-oswald text-base lg:text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3">
+            <button 
+              onClick={handlePurchaseToken}
+              className="w-full bg-[#E60000] text-white py-5 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3"
+            >
               Unlock Suite ($4.99) <DollarSign size={20} />
             </button>
-            <button onClick={() => setActiveRoom("04")} className="mt-6 text-[9px] lg:text-[10px] text-[#555] uppercase font-mono hover:text-white transition-colors">
+            <button 
+              onClick={() => setActiveRoom("04")}
+              className="mt-6 text-[10px] text-[#555] uppercase font-mono hover:text-white transition-colors"
+            >
               ← Return to Booth
             </button>
           </div>
@@ -277,35 +406,45 @@ export default function Room05_VocalSuite() {
       )}
 
       {audioData && (
-        <audio ref={beatAudioRef} src={audioData.url} onTimeUpdate={() => setCurrentTime(beatAudioRef.current?.currentTime || 0)} onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} onEnded={() => { setIsPreviewPlaying(false); activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} }); activeSourcesRef.current = []; }} className="hidden" />
+        <audio 
+          ref={beatAudioRef} 
+          src={audioData.url} 
+          onTimeUpdate={() => setCurrentTime(beatAudioRef.current?.currentTime || 0)} 
+          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} 
+          onEnded={() => {
+             setIsPreviewPlaying(false);
+             activeSourcesRef.current.forEach(s => { try { s.stop(); s.disconnect(); } catch(e){} });
+             activeSourcesRef.current = [];
+          }} 
+          className="hidden" 
+        />
       )}
       
       {/* SIDEBAR PRESETS */}
-      {/* 🚨 RESPONSIVE FIX: h-1/3 on mobile, lg:h-full on desktop */}
-      <div className="w-full lg:w-1/3 h-[45%] lg:h-full border-b lg:border-b-0 lg:border-r border-[#222] flex flex-col bg-black">
-        <div className="p-4 lg:p-6 border-b border-[#222]">
-          <h2 className="font-oswald text-xl lg:text-2xl uppercase font-bold text-white flex items-center gap-3">
+      <div className="w-full md:w-1/3 border-r border-[#222] flex flex-col bg-black">
+        <div className="p-6 border-b border-[#222]">
+          <h2 className="font-oswald text-2xl uppercase font-bold text-white flex items-center gap-3">
             <Settings2 size={24} className="text-[#E60000]" /> Engineering
           </h2>
         </div>
-        <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-2 lg:space-y-3 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {VOCAL_CHAINS.map(c => (
-            <button key={c.id} onClick={() => handleChainSelect(c.id)} className={`w-full text-left p-3 lg:p-4 border transition-all ${activeChain === c.id ? 'border-[#E60000] bg-[#110000]' : 'border-[#222] bg-[#0a0a0a] hover:border-[#555]'}`}>
-              <span className={`font-oswald text-base lg:text-lg uppercase font-bold ${activeChain === c.id ? 'text-white' : 'text-gray-400'}`}>{c.name}</span>
-              <span className="font-mono text-[8px] lg:text-[9px] text-[#888] block mt-1">{c.desc}</span>
+            <button key={c.id} onClick={() => handleChainSelect(c.id)} className={`w-full text-left p-4 border transition-all ${activeChain === c.id ? 'border-[#E60000] bg-[#110000]' : 'border-[#222] bg-[#0a0a0a] hover:border-[#555]'}`}>
+              <span className={`font-oswald text-lg uppercase font-bold ${activeChain === c.id ? 'text-white' : 'text-gray-400'}`}>{c.name}</span>
+              <span className="font-mono text-[9px] text-[#888] block mt-1">{c.desc}</span>
             </button>
           ))}
         </div>
         
-        {/* STEM CONSOLE */}
-        <div className="border-t border-[#222] bg-[#050505] p-3 lg:p-4 shrink-0">
-           <h3 className="text-[9px] lg:text-[10px] font-mono text-[#888] uppercase tracking-widest font-bold mb-2 lg:mb-3 flex items-center gap-2"><ListMusic size={14}/> Stem Console</h3>
-           <div className="space-y-2 max-h-32 lg:max-h-48 overflow-y-auto custom-scrollbar pr-2">
+        {/* ROOM 4 TIMELINE SLIDERS ADDED FOR QUICK ACCESS */}
+        <div className="border-t border-[#222] bg-[#050505] p-4">
+           <h3 className="text-[10px] font-mono text-[#888] uppercase tracking-widest font-bold mb-3 flex items-center gap-2"><ListMusic size={14}/> Stem Console</h3>
+           <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
              {vocalStems.map(s => (
-                <div key={s.id} className="bg-black border border-[#111] p-2 lg:p-3 rounded-sm flex items-center justify-between gap-2 lg:gap-3">
+                <div key={s.id} className="bg-black border border-[#111] p-3 rounded-sm flex items-center justify-between gap-3">
                    <div className="flex flex-col">
-                     <span className="font-mono text-[8px] lg:text-[9px] text-white uppercase">{s.type}</span>
-                     <span className="font-mono text-[7px] lg:text-[8px] text-[#555]">{s.id.substring(5, 12)}</span>
+                     <span className="font-mono text-[9px] text-white uppercase">{s.type}</span>
+                     <span className="font-mono text-[8px] text-[#555]">{s.id.substring(5, 12)}</span>
                    </div>
                    <div className="flex-1 flex items-center gap-2">
                      <input type="range" min="0" max="2" step="0.05" value={s.volume ?? 1} onChange={(e) => updateStemVolume(s.id, parseFloat(e.target.value))} className="w-full accent-[#E60000] h-1 bg-[#222] rounded-full appearance-none cursor-pointer" />
@@ -321,56 +460,68 @@ export default function Room05_VocalSuite() {
       </div>
 
       {/* MAIN RACK */}
-      {/* 🚨 RESPONSIVE FIX: flex-1 on mobile naturally takes the rest, padding adjusted */}
-      <div className="flex-1 flex flex-col p-4 lg:p-12 relative overflow-y-auto custom-scrollbar bg-black">
+      <div className="flex-1 flex flex-col p-6 lg:p-12 relative overflow-y-auto custom-scrollbar bg-black">
         <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none"><Waves size={400} /></div>
-        <div className="relative z-10 max-w-2xl mx-auto w-full flex-1 flex flex-col gap-4 lg:gap-6">
+        <div className="relative z-10 max-w-2xl mx-auto w-full flex-1 flex flex-col gap-6">
           
-          <div className="bg-[#111] border border-[#222] p-4 lg:p-6 rounded-sm flex flex-col gap-4 lg:gap-5 shadow-lg">
+          <div className="bg-[#111] border border-[#222] p-6 rounded-sm flex flex-col gap-5 shadow-lg">
              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 lg:gap-4">
-                  <button onClick={togglePreviewPlayback} disabled={vocalStems.length === 0 || status !== "idle"} className={`w-10 h-10 lg:w-14 lg:h-14 flex items-center justify-center rounded-full transition-all disabled:opacity-50 ${isPreviewPlaying ? 'bg-[#E60000] text-white animate-pulse shadow-[0_0_20px_rgba(230,0,0,0.4)]' : 'bg-white text-black hover:bg-[#E60000] hover:text-white'}`}>
-                    {isPreviewPlaying ? <Pause size={18} /> : <Play size={18} className="ml-1" />}
+                <div className="flex items-center gap-4">
+                  <button onClick={togglePreviewPlayback} disabled={vocalStems.length === 0 || status !== "idle"} className={`w-14 h-14 flex items-center justify-center rounded-full transition-all disabled:opacity-50 ${isPreviewPlaying ? 'bg-[#E60000] text-white animate-pulse shadow-[0_0_20px_rgba(230,0,0,0.4)]' : 'bg-white text-black hover:bg-[#E60000] hover:text-white'}`}>
+                    {isPreviewPlaying ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
                   </button>
-                  <div><p className="font-oswald text-sm lg:text-lg text-white uppercase tracking-widest font-bold flex items-center gap-2"><ListMusic size={14} className="text-[#E60000]"/> Synced Audition</p><p className="font-mono text-[8px] lg:text-[10px] text-[#888] uppercase tracking-widest mt-1">Instrumental + Vocal Chain</p></div>
+                  <div><p className="font-oswald text-lg text-white uppercase tracking-widest font-bold flex items-center gap-2"><ListMusic size={16} className="text-[#E60000]"/> Synced Audition</p><p className="font-mono text-[10px] text-[#888] uppercase tracking-widest mt-1">Instrumental + Active Vocal Chain</p></div>
                 </div>
-                <div className="text-right"><span className="font-mono text-xs lg:text-sm font-bold text-[#E60000] bg-black px-2 py-1 lg:px-3 border border-[#333]">{Math.floor(currentTime/60)}:{Math.floor(currentTime%60).toString().padStart(2,'0')}</span></div>
+                <div className="text-right"><span className="font-mono text-sm font-bold text-[#E60000] bg-black px-3 py-1 border border-[#333]">{Math.floor(currentTime/60)}:{Math.floor(currentTime%60).toString().padStart(2,'0')}</span></div>
              </div>
+             
+             {/* 🚨 SCRUBBER SYNC FIX */}
              <div className="w-full flex items-center gap-3">
-               <input type="range" min="0" max={duration || 100} step="0.1" value={currentTime} onChange={(e) => { const nt = parseFloat(e.target.value); setCurrentTime(nt); if(beatAudioRef.current) beatAudioRef.current.currentTime = nt; if(isPreviewPlaying) { const scheduleTime = audioCtxRef.current!.currentTime; startVocalBuffers(nt, scheduleTime); } }} className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" />
+               <input 
+                 type="range" min="0" max={duration || 100} step="0.1" value={currentTime} 
+                 onChange={(e) => { 
+                   const nt = parseFloat(e.target.value); 
+                   setCurrentTime(nt); 
+                   if(beatAudioRef.current) beatAudioRef.current.currentTime = nt; 
+                   if(isPreviewPlaying) { 
+                       const scheduleTime = audioCtxRef.current!.currentTime;
+                       startVocalBuffers(nt, scheduleTime); 
+                   }
+                 }} 
+                 className="flex-1 accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" 
+               />
              </div>
           </div>
 
-          <div className="bg-black/80 backdrop-blur-sm border border-[#222] p-4 lg:p-8 rounded-sm">
-            <h3 className="font-oswald text-base lg:text-lg uppercase text-white mb-4 lg:mb-6 border-b border-[#222] pb-2 lg:pb-3 flex items-center justify-between"><span className="flex items-center gap-2"><Sliders size={14} className="text-[#E60000]" /> Parametric EQ</span><span className="text-[8px] lg:text-[10px] font-mono text-[#E60000] tracking-widest">±12dB</span></h3>
-            {/* 🚨 RESPONSIVE FIX: overflow-x-auto allows touch swiping if sliders get too tight */}
-            <div className="flex justify-between items-end h-32 sm:h-48 gap-1 sm:gap-2 mb-2 overflow-x-auto custom-scrollbar pb-2">
+          <div className="bg-black/80 backdrop-blur-sm border border-[#222] p-6 lg:p-8 rounded-sm">
+            <h3 className="font-oswald text-lg uppercase text-white mb-6 border-b border-[#222] pb-3 flex items-center justify-between"><span className="flex items-center gap-2"><Sliders size={16} className="text-[#E60000]" /> Parametric EQ</span><span className="text-[10px] font-mono text-[#E60000] tracking-widest">±12dB</span></h3>
+            <div className="flex justify-between items-end h-48 gap-1 sm:gap-2 mb-2">
               {FREQUENCIES.map((freq, i) => (
-                <div key={freq} className="flex flex-col items-center flex-1 group min-w-[24px] sm:min-w-[30px]">
-                  <span className="text-[8px] sm:text-[9px] font-mono text-[#E60000] mb-2 sm:mb-3 opacity-0 group-hover:opacity-100 transition-opacity">{eqGains[i] > 0 ? '+' : ''}{eqGains[i].toFixed(1)}</span>
-                  <input type="range" min="-12" max="12" step="0.5" value={eqGains[i]} onChange={(e) => { const ng = [...eqGains]; ng[i] = parseFloat(e.target.value); setEqGains(ng); }} className="w-1.5 sm:w-2 h-20 sm:h-32 appearance-none bg-[#222] outline-none accent-[#E60000] hover:bg-[#333] transition-colors rounded-full cursor-pointer" style={{ WebkitAppearance: 'slider-vertical' }} />
-                  <span className="text-[7px] sm:text-[8px] font-mono text-[#888] mt-2 sm:mt-4 font-bold">{freq >= 1000 ? `${freq/1000}k` : freq}</span>
+                <div key={freq} className="flex flex-col items-center flex-1 group">
+                  <span className="text-[9px] font-mono text-[#E60000] mb-3 opacity-0 group-hover:opacity-100 transition-opacity">{eqGains[i] > 0 ? '+' : ''}{eqGains[i].toFixed(1)}</span>
+                  <input type="range" min="-12" max="12" step="0.5" value={eqGains[i]} onChange={(e) => { const ng = [...eqGains]; ng[i] = parseFloat(e.target.value); setEqGains(ng); }} className="w-2 h-32 appearance-none bg-[#222] outline-none accent-[#E60000] hover:bg-[#333] transition-colors rounded-full cursor-pointer" style={{ WebkitAppearance: 'slider-vertical' }} />
+                  <span className="text-[8px] font-mono text-[#888] mt-4 font-bold">{freq >= 1000 ? `${freq/1000}k` : freq}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="bg-black/80 backdrop-blur-sm border border-[#222] p-4 lg:p-8 rounded-sm mb-4 lg:mb-8">
-            <div className="space-y-6 lg:space-y-8">
-              <div><div className="flex justify-between items-center mb-2 lg:mb-3"><label className="text-[8px] lg:text-[10px] font-mono uppercase text-[#888] font-bold">Presence / Saturation</label><span className="text-[10px] lg:text-xs font-mono text-white">{presenceIntensity}%</span></div><input type="range" min="0" max="100" value={presenceIntensity} onChange={(e) => setPresenceIntensity(Number(e.target.value))} className="w-full accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" /></div>
-              <div><div className="flex justify-between items-center mb-2 lg:mb-3"><label className="text-[8px] lg:text-[10px] font-mono uppercase text-[#888] font-bold">Vocal Space (Reverb Size)</label><span className="text-[10px] lg:text-xs font-mono text-white">{reverbMix}%</span></div><input type="range" min="0" max="100" value={reverbMix} onChange={(e) => setReverbMix(Number(e.target.value))} className="w-full accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" /></div>
+          <div className="bg-black/80 backdrop-blur-sm border border-[#222] p-6 lg:p-8 rounded-sm mb-8">
+            <div className="space-y-8">
+              <div><div className="flex justify-between items-center mb-3"><label className="text-[10px] font-mono uppercase text-[#888] font-bold">Presence / Saturation</label><span className="text-xs font-mono text-white">{presenceIntensity}%</span></div><input type="range" min="0" max="100" value={presenceIntensity} onChange={(e) => setPresenceIntensity(Number(e.target.value))} className="w-full accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" /></div>
+              <div><div className="flex justify-between items-center mb-3"><label className="text-[10px] font-mono uppercase text-[#888] font-bold">Vocal Space (Reverb Size)</label><span className="text-xs font-mono text-white">{reverbMix}%</span></div><input type="range" min="0" max="100" value={reverbMix} onChange={(e) => setReverbMix(Number(e.target.value))} className="w-full accent-[#E60000] h-1.5 bg-[#222] rounded-full appearance-none cursor-pointer" /></div>
             </div>
           </div>
 
-          <div className="mt-auto shrink-0 pb-4">
+          <div className="mt-auto shrink-0">
             {status === "idle" && (
-              <button onClick={handleApplyEngineering} disabled={vocalStems.length === 0} className="w-full bg-[#E60000] text-white py-4 lg:py-6 font-oswald text-base lg:text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-3 disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(230,0,0,0.2)]">Bake & Apply Chain <PlayCircle size={20} /></button>
+              <button onClick={handleApplyEngineering} disabled={vocalStems.length === 0} className="w-full bg-[#E60000] text-white py-6 font-oswald text-lg font-bold uppercase tracking-widest hover:bg-red-700 transition-all flex justify-center items-center gap-3 disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(230,0,0,0.2)]">Bake & Apply Chain <PlayCircle size={20} /></button>
             )}
             {status === "processing" && (
-              <div className="bg-[#110000] border-2 border-[#E60000] p-6 lg:p-10 flex flex-col items-center animate-pulse rounded-sm"><Loader2 size={24} className="text-[#E60000] animate-spin mb-4" /><p className="font-oswald text-lg lg:text-xl uppercase font-bold text-white tracking-widest">Rendering Matrix...</p></div>
+              <div className="bg-[#110000] border-2 border-[#E60000] p-10 flex flex-col items-center animate-pulse rounded-sm"><Loader2 size={32} className="text-[#E60000] animate-spin mb-4" /><p className="font-oswald text-xl uppercase font-bold text-white tracking-widest">Rendering Matrix...</p></div>
             )}
             {status === "success" && (
-              <div className="bg-green-950/20 border-2 border-green-500/50 p-6 lg:p-10 flex flex-col items-center animate-in zoom-in rounded-sm shadow-[0_0_50px_rgba(34,197,94,0.1)]"><CheckCircle2 size={24} className="text-green-500 mb-4" /><p className="font-oswald text-lg lg:text-xl uppercase font-bold text-white mb-6 tracking-widest">Vocals Engineered</p><button onClick={() => setActiveRoom("06")} className="w-full bg-white text-black py-3 lg:py-4 font-oswald text-sm lg:text-md font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex justify-center items-center gap-3">Proceed to Mastering <ArrowRight size={16} /></button></div>
+              <div className="bg-green-950/20 border-2 border-green-500/50 p-10 flex flex-col items-center animate-in zoom-in rounded-sm shadow-[0_0_50px_rgba(34,197,94,0.1)]"><CheckCircle2 size={32} className="text-green-500 mb-4" /><p className="font-oswald text-xl uppercase font-bold text-white mb-6 tracking-widest">Vocals Engineered</p><button onClick={() => setActiveRoom("06")} className="w-full bg-white text-black py-4 font-oswald text-md font-bold uppercase tracking-widest hover:bg-[#E60000] hover:text-white transition-all flex justify-center items-center gap-3">Proceed to Mastering <ArrowRight size={18} /></button></div>
             )}
           </div>
         </div>
