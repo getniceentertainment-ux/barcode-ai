@@ -74,13 +74,18 @@ def load_cultural_context():
 def init_model():
     global model
     print("Connecting to Sovereign Vault on Hugging Face...")
+    token = os.environ.get("HF_TOKEN")
+    
+    if not token:
+        print("🚨 ERROR: HF_TOKEN environment variable is MISSING!")
+        return
+
     try:
-        # Downloads and returns the local path to the cached .gguf
         model_path = hf_hub_download(
-            repo_id=REPO_ID,
-            filename=FILENAME,
-            token=HF_TOKEN,
-            cache_dir="/runpod-volume/huggingface-cache" # Keeps it persistent on your volume
+            repo_id="talo85/getnice",
+            filename="bar-code-ghostwriter-q4.gguf",
+            token=token,
+            cache_dir="/runpod-volume/huggingface-cache"
         )
         
         print(f"✅ Engine localized: {model_path}")
@@ -93,7 +98,8 @@ def init_model():
         )
         print("✅ Sovereign Engine fused and online.")
     except Exception as e:
-        print(f"🚨 ENGINE LOAD FAILED! {e}")
+        # This will now tell you if it's a 401 (Unauthorized) or 404 (Not Found)
+        print(f"🚨 ENGINE LOAD FAILED! Detailed Error: {e}")
 
 def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, bpm, flow_reference="", banned_words_map=None, is_explicit=True):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
