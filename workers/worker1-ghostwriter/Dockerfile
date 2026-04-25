@@ -1,21 +1,28 @@
-# Base image: Ubuntu 22.04 with PyTorch and CUDA 11.8
+# Base image: Ubuntu 22.04 with CUDA 11.8
 FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y git build-essential
+# Added wget to the system installs
+RUN apt-get update && apt-get install -y git build-essential wget
 
-# Copy requirements and install
+# Copy requirements
 COPY requirements.txt .
+
+# CRITICAL: Tell llama-cpp-python to compile with Nvidia CUDA support
+ENV CMAKE_ARGS="-DGGML_CUDA=on"
+ENV FORCE_CMAKE=1
+
+# Install requirements (llama-cpp-python will compile for the GPU here)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all worker files
-COPY . .
+# --- DOWNLOAD SUPABASE INTEL DIRECTLY INTO THE IMAGE ---
+RUN wget -O Daily_Briefing.txt "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/matrix_intel/Daily_Briefing.txt"
+RUN wget -O dictionary.json "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/matrix_intel/Dictionary.json"
+RUN wget -O master_index.json "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/matrix_intel/master_index.json"
 
-# Warm up the model (Deep Burn-In) by running the handler once on build (Optional, but recommended for faster cold starts)
-# RUN python -c "from handler import init_model; init_model()"
+# Copy ONLY code files to keep the image light
+# If you use a Network Volume for the .gguf, DO NOT include the .gguf in this folder
+COPY handler.py .
 
-# Start the RunPod serverless handler
 CMD ["python", "-u", "handler.py"]

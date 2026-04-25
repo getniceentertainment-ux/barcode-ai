@@ -2,58 +2,44 @@ import os
 import json
 import random
 import re
-import torch
 import runpod
-import urllib.request
-from urllib.error import HTTPError
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from peft import PeftModel
+from llama_cpp import Llama
+from huggingface_hub import hf_hub_download
 
-# --- PROPRIETARY GETNICE ENGINE ---
-BASE_MODEL_NAME = "NousResearch/Hermes-2-Pro-Llama-3-8B"
-LORA_WEIGHTS_DIR = "./model_weights/getnice_adapter_ckpt_50"
-
-SHARED_VOLUME_PATH = os.environ.get("SHARED_VOLUME_PATH", "/runpod-volume/daily_briefing.txt")
-
-INTEL_BASE_URLS = [
-    "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/matrix_intel",
-    "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/public_audio/matrix_intel"
-]
+# --- PROPRIETARY GETNICE ENGINE CONFIG ---
+# Replace with your actual HF username and repo name
+REPO_ID = "talo85/getnice" 
+FILENAME = "bar-code-ghostwriter-q4.gguf"
+# Securely fetch token from RunPod Environment Variables (set this in RunPod dashboard)
+HF_TOKEN = os.environ.get("HF_TOKEN") 
 
 model = None
-tokenizer = None
 
-REQ_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-
-def fetch_web_intel(filename):
-    variations = list(set([filename, filename.lower(), filename.capitalize(), filename.title()]))
-    for base_url in INTEL_BASE_URLS:
-        for variant in variations:
-            url = f"{base_url}/{variant}"
-            try:
-                req = urllib.request.Request(url, headers=REQ_HEADERS)
-                with urllib.request.urlopen(req, timeout=5) as response:
-                    content = response.read().decode('utf-8')
-                    if content.strip(): return content
-            except HTTPError: continue 
-            except Exception: continue
+def load_local_file(filename):
+    """Reads the Intel files directly from the Docker container's hard drive."""
+    # /app is the WORKDIR we set in the Dockerfile
+    filepath = os.path.join("/app", filename)
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            print(f"Error reading {filename}: {e}")
     return None
 
 def load_rag_intel():
-    content = fetch_web_intel("daily_briefing.txt")
+    content = load_local_file("Daily_Briefing.txt")
     if content: return f"[LATEST MARKET DISPATCH]: {content.strip()}"
-    if os.path.exists(SHARED_VOLUME_PATH):
-        with open(SHARED_VOLUME_PATH, "r", encoding="utf-8") as f: return f.read()
     return "Market Intel: Focus on node growth and independent street equity."
 
 def load_street_slang(style="getnice_hybrid"):
-    drill_slang = ["opp", "spin", "motion", "clear the board", "tactical", "steppin'"]
-    trap_slang = ["bag", "margins", "overhead", "frontend", "clearance", "motion"]
+    drill_slang = ["opp", "spin", "motion", "clear the board", "tactical", "steppin'", "pole", "glizzy", "crashing out"]
+    trap_slang = ["bag", "margins", "overhead", "frontend", "clearance", "motion", "guap", "blue cheese", "racks"]
     executive_slang = ["equity", "leverage", "routing", "offshore", "dividend", "infrastructure", "bandwidth", "allocation", "vault", "code"]
     
     target_list = drill_slang if style in ["drill", "chopper"] else trap_slang if style in ["trap", "triplet", "lazy"] else executive_slang
 
-    content = fetch_web_intel("dictionary.json")
+    content = load_local_file("dictionary.json")
     if content:
         words = []
         try:
@@ -73,7 +59,7 @@ def load_street_slang(style="getnice_hybrid"):
     return target_list
 
 def load_cultural_context():
-    content = fetch_web_intel("master_index.json")
+    content = load_local_file("master_index.json")
     if content:
         try:
             data = json.loads(content)
@@ -85,47 +71,54 @@ def load_cultural_context():
         except: pass
     return "Focus on the struggle, algorithmic survival, and ownership."
 
-def sanitize_lora_config():
-    config_path = os.path.join(LORA_WEIGHTS_DIR, "adapter_config.json")
-    if not os.path.exists(config_path): return
-    try:
-        with open(config_path, "r", encoding="utf-8") as f: config = json.load(f)
-        keys_to_remove = ["alora_invocation_tokens", "arrow_config", "corda_config", "ensure_weight_tying", "layer_replication", "megatron_config", "megatron_core", "use_rslora", "use_dora", "inject_mlps", "eva_config", "exclude_modules", "lora_bias", "peft_version", "qalora_group_size", "target_parameters", "trainable_token_indices", "use_qalora", "alora_alpha"]
-        modified = False
-        for key in keys_to_remove:
-            if key in config:
-                del config[key]
-                modified = True
-        if modified:
-            with open(config_path, "w", encoding="utf-8") as f: json.dump(config, f, indent=2)
-    except Exception: pass
-
 def init_model():
-    global model, tokenizer
-    print("Initiating GETNICE Engine Deep Burn-In...")
-    sanitize_lora_config()
-    bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4")
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
-    tokenizer.pad_token_id = tokenizer.eos_token_id 
-    
-    base_model = AutoModelForCausalLM.from_pretrained(BASE_MODEL_NAME, quantization_config=bnb_config, device_map={"": 0}, torch_dtype=torch.float16, low_cpu_mem_usage=True)
+    global model
+    print("Connecting to Sovereign Vault on Hugging Face...")
     try:
-        model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_DIR)
-        print("✅ GetNice Adapter fused successfully.")
+        # Downloads and returns the local path to the cached .gguf
+        model_path = hf_hub_download(
+            repo_id=REPO_ID,
+            filename=FILENAME,
+            token=HF_TOKEN,
+            cache_dir="/runpod-volume/huggingface-cache" # Keeps it persistent on your volume
+        )
+        
+        print(f"✅ Engine localized: {model_path}")
+        
+        model = Llama(
+            model_path=model_path,
+            n_ctx=8192,
+            n_gpu_layers=-1, 
+            verbose=False
+        )
+        print("✅ Sovereign Engine fused and online.")
     except Exception as e:
-        print(f"🚨 LORA FUSION FAILED! {e}")
-        model = base_model
+        print(f"🚨 ENGINE LOAD FAILED! {e}")
 
 def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, bpm, flow_reference="", banned_words_map=None, is_explicit=True):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
-    slang_list = ", ".join(load_street_slang(style)) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
+    
+    if use_slang:
+        slang_injection = f"""
+[MANDATORY GETNICE VOCABULARY]
+- Money: Guap, bands, blue cheese, racks, bag, fetty, digits
+- Police: Ops, 12, feds, jakes, boys in blue
+- Crew: Slime, day ones, gang, brodie, kin
+- Weapons: Pole, glizzy, iron, stick, blicky, heater, draco
+- Status: Motion, up, eating, big body, steppin', active
+- Action: Sliding, spinning, crashing out, pressing
+- Vehicles: Foreign, whip, coupe, scat, hellcat, ghost, maybach
+- Dynamic Additions: {", ".join(load_street_slang(style))}
+"""
+    else:
+        slang_injection = "[VOCABULARY]: Standard vocabulary."
     
     if banned_words_map and isinstance(banned_words_map, dict):
         clean_words = [k.replace("\\b", "").replace("?", "").replace("(?:y|ies)", "y") for k in banned_words_map.keys()]
         banned_words_str = ", ".join(clean_words[:15])
     else:
-        banned_words_str = "tapestry, delve, testament, beacon, journey, myriad, landscape, whisper, shadows, dancing"
+        banned_words_str = "tapestry, delve, testament, beacon, journey, myriad, landscape, whisper, shadows, dancing, plight, fright, ignite, divine, sublime, mindstream, embrace, souls, abyss, void, chaos, destiny, fate, temptress, kingdom, throne, gravity"
     
     strike_rule = "Ensure your multi-syllabic rhyme endings land precisely on the 2-count and 4-count (the snare drum)."
     if strike_zone == "downbeat": strike_rule = "Force aggressive, heavy emphasis on the 1-count (the downbeat/kick drum)."
@@ -142,6 +135,15 @@ def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle
     elif is_minor and not is_fast: dsp_vocal_instruction = "Inject heavy, isolated 1-word pauses and dragged-out sinister spelling."
     elif not is_minor and is_fast: dsp_vocal_instruction = "Inject high-energy repeated chants and triumphant rhythmic bouncing."
     else: dsp_vocal_instruction = "Inject massive, anthemic spelled-out words and huge group-style pauses."
+
+    sonics = {
+        "chopper": "TONE: Distorted, aggressive, rapid-fire. Heavy compression delivery.",
+        "lazy": "TONE: Ethereal, wavy, reverb-heavy. Use atmospheric phrasing.",
+        "drill": "TONE: Gritty, raw, aggressive. Tinny and urgent like a recorded call from a cell block.",
+        "triplet": "TONE: Punchy, staccato, heavily pocketed.",
+        "getnice_hybrid": "TONE: Crisp, melodic, but street-level authoritative."
+    }
+    sonic_vibe = sonics.get(style, "TONE: Standard trap delivery, pocketed and confident.")
 
     flow_mimicry = ""
     if flow_reference and len(flow_reference) > 5:
@@ -169,6 +171,8 @@ You are a chart-topping {active_persona} artist. You do not speak in complex poe
 {rag_context}
 {culture_context}
 
+{slang_injection}
+
 [TRACK VARIABLES]
 - TITLE: {title}
 - DRIVE: {motive}
@@ -181,13 +185,14 @@ You are a chart-topping {active_persona} artist. You do not speak in complex poe
 - CONTOUR DIRECTION: The beat {contour}.
 - THE STRIKE ZONE: {strike_rule}
 {rhythm_logic}
+- SONIC VIBE: {sonic_vibe}
 
 [ABSOLUTE ENGINE RULES]
 1. ONE LINE = ONE BAR. 
 2. THE PIPE SYMBOL: You MUST place exactly one pipe symbol (|) in the exact middle of EVERY single line to mark the rhythmic pause.
 3. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
-4. TONE: Modern trap. Simple vocabulary. Dynamic flow. DO NOT force heavy repetition on every single line unless instructed.
-5. VOCABULARY: Organically weave in the following slang terms contextually: [ {slang_list} ].
+4. CONCRETE NOUNS ONLY: Use physical objects (Cars, Money, Guns, Buildings, Designer Clothes). Abandon abstract metaphors.
+5. VOCABULARY: Organically weave in terms from the [MANDATORY GETNICE VOCABULARY] block contextually.
 {explicit_directive}
 7. DSP VOCAL MATCH: {dsp_vocal_instruction}
 {flow_mimicry}
@@ -224,7 +229,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         active_strikes = [v for v in pattern_array if v != 6]
         accent_target = len(active_strikes)
         
-        # 🚨 SURGICAL FIX: REMOVED SUBJECTIVE ENGLISH "extremely short" TO PREVENT CONTRADICTION
         dna_constraint = f"""
 [ULTIMATUM: MATH & RHYTHM]
 1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line. Check your math.
@@ -276,9 +280,17 @@ Write the draft now. Do not write action words like SNAP or STEP into the lyrics
 <|im_end|>
 <|im_start|>assistant
 """
-    inputs = tokenizer(system_prompt + draft_prompt, return_tensors="pt").to("cuda")
-    outputs = model.generate(**inputs, max_new_tokens=64 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id)
-    draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
+    # PASS 1: The Draft
+    full_prompt_draft = system_prompt + draft_prompt
+    outputs = model(
+        full_prompt_draft, 
+        max_tokens=64 * bars, 
+        temperature=0.85, 
+        top_p=0.9, 
+        repeat_penalty=1.15, 
+        stop=["<|im_end|>"]
+    )
+    draft_text = outputs["choices"][0]["text"].strip()
 
     refine_prompt = f"""<|im_start|>user
 [THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
@@ -295,9 +307,17 @@ Output ONLY the final {bars} lines now.
 <|im_end|>
 <|im_start|>assistant
 """
-    inputs_refine = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
-    outputs_refine = model.generate(**inputs_refine, max_new_tokens=64 * bars, temperature=0.5, top_p=0.9, repetition_penalty=1.1, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id)
-    final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
+    # PASS 2: The Refinement
+    full_prompt_refine = system_prompt + refine_prompt
+    outputs_refine = model(
+        full_prompt_refine, 
+        max_tokens=64 * bars, 
+        temperature=0.5, 
+        top_p=0.9, 
+        repeat_penalty=1.1, 
+        stop=["<|im_end|>"]
+    )
+    final_text = outputs_refine["choices"][0]["text"].strip()
 
     final_text = final_text.replace("<|im_end|>", "").strip()
     final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
@@ -323,12 +343,9 @@ Output ONLY the final {bars} lines now.
             
         line = re.sub(r'\|+', '|', line)
         line = re.sub(r'\s+\|\s+', ' | ', line)
-        
-        # 🚨 SURGICAL FIX: REMOVED BANNED WORD REPLACE (NOW HANDLED IN PROMPT) TO PROTECT MATH
                 
         line = line.strip('|').strip().upper()
 
-        # 🚨 SURGICAL FIX: POCKET EXECUTIONER (FORCED PUNCTUATION)
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
             if not line.startswith("..."): line = "..." + line
         elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
@@ -389,9 +406,16 @@ CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Output
 <|im_end|>
 <|im_start|>assistant
 """
-        inputs = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
-        outputs = model.generate(**inputs, max_new_tokens=50, temperature=0.7, top_p=0.9, repetition_penalty=1.1, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id)
-        refined_line = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
+        full_prompt_refine = system_prompt + refine_prompt
+        outputs = model(
+            full_prompt_refine, 
+            max_tokens=50, 
+            temperature=0.7, 
+            top_p=0.9, 
+            repeat_penalty=1.1, 
+            stop=["<|im_end|>"]
+        )
+        refined_line = outputs["choices"][0]["text"].strip()
         refined_line = refined_line.replace("<|im_end|>", "").strip()
         refined_line = re.sub(r'^["\']|["\']$', '', refined_line).upper() 
         return {"refinedLine": refined_line}
