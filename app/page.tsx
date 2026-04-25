@@ -412,6 +412,8 @@ export default function MatrixController() {
           {renderActiveRoom()}
         </div>
 
+       </div>
+
         {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
       </main>
 
