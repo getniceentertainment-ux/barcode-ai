@@ -85,7 +85,7 @@ def init_model():
             repo_id="talo85/getnice",
             filename="bar-code-ghostwriter-q4.gguf",
             token=token,
-            cache_dir="/runpod-volume/huggingface-cache"
+            cache_dir="/tmp/model-cache"
         )
         
         print(f"✅ Engine localized: {model_path}")
