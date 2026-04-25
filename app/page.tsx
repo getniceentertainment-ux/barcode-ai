@@ -340,7 +340,7 @@ export default function MatrixController() {
         </nav>
       </aside>
 
-      <main className="flex-1 relative flex flex-col bg-black overflow-hidden w-full h-[100dvh]">
+      <main className="flex-1 relative flex flex-col bg-black overflow-hidden w-full h-full">
         
         {/* MOBILE & PC RESPONSIVE HEADER */}
         <div className="h-14 border-b border-[#111] bg-black/80 backdrop-blur-md flex items-center justify-between px-4 md:px-10 z-10 shrink-0">
@@ -407,6 +407,8 @@ export default function MatrixController() {
             <RoomDirectives roomId={activeRoom} />
           </div>
 
+        {/* UNIVERSAL ROOM WRAPPER */}
+        <div className="w-full min-h-full pb-12 md:pb-4 overflow-x-hidden flex flex-col">
           {renderActiveRoom()}
         </div>
 
