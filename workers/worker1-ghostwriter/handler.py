@@ -529,7 +529,7 @@ CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Output
         return {"lyrics": final_lyrics.strip()}
 
 # Manual boot call at start of container
-init_model()
+#init_model()
 
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
