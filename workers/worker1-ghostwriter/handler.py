@@ -72,22 +72,21 @@ def init_model():
     global model
     print("Initiating GETNICE Engine GGUF Deep Burn-In...")
     
-    try:
-    # Downloads the model from your HuggingFace repo (if not already cached)
-    model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, token=HF_TOKEN)
-    
-    # THE SPEED MATRIX
-    model = Llama(
-        model_path=model_path,
-        n_ctx=4096,          # 4096 is plenty for a rap song + RAG. 8192 slows it down.
-        n_batch=1024,        # CRITICAL: Processes your large RAG prompt in massive chunks.
-        n_gpu_layers=-1,     # CRITICAL: Forces 100% of the neural network onto the RunPod GPU.
-        n_threads=8,         # Optimizes CPU handoffs.
-        use_mlock=True,      # Locks the model in memory so it doesn't swap to a slow hard drive.
-        verbose=False
-    )
-    print("✅ GetNice GGUF Engine Accelerated and Ready.")
-    except Exception as e:
+    try: # <--- YOU WERE MISSING THIS
+        model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, token=HF_TOKEN)
+        
+        model = Llama(
+            model_path=model_path,
+            n_ctx=4096,          
+            n_batch=1024,        
+            n_gpu_layers=-1,     
+            n_threads=8,         
+            use_mlock=True,      
+            verbose=False
+        )
+        print("✅ GetNice GGUF Engine Accelerated and Ready.")
+        
+    except Exception as e: # <--- NOW THIS WILL WORK
         print(f"🚨 ENGINE LOAD FAILED! Detailed Error: {e}")
 
 def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, bpm, flow_reference="", banned_words_map=None, is_explicit=True):
