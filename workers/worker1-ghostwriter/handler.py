@@ -79,13 +79,19 @@ def init_model():
         # THE SPEED MATRIX
         model = Llama(
             model_path=model_path,
-            n_ctx=4096,          # 4096 is plenty for a rap song + RAG. 8192 slows it down.
-            n_batch=1024,        # CRITICAL: Processes your large RAG prompt in massive chunks.
-            n_gpu_layers=-1,     # CRITICAL: Forces 100% of the neural network onto the RunPod GPU.
-            n_threads=8,         # Optimizes CPU handoffs.
-            use_mlock=True,      # Locks the model in memory so it doesn't swap to a slow hard drive.
+            n_ctx=4096,          
+            n_batch=1024,        
+            n_gpu_layers=-1,     # <--- This is your GGUF version of .to("cuda")
+            n_threads=8,         
+            use_mlock=True,      
             verbose=False
         )
+        
+        # --- THE VRAM WARM-UP (DUMMY GENERATION) ---
+        print("Forcing VRAM allocation...")
+        _ = model("Test warmup prompt", max_tokens=2, temperature=0.1)
+        # -------------------------------------------
+        
         print("✅ GetNice GGUF Engine Accelerated and Ready.")
     except Exception as e:
         print(f"🚨 ENGINE LOAD FAILED! Detailed Error: {e}")
