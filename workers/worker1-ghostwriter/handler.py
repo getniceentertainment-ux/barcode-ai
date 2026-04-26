@@ -72,9 +72,9 @@ def init_model():
     global model
     print("Initiating GETNICE Engine GGUF Deep Burn-In...")
     
-    try:
+   try:
     # Downloads the model from your HuggingFace repo (if not already cached)
-    	model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, token=HF_TOKEN)
+    model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, token=HF_TOKEN)
     
     # THE SPEED MATRIX
     model = Llama(
