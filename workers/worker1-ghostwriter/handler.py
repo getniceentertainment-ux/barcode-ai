@@ -7,15 +7,14 @@ from llama_cpp import Llama
 from huggingface_hub import hf_hub_download
 
 # --- PROPRIETARY GETNICE ENGINE CONFIG ---
-# Replace with your actual HF username and repo name
 REPO_ID = "talo85/getnice" 
 FILENAME = "bar-code-ghostwriter-q4.gguf"
-# Securely fetch token from RunPod Environment Variables (set this in RunPod dashboard)
 HF_TOKEN = os.environ.get("HF_TOKEN") 
+
+model = None
 
 def load_local_file(filename):
     """Reads the Intel files directly from the Docker container's hard drive."""
-    # /app is the WORKDIR we set in the Dockerfile
     filepath = os.path.join("/app", filename)
     if os.path.exists(filepath):
         try:
@@ -71,22 +70,24 @@ def load_cultural_context():
 
 def init_model():
     global model
-    print("Connecting to Sovereign Vault on Hugging Face...")
+    print("--- STARTING SOVEREIGN ENGINE BOOT SEQUENCE ---")
     token = os.environ.get("HF_TOKEN")
     
     if not token:
-        print("🚨 ERROR: HF_TOKEN environment variable is MISSING!")
+        print("🚨 CRITICAL ERROR: HF_TOKEN environment variable is MISSING!")
         return
 
     try:
+        # Download into /tmp for stateless operation
         model_path = hf_hub_download(
-            repo_id="talo85/getnice",
-            filename="bar-code-ghostwriter-q4.gguf",
+            repo_id=REPO_ID,
+            filename=FILENAME,
             token=token,
-            cache_dir="/tmp/model-cache"
+            cache_dir="/tmp/model-cache",
+            resume_download=True
         )
         
-        print(f"✅ Engine localized: {model_path}")
+        print(f"✅ Engine localized at: {model_path}")
         
         model = Llama(
             model_path=model_path,
@@ -94,9 +95,8 @@ def init_model():
             n_gpu_layers=-1, 
             verbose=False
         )
-        print("✅ Sovereign Engine fused and online.")
+        print("✅ SOVEREIGN ENGINE FUSED AND ONLINE.")
     except Exception as e:
-        # This will now tell you if it's a 401 (Unauthorized) or 404 (Not Found)
         print(f"🚨 ENGINE LOAD FAILED! Detailed Error: {e}")
 
 def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, bpm, flow_reference="", banned_words_map=None, is_explicit=True):
@@ -226,7 +226,10 @@ Rhythm DNA: {" -> ".join(sequence)}
 """
 
 def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, rhyme_scheme, pattern_desc, pattern_array, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
-    
+    global model
+    if model is None:
+        return [f"ERROR | SOVEREIGN ENGINE NOT READY. CHECK LOGS."]
+
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
     if pattern_array:
@@ -374,6 +377,16 @@ Output ONLY the final {bars} lines now.
     return clean_lines[:bars]
 
 def handler(event):
+    global model
+    
+    # --- RENDEZVOUS CHECK ---
+    # Ensure model is initialized before proceeding
+    if model is None:
+        print("Model not initialized. Attempting manual boot...")
+        init_model()
+        if model is None:
+            return {"error": "Sovereign Engine failed to initialize. Check System Logs for HF_TOKEN errors."}
+
     job_input = event.get("input", {})
     print(f"\n================ RUNPOD INCOMING PAYLOAD ================\n{json.dumps(job_input, indent=2)}\n=========================================================\n")
     
@@ -508,6 +521,8 @@ CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Output
 
         return {"lyrics": final_lyrics.strip()}
 
+# Manual boot call at start of container
 init_model()
+
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
