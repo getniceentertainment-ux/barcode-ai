@@ -83,9 +83,7 @@ def init_model():
             repo_id=REPO_ID,
             filename=FILENAME,
             token=token,
-            repo_type="buckets",
             cache_dir="/tmp/model-cache",
-            resume_download=True
         )
         
         print(f"✅ Engine localized at: {model_path}")
