@@ -8,12 +8,8 @@ RUN apt-get update && apt-get install -y python3 python3-pip git build-essential
 # Copy requirements
 COPY requirements.txt .
 
-# CRITICAL: Tell llama-cpp-python to compile with Nvidia CUDA support
-ENV CMAKE_ARGS="-DGGML_CUDA=on -DGGML_NATIVE=off"
-ENV FORCE_CMAKE=1
-
 # Install requirements (llama-cpp-python will compile for the GPU here)
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu118
 
 # --- DOWNLOAD SUPABASE INTEL DIRECTLY INTO THE IMAGE ---
 RUN wget -O Daily_Briefing.txt "https://gdenckjxeutdcamnmdxp.supabase.co/storage/v1/object/public/matrix_intel/Daily_Briefing.txt"
