@@ -13,8 +13,6 @@ FILENAME = "bar-code-ghostwriter-q4.gguf"
 # Securely fetch token from RunPod Environment Variables (set this in RunPod dashboard)
 HF_TOKEN = os.environ.get("HF_TOKEN") 
 
-model = None
-
 def load_local_file(filename):
     """Reads the Intel files directly from the Docker container's hard drive."""
     # /app is the WORKDIR we set in the Dockerfile
