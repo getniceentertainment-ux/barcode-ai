@@ -83,7 +83,7 @@ def init_model():
             repo_id=REPO_ID,
             filename=FILENAME,
             token=token,
-            repo_type="dataset",
+            repo_type="storage",
             cache_dir="/tmp/model-cache",
             resume_download=True
         )
