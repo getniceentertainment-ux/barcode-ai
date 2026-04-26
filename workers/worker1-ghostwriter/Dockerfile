@@ -3,9 +3,8 @@ FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
 
 WORKDIR /app
 
-# Added wget to the system installs
-RUN apt-get update && apt-get install -y git build-essential wget
-
+# Install Python, build tools, and the CRITICAL libgomp1 threading library
+RUN apt-get update && apt-get install -y python3 python3-pip git build-essential wget libgomp1
 # Copy requirements
 COPY requirements.txt .
 
@@ -25,4 +24,4 @@ RUN wget -O master_index.json "https://gdenckjxeutdcamnmdxp.supabase.co/storage/
 # If you use a Network Volume for the .gguf, DO NOT include the .gguf in this folder
 COPY handler.py .
 
-CMD ["python", "-u", "handler.py"]
+CMD ["python3", "-u", "handler.py"]
