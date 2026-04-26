@@ -72,12 +72,12 @@ def init_model():
     global model
     print("Initiating GETNICE Engine GGUF Deep Burn-In...")
     
-        try:1
-            # Downloads the model from your HuggingFace repo (if not already cached)
-            model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, token=HF_TOKEN)
-    
-            # THE SPEED MATRIX
-            model = Llama(
+    try:
+        # Downloads the model from your HuggingFace repo (if not already cached)
+        model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, token=HF_TOKEN)
+
+        # THE SPEED MATRIX
+        model = Llama(
             model_path=model_path,
             n_ctx=4096,          # 4096 is plenty for a rap song + RAG. 8192 slows it down.
             n_batch=1024,        # CRITICAL: Processes your large RAG prompt in massive chunks.
@@ -85,8 +85,8 @@ def init_model():
             n_threads=8,         # Optimizes CPU handoffs.
             use_mlock=True,      # Locks the model in memory so it doesn't swap to a slow hard drive.
             verbose=False
-    )
-    print("✅ GetNice GGUF Engine Accelerated and Ready.")
+        )
+        print("✅ GetNice GGUF Engine Accelerated and Ready.")
     except Exception as e:
         print(f"🚨 ENGINE LOAD FAILED! Detailed Error: {e}")
 
@@ -220,6 +220,16 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     global model
     if model is None:
         return [f"ERROR | SOVEREIGN ENGINE NOT READY. CHECK LOGS."]
+
+    # THE ZERO-BAR FIREWALL (Protects the runtime from crashing)
+    try:
+        bars = int(bars)
+    except (ValueError, TypeError):
+        bars = 0
+        
+    if bars <= 0:
+        print(f"⚠️ BLOCKED: Attempted to generate a section ({section_type}) with 0 bars.")
+        return []
 
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
