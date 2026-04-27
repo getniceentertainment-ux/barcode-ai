@@ -326,11 +326,15 @@ export default function Room04_Booth() {
   };
 
   const handleGenerateGuide = async () => {
+    // 🚨 FIX: Explicitly grab the blueprint and BPM directly from the store state
+    const matrixBlueprint = useMatrixStore.getState().matrixBlueprint;
+    const currentBpm = useMatrixStore.getState().bpm || 140;
+
     if (!matrixBlueprint || matrixBlueprint.length === 0) {
       if (addToast) addToast("No lyrics found. Load a Bar-Code blueprint first.", "error");
       return;
     }
-    const preciseBpm = bpm || 140;
+    
     setIsGeneratingGuide(true);
     setGuideProgress(10);
 
@@ -369,7 +373,7 @@ export default function Room04_Booth() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
               lyrics: aggressiveText, 
-              bpm: preciseBpm,
+              bpm: currentBpm, // Updated to use the safely fetched BPM
               gender: useMatrixStore.getState().gwGender || "male",
               pitch: "low",
               style: "aggressive"
