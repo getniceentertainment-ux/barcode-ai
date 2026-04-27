@@ -325,26 +325,19 @@ export default function Room04_Booth() {
     }));
   };
 
-  const handleGenerateGuide = async () => {
-    // 🚨 FIX: We grab 'lyricLines' (which has all the grid math and drag/drop updates)
-    // instead of the raw global store text!
+const handleGenerateGuide = async () => {
     const gridBlueprint = lyricLines; 
     const currentBpm = useMatrixStore.getState().bpm || 140;
 
-    console.log("=== GUIDE GENERATION INITIATED ===");
-    console.log("Grid Lines Loaded:", gridBlueprint ? `${gridBlueprint.length} lines` : "UNDEFINED");
+    console.log("=== HUMANIZED GUIDE GENERATION INITIATED ===");
 
     if (!gridBlueprint || gridBlueprint.length === 0) {
       if (addToast) addToast("No lyrics found. Load a Bar-Code blueprint first.", "error");
       return;
     }
 
-    // 🚨 THE BOUNCER: Now it checks the actual math grid
     const hasQuantizedWords = gridBlueprint.some(line => !line.isHeader && line.words && line.words.length > 0);
-    console.log("Did the Quantizer do its job? (hasQuantizedWords):", hasQuantizedWords);
-
     if (!hasQuantizedWords) {
-      console.warn("🚨 GUIDE ABORTED: The grid has no syllables mapped to it.");
       if (addToast) addToast("No grid math found! Please wait for the grid to initialize.", "error");
       return; 
     }
@@ -356,7 +349,6 @@ export default function Room04_Booth() {
       const offlineCtx = new OfflineAudioContext(1, 44100 * 300, 44100);
       let linesProcessed = 0;
 
-      // 🚨 FIX: Ensure the loop uses 'gridBlueprint' instead of 'matrixBlueprint'
       for (let i = 0; i < gridBlueprint.length; i++) {
         const line = gridBlueprint[i];
         if (line.isHeader || !line.words || line.words.length === 0) continue;
@@ -366,30 +358,42 @@ export default function Room04_Booth() {
 
         try {
           const mappedWords = line.words;
-          let gridAwareText = "";
           
+          // 🚨 1. PUNCTUATION BREATH-HACK 🚨
+          let gridAwareText = "";
           for (let w = 0; w < mappedWords.length; w++) {
             gridAwareText += mappedWords[w].word;
             if (w < mappedWords.length - 1) {
-              // 🚨 SAFEGUARD: Fallback to 0.3s if your quantizer forgot to set duration
-              const safeDuration = mappedWords[w].duration || 0.3; 
-              const currentEnd = mappedWords[w].startTime + safeDuration;
+              const currentEnd = mappedWords[w].startTime + (mappedWords[w].duration || 0.3);
               const nextStart = mappedWords[w+1].startTime;
-              
-              if (nextStart - currentEnd > 0.15) {
+              // Larger gaps get ellipses (vocal fry/drag), medium gaps get commas (quick breath)
+              if (nextStart - currentEnd > 0.3) {
+                gridAwareText += "... "; 
+              } else if (nextStart - currentEnd > 0.15) {
                 gridAwareText += ", "; 
               } else {
                 gridAwareText += " ";
               }
             }
           }
-          const aggressiveText = gridAwareText.trim() + "!";
+
+          // 🚨 2. PHONETIC SPELLING (SLANG FILTER) 🚨
+          // Forces the AI mouth to slur syllables together naturally
+          const slangText = gridAwareText
+            .replace(/\b(\w+)ing\b/gi, "$1in'")
+            .replace(/\bthe\b/gi, "tha")
+            .replace(/\bwith\b/gi, "wit")
+            .replace(/\bgoing to\b/gi, "gonna")
+            .replace(/\bI am\b/gi, "I'm")
+            .trim() + "!";
+
+          console.log(`🎤 Rapping line ${i}: "${slangText}"`);
 
           const res = await fetch('/api/audio/generate-guide', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              lyrics: aggressiveText, 
+              lyrics: slangText, // Sending the humanized text!
               bpm: currentBpm,
               gender: useMatrixStore.getState().gwGender || "male",
               pitch: "low",
@@ -402,45 +406,47 @@ export default function Room04_Booth() {
           const arrayBuffer = await res.arrayBuffer();
           const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
 
+          // 🚨 4. THE HOLY GRAIL: LINE STRETCHING 🚨
+          // Instead of chopping words, we play the WHOLE line, but stretch it to fit the grid.
           const ttsDuration = audioBuffer.duration;
-          // 🚨 SAFEGUARD: Ensure lineDuration exists so we don't divide by zero
-          const mathLineDuration = line.lineDuration || 2; 
-          const safeLineStartTime = line.startTime || (line.barIndex * (60 / currentBpm) * 4); // Fallback math
+          const firstWordStart = mappedWords[0].startTime;
+          
+          const lastWord = mappedWords[mappedWords.length - 1];
+          const lastWordEnd = lastWord.startTime + (lastWord.duration || 0.3);
+          
+          // How long the MIDI grid says this entire phrase SHOULD take
+          const requiredGridDuration = lastWordEnd - firstWordStart; 
 
-          mappedWords.forEach((wObj) => {
-            if (!wObj.word.trim()) return;
+          // Calculate the warp multiplier (e.g. if TTS is 4s but Grid is 3s, speed it up)
+          // We cap it between 0.8x and 1.4x so the AI doesn't sound like a chipmunk.
+          const stretchRatio = Math.max(0.8, Math.min(1.4, (ttsDuration / requiredGridDuration)));
 
-            // 🚨 SAFEGUARD: Protect against NaN crashes
-            const safeWordDuration = wObj.duration || 0.3;
-            const relativeWordStart = wObj.startTime - safeLineStartTime;
-            const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
-            const ttsWordDuration = (safeWordDuration / mathLineDuration) * ttsDuration;
+          // 🚨 3. INJECTING "SWING" 🚨
+          // Real rappers push/pull the pocket. Randomize the drop by -15ms to +15ms.
+          const humanSwing = (Math.random() * 0.030) - 0.015;
+          const swungStartTime = Math.max(0, firstWordStart + humanSwing);
 
-            const tailBleed = 1.2; 
-            const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - Math.max(0, ttsOffset));
+          const source = offlineCtx.createBufferSource();
+          source.buffer = audioBuffer;
+          
+          // Apply the Elastic Time Stretch
+          source.playbackRate.value = stretchRatio; 
 
-            const source = offlineCtx.createBufferSource();
-            source.buffer = audioBuffer;
-            source.playbackRate.value = 1.0; 
+          // Organic tail bleed for the end of the phrase
+          const gainNode = offlineCtx.createGain();
+          gainNode.gain.setValueAtTime(1, swungStartTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, swungStartTime + requiredGridDuration + 0.8);
 
-            const gainNode = offlineCtx.createGain();
-            gainNode.gain.setValueAtTime(0, wObj.startTime);
-            gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
-            gainNode.gain.setValueAtTime(1, wObj.startTime + safeWordDuration);
-            gainNode.gain.exponentialRampToValueAtTime(0.001, wObj.startTime + safeWordDuration + tailBleed); 
-
-            source.connect(gainNode);
-            gainNode.connect(offlineCtx.destination);
-            
-            source.start(wObj.startTime, Math.max(0, ttsOffset), Math.max(0.1, safeExtractDuration));
-          });
+          source.connect(gainNode);
+          gainNode.connect(offlineCtx.destination);
+          
+          // Trigger the entire humanized phrase at once!
+          source.start(swungStartTime);
 
         } catch (lineErr) {
           console.error(`🚨 Math/Audio failure on line ${i}:`, lineErr);
         }
       }
-
-      console.log(`Successfully mapped ${linesProcessed} lines to audio.`);
 
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);
@@ -448,7 +454,7 @@ export default function Room04_Booth() {
       const takeId = `GUIDE_${Date.now()}`;
 
       addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.85, offsetBars: 0 });
-      if (addToast) addToast("High-fidelity aggressive audio glued to visual metronome.", "success");
+      if (addToast) addToast("High-fidelity humanized guide vocal generated.", "success");
 
     } catch (err: any) {
       console.error("OVERALL GUIDE ERROR:", err);
@@ -458,7 +464,6 @@ export default function Room04_Booth() {
       setGuideProgress(0);
     }
   };
-
   const handleUpdateTakeType = (id: string, newType: string) => {
     const updatedStems = vocalStems.map(stem => stem.id === id ? { ...stem, type: newType as TrackType } : stem);
     useMatrixStore.setState({ vocalStems: updatedStems } as any);
