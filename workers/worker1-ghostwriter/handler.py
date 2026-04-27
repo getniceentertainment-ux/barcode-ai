@@ -108,7 +108,7 @@ def init_model():
             model_path=model_path,
             n_ctx=4096,
             n_gpu_layers=-1,
-            flash_attn=True,  # <--- ADD THIS LINE
+            flash_attn=True,
             n_batch=512,
             use_mlock=False
         )
@@ -130,7 +130,7 @@ def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle
 - Status: Motion, up, eating, big body, steppin', active
 - Action: Sliding, spinning, crashing out, pressing
 - Vehicles: Foreign, whip, coupe, scat, hellcat, ghost, maybach
-- Explicit: Nigga, Fuck Em', Fuck You, Bitch Ass, Lil Nigga, Dick, Cock, Pussy, Bitch, Shit, Fish Scale, Cocaine, Cola, Spliff
+- Foul" Nigga, Fuck Em', Fuck You, Bitch Ass, Lil Nigga, Dick, Cock, Pussy, Bitch, Shit, Fish Scale, Cocaine, Cola, Spliff
 - Dynamic Additions: {", ".join(load_street_slang(style))}
 """
     else:
@@ -174,7 +174,7 @@ def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle
 "{short_ref}"
 -> Use this quote ONLY for thematic vibe and rhyme placement. YOU MUST STRICTLY OBEY THE DYNAMIC SYLLABLE LIMIT FOR THE SECTION OVER THIS REFERENCE."""
 
-    explicit_directive = "6. EXPLICIT CONTENT RATING: This is a raw, uncensored street track. You MUST organically use harsh profanity to emphasize aggression." if is_explicit else "6. CLEAN RATING: Keep the lyrics strictly radio-clean. Do not use profanity."
+    explicit_directive = "5. EXPLICIT CONTENT RATING: This is a raw, uncensored street track. You MUST organically use harsh profanity to emphasize aggression." if is_explicit else "5. CLEAN RATING: Keep the lyrics strictly radio-clean. Do not use profanity."
 
     style_personas = {
         "chopper": "Fast-paced Tech/Chopper",
@@ -185,6 +185,7 @@ def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle
     }
     active_persona = style_personas.get(style, "Modern Trap")
 
+    # 🚨 SURGICAL FIX: The "Fear of God" Prompt injected directly into the core system instructions.
     return f"""<|im_start|>system
 [SYSTEM DIRECTIVE: THE MODERN TRAP ICON]
 You are a chart-topping {active_persona} artist. You do not speak in complex poetry, riddles, or medieval metaphors. You speak in literal, flex-heavy, repetitive street language. Your syntax is simple, punchy, and highly rhythmic. You focus on money, loyalty, survival, and designer lifestyles.
@@ -209,14 +210,13 @@ You are a chart-topping {active_persona} artist. You do not speak in complex poe
 {rhythm_logic}
 - SONIC VIBE: {sonic_vibe}
 
-[ABSOLUTE ENGINE RULES]
+[CRITICAL SYSTEM PARSER RULES - DO NOT VIOLATE]
 1. ONE LINE = ONE BAR. 
-2. THE PIPE SYMBOL: You MUST place exactly one pipe symbol (|) in the exact middle of EVERY single line to mark the rhythmic pause.
-3. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
-4. CONCRETE NOUNS ONLY: Use physical objects (Cars, Money, Guns, Buildings, Designer Clothes). Abandon abstract metaphors.
-5. VOCABULARY: Organically weave in terms from the [MANDATORY GETNICE VOCABULARY] block contextually.
+2. THE ONE PIPE RULE: Every single lyric line MUST contain exactly one pipe symbol (|) splitting the line into two halves. DO NOT use zero pipes. DO NOT use multiple pipes. Example: "MONEY IN MY HAND | AIN'T NO TIME TO WASTE."
+3. SYLLABLE CAP: You MUST count the syllables. Do not write sentences longer than the requested maxSyllables. If you exceed the max syllables, the parser will fail and the system will crash.
+4. CONCRETE NOUNS ONLY: Use physical objects (Cars, Money, Guns). Abandon abstract metaphors. Avoid AI cliches: {banned_words_str}.
 {explicit_directive}
-7. DSP VOCAL MATCH: {dsp_vocal_instruction}
+6. DSP VOCAL MATCH: {dsp_vocal_instruction}
 {flow_mimicry}
 <|im_end|>"""
 
@@ -266,7 +266,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         
         dna_constraint = f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line. Check your math.
+1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line. Check your math. If you exceed this, the software will crash.
 2. RHYTHMIC ACCENTS: Anchor your line on exactly {accent_target} heavy stressed words.
 3. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
 4. POCKET PLACEMENT: {pocket_instruction}
@@ -275,7 +275,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     else:
         dna_law += f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line.
+1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line. If you exceed this, the software will crash.
 2. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
 3. POCKET PLACEMENT: {pocket_instruction}
 """
@@ -311,7 +311,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 [PREVIOUS CONTEXT]
 {previous_lyrics if previous_lyrics else 'Start of track.'}
 
-Write the draft now. Do not write action words like SNAP or STEP into the lyrics.
+Write the draft now. Do not write action words like SNAP or STEP into the lyrics. Do not output section headers, just the pure lines.
 <|im_end|>
 <|im_start|>assistant
 """
@@ -327,16 +327,17 @@ Write the draft now. Do not write action words like SNAP or STEP into the lyrics
     )
     draft_text = outputs["choices"][0]["text"].strip()
 
+    # 🚨 SURGICAL FIX: The ultimate refinement threat
     refine_prompt = f"""<|im_start|>user
 [THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
 You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
-CRITICAL REFINEMENT COMMANDS:
+CRITICAL REFINEMENT COMMANDS (IF YOU FAIL THESE, THE PARSER WILL CRASH):
 1. MATH & RHYME: Enforce the strict {max_syllables} syllable limit per line! Enforce the {rhyme_scheme} rhyme scheme.
 2. OBEY THE POCKET: {pocket_instruction}
-3. THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE. 
-4. NO METADATA. DO NOT separate words onto different lines. Write full sentences. Output ONLY the raw lyrics.
+3. THE ONE PIPE RULE: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE. NOT ZERO PIPES. NOT THREE PIPES. EXACTLY ONE.
+4. NO METADATA. DO NOT output section headers like [VERSE]. DO NOT write verse labels. Output ONLY the raw {bars} lines of lyrics.
 
 Output ONLY the final {bars} lines now.
 <|im_end|>
@@ -376,9 +377,6 @@ Output ONLY the final {bars} lines now.
         for action_word in ["SNAP", "STEP", "HOLD", "GLIDE", "GHOST", "EXTREME-DRAG"]:
             line = re.sub(rf'\b{action_word}\b', '', line, flags=re.IGNORECASE).strip()
             
-        line = re.sub(r'\|+', '|', line)
-        line = re.sub(r'\s+\|\s+', ' | ', line)
-                
         line = line.strip('|').strip().upper()
 
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
@@ -388,10 +386,20 @@ Output ONLY the final {bars} lines now.
         elif "period" in pocket_instruction:
             if not line.endswith("."): line = line + "."
 
-        if '|' not in line: 
-            words = line.split()
-            mid = len(words) // 2
+        # 🚨 SURGICAL FIX: The Indestructible Python Pipe Fallback
+        # If the LLM hallucinates 0 pipes or >1 pipes, Python forcibly fixes it so the frontend doesn't crash.
+        parts = [p.strip() for p in line.split('|') if p.strip()]
+        if len(parts) == 0:
+            line = "YEAH | WE STAY IN MOTION"
+        elif len(parts) == 1:
+            words = parts[0].split()
+            mid = max(1, len(words) // 2)
             line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
+        else:
+            mid_part = max(1, len(parts) // 2)
+            left = " ".join(parts[:mid_part])
+            right = " ".join(parts[mid_part:])
+            line = f"{left} | {right}"
             
         if len(clean_lines) > 0 and clean_lines[-1] == line:
             continue 
