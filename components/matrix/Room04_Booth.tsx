@@ -326,21 +326,34 @@ export default function Room04_Booth() {
   };
 
   const handleGenerateGuide = async () => {
-    // 🚨 FIX: Explicitly grab the blueprint and BPM directly from the store state
+    // 🚨 1. Explicitly grab state
     const matrixBlueprint = useMatrixStore.getState().matrixBlueprint;
     const currentBpm = useMatrixStore.getState().bpm || 140;
+
+    // 🚨 2. LOUD DEBUGGING: Open your F12 Console when you click the button!
+    console.log("=== GUIDE GENERATION INITIATED ===");
+    console.log("Blueprint Loaded:", matrixBlueprint ? `${matrixBlueprint.length} lines` : "UNDEFINED");
 
     if (!matrixBlueprint || matrixBlueprint.length === 0) {
       if (addToast) addToast("No lyrics found. Load a Bar-Code blueprint first.", "error");
       return;
     }
-    
+
+    // 🚨 3. THE BOUNCER: Check if the Quantizer actually saved the words to the global store
+    const hasQuantizedWords = matrixBlueprint.some(line => !line.isHeader && line.words && line.words.length > 0);
+    console.log("Did the Quantizer do its job? (hasQuantizedWords):", hasQuantizedWords);
+
+    if (!hasQuantizedWords) {
+      console.warn("🚨 GUIDE ABORTED: The global store has no syllables in the 'words' arrays.");
+      if (addToast) addToast("No grid math found! You must click Quantize/Glue first.", "error");
+      return; // Kills the silent click!
+    }
+
     setIsGeneratingGuide(true);
     setGuideProgress(10);
 
     try {
       const offlineCtx = new OfflineAudioContext(1, 44100 * 300, 44100);
-      let globalTimeCursor = 0;
       let linesProcessed = 0;
 
       for (let i = 0; i < matrixBlueprint.length; i++) {
@@ -352,13 +365,16 @@ export default function Room04_Booth() {
 
         try {
           const mappedWords = line.words;
-          
           let gridAwareText = "";
+          
           for (let w = 0; w < mappedWords.length; w++) {
             gridAwareText += mappedWords[w].word;
             if (w < mappedWords.length - 1) {
-              const currentEnd = mappedWords[w].startTime + mappedWords[w].duration;
+              // 🚨 SAFEGUARD: Fallback to 0.3s if your quantizer forgot to set duration
+              const safeDuration = mappedWords[w].duration || 0.3; 
+              const currentEnd = mappedWords[w].startTime + safeDuration;
               const nextStart = mappedWords[w+1].startTime;
+              
               if (nextStart - currentEnd > 0.15) {
                 gridAwareText += ", "; 
               } else {
@@ -373,7 +389,7 @@ export default function Room04_Booth() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
               lyrics: aggressiveText, 
-              bpm: currentBpm, // Updated to use the safely fetched BPM
+              bpm: currentBpm,
               gender: useMatrixStore.getState().gwGender || "male",
               pitch: "low",
               style: "aggressive"
@@ -386,17 +402,21 @@ export default function Room04_Booth() {
           const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
 
           const ttsDuration = audioBuffer.duration;
-          const mathLineDuration = line.lineDuration || 2;
+          // 🚨 SAFEGUARD: Ensure lineDuration exists so we don't divide by zero
+          const mathLineDuration = line.lineDuration || 2; 
+          const safeLineStartTime = line.startTime || (line.barIndex * (60 / currentBpm) * 4); // Fallback math
 
           mappedWords.forEach((wObj) => {
             if (!wObj.word.trim()) return;
 
-            const relativeWordStart = wObj.startTime - line.startTime;
+            // 🚨 SAFEGUARD: Protect against NaN crashes
+            const safeWordDuration = wObj.duration || 0.3;
+            const relativeWordStart = wObj.startTime - safeLineStartTime;
             const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
-            const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
+            const ttsWordDuration = (safeWordDuration / mathLineDuration) * ttsDuration;
 
             const tailBleed = 1.2; 
-            const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
+            const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - Math.max(0, ttsOffset));
 
             const source = offlineCtx.createBufferSource();
             source.buffer = audioBuffer;
@@ -405,21 +425,22 @@ export default function Room04_Booth() {
             const gainNode = offlineCtx.createGain();
             gainNode.gain.setValueAtTime(0, wObj.startTime);
             gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
-            gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-            gainNode.gain.exponentialRampToValueAtTime(0.001, wObj.startTime + wObj.duration + tailBleed); 
+            gainNode.gain.setValueAtTime(1, wObj.startTime + safeWordDuration);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, wObj.startTime + safeWordDuration + tailBleed); 
 
             source.connect(gainNode);
             gainNode.connect(offlineCtx.destination);
             
-            source.start(wObj.startTime, Math.max(0, ttsOffset), safeExtractDuration);
+            source.start(wObj.startTime, Math.max(0, ttsOffset), Math.max(0.1, safeExtractDuration));
           });
 
         } catch (lineErr) {
-          console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
+          console.error(`🚨 Math/Audio failure on line ${i}:`, lineErr);
         }
       }
 
-      // These lines were causing the error because they were accidentally placed outside the main try block
+      console.log(`Successfully mapped ${linesProcessed} lines to audio.`);
+
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);
       const url = URL.createObjectURL(blob);
@@ -429,7 +450,7 @@ export default function Room04_Booth() {
       if (addToast) addToast("High-fidelity aggressive audio glued to visual metronome.", "success");
 
     } catch (err: any) {
-      console.error(err);
+      console.error("OVERALL GUIDE ERROR:", err);
       if (addToast) addToast("Guide Error: " + err.message, "error");
     } finally {
       setIsGeneratingGuide(false);
