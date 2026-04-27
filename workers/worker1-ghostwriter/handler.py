@@ -70,31 +70,38 @@ def load_cultural_context():
 
 def init_model():
     global model
-    print("Initiating GETNICE Engine GGUF Deep Burn-In...")
+    # RunPod Serverless ALWAYS mounts to this exact path
+    mount_path = "/runpod-volume"
+    model_path = os.path.join(mount_path, FILENAME)
     
-    try:
-        # Downloads the model from your HuggingFace repo (if not already cached)
-        model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, token=HF_TOKEN)
+    print(f"Checking for Matrix Model at: {model_path}")
+    
+    # Check if the volume is actually mounted and if the file exists
+    if os.path.exists(model_path):
+        print(f"✅ VOLUME DATA FOUND. Size: {os.path.getsize(model_path) / (1024**3):.2f} GB")
+        print("Skipping download. Loading directly into VRAM...")
+    else:
+        print("❌ VOLUME EMPTY. Starting Initial Download to Network Volume...")
+        # This saves the model to the 20GB volume so it stays there forever
+        model_path = hf_hub_download(
+            repo_id=REPO_ID, 
+            filename=FILENAME, 
+            token=HF_TOKEN,
+            local_dir=mount_path,
+            local_dir_use_symlinks=False
+        )
+        print(f"✅ Model successfully cached to volume at: {model_path}")
 
-        # THE SPEED MATRIX
+    try:
         model = Llama(
             model_path=model_path,
-            n_ctx=4096,          
-            n_batch=1024,        
-            n_gpu_layers=-1,     # <--- This is your GGUF version of .to("cuda")
-            n_threads=8,         
-            use_mlock=True,      
-            verbose=False
+            n_ctx=4096,
+            n_gpu_layers=-1,
+            use_mlock=True
         )
-        
-        # --- THE VRAM WARM-UP (DUMMY GENERATION) ---
-        print("Forcing VRAM allocation...")
-        _ = model("Test warmup prompt", max_tokens=2, temperature=0.1)
-        # -------------------------------------------
-        
-        print("✅ GetNice GGUF Engine Accelerated and Ready.")
+        print("✅ GGUF ENGINE ACCELERATED.")
     except Exception as e:
-        print(f"🚨 ENGINE LOAD FAILED! Detailed Error: {e}")
+        print(f"🚨 ENGINE BOOT FAILURE: {e}")
 
 def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, bpm, flow_reference="", banned_words_map=None, is_explicit=True):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
