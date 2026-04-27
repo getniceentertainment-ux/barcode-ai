@@ -377,10 +377,46 @@ export default function Room04_Booth() {
                 const arrayBuffer = await res.arrayBuffer();
                 const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
                 
+                try {
                 const mappedWords = line.words;
                 if (!mappedWords || mappedWords.length === 0) continue;
 
-                // 🚨 FIX 1: Restore Proportional Crossfade Audio Logic (Syllable Syncing)
+                // 🚨 1. GRID-AWARE PUNCTUATION INJECTION 🚨
+                // We look at your quantized MIDI grid. If there is a physical gap > 0.15s
+                // between words, we inject a comma. This forces the TTS AI to natively 
+                // take a breath/pause exactly where your pocket is.
+                let gridAwareText = "";
+                for (let w = 0; w < mappedWords.length; w++) {
+                  gridAwareText += mappedWords[w].word;
+                  if (w < mappedWords.length - 1) {
+                    const currentEnd = mappedWords[w].startTime + mappedWords[w].duration;
+                    const nextStart = mappedWords[w+1].startTime;
+                    if (nextStart - currentEnd > 0.15) {
+                      gridAwareText += ", "; // Force a natural pocket pause
+                    } else {
+                      gridAwareText += " ";
+                    }
+                  }
+                }
+                const aggressiveText = gridAwareText.trim() + "!";
+
+                const res = await fetch('/api/audio/generate-guide', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ 
+                    lyrics: aggressiveText, 
+                    bpm: preciseBpm,
+                    gender: useMatrixStore.getState().gwGender || "male",
+                    pitch: "low",
+                    style: "aggressive"
+                  })
+                });
+                
+                if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
+
+                const arrayBuffer = await res.arrayBuffer();
+                const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+
                 const ttsDuration = audioBuffer.duration;
                 const mathLineDuration = line.lineDuration || 2;
 
@@ -391,7 +427,9 @@ export default function Room04_Booth() {
                   const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
                   const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
 
-                  const tailBleed = 0.35; 
+                  // 🚨 2. THE ORGANIC BLEED ENVELOPE 🚨
+                  // Bumped tailBleed from 0.35s to 1.2s. This allows the word to fully finish pronouncing.
+                  const tailBleed = 1.2; 
                   const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
 
                   const source = offlineCtx.createBufferSource();
@@ -399,21 +437,28 @@ export default function Room04_Booth() {
                   source.playbackRate.value = 1.0; 
 
                   const gainNode = offlineCtx.createGain();
+                  
+                  // Instantly fade in to catch the transient attack
                   gainNode.gain.setValueAtTime(0, wObj.startTime);
                   gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
+                  
+                  // Hold at maximum volume for the duration of the assigned MIDI slot
                   gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-                  gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
+                  
+                  // CRITICAL FIX: Use exponential decay instead of linear hard-cut. 
+                  // This allows the tail end of long words to smoothly bleed UNDER the next slot without clipping.
+                  // Note: exponentialRamp cannot go to absolute 0, so we use 0.001.
+                  gainNode.gain.exponentialRampToValueAtTime(0.001, wObj.startTime + wObj.duration + tailBleed); 
 
                   source.connect(gainNode);
                   gainNode.connect(offlineCtx.destination);
                   
-                  source.start(wObj.startTime, ttsOffset, safeExtractDuration);
+                  source.start(wObj.startTime, Math.max(0, ttsOffset), safeExtractDuration);
                 });
 
               } catch (lineErr) {
                 console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
               }
-            }
 
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);

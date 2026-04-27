@@ -8,14 +8,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing lyrics." }, { status: 400 });
     }
 
-    // --- SURGICAL FIX: AGGRESSIVE ORPHEUS STEERING ---
-    // High-fidelity models need explicit emotional and pacing tags to avoid robotic delivery.
-    // We dynamically adjust the steering based on the BPM passed from Room04.
+    /// --- SURGICAL FIX: AGGRESSIVE ORPHEUS STEERING ---
     let pacingTag = "[steady]";
     if (bpm && bpm > 130) pacingTag = "[fast]";
     else if (bpm && bpm < 90) pacingTag = "[slow]";
 
-    const steerableLyrics = `[rap] [energetic] ${pacingTag} ${lyrics}`;
+    // ADDED: [intense] for personality and [articulate] to force clear word endings
+    const steerableLyrics = `[rap] [intense] [articulate] ${pacingTag} ${lyrics}`;
 
     // Hitting Groq's blazing-fast OpenAI-compatible speech endpoint
     const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {

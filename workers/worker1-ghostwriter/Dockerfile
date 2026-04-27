@@ -4,11 +4,12 @@ FROM nvidia/cuda:11.8.0-devel-ubuntu22.04 AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y python3 python3-pip git build-essential cmake ninja-build
 
-# Force the safe, generic GPU build
+# Force the modern GPU build
 ENV CMAKE_ARGS="-DGGML_CUDA=on -DGGML_NATIVE=off"
 ENV FORCE_CMAKE=1
 
-RUN pip3 install --no-cache-dir llama-cpp-python==0.2.75
+# REMOVED the ==0.2.75 lock. Let it grab the newest architecture.
+RUN pip3 install --no-cache-dir --upgrade llama-cpp-python
 
 # STAGE 2: THE RUNTIME (The Finished House)
 FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
