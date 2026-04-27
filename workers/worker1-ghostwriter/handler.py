@@ -130,7 +130,7 @@ def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle
 - Status: Motion, up, eating, big body, steppin', active
 - Action: Sliding, spinning, crashing out, pressing
 - Vehicles: Foreign, whip, coupe, scat, hellcat, ghost, maybach
-- Foul" Nigga, Fuck Em', Fuck You, Bitch Ass, Lil Nigga, Dick, Cock, Pussy, Bitch, Shit, Fish Scale, Cocaine, Cola, Spliff
+- Explicit: Nigga, Fuck Em', Fuck You, Bitch Ass, Lil Nigga, Dick, Cock, Pussy, Bitch, Shit, Fish Scale, Cocaine, Cola, Spliff
 - Dynamic Additions: {", ".join(load_street_slang(style))}
 """
     else:

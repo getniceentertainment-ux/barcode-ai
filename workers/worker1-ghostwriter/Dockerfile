@@ -9,7 +9,8 @@ ENV CMAKE_ARGS="-DGGML_CUDA=on -DGGML_NATIVE=off"
 ENV FORCE_CMAKE=1
 
 # REMOVED the ==0.2.75 lock. Let it grab the newest architecture.
-RUN pip3 install --no-cache-dir --upgrade llama-cpp-python
+# Putting the lock back so the build succeeds like it used to
+RUN pip3 install --no-cache-dir llama-cpp-python==0.2.75
 
 # STAGE 2: THE RUNTIME (The Finished House)
 FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
