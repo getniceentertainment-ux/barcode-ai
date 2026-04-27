@@ -428,7 +428,9 @@ const handleGenerateGuide = async () => {
 
           const source = offlineCtx.createBufferSource();
           source.buffer = audioBuffer;
-          
+
+          source.preservesPitch = true;
+
           // Apply the Elastic Time Stretch
           source.playbackRate.value = stretchRatio; 
 
