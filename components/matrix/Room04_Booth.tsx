@@ -355,10 +355,13 @@ export default function Room04_Booth() {
                 // 🚨 SURGICAL FIX: The Aggressive Delivery Override
                 // Stripping soft punctuation and forcing exclamation marks triggers maximum vocal projection in Neural TTS models.
                 let rawText = line.text.replace(/\|/g, '').trim();
-                if (rawText.endsWith('.') || rawText.endsWith(',')) {
-                    rawText = rawText.slice(0, -1);
+
+                let swaggerText = rawText;
+                if (!swaggerText.endsWith('.') && !swaggerText.endsWith(',') && !swaggerText.endsWith('!') && !swaggerText.endsWith('?')) {
+                    swaggerText = swaggerText + ".";
                 }
-                const aggressiveText = rawText + "!";
+
+                const aggressiveText = swaggerText;
 
                 const res = await fetch('/api/audio/generate-guide', {
                   method: 'POST',

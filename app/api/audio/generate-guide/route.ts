@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     if (bpm && bpm > 130) pacingTag = "[fast]";
     else if (bpm && bpm < 90) pacingTag = "[slow]";
 
-    const steerableLyrics = `[rap] [energetic] ${pacingTag} ${lyrics}`;
+    const steerableLyrics = `[rap] [casual] [singsong] [breathy] ${pacingTag} ${lyrics}`;
 
     // Hitting Groq's blazing-fast OpenAI-compatible speech endpoint
     const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
