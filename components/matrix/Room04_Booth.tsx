@@ -447,6 +447,7 @@ const handleGenerateGuide = async () => {
       setGuideProgress(0);
     }
   };
+
   const handleUpdateTakeType = (id: string, newType: string) => {
     const updatedStems = vocalStems.map(stem => stem.id === id ? { ...stem, type: newType as TrackType } : stem);
     useMatrixStore.setState({ vocalStems: updatedStems } as any);
