@@ -30,14 +30,8 @@ def load_rag_intel():
     return "Market Intel: Focus on node growth and independent street equity."
 
 def load_street_slang(style="getnice_hybrid"):
-    """
-    Loads specific assortments of slang based on the operational style.
-    
-    Styles:
-    - drill/chopper: Combat, retaliation, and street warfare terms.
-    - trap/triplet/lazy: Product, margins, and the day-to-day hustle.
-    - executive: High-level laundering, leverage, and corporate-street crossover.
-    """    
+    # Fix: Initialize words list immediately so it's defined before use
+    words = [] 
     
     drill_slang = ["opp", "spin the block", "motion", "clearance", "stick", "mop", "nina", "hammer", "drill", "crash out", "walk down", "tote", "strapped", "blicky", "hollows"]
     trap_slang = ["bag", "zip", "chicken", "brick", "pack", "trap", "motion", "guap", "racks", "blue strips", "flip", "front", "serve", "weight", "whole thang", "zone"]
@@ -48,27 +42,29 @@ def load_street_slang(style="getnice_hybrid"):
     elif style in ["trap", "triplet", "lazy"]:
         target_list = trap_slang
     else:
-        # Defaults to executive for high-level operations
         target_list = executive_slang
 
-    # Implementation for loading from our dictionary.json
     content = load_local_file("dictionary.json")
     if content:
-        import json
         try:
             data = json.loads(content)
             if isinstance(data, dict) and "slang_terms" in data:
                 for key, val in data["slang_terms"].items():
                     if isinstance(val, dict) and "definitions" in val and len(val["definitions"]) > 0:
                         words.append(f"'{key}' (Meaning: {val['definitions'][0]})")
-                    else: words.append(key)
+                    else: 
+                        words.append(key)
             elif isinstance(data, list):
                 words = [item.get("word", "") for item in data if "word" in item]
+            
             if words:
                 words = [w.strip() for w in words if w.strip()]
                 combined_list = list(set(words + target_list))
                 return random.sample(combined_list, min(10, len(combined_list)))
-        except json.JSONDecodeError: pass
+        except Exception as e:
+            print(f"Dictionary load error: {e}")
+            pass 
+
     return target_list
 
 def load_cultural_context():
@@ -86,35 +82,28 @@ def load_cultural_context():
 
 def init_model():
     global model
-    # RunPod Serverless ALWAYS mounts to this exact path
+    # FORCE the path to the network volume
     mount_path = "/runpod-volume"
-    model_path = os.path.join(mount_path, FILENAME)
-    
-    print(f"Checking for Matrix Model at: {model_path}")
-    
-    # Check if the volume is actually mounted and if the file exists
+    model_path = os.path.join(mount_path, "bar-code-ghostwriter-q4.gguf")
+
     if os.path.exists(model_path):
-        print(f"✅ VOLUME DATA FOUND. Size: {os.path.getsize(model_path) / (1024**3):.2f} GB")
-        print("Skipping download. Loading directly into VRAM...")
+        print(f"--- PHYSICAL CACHE DETECTED AT {model_path} ---")
     else:
-        print("❌ VOLUME EMPTY. Starting Initial Download to Network Volume...")
-        # This saves the model to the 20GB volume so it stays there forever
+        print("--- CACHE EMPTY: PERMANENTLY SAVING TO STORAGE POD ---")
         model_path = hf_hub_download(
-            repo_id=REPO_ID, 
-            filename=FILENAME, 
+            repo_id=REPO_ID,
+            filename=FILENAME,
             token=HF_TOKEN,
-            local_dir=mount_path,
+            local_dir=mount_path, # This writes it to your $1.40/mo volume
             local_dir_use_symlinks=False
         )
-        print(f"✅ Model successfully cached to volume at: {model_path}")
-
-    try:
-        model = Llama(
-            model_path=model_path,
-            n_ctx=4096,
-            n_gpu_layers=-1,
-            use_mlock=True
-        )
+    
+    model = Llama(
+        model_path=model_path,
+        n_ctx=4096,
+        n_gpu_layers=-1, # <--- CRITICAL: Your log shows it's using CPU. This forces it to the 4090.
+        use_mlock=True
+    )
         print("✅ GGUF ENGINE ACCELERATED.")
     except Exception as e:
         print(f"🚨 ENGINE BOOT FAILURE: {e}")
