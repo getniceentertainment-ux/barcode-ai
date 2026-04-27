@@ -342,6 +342,21 @@ const handleGenerateGuide = async () => {
       return; 
     }
 
+const handleGenerateGuide = async () => {
+    const gridBlueprint = lyricLines; 
+    const currentBpm = useMatrixStore.getState().bpm || 140;
+
+    if (!gridBlueprint || gridBlueprint.length === 0) {
+      if (addToast) addToast("No lyrics found. Load a Bar-Code blueprint first.", "error");
+      return;
+    }
+
+    const hasQuantizedWords = gridBlueprint.some(line => !line.isHeader && line.words && line.words.length > 0);
+    if (!hasQuantizedWords) {
+      if (addToast) addToast("No grid math found! Please wait for the grid to initialize.", "error");
+      return; 
+    }
+
     setIsGeneratingGuide(true);
     setGuideProgress(10);
 
@@ -359,41 +374,29 @@ const handleGenerateGuide = async () => {
         try {
           const mappedWords = line.words;
           
-          // 🚨 1. PUNCTUATION BREATH-HACK 🚨
+          // 1. Phrasing & Slang (Keep it sounding human)
           let gridAwareText = "";
           for (let w = 0; w < mappedWords.length; w++) {
             gridAwareText += mappedWords[w].word;
             if (w < mappedWords.length - 1) {
               const currentEnd = mappedWords[w].startTime + (mappedWords[w].duration || 0.3);
               const nextStart = mappedWords[w+1].startTime;
-              // Larger gaps get ellipses (vocal fry/drag), medium gaps get commas (quick breath)
-              if (nextStart - currentEnd > 0.3) {
-                gridAwareText += "... "; 
-              } else if (nextStart - currentEnd > 0.15) {
-                gridAwareText += ", "; 
-              } else {
-                gridAwareText += " ";
-              }
+              if (nextStart - currentEnd > 0.25) gridAwareText += ", "; 
+              else gridAwareText += " ";
             }
           }
 
-          // 🚨 2. PHONETIC SPELLING (SLANG FILTER) 🚨
-          // Forces the AI mouth to slur syllables together naturally
           const slangText = gridAwareText
             .replace(/\b(\w+)ing\b/gi, "$1in'")
             .replace(/\bthe\b/gi, "tha")
             .replace(/\bwith\b/gi, "wit")
-            .replace(/\bgoing to\b/gi, "gonna")
-            .replace(/\bI am\b/gi, "I'm")
             .trim() + "!";
-
-          console.log(`🎤 Rapping line ${i}: "${slangText}"`);
 
           const res = await fetch('/api/audio/generate-guide', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              lyrics: slangText, // Sending the humanized text!
+              lyrics: slangText, 
               bpm: currentBpm,
               gender: useMatrixStore.getState().gwGender || "male",
               pitch: "low",
@@ -406,47 +409,25 @@ const handleGenerateGuide = async () => {
           const arrayBuffer = await res.arrayBuffer();
           const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
 
-          // 🚨 4. THE HOLY GRAIL: LINE STRETCHING 🚨
-          // Instead of chopping words, we play the WHOLE line, but stretch it to fit the grid.
-          const ttsDuration = audioBuffer.duration;
+          // 2. THE DROP: No stretching, no slicing. Just play the audio at normal speed.
           const firstWordStart = mappedWords[0].startTime;
-          
-          const lastWord = mappedWords[mappedWords.length - 1];
-          const lastWordEnd = lastWord.startTime + (lastWord.duration || 0.3);
-          
-          // How long the MIDI grid says this entire phrase SHOULD take
-          const requiredGridDuration = lastWordEnd - firstWordStart; 
-
-          // Calculate the warp multiplier (e.g. if TTS is 4s but Grid is 3s, speed it up)
-          // We cap it between 0.8x and 1.4x so the AI doesn't sound like a chipmunk.
-          const stretchRatio = Math.max(0.8, Math.min(1.4, (ttsDuration / requiredGridDuration)));
-
-          // 🚨 3. INJECTING "SWING" 🚨
-          // Real rappers push/pull the pocket. Randomize the drop by -15ms to +15ms.
-          const humanSwing = (Math.random() * 0.030) - 0.015;
-          const swungStartTime = Math.max(0, firstWordStart + humanSwing);
 
           const source = offlineCtx.createBufferSource();
           source.buffer = audioBuffer;
+          source.playbackRate.value = 1.0; // PURE 1.0 SPEED. NO CHIPMUNK.
 
-          source.preservesPitch = true;
-
-          // Apply the Elastic Time Stretch
-          source.playbackRate.value = stretchRatio; 
-
-          // Organic tail bleed for the end of the phrase
+          // 3. FULL VOLUME: No complex envelopes, just raw output.
           const gainNode = offlineCtx.createGain();
-          gainNode.gain.setValueAtTime(1, swungStartTime);
-          gainNode.gain.exponentialRampToValueAtTime(0.001, swungStartTime + requiredGridDuration + 0.8);
+          gainNode.gain.value = 1.0; 
 
           source.connect(gainNode);
           gainNode.connect(offlineCtx.destination);
           
-          // Trigger the entire humanized phrase at once!
-          source.start(swungStartTime);
+          // Trigger the entire humanized phrase exactly where the first word is supposed to start
+          source.start(firstWordStart);
 
         } catch (lineErr) {
-          console.error(`🚨 Math/Audio failure on line ${i}:`, lineErr);
+          console.error(`🚨 Audio failure on line ${i}:`, lineErr);
         }
       }
 
@@ -455,8 +436,8 @@ const handleGenerateGuide = async () => {
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
 
-      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.85, offsetBars: 0 });
-      if (addToast) addToast("High-fidelity humanized guide vocal generated.", "success");
+      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 1.0, offsetBars: 0 });
+      if (addToast) addToast("High-fidelity guide vocal generated.", "success");
 
     } catch (err: any) {
       console.error("OVERALL GUIDE ERROR:", err);
