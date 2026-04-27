@@ -326,27 +326,27 @@ export default function Room04_Booth() {
   };
 
   const handleGenerateGuide = async () => {
-    // 🚨 1. Explicitly grab state
-    const matrixBlueprint = useMatrixStore.getState().matrixBlueprint;
+    // 🚨 FIX: We grab 'lyricLines' (which has all the grid math and drag/drop updates)
+    // instead of the raw global store text!
+    const gridBlueprint = lyricLines; 
     const currentBpm = useMatrixStore.getState().bpm || 140;
 
-    // 🚨 2. LOUD DEBUGGING: Open your F12 Console when you click the button!
     console.log("=== GUIDE GENERATION INITIATED ===");
-    console.log("Blueprint Loaded:", matrixBlueprint ? `${matrixBlueprint.length} lines` : "UNDEFINED");
+    console.log("Grid Lines Loaded:", gridBlueprint ? `${gridBlueprint.length} lines` : "UNDEFINED");
 
-    if (!matrixBlueprint || matrixBlueprint.length === 0) {
+    if (!gridBlueprint || gridBlueprint.length === 0) {
       if (addToast) addToast("No lyrics found. Load a Bar-Code blueprint first.", "error");
       return;
     }
 
-    // 🚨 3. THE BOUNCER: Check if the Quantizer actually saved the words to the global store
-    const hasQuantizedWords = matrixBlueprint.some(line => !line.isHeader && line.words && line.words.length > 0);
+    // 🚨 THE BOUNCER: Now it checks the actual math grid
+    const hasQuantizedWords = gridBlueprint.some(line => !line.isHeader && line.words && line.words.length > 0);
     console.log("Did the Quantizer do its job? (hasQuantizedWords):", hasQuantizedWords);
 
     if (!hasQuantizedWords) {
-      console.warn("🚨 GUIDE ABORTED: The global store has no syllables in the 'words' arrays.");
-      if (addToast) addToast("No grid math found! You must click Quantize/Glue first.", "error");
-      return; // Kills the silent click!
+      console.warn("🚨 GUIDE ABORTED: The grid has no syllables mapped to it.");
+      if (addToast) addToast("No grid math found! Please wait for the grid to initialize.", "error");
+      return; 
     }
 
     setIsGeneratingGuide(true);
@@ -356,12 +356,13 @@ export default function Room04_Booth() {
       const offlineCtx = new OfflineAudioContext(1, 44100 * 300, 44100);
       let linesProcessed = 0;
 
-      for (let i = 0; i < matrixBlueprint.length; i++) {
-        const line = matrixBlueprint[i];
+      // 🚨 FIX: Ensure the loop uses 'gridBlueprint' instead of 'matrixBlueprint'
+      for (let i = 0; i < gridBlueprint.length; i++) {
+        const line = gridBlueprint[i];
         if (line.isHeader || !line.words || line.words.length === 0) continue;
 
         linesProcessed++;
-        setGuideProgress(10 + Math.floor((linesProcessed / matrixBlueprint.length) * 80));
+        setGuideProgress(10 + Math.floor((linesProcessed / gridBlueprint.length) * 80));
 
         try {
           const mappedWords = line.words;
