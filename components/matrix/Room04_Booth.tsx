@@ -231,27 +231,23 @@ function getOrpheusTags(sectionType: string, patternArray: number[]): string {
 
   // 1. Structural Contour (Hook vs. Verse)
   if (sectionType === "HOOK") {
-    tags.push("[singsong]", "[excited]"); // Melodic, high energy
+    tags.push("[singsong]", "[excited]", "[loud]"); // Melodic, maximum energy
   } else if (sectionType === "INTRO" || sectionType === "OUTRO") {
-    tags.push("[casual]", "[breathy]"); // Low energy, talking intro
+    tags.push("[conversational]", "[confident]"); // Stripped [casual] so it doesn't get lazy
   } else {
     // VERSES
-    tags.push("[confident]", "[authoritatively]"); // Punchy, standard rap delivery
+    tags.push("[intense]", "[passionate]", "[authoritatively]"); // Pure projection and swagger
   }
 
   // 2. Rhythmic Puppeteering (Analyzing the Array)
-  // Calculate average step density to determine speed/cadence
   const avgDensity = patternArray.reduce((a, b) => a + b, 0) / patternArray.length;
 
   if (avgDensity <= 1.5) {
-    // Chopper / Fast Flows (lots of 1s)
-    tags.push("[rapid babbling]");
+    tags.push("[rapid babbling]", "[urgent]"); // Adds urgency to fast flows
   } else if (avgDensity >= 4) {
-    // Lazy / Dragged Flows (lots of 4s, 6s, 8s)
-    tags.push("[lazy]", "[dropping tone]");
+    tags.push("[lazy]", "[dropping tone]"); 
   } else if (patternArray.includes(3)) {
-    // Triplet Flows
-    tags.push("[bouncing]"); // Triggers syncopated rhythmic delivery
+    tags.push("[bouncing]"); 
   }
 
   return tags.join(" ");
@@ -399,16 +395,18 @@ export default function Room04_Booth() {
                 // 🚨 SURGICAL FIX: The Swag Delivery Override
                 let rawText = line.text.replace(/\|/g, '').trim();
 
+                // Ground the sentence for natural breathing
                 let swaggerText = rawText;
                 if (!swaggerText.endsWith('.') && !swaggerText.endsWith(',') && !swaggerText.endsWith('!') && !swaggerText.endsWith('?')) {
                     swaggerText = swaggerText + ".";
                 }
 
-                const aggressiveText = swaggerText;
+                // CAPITALIZING the text forces the Orpheus model to project with maximum vocal weight
+                const aggressiveText = swaggerText.toUpperCase();
 
                 const res = await fetch('/api/audio/generate-guide', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  // ... rest of the fetch request remains exactly the same                  headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ 
                     lyrics: aggressiveText, 
                     bpm: preciseBpm,

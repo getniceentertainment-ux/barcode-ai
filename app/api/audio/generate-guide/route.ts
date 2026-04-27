@@ -18,7 +18,7 @@ export async function POST(req: Request) {
 
     // Combine the base rap tag, the dynamic grid math tags, the pacing, and the lyrics
     // We use a fallback `|| ""` just in case semanticTags is somehow undefined
-    const steerableLyrics = `[rap] ${semanticTags || ""} ${pacingTag} ${lyrics}`.replace(/\s+/g, ' ').trim();
+    const steerableLyrics = `[rap] [high energy] ${semanticTags || ""} ${pacingTag} ${lyrics}`.replace(/\s+/g, ' ').trim();
 
     // Hitting Groq's blazing-fast OpenAI-compatible speech endpoint
     const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
