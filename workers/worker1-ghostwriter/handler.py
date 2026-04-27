@@ -108,7 +108,9 @@ def init_model():
             model_path=model_path,
             n_ctx=4096,
             n_gpu_layers=-1,
-            use_mlock=False  # Changed to False to prevent 'Cannot allocate memory'
+            flash_attn=True,  # <--- ADD THIS LINE
+            n_batch=512,
+            use_mlock=False
         )
         print("✅ GGUF ENGINE ACCELERATED.")
     except Exception as e:
