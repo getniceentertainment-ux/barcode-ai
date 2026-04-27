@@ -326,149 +326,104 @@ export default function Room04_Booth() {
   };
 
   const handleGenerateGuide = async () => {
-    if (!lyricLines || lyricLines.length === 0) {
-      if (addToast) addToast("No valid lyrics found to generate guide.", "error");
+    if (!matrixBlueprint || matrixBlueprint.length === 0) {
+      if (addToast) addToast("No lyrics found. Load a Bar-Code blueprint first.", "error");
       return;
     }
-    
+    const preciseBpm = bpm || 140;
     setIsGeneratingGuide(true);
-    setGuideProgress(0);
-    
+    setGuideProgress(10);
+
     try {
-      // 🚨 FIX 4: Guide reads from the mathematically accurate local state, not the stale store
-      const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
-      if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
+      const offlineCtx = new OfflineAudioContext(1, 44100 * 300, 44100);
+      let globalTimeCursor = 0;
+      let linesProcessed = 0;
 
-      const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
-      const sampleRate = 44100;
-      
-      const OfflineCtxClass = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
-      const offlineCtx = new OfflineCtxClass(1, Math.ceil(sampleRate * renderDuration), sampleRate);
+      for (let i = 0; i < matrixBlueprint.length; i++) {
+        const line = matrixBlueprint[i];
+        if (line.isHeader || !line.words || line.words.length === 0) continue;
 
-      for (let i = 0; i < parsedLines.length; i++) {
-              const line = parsedLines[i];
-              
-              // 🚨 FIX 2: Restore Guide Progress Percentage
-              setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
+        linesProcessed++;
+        setGuideProgress(10 + Math.floor((linesProcessed / matrixBlueprint.length) * 80));
 
-              try {
-                // 🚨 SURGICAL FIX: The Aggressive Delivery Override
-                // Stripping soft punctuation and forcing exclamation marks triggers maximum vocal projection in Neural TTS models.
-                let rawText = line.text.replace(/\|/g, '').trim();
-                if (rawText.endsWith('.') || rawText.endsWith(',')) {
-                    rawText = rawText.slice(0, -1);
-                }
-                const aggressiveText = rawText + "!";
-
-                const res = await fetch('/api/audio/generate-guide', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ 
-                    lyrics: aggressiveText, 
-                    bpm: preciseBpm,
-                    gender: useMatrixStore.getState().gwGender || "male",
-                    pitch: "low",
-                    style: "aggressive" // Hint for the backend if applicable
-                  })
-                });
-                
-                if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
-
-                const arrayBuffer = await res.arrayBuffer();
-                const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-                
-                try {
-                const mappedWords = line.words;
-                if (!mappedWords || mappedWords.length === 0) continue;
-
-                // 🚨 1. GRID-AWARE PUNCTUATION INJECTION 🚨
-                // We look at your quantized MIDI grid. If there is a physical gap > 0.15s
-                // between words, we inject a comma. This forces the TTS AI to natively 
-                // take a breath/pause exactly where your pocket is.
-                let gridAwareText = "";
-                for (let w = 0; w < mappedWords.length; w++) {
-                  gridAwareText += mappedWords[w].word;
-                  if (w < mappedWords.length - 1) {
-                    const currentEnd = mappedWords[w].startTime + mappedWords[w].duration;
-                    const nextStart = mappedWords[w+1].startTime;
-                    if (nextStart - currentEnd > 0.15) {
-                      gridAwareText += ", "; // Force a natural pocket pause
-                    } else {
-                      gridAwareText += " ";
-                    }
-                  }
-                }
-                const aggressiveText = gridAwareText.trim() + "!";
-
-                const res = await fetch('/api/audio/generate-guide', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ 
-                    lyrics: aggressiveText, 
-                    bpm: preciseBpm,
-                    gender: useMatrixStore.getState().gwGender || "male",
-                    pitch: "low",
-                    style: "aggressive"
-                  })
-                });
-                
-                if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
-
-                const arrayBuffer = await res.arrayBuffer();
-                const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-
-                const ttsDuration = audioBuffer.duration;
-                const mathLineDuration = line.lineDuration || 2;
-
-                mappedWords.forEach((wObj) => {
-                  if (!wObj.word.trim()) return;
-
-                  const relativeWordStart = wObj.startTime - line.startTime;
-                  const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
-                  const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
-
-                  // 🚨 2. THE ORGANIC BLEED ENVELOPE 🚨
-                  // Bumped tailBleed from 0.35s to 1.2s. This allows the word to fully finish pronouncing.
-                  const tailBleed = 1.2; 
-                  const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
-
-                  const source = offlineCtx.createBufferSource();
-                  source.buffer = audioBuffer;
-                  source.playbackRate.value = 1.0; 
-
-                  const gainNode = offlineCtx.createGain();
-                  
-                  // Instantly fade in to catch the transient attack
-                  gainNode.gain.setValueAtTime(0, wObj.startTime);
-                  gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
-                  
-                  // Hold at maximum volume for the duration of the assigned MIDI slot
-                  gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-                  
-                  // CRITICAL FIX: Use exponential decay instead of linear hard-cut. 
-                  // This allows the tail end of long words to smoothly bleed UNDER the next slot without clipping.
-                  // Note: exponentialRamp cannot go to absolute 0, so we use 0.001.
-                  gainNode.gain.exponentialRampToValueAtTime(0.001, wObj.startTime + wObj.duration + tailBleed); 
-
-                  source.connect(gainNode);
-                  gainNode.connect(offlineCtx.destination);
-                  
-                  source.start(wObj.startTime, Math.max(0, ttsOffset), safeExtractDuration);
-                });
-
-              } catch (lineErr) {
-                console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
+        try {
+          const mappedWords = line.words;
+          
+          let gridAwareText = "";
+          for (let w = 0; w < mappedWords.length; w++) {
+            gridAwareText += mappedWords[w].word;
+            if (w < mappedWords.length - 1) {
+              const currentEnd = mappedWords[w].startTime + mappedWords[w].duration;
+              const nextStart = mappedWords[w+1].startTime;
+              if (nextStart - currentEnd > 0.15) {
+                gridAwareText += ", "; 
+              } else {
+                gridAwareText += " ";
               }
             }
+          }
+          const aggressiveText = gridAwareText.trim() + "!";
 
+          const res = await fetch('/api/audio/generate-guide', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              lyrics: aggressiveText, 
+              bpm: preciseBpm,
+              gender: useMatrixStore.getState().gwGender || "male",
+              pitch: "low",
+              style: "aggressive"
+            })
+          });
+          
+          if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
+
+          const arrayBuffer = await res.arrayBuffer();
+          const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+
+          const ttsDuration = audioBuffer.duration;
+          const mathLineDuration = line.lineDuration || 2;
+
+          mappedWords.forEach((wObj) => {
+            if (!wObj.word.trim()) return;
+
+            const relativeWordStart = wObj.startTime - line.startTime;
+            const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
+            const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
+
+            const tailBleed = 1.2; 
+            const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
+
+            const source = offlineCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.playbackRate.value = 1.0; 
+
+            const gainNode = offlineCtx.createGain();
+            gainNode.gain.setValueAtTime(0, wObj.startTime);
+            gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
+            gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, wObj.startTime + wObj.duration + tailBleed); 
+
+            source.connect(gainNode);
+            gainNode.connect(offlineCtx.destination);
+            
+            source.start(wObj.startTime, Math.max(0, ttsOffset), safeExtractDuration);
+          });
+
+        } catch (lineErr) {
+          console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
+        }
+      }
+
+      // These lines were causing the error because they were accidentally placed outside the main try block
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
 
-      // 🚨 SURGICAL FIX: Bumped the default TTS guide track volume from 0.3 up to 0.85 for massive projection punch
       addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.85, offsetBars: 0 });
       if (addToast) addToast("High-fidelity aggressive audio glued to visual metronome.", "success");
+
     } catch (err: any) {
       console.error(err);
       if (addToast) addToast("Guide Error: " + err.message, "error");
