@@ -459,6 +459,7 @@ export default function Room04_Booth() {
               } catch (lineErr) {
                 console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
               }
+            }
 
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);
