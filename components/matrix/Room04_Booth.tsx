@@ -225,6 +225,38 @@ const FLOW_VAULT: Record<string, number[][]> = {
   ]
 };
 
+// --- ORPHEUS PUPPETEER: Maps Math & Structure to Semantic Tags ---
+function getOrpheusTags(sectionType: string, patternArray: number[]): string {
+  let tags = [];
+
+  // 1. Structural Contour (Hook vs. Verse)
+  if (sectionType === "HOOK") {
+    tags.push("[singsong]", "[excited]"); // Melodic, high energy
+  } else if (sectionType === "INTRO" || sectionType === "OUTRO") {
+    tags.push("[casual]", "[breathy]"); // Low energy, talking intro
+  } else {
+    // VERSES
+    tags.push("[confident]", "[authoritatively]"); // Punchy, standard rap delivery
+  }
+
+  // 2. Rhythmic Puppeteering (Analyzing the Array)
+  // Calculate average step density to determine speed/cadence
+  const avgDensity = patternArray.reduce((a, b) => a + b, 0) / patternArray.length;
+
+  if (avgDensity <= 1.5) {
+    // Chopper / Fast Flows (lots of 1s)
+    tags.push("[rapid babbling]");
+  } else if (avgDensity >= 4) {
+    // Lazy / Dragged Flows (lots of 4s, 6s, 8s)
+    tags.push("[lazy]", "[dropping tone]");
+  } else if (patternArray.includes(3)) {
+    // Triplet Flows
+    tags.push("[bouncing]"); // Triggers syncopated rhythmic delivery
+  }
+
+  return tags.join(" ");
+}
+
 export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
@@ -352,8 +384,19 @@ export default function Room04_Booth() {
               setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
 
               try {
-                // 🚨 SURGICAL FIX: The Aggressive Delivery Override
-                // Stripping soft punctuation and forcing exclamation marks triggers maximum vocal projection in Neural TTS models.
+                // 🚨 THE ORPHEUS PUPPETEER PAYLOAD
+                // Identify the section type (e.g., HOOK, VERSE) by finding the closest header before this line
+                const activeHeaderLine = parsedLines.slice(0, i).reverse().find(l => l.text.startsWith('['));
+                const sectionType = activeHeaderLine ? activeHeaderLine.text.replace(/\[|\]/g, '') : "VERSE";
+
+                // Extract the pattern associated with this flow style to determine rhythm
+                const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
+                const activePattern = activeVariations[i % activeVariations.length];
+
+                // Generate the specific bracket tags for Orpheus
+                const semanticTags = getOrpheusTags(sectionType, activePattern);
+
+                // 🚨 SURGICAL FIX: The Swag Delivery Override
                 let rawText = line.text.replace(/\|/g, '').trim();
 
                 let swaggerText = rawText;
@@ -371,7 +414,8 @@ export default function Room04_Booth() {
                     bpm: preciseBpm,
                     gender: useMatrixStore.getState().gwGender || "male",
                     pitch: "low",
-                    style: "aggressive" // Hint for the backend if applicable
+                    style: "aggressive", // Hint for the backend if applicable
+                    semanticTags: semanticTags // <-- Sending the puppet strings to the backend
                   })
                 });
                 

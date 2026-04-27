@@ -2,20 +2,23 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
-    const { lyrics, bpm } = await req.json();
+    // 🚨 SURGICAL FIX: Catch semanticTags from the frontend puppeteer
+    const { lyrics, bpm, semanticTags } = await req.json();
 
     if (!lyrics) {
       return NextResponse.json({ error: "Missing lyrics." }, { status: 400 });
     }
 
-    // --- SURGICAL FIX: AGGRESSIVE ORPHEUS STEERING ---
+    // --- DYNAMIC ORPHEUS STEERING ---
     // High-fidelity models need explicit emotional and pacing tags to avoid robotic delivery.
     // We dynamically adjust the steering based on the BPM passed from Room04.
     let pacingTag = "[steady]";
     if (bpm && bpm > 130) pacingTag = "[fast]";
     else if (bpm && bpm < 90) pacingTag = "[slow]";
 
-    const steerableLyrics = `[rap] [casual] [confidently] [excited] ${pacingTag} ${lyrics}`;
+    // Combine the base rap tag, the dynamic grid math tags, the pacing, and the lyrics
+    // We use a fallback `|| ""` just in case semanticTags is somehow undefined
+    const steerableLyrics = `[rap] ${semanticTags || ""} ${pacingTag} ${lyrics}`.replace(/\s+/g, ' ').trim();
 
     // Hitting Groq's blazing-fast OpenAI-compatible speech endpoint
     const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
