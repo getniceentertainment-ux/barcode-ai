@@ -105,7 +105,7 @@ def init_model():
         use_mlock=True
     )
         print("✅ GGUF ENGINE ACCELERATED.")
-    except Exception as e:
+        except Exception as e:
         print(f"🚨 ENGINE BOOT FAILURE: {e}")
 
 def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, bpm, flow_reference="", banned_words_map=None, is_explicit=True):
