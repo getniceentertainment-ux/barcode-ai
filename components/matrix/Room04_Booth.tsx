@@ -325,122 +325,106 @@ export default function Room04_Booth() {
     }));
   };
 
-const handleGenerateGuide = async () => {
-    const gridBlueprint = lyricLines; 
-    const currentBpm = useMatrixStore.getState().bpm || 140;
-
-    console.log("=== HUMANIZED GUIDE GENERATION INITIATED ===");
-
-    if (!gridBlueprint || gridBlueprint.length === 0) {
-      if (addToast) addToast("No lyrics found. Load a Bar-Code blueprint first.", "error");
+  const handleGenerateGuide = async () => {
+    if (!lyricLines || lyricLines.length === 0) {
+      if (addToast) addToast("No valid lyrics found to generate guide.", "error");
       return;
     }
-
-    const hasQuantizedWords = gridBlueprint.some(line => !line.isHeader && line.words && line.words.length > 0);
-    if (!hasQuantizedWords) {
-      if (addToast) addToast("No grid math found! Please wait for the grid to initialize.", "error");
-      return; 
-    }
-
-const handleGenerateGuide = async () => {
-    const gridBlueprint = lyricLines; 
-    const currentBpm = useMatrixStore.getState().bpm || 140;
-
-    if (!gridBlueprint || gridBlueprint.length === 0) {
-      if (addToast) addToast("No lyrics found. Load a Bar-Code blueprint first.", "error");
-      return;
-    }
-
-    const hasQuantizedWords = gridBlueprint.some(line => !line.isHeader && line.words && line.words.length > 0);
-    if (!hasQuantizedWords) {
-      if (addToast) addToast("No grid math found! Please wait for the grid to initialize.", "error");
-      return; 
-    }
-
+    
     setIsGeneratingGuide(true);
-    setGuideProgress(10);
-
+    setGuideProgress(0);
+    
     try {
-      const offlineCtx = new OfflineAudioContext(1, 44100 * 300, 44100);
-      let linesProcessed = 0;
+      // 🚨 FIX 4: Guide reads from the mathematically accurate local state, not the stale store
+      const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
+      if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
-      for (let i = 0; i < gridBlueprint.length; i++) {
-        const line = gridBlueprint[i];
-        if (line.isHeader || !line.words || line.words.length === 0) continue;
+      const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
+      const sampleRate = 44100;
+      
+      const OfflineCtxClass = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
+      const offlineCtx = new OfflineCtxClass(1, Math.ceil(sampleRate * renderDuration), sampleRate);
 
-        linesProcessed++;
-        setGuideProgress(10 + Math.floor((linesProcessed / gridBlueprint.length) * 80));
+      for (let i = 0; i < parsedLines.length; i++) {
+              const line = parsedLines[i];
+              
+              // 🚨 FIX 2: Restore Guide Progress Percentage
+              setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
 
-        try {
-          const mappedWords = line.words;
-          
-          // 1. Phrasing & Slang (Keep it sounding human)
-          let gridAwareText = "";
-          for (let w = 0; w < mappedWords.length; w++) {
-            gridAwareText += mappedWords[w].word;
-            if (w < mappedWords.length - 1) {
-              const currentEnd = mappedWords[w].startTime + (mappedWords[w].duration || 0.3);
-              const nextStart = mappedWords[w+1].startTime;
-              if (nextStart - currentEnd > 0.25) gridAwareText += ", "; 
-              else gridAwareText += " ";
+              try {
+                // 🚨 SURGICAL FIX: The Aggressive Delivery Override
+                // Stripping soft punctuation and forcing exclamation marks triggers maximum vocal projection in Neural TTS models.
+                let rawText = line.text.replace(/\|/g, '').trim();
+                if (rawText.endsWith('.') || rawText.endsWith(',')) {
+                    rawText = rawText.slice(0, -1);
+                }
+                const aggressiveText = rawText + "!";
+
+                const res = await fetch('/api/audio/generate-guide', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ 
+                    lyrics: aggressiveText, 
+                    bpm: preciseBpm,
+                    gender: useMatrixStore.getState().gwGender || "male",
+                    pitch: "low",
+                    style: "aggressive" // Hint for the backend if applicable
+                  })
+                });
+                
+                if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
+
+                const arrayBuffer = await res.arrayBuffer();
+                const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+                
+                const mappedWords = line.words;
+                if (!mappedWords || mappedWords.length === 0) continue;
+
+                // 🚨 FIX 1: Restore Proportional Crossfade Audio Logic (Syllable Syncing)
+                const ttsDuration = audioBuffer.duration;
+                const mathLineDuration = line.lineDuration || 2;
+
+                mappedWords.forEach((wObj) => {
+                  if (!wObj.word.trim()) return;
+
+                  const relativeWordStart = wObj.startTime - line.startTime;
+                  const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
+                  const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
+
+                  const tailBleed = 0.35; 
+                  const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
+
+                  const source = offlineCtx.createBufferSource();
+                  source.buffer = audioBuffer;
+                  source.playbackRate.value = 1.0; 
+
+                  const gainNode = offlineCtx.createGain();
+                  gainNode.gain.setValueAtTime(0, wObj.startTime);
+                  gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
+                  gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
+                  gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
+
+                  source.connect(gainNode);
+                  gainNode.connect(offlineCtx.destination);
+                  
+                  source.start(wObj.startTime, ttsOffset, safeExtractDuration);
+                });
+
+              } catch (lineErr) {
+                console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
+              }
             }
-          }
-
-          const slangText = gridAwareText
-            .replace(/\b(\w+)ing\b/gi, "$1in'")
-            .replace(/\bthe\b/gi, "tha")
-            .replace(/\bwith\b/gi, "wit")
-            .trim() + "!";
-
-          const res = await fetch('/api/audio/generate-guide', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              lyrics: slangText, 
-              bpm: currentBpm,
-              gender: useMatrixStore.getState().gwGender || "male",
-              pitch: "low",
-              style: "aggressive"
-            })
-          });
-          
-          if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
-
-          const arrayBuffer = await res.arrayBuffer();
-          const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-
-          // 2. THE DROP: No stretching, no slicing. Just play the audio at normal speed.
-          const firstWordStart = mappedWords[0].startTime;
-
-          const source = offlineCtx.createBufferSource();
-          source.buffer = audioBuffer;
-          source.playbackRate.value = 1.0; // PURE 1.0 SPEED. NO CHIPMUNK.
-
-          // 3. FULL VOLUME: No complex envelopes, just raw output.
-          const gainNode = offlineCtx.createGain();
-          gainNode.gain.value = 1.0; 
-
-          source.connect(gainNode);
-          gainNode.connect(offlineCtx.destination);
-          
-          // Trigger the entire humanized phrase exactly where the first word is supposed to start
-          source.start(firstWordStart);
-
-        } catch (lineErr) {
-          console.error(`🚨 Audio failure on line ${i}:`, lineErr);
-        }
-      }
 
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
 
-      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 1.0, offsetBars: 0 });
-      if (addToast) addToast("High-fidelity guide vocal generated.", "success");
-
+      // 🚨 SURGICAL FIX: Bumped the default TTS guide track volume from 0.3 up to 0.85 for massive projection punch
+      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.85, offsetBars: 0 });
+      if (addToast) addToast("High-fidelity aggressive audio glued to visual metronome.", "success");
     } catch (err: any) {
-      console.error("OVERALL GUIDE ERROR:", err);
+      console.error(err);
       if (addToast) addToast("Guide Error: " + err.message, "error");
     } finally {
       setIsGeneratingGuide(false);
