@@ -30,15 +30,31 @@ def load_rag_intel():
     return "Market Intel: Focus on node growth and independent street equity."
 
 def load_street_slang(style="getnice_hybrid"):
-    drill_slang = ["opp", "spin", "motion", "clear the board", "tactical", "steppin'", "pole", "glizzy", "crashing out"]
-    trap_slang = ["bag", "margins", "overhead", "frontend", "clearance", "motion", "guap", "blue cheese", "racks"]
-    executive_slang = ["equity", "leverage", "routing", "offshore", "dividend", "infrastructure", "bandwidth", "allocation", "vault", "code"]
+    """
+    Loads specific assortments of slang based on the operational style.
     
-    target_list = drill_slang if style in ["drill", "chopper"] else trap_slang if style in ["trap", "triplet", "lazy"] else executive_slang
+    Styles:
+    - drill/chopper: Combat, retaliation, and street warfare terms.
+    - trap/triplet/lazy: Product, margins, and the day-to-day hustle.
+    - executive: High-level laundering, leverage, and corporate-street crossover.
+    """    
+    
+    drill_slang = ["opp", "spin the block", "motion", "clearance", "stick", "mop", "nina", "hammer", "drill", "crash out", "walk down", "tote", "strapped", "blicky", "hollows"]
+    trap_slang = ["bag", "zip", "chicken", "brick", "pack", "trap", "motion", "guap", "racks", "blue strips", "flip", "front", "serve", "weight", "whole thang", "zone"]
+    executive_slang = ["washing", "dividend", "leverage", "motion", "clearance", "equity", "infrastructure", "offshore", "allocation", "vault", "code", "quarter", "10-piece", "backend", "legit"]
+    
+    if style in ["drill", "chopper"]:
+        target_list = drill_slang
+    elif style in ["trap", "triplet", "lazy"]:
+        target_list = trap_slang
+    else:
+        # Defaults to executive for high-level operations
+        target_list = executive_slang
 
+    # Implementation for loading from our dictionary.json
     content = load_local_file("dictionary.json")
     if content:
-        words = []
+        import json
         try:
             data = json.loads(content)
             if isinstance(data, dict) and "slang_terms" in data:
@@ -117,6 +133,7 @@ def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle
 - Status: Motion, up, eating, big body, steppin', active
 - Action: Sliding, spinning, crashing out, pressing
 - Vehicles: Foreign, whip, coupe, scat, hellcat, ghost, maybach
+- Foul" Nigga, Fuck Em', Fuck You, Bitch Ass, Lil Nigga, Dick, Cock, Pussy, Bitch, Shit, Fish Scale, Cocaine, Cola, Spliff
 - Dynamic Additions: {", ".join(load_street_slang(style))}
 """
     else:

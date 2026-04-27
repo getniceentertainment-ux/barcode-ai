@@ -1,529 +1,220 @@
 {
   "slang_terms": {
-    "Actavis": {
-      "type": "noun",
-      "definitions": ["lean, drank"],
-      "example": "Christian Louboutins, a walking mannequin, my Balmains full of blue Benjamins/Don't drink that shit just to be cool, I only sip Actavis ’cause it's my medicine. A liquid opiate drink, usually purple like syrup, mixed with sprite. Highly Addictive."
-    },
-    "act up": {
-      "type": "phrase",
-      "definitions": ["to engage in foolish behavior."],
-      "example": "Act up, we gon' mask up, boy, I dare you/Brody catch a body, I'ma leave you in the rearview"
-    },
-    "bag": {
-      "type": "noun",
-      "definitions": ["money"],
-      "example": "You get the bag and fumble it/I get the bag and flip it and tumble it (Yeah),"
-    },
-    "bando": {
-      "type": "noun",
-      "definitions": ["an abandoned house, a trap house"],
-      "example": "Fill the bando up with bags, give the lil' bro them a job/You can come get rich with us, you gon' eat or you gon' starve?"
-    },
-    "barbz": {
-      "type": "noun",
-      "definitions": ["Nicki Minaj's fan base"],
-      "example": "Yeah, my money's so tall that my Barbies got to climb it/Hotter than a Middle Eastern climate, violent"
-    },
-    "bussin’": {
-      "type": "adjective",
-      "definitions": [
-        "to let gun shots ring out",
-        "something that is very good"
-      ],
-      "example": "Police-ass niggas with that cuffin'/Try to run up on us, we gon get to bussin'"
-    },
-    "cake": {
-      "type": "noun",
-      "definitions": [
-        "a big butt",
-        "money"
-      ],
-      "example": "Mink coats make your woman wanna fornicate/Rozay and Drake, I'm getting cake, nothin' short of great"
-    },
-    "cap": {
-      "type": "noun",
-      "definitions": [
-        "lying",
-        "the top of one's head",
-        "to take one's head off"
-      ],
-      "example": "I've been had my way out here, yeah, know that's facts/You ain't livin' that shit you say, yeah, we know that's cap"
-    },
-    "chicken": {
-      "type": "noun",
-      "definitions": ["money"],
-      "example": "I be gettin' to the chicken, countin' to the chicken/And all of my niggas gon' split it"
-    },
-    "crack": {
-      "type": "adjective",
-      "definitions": ["something really good and addicting"],
-      "example": "Florida BasedGod what it do? I'm back/One hundred grand show, man, dude, that's crack"
-    },
-    "dab": {
-      "type": "noun",
-      "definitions": [
-        "dance move",
-        "fashion sense",
-        "a concentrated form of cannabis"
-      ],
-      "example": "Took your hoe ’cause she gave me a boner/Look at my dab persona"
-    },
-    "dat way": {
-      "type": "phrase",
-      "definitions": [
-        "For real",
-        "To curve or swerve in a certain direction"
-      ],
-      "example": "Nigga try Lil' Tay-K, it's gon' be his last day/If you not talkin' ’bout smoke, you could go dat way"
-    },
-    "deadass": {
-      "type": "adverb",
-      "definitions": ["seriously"],
-      "example": "When it comes to that paper, I be deadass serious/My driveway look like the Fast & the Furious (skrrt)"
-    },
-    "don": {
-      "type": "noun",
-      "definitions": ["A boss, the head of crew"],
-      "example": "OG on the beat, OG Jordan 3s/When you the don, you understand and you oversee it"
-    },
-    "drip": {
-      "type": "adjective",
-      "definitions": ["a cool outfit"],
-      "example": "Keep my head above the water while I drown in wealth/I got that drip like Gunna, I may drip or drown myself"
-    },
-    "drill": {
-      "type": "verb",
-      "definitions": ["to kill someone, something"],
-      "example": "The type of shit'll make me flip out and just kill somethin'/Drill somethin', get ill and fill ratchets with a lil' somethin'"
-    },
-    "eater": {
-      "type": "noun",
-      "definitions": ["a person who performs a lot of oral sex"],
-      "example": "Bad bitch from the woods, I think she a hunter/She a killer and an eater, she a Jeffrey Dahmer"
-    },
-    "fire": {
-      "type": "adjective",
-      "definitions": [
-        "something that's amazing, pleasant and attractive",
-        "weapons and ammo"
-      ],
-      "example": "My head game is fire, punani Dasani/It's goin' in dry and it's comin' out soggy"
-    },
-    "fried": {
-      "type": "adjective",
-      "definitions": ["to be highly intoxicated"],
-      "example": "In the function, and I'm fried, it's a strive, it's not a drive/When they open wide, it's a riot, riot"
-    },
-    "flossin'": {
-      "type": "verb",
-      "definitions": ["showing off, stunting"],
-      "example": "I don't need no one vouchin' for me/I be flossin', ain't talkin' 'bout my teeth"
-    },
-    "flex": {
-      "type": "verb",
-      "definitions": ["to boast about possessions or money"],
-      "example": "Natural born hustler, nigga, stuntin' is my strong suit/Flexin' with a hunnid cash, look at what these songs do"
-    },
-    "gas": {
-      "type": "adjective",
-      "definitions": [
-        "high-grade marijuana",
-        "to hype someone"
-      ],
-      "example": "I am smokin' on that gas, life should be on Cinemax/Movie, bought my boo bigger tits and a bigger ass"
-    },
-    "goofy": {
-      "type": "noun",
-      "definitions": ["A lame, cornball"],
-      "example": "I hate a goofy especially/They always dyin' to mention me"
-    },
-    "hammer": {
-      "type": "noun",
-      "definitions": ["a gun"],
-      "example": "Ayo, Eli, why they testin' me?/Like I don't always keep the hammer next to me"
-    },
-    "hard": {
-      "type": "noun",
-      "definitions": ["someone or something that is tough in manner"],
-      "example": "I carved OF on it this morning with a glass shard/On my green mini ramp that I built in my backyard, that's hard"
-    },
-    "ice": {
-      "type": "noun",
-      "definitions": ["jewelry, diamonds"],
-      "example": "Ice on my neck, cost me 10 times three/$30,000 for a nigga to get flee"
-    },
-    "irie": {
-      "type": "adjective",
-      "definitions": [
-        "the state of feeling good",
-        "high, intoxicated"
-      ],
-      "example": "I got dressed, I mixed the Tisa with Versace/I smoked a joint and took a bar, now I'm irie"
-    },
-    "jackin'": {
-      "type": "verb",
-      "definitions": [
-        "not believing or thinking",
-        "stealing",
-        "claiming"
-      ],
-      "example": "Now wildin', ready for all the violence/I don’t need a nigga jacking that he riding"
-    },
-    "jabroni": {
-      "type": "noun",
-      "definitions": ["a lame, cornball"],
-      "example": "MAC-10 hungry, you pussies are baloneys/I been with your mummy ’cause your daddy a jabroni"
-    },
-    "knock": {
-      "type": "verb",
-      "definitions": ["to play loudly"],
-      "example": "Tint the windows by the doors, let the four ride/Speakers knockin', they can hear me in the north side"
-    },
-    "kiss": {
-      "type": "verb",
-      "definitions": ["to kill"],
-      "example": "Jada, MWAH, I'll kiss you, you bitch-ass nigga/Bet the hood won't miss you, you bitch-ass nigga"
-    },
-    "lick": {
-      "type": "noun",
-      "definitions": [
-        "a way of making money",
-        "a drug fiend"
-      ],
-      "example": "Bustin' all the bells out the box/I just hit a lick with the box"
-    },
-    "lit": {
-      "type": "adjective",
-      "definitions": [
-        "something that's turned up",
-        "intoxicated"
-      ],
-      "example": "30 for a walkthrough, man, we had that bitch lit/Had so many bottles, gave ugly girl a sip"
-    },
-    "mop": {
-      "type": "noun",
-      "definitions": [
-        "a firearm with a long clip",
-        "a wet mouth"
-      ],
-      "example": "I got the mop, watch me wash ’em like detergent/And I'm ballin', that's why it's diamonds on my jersey"
-    },
-    "moola": {
-      "type": "noun",
-      "definitions": ["money, currency"],
-      "example": "She know I get that moola, man trappin' is a habit/We ballin' every night, baby, woah Kemosabe"
-    },
-    "nina": {
-      "type": "noun",
-      "definitions": ["a handgun"],
-      "example": "I bet a lot of niggas plottin' so you know I got that heater, bruh/Drive my side of Harlem, catch me ridin' with my Nina, bruh"
-    },
-    "nice": {
-      "type": "adjective",
-      "definitions": ["skilled"],
-      "example": "Pull up on them bikes, let the throttle pop/Niggas know I'm nice, and I got a lot"
-    },
-    "no cap": {
-      "type": "adverb",
-      "definitions": [
-        "to tell the truth",
-        "no lie"
-      ],
-      "example": "Opp, I'll slap the shit out a nigga/No talkin', I don't like to argue with niggas"
-    },
-    "od": {
-      "type": "adjective",
-      "definitions": [
-        "past the limit",
-        "overdone"
-      ],
-      "example": "Trips that you plan for the next whole week/Bands too long for a nigga so cheap/And your flex OD, and your sex OD"
-    },
-    "opp": {
-      "type": "noun",
-      "definitions": ["an enemy"],
-      "example": "In New York I Milly Rock/Hide it in my sock/Running from an opp/And I shoot at opp"
-    },
-    "p": {
-      "type": "noun/verb",
-      "definitions": [
-        "a positive thing",
-        "player",
-        "keeping it real"
-      ],
-      "example": "She let me squeeze, then she lеave ’cause she keep it P"
-    },
-    "pack": {
-      "type": "noun",
-      "definitions": [
-        "a dead person or thing",
-        "to carry a weapon",
-        "a collection of drugs"
-      ],
-      "example": "My nigga sell crack like it's back in the ’80s/Know a young nigga, he actin' so crazy/He serve a few packs and he jack a Mercedes"
-    },
-    "peon": {
-      "type": "noun",
-      "definitions": ["a soft, lame person"],
-      "example": "These niggas groupies, they peons, mane/King of my city like Leon, mane"
-    },
-    "quickie": {
-      "type": "noun",
-      "definitions": [
-        "a brief sexual act",
-        "to do something in a hurry"
-      ],
-      "example": "Yung Miami, yeah, bitch, I'm from the city/I'm litty, diamonds drippy, eat my pussy, that's a quickie"
-    },
-    "quarter": {
-      "type": "noun",
-      "definitions": [
-        "one fourth of one million dollars",
-        "one fourth of an ounce in drugs"
-      ],
-      "example": "Earrings cost a quarter, certified by GIA/If it's ’bout my bae or ’bout some smoke, I'm on my way"
-    },
-    "rat": {
-      "type": "noun",
-      "definitions": ["a snitch"],
-      "example": "Stuart Little, heard these niggas some rats/Pockets full of cheese, bitch, I got racks"
-    },
-    "ratchet": {
-      "type": "adjective",
-      "definitions": ["out of pocket, unruly"],
-      "example": "Not classy, I’m ratchet, if I twerk it, he gon’ smack it/Put money in my basket, I got some expensive habits"
-    },
-    "simp": {
-      "type": "noun",
-      "definitions": ["a desperate person, a person who does too much for someone they like"],
-      "example": "Them whack hoes, y'all niggas simpin'/Them bad hoes, my niggas pimpin'"
-    },
-    "slatt": {
-      "type": "phrase",
-      "definitions": ["slime love all the time"],
-      "example": "In L.A., I smoke that gas/In L.A., I link with slatt"
-    },
-    "slime": {
-      "type": "noun",
-      "definitions": [
-        "a homie, ride or die",
-        "to do someone dirty"
-      ],
-      "example": "She slid her hand down my pants just to grab the torpedo/I had to go back and link with my slimes like I'm 13 and zero"
-    },
-    "straightenin'": {
-      "type": "verb",
-      "definitions": ["getting things right"],
-      "example": "Niggas act like somеthing been taken/Ain't nothing but a little bit of straightenin'"
-    },
-    "sucka": {
-      "type": "noun",
-      "definitions": ["a punk, chump"],
-      "example": "I don't rap to suckas/God bless you all, I only talk special talk"
-    },
-    "tech": {
-      "type": "noun",
-      "definitions": [
-        "a semi-automatic pistol",
-        "lean, cough syrup"
-      ],
-      "example": "Ayo, I walk through the valley of the shadow of death/Where niggas hold techs like they mad at the ref"
-    },
-    "thot": {
-      "type": "noun",
-      "definitions": ["an overindulgent person when it comes to sex"],
-      "example": "I see two twin opps, leave ’em on a banner/And I got two thick thots, wanna link the gang, yeah"
-    },
-    "up it": {
-      "type": "phrase",
-      "definitions": ["to raise weapons, shoot"],
-      "example": "Hey, the beat go off?/I up it then my heat go off"
-    },
-    "vamp": {
-      "type": "noun",
-      "definitions": [
-        "someone who stays up all night",
-        "Playboi Carti's fan base"
-      ],
-      "example": "When them vamps outside, lil' bitch, you better be ready/When them guns outside, lil' bitch, you better be ready"
-    },
-    "wetty": {
-      "type": "noun",
-      "definitions": [
-        "an attractive woman",
-        "to be wet"
-      ],
-      "example": "Fivio said she a wetty/I was sittin' at the trap house whippin' shit out the crocker like Betty"
-    },
-    "wap": {
-      "type": "phrase",
-      "definitions": ["an acronym for wet-ass pussy"],
-      "example": "I'm talkin' WAP, WAP, WAP, that's some wet-ass pussy/Macaroni in a pot, that's some wet-ass pussy"
-    },
-    "xanny": {
-      "type": "noun",
-      "definitions": ["Xanax"],
-      "example": "She say I'm insane, yeah/I might blow my brain out/Xanny, help the pain, yeah/Please, Xanny, make it go away"
-    },
-    "yams": {
-      "type": "noun",
-      "definitions": ["a big butt"],
-      "example": "I'm in the kitchen, yams everywhere/Just made a juug, I got bands everywhere"
-    },
-    "yolo": {
-      "type": "phrase",
-      "definitions": ["you only live once"],
-      "example": "I'm screamin' out, 'YOLO,' yeah, that's still the motto/I know I be on some shit that they ain't thought of"
-    },
-    "zaza": {
-      "type": "noun",
-      "definitions": ["exotic, potent weed"],
-      "example": "I smoke Zaza, I'm in La La off them trees/Took the T-tops off the ’Vette, I need a breeze"
-    },
-    "zooted": {
-      "type": "adjective",
-      "definitions": ["to be lit, highly intoxicated"],
-      "example": "Popped me a Perc' and went ooh on her titties/Smokin' exotic, I'm zooted, I'm litty"
-    },
-    "bangin’": {
-      "type": "noun",
-      "definitions": [
-        "of extraordinary quality",
-        "attractive or desirable"
-      ],
-      "example": "Goddamn, backyard's bangin’ like a Benzie/If I was jiggy, you'd be spotted like Spuds McKenzie"
-    },
-    "big willie": {
-      "type": "noun",
-      "definitions": [
-        "someone with a lot of money and luxury goods, usually acquired through hustling",
-        "one with extravagant taste and a penchant for flaunting their wealth."
-      ],
-      "example": "The crew is lampin’ Big Willie-style/Check the chip-toothed smile, plus I profile wild"
-    },
-    "bling": {
-      "type": "noun",
-      "definitions": ["jewelry made primarily of platinum or diamonds characterized by distinct gleam"],
-      "example": "All day my phone ringin' bling, bling, bling/Can see my earring from a mile, bling, bling"
-    },
-    "’bout it": {
-      "type": "adjective",
-      "definitions": [
-        "showing dedication; all about a particular topic or action",
-        "to be thorough in handling one’s business",
-        "down for any and everything",
-        "intrepidness; not showing fear"
-      ],
-      "example": "’Cause I'm bout it, I mean I'm rowdy/I hang with these killas that everyone talk about"
-    },
-    "cheddar": {
-      "type": "noun",
-      "definitions": ["currency; money, usually cash."],
-      "example": "See it's all about the cheddar, nobody do it better/Going back to Cali, strictly for the weather"
-    },
-    "chillaxin’": {
-      "type": "verb",
-      "definitions": ["to chill and relax at the same time."],
-      "example": "I'm just chillaxin'"
-    },
-    "coolio": {
-      "type": "adjective",
-      "definitions": ["remarkably cool or fresh"],
-      "notes": "The name of 1990’s rapper Coolio of “Gangsta’s Paradise” fame."
-    },
-    "cream": {
-      "type": "noun",
-      "definitions": ["currency, usually signaling substantial, long-term wealth"],
-      "example": "Cash rules everything around me/CREAM! Get the money, dolla, dolla bill y’all."
-    },
-    "da bomb": {
-      "type": "noun/verb",
-      "definitions": [
-        "something of surprisingly exceptional quality",
-        "to be explosively good; mind-blowing."
-      ],
-      "example": "The pussy was da bomb, had a nigga on sprung"
-    },
-    "dough": {
-      "type": "noun",
-      "definitions": ["currency; quick means of exchange"],
-      "example": "So think a little 'bout the people minus money/And when you get your dough, why don't you show some kindness, honey?"
-    },
-    "drop it like it’s hot": {
-      "type": "verb",
-      "definitions": ["to drop one’s backside quickly to the rhythm of a song, catching it just before it touches the floor."],
-      "example": "After you back it up, then stop/Then wha, wha, what, drop drop it like it's hot"
-    },
-    "everything is everything": {
-      "type": "phrase",
-      "definitions": ["it’s all good; used to affirm or confirm that a situation is chill"],
-      "example": "Everything is everything, what is meant to be will be"
-    },
-    "groovy": {
-      "type": "adjective",
-      "definitions": [
-        "cool; used to confirm that everything is OK",
-        "often uttered during the use of hallucinogenic or psychedelic drugs."
-      ],
-      "example": "Groovy dude, not to prove to be rude/But this stuff is like what you might put on movie food"
-    },
-    "holla back": {
-      "type": "verb",
-      "definitions": ["to reply in order to continue a correspondence with a friend or new acquaintance."],
-      "example": "It's alright, you heard? It's alright, holla back",
-      "notes": "Officially died in 2005, after the release of Gwen Stefani’s “Hollaback Girl”"
-    },
-    "hooty hoo": {
-      "type": "noun",
-      "definitions": [
-        "call used by hustlers to signal the presence of police.",
-        "tribal utterance acknowledging a friend."
-      ],
-      "example": "One for the playas at the crib, dank and dranks/And two is for the sound, Hootie Hoo that I make"
-    },
-    "keepin’ it real": {
-      "type": "verb",
-      "definitions": ["the act of staying true to one’s self or upbringing"],
-      "example": "Keepin’ it real, packin’ steel, getting’ high/’Cause life’s a bitch and then ya die"
-    },
-    "live": {
-      "type": "adjective",
-      "definitions": [
-        "full of energy; exciting; lively",
-        "real, authentic"
-      ],
-      "example": "From Bedford Stuyvesant, the livest one/Representin’ BK to the fullest"
-    },
-    "maxin’": {
-      "type": "verb",
-      "definitions": ["to do a whole lot of nothing; relaxing without a care in the world."],
-      "example": "Chillin’ out, maxin’, relaxin’ all cool and, uh, shootin’ some b-ball outside of the school"
-    },
-    "mo money, mo’ problems": {
-      "type": "phrase",
-      "definitions": ["the eternal conundrum of success; the more money you get, the more problems you have."],
-      "example": "I don’t know what they want from me/It’s like the more money we come about, the more problems we see"
-    },
-    "no diggity": {
-      "type": "adjective",
-      "definitions": ["without a doubt; definite; used to show supreme confidence in something"],
-      "example": "I like the players/No diggity, no doubt"
-    },
-    "slammin'": {
-      "type": "adjective",
-      "definitions": ["aggressively good; of a definitely superior quality"],
-      "example": "My rap’s steady slammin’, I keep a heavy cannon/It’s a new sheriff in town, and it ain’t Reggie Hammond."
-    },
-    "sneaks": {
-      "type": "noun",
-      "definitions": ["tennis shoes; kicks; gym shoes"],
-      "example": "Freaks be movin' in fly sneaks/Two finger rings and gold teeth and ain't afraid to hold heat"
-    },
-    "word up": {
-      "type": "adjective/interjection",
-      "definitions": ["interjectional statement of the affirmative; shows enthusiastic agreement"],
-      "example": "Thug changes, and love changes/and best friends become strangers, word up"    
-    }
+    "activis": { "definitions": ["purple lean syrup"] },
+    "bag": { "definitions": ["large amount of money"] },
+    "bando": { "definitions": ["abandoned trap house"] },
+    "bussin'": { "definitions": ["shooting a gun", "extremely good"] },
+    "cap": { "definitions": ["lying or faking"] },
+    "chicken": { "definitions": ["brick of drugs", "money"] },
+    "crash out": { "definitions": ["throw your life away on violence"] },
+    "deadass": { "definitions": ["completely serious"] },
+    "don": { "definitions": ["the untouchable boss"] },
+    "drip": { "definitions": ["expensive luxury clothes"] },
+    "drill": { "definitions": ["to assassinate", "violent street music"] },
+    "fire": { "definitions": ["top tier quality", "gunfire"] },
+    "flex": { "definitions": ["showing off massive wealth"] },
+    "gas": { "definitions": ["exotic high-grade weed"] },
+    "hammer": { "definitions": ["heavy handgun"] },
+    "ice": { "definitions": ["flawless diamonds"] },
+    "lick": { "definitions": ["a highly profitable robbery"] },
+    "mop": { "definitions": ["rifle with a long magazine"] },
+    "motion": { "definitions": ["having serious financial momentum"] },
+    "nina": { "definitions": ["9mm handgun"] },
+    "od": { "definitions": ["taking things way too far"] },
+    "opp": { "definitions": ["sworn enemy"] },
+    "p": { "definitions": ["keeping it player and authentic"] },
+    "pack": { "definitions": ["smoking a dead enemy", "bulk drugs"] },
+    "peon": { "definitions": ["a broke, irrelevant person"] },
+    "quarter": { "definitions": ["250 thousand dollars"] },
+    "racks": { "definitions": ["stacks of thousands of dollars"] },
+    "rat": { "definitions": ["police informant"] },
+    "slatt": { "definitions": ["loyal brother", "slime"] },
+    "spin the block": { "definitions": ["return to enemy territory to shoot"] },
+    "stick": { "definitions": ["assault rifle"] },
+    "trap": { "definitions": ["the drug house", "the hustle lifestyle"] },
+    "washing": { "definitions": ["laundering dirty money into clean equity"] },
+    "zip": { "definitions": ["an ounce of product"] },
+    "zooted": { "definitions": ["heavily intoxicated"] },
+    "dividend": { "definitions": ["corporate payout from street money"] },
+    "leverage": { "definitions": ["holding the power in a deal"] },
+    "clearance": { "definitions": ["having the green light to operate"] },
+    "10-piece": { "definitions": ["ten thousand dollars"] },
+    "40-cal": { "definitions": ["a .40 caliber handgun"] },
+    "addy": { "definitions": ["address or location"] },
+    "all-state": { "definitions": ["operating across state lines"] },
+    "backend": { "definitions": ["payment received after a job or performance"] },
+    "ballin'": { "definitions": ["living an expensive lifestyle"] },
+    "bands": { "definitions": ["stacks of cash, usually $1,000 each"] },
+    "beam": { "definitions": ["laser sight on a firearm"] },
+    "beeper": { "definitions": ["old school pager used for deals"] },
+    "benjis": { "definitions": ["hundred dollar bills"] },
+    "big dawg": { "definitions": ["a person with high status"] },
+    "bird": { "definitions": ["a kilogram of cocaine"] },
+    "blicky": { "definitions": ["a handgun"] },
+    "blue strips": { "definitions": ["new series $100 bills"] },
+    "body": { "definitions": ["a murder credit"] },
+    "bone": { "definitions": ["one dollar"] },
+    "book": { "definitions": ["to run away quickly"] },
+    "booted": { "definitions": ["high on drugs, especially ecstasy"] },
+    "bout it": { "definitions": ["ready for action or violence"] },
+    "bread": { "definitions": ["money"] },
+    "brick": { "definitions": ["a kilogram of drugs"] },
+    "buck": { "definitions": ["one hundred dollars"] },
+    "bump": { "definitions": ["to play music loudly"] },
+    "burner": { "definitions": ["untraceable cell phone or gun"] },
+    "bustdown": { "definitions": ["watch covered in diamonds"] },
+    "cake": { "definitions": ["piled up money"] },
+    "call": { "definitions": ["a drug order"] },
+    "capper": { "definitions": ["someone who lies constantly"] },
+    "choppa": { "definitions": ["AK-47 or large firearm"] },
+    "clapped": { "definitions": ["shot or killed"] },
+    "clean": { "definitions": ["not carrying anything illegal"] },
+    "clout": { "definitions": ["fame and influence"] },
+    "clutch": { "definitions": ["perfect timing"] },
+    "cold": { "definitions": ["ruthless or very good"] },
+    "cook up": { "definitions": ["to manufacture crack cocaine"] },
+    "copper": { "definitions": ["police officer"] },
+    "count": { "definitions": ["the total amount of money"] },
+    "creepin'": { "definitions": ["moving stealthily"] },
+    "cut": { "definitions": ["to dilute drugs for profit"] },
+    "deuce": { "definitions": ["two thousand dollars or a .22 caliber"] },
+    "dig": { "definitions": ["to understand or like"] },
+    "dirt": { "definitions": ["illegal acts or incriminating info"] },
+    "dirty": { "definitions": ["carrying drugs or a used gun"] },
+    "dog": { "definitions": ["close friend"] },
+    "dot": { "definitions": ["red dot laser sight"] },
+    "double back": { "definitions": ["return to a location"] },
+    "double cup": { "definitions": ["styrofoam cups used for lean"] },
+    "draco": { "definitions": ["compact AK-47 style pistol"] },
+    "drain": { "definitions": ["to take all of someone's money"] },
+    "drift": { "definitions": ["to understand the underlying meaning"] },
+    "drop": { "definitions": ["a location for a delivery"] },
+    "dub": { "definitions": ["twenty dollars or a win"] },
+    "e-way": { "definitions": ["the highway"] },
+    "eater": { "definitions": ["someone who performs sexual favors"] },
+    "ends": { "definitions": ["money needed to survive"] },
+    "extendo": { "definitions": ["extended ammunition magazine"] },
+    "faded": { "definitions": ["high or drunk"] },
+    "feds": { "definitions": ["federal agents"] },
+    "feen": { "definitions": ["a drug addict"] },
+    "fifteen": { "definitions": ["fifteen hundred dollars"] },
+    "finna": { "definitions": ["about to do something"] },
+    "flick": { "definitions": ["a movie or a photo"] },
+    "flip": { "definitions": ["to sell something for profit"] },
+    "front": { "definitions": ["to give drugs on credit"] },
+    "full clip": { "definitions": ["fully loaded magazine"] },
+    "g-wagon": { "definitions": ["Mercedes-Benz G-Class"] },
+    "gang": { "definitions": ["the immediate circle of friends"] },
+    "gat": { "definitions": ["a firearm"] },
+    "geeked": { "definitions": ["very high on stimulants"] },
+    "ghost": { "definitions": ["to disappear suddenly"] },
+    "glizzy": { "definitions": ["a Glock handgun"] },
+    "glow up": { "definitions": ["significant improvement in appearance/wealth"] },
+    "goon": { "definitions": ["a hired thug"] },
+    "gotchu": { "definitions": ["I understand or I have your back"] },
+    "grand": { "definitions": ["one thousand dollars"] },
+    "green light": { "definitions": ["permission to kill"] },
+    "grill": { "definitions": ["jewelry worn over teeth"] },
+    "grind": { "definitions": ["working hard for money"] },
+    "guap": { "definitions": ["large amount of cash"] },
+    "gut": { "definitions": ["to remove tobacco from a cigar"] },
+    "half-a-brick": { "definitions": ["500 grams of drugs"] },
+    "handle": { "definitions": ["to take care of business"] },
+    "heat": { "definitions": ["a gun or police pressure"] },
+    "heavy": { "definitions": ["having a lot of influence or weight"] },
+    "hollows": { "definitions": ["hollow-point bullets"] },
+    "hood": { "definitions": ["the neighborhood"] },
+    "hot": { "definitions": ["watched by police"] },
+    "hustle": { "definitions": ["any way to make money"] },
+    "iron": { "definitions": ["a handgun"] },
+    "jack": { "definitions": ["to steal or rob"] },
+    "jam": { "definitions": ["a difficult situation"] },
+    "jits": { "definitions": ["young kids or teenagers"] },
+    "joint": { "definitions": ["a prison or a marijuana cigarette"] },
+    "jug": { "definitions": ["to hustle or swindle"] },
+    "juice": { "definitions": ["respect and influence"] },
+    "jumpin'": { "definitions": ["very busy or active"] },
+    "k": { "definitions": ["one thousand or an AK-47"] },
+    "keep it 100": { "definitions": ["to stay completely honest"] },
+    "keys": { "definitions": ["kilograms of drugs"] },
+    "kicks": { "definitions": ["shoes"] },
+    "kite": { "definitions": ["a letter sent from prison"] },
+    "know the vibes": { "definitions": ["understanding the situation"] },
+    "lackin'": { "definitions": ["caught without a weapon"] },
+    "lame": { "definitions": ["unoriginal or boring person"] },
+    "lay low": { "definitions": ["to hide from the law"] },
+    "lean": { "definitions": ["codeine cough syrup mixture"] },
+    "leftovers": { "definitions": ["remaining drugs or money"] },
+    "legit": { "definitions": ["legal business"] },
+    "light up": { "definitions": ["to shoot at"] },
+    "links": { "definitions": ["connections or jewelry"] },
+    "lit": { "definitions": ["exciting or intoxicated"] },
+    "loud": { "definitions": ["strong smelling marijuana"] },
+    "lowkey": { "definitions": ["secretly or quietly"] },
+    "main squeeze": { "definitions": ["primary romantic partner"] },
+    "mark": { "definitions": ["a target for a scam"] },
+    "merch": { "definitions": ["to prove or provide evidence"] },
+    "mill": { "definitions": ["one million dollars"] },
+    "mission": { "definitions": ["a specific task or hit"] },
+    "motherland": { "definitions": ["the original neighborhood"] },
+    "on god": { "definitions": ["I swear on everything"] },
+    "on sight": { "definitions": ["immediate action upon seeing someone"] },
+    "ops": { "definitions": ["police or opposition"] },
+    "out the mud": { "definitions": ["rising from poverty"] },
+    "paper": { "definitions": ["money"] },
+    "pay scale": { "definitions": ["the level of income"] },
+    "perc": { "definitions": ["Percocet pill"] },
+    "piece": { "definitions": ["a gun"] },
+    "pipe down": { "definitions": ["to be quiet"] },
+    "player": { "definitions": ["someone who plays the game well"] },
+    "plug": { "definitions": ["a large-scale supplier"] },
+    "pop off": { "definitions": ["to start a fight or shoot"] },
+    "pull up": { "definitions": ["to arrive at a location"] },
+    "pump": { "definitions": ["a shotgun"] },
+    "push": { "definitions": ["to sell drugs"] },
+    "rain": { "definitions": ["throwing money in the air"] },
+    "raw": { "definitions": ["undiluted drugs"] },
+    "real one": { "definitions": ["a loyal person"] },
+    "ride or die": { "definitions": ["loyal to the end"] },
+    "roll up": { "definitions": ["to prepare a marijuana cigar"] },
+    "run it up": { "definitions": ["to make a lot of money quickly"] },
+    "sauce": { "definitions": ["style and charisma"] },
+    "score": { "definitions": ["to make a successful deal or kill"] },
+    "serve": { "definitions": ["to sell drugs to a customer"] },
+    "shook": { "definitions": ["scared or intimidated"] },
+    "shots": { "definitions": ["gunfire or insults"] },
+    "slide": { "definitions": ["to go over to someone's house"] },
+    "slime": { "definitions": ["a close friend"] },
+    "smoke": { "definitions": ["conflict or trouble"] },
+    "snack": { "definitions": ["an attractive person"] },
+    "snitch": { "definitions": ["informant"] },
+    "stashed": { "definitions": ["hidden away"] },
+    "stay up": { "definitions": ["remain positive or alert"] },
+    "strapped": { "definitions": ["carrying a gun"] },
+    "stunt": { "definitions": ["to show off"] },
+    "swag": { "definitions": ["style or confidence"] },
+    "swerve": { "definitions": ["to avoid or depart"] },
+    "taxin'": { "definitions": ["charging high prices"] },
+    "tea": { "definitions": ["gossip"] },
+    "ten-toes-down": { "definitions": ["fully committed and grounded"] },
+    "thraxx": { "definitions": ["potent marijuana"] },
+    "ticket": { "definitions": ["a way out of the struggle"] },
+    "tight": { "definitions": ["close-knit or angry"] },
+    "toolbox": { "definitions": ["a car full of weapons"] },
+    "tote": { "definitions": ["to carry a weapon"] },
+    "touchdown": { "definitions": ["successful delivery of product"] },
+    "wack": { "definitions": ["terrible or fake"] },
+    "walk down": { "definitions": ["to approach on foot to shoot"] },
+    "weight": { "definitions": ["large quantity of drugs"] },
+    "wet": { "definitions": ["covered in blood or high on PCP"] },
+    "whip": { "definitions": ["an expensive car"] },
+    "white girl": { "definitions": ["cocaine"] },
+    "whole thang": { "definitions": ["a full kilogram"] },
+    "work": { "definitions": ["drugs being sold"] },
+    "yard": { "definitions": ["one hundred dollars"] },
+    "yerc": { "definitions": ["slang for Percocet"] },
+    "yola": { "definitions": ["cocaine"] },
+    "youngin": { "definitions": ["a younger associate"] },
+    "zone": { "definitions": ["an ounce of drugs"] }
   }
 }
