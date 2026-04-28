@@ -328,19 +328,23 @@ Write the draft now. Do not write action words like SNAP or STEP into the lyrics
     )
     draft_text = outputs["choices"][0]["text"].strip()
 
-    # 🚨 SURGICAL FIX: The ultimate refinement threat
+   # Strictly translate syllables to a physical word cap
+    word_cap = max(3, int(max_syllables * 0.8))
+
+    # 🚨 SURGICAL FIX: Restructured refinement to prevent rule-echoing and enforce word caps
     refine_prompt = f"""<|im_start|>user
-[THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
-You drafted this {bars}-bar {section_type.upper()}:
-"{draft_text}"
+Rewrite the following draft to fix the rhythm.
 
-CRITICAL REFINEMENT COMMANDS (IF YOU FAIL THESE, THE PARSER WILL CRASH):
-1. MATH & RHYME: Enforce the strict {max_syllables} syllable limit per line! Enforce the {rhyme_scheme} rhyme scheme.
-2. OBEY THE POCKET: {pocket_instruction}
-3. THE ONE PIPE RULE: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE. NOT ZERO PIPES. NOT THREE PIPES. EXACTLY ONE.
-4. NO METADATA. DO NOT output section headers like [VERSE]. DO NOT write verse labels. Output ONLY the raw {bars} lines of lyrics.
+[CRITICAL RULES]
+1. LENGTH: DO NOT exceed {word_cap} words per line! Cut out unnecessary words. Be extremely brief.
+2. RHYME: End the lines using a strict {rhyme_scheme} rhyming pattern.
+3. FORMAT: Put exactly one vertical bar '|' in the middle of each line.
+4. POCKET: {pocket_instruction}
 
-Output ONLY the final {bars} lines now.
+[DRAFT TO REWRITE]
+{draft_text}
+
+Output ONLY the {bars} rewritten lines. Do not output rules, numbers, or headers.
 <|im_end|>
 <|im_start|>assistant
 """
