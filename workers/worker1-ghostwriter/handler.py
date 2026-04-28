@@ -264,9 +264,10 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         active_strikes = [v for v in pattern_array if v != 6]
         accent_target = len(active_strikes)
         
+        estimated_words = max(3, int(max_syllables * 0.75)) # Translates syllables to a rough word cap
         dna_constraint = f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line. Check your math. If you exceed this, the software will crash.
+1. LENGTH LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables (approx {estimated_words} words) per line. Be concise. If you write long sentences, the software will crash.
 2. RHYTHMIC ACCENTS: Anchor your line on exactly {accent_target} heavy stressed words.
 3. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
 4. POCKET PLACEMENT: {pocket_instruction}
@@ -379,15 +380,17 @@ Output ONLY the final {bars} lines now.
             
         line = line.strip('|').strip().upper()
 
+        # Force the Pocket Punctuation
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
             if not line.startswith("..."): line = "..." + line
         elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
-            if not line.endswith(","): line = line + ","
+            line = line.rstrip('.,?!;') + ","
+        elif "CASCADE" in pocket_instruction:
+            line = line.rstrip('.,?!;') # Force strip all ending punctuation for cascade
         elif "period" in pocket_instruction:
-            if not line.endswith("."): line = line + "."
+            line = line.rstrip('.,?!;') + "."
 
-        # 🚨 SURGICAL FIX: The Indestructible Python Pipe Fallback
-        # If the LLM hallucinates 0 pipes or >1 pipes, Python forcibly fixes it so the frontend doesn't crash.
+        # The Indestructible Python Pipe Fallback
         parts = [p.strip() for p in line.split('|') if p.strip()]
         if len(parts) == 0:
             line = "YEAH | WE STAY IN MOTION"
@@ -401,7 +404,9 @@ Output ONLY the final {bars} lines now.
             right = " ".join(parts[mid_part:])
             line = f"{left} | {right}"
             
-        if len(clean_lines) > 0 and clean_lines[-1] == line:
+        # Enhanced Deduplicator: Strip quotes before comparing to catch sneaky loops
+        clean_compare_line = line.replace('"', '').replace("'", "")
+        if len(clean_lines) > 0 and clean_lines[-1].replace('"', '').replace("'", "") == clean_compare_line:
             continue 
             
         if line: clean_lines.append(line)
