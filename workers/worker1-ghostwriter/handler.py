@@ -342,7 +342,7 @@ Rewrite the following draft to fix the rhythm.
 2. RHYME: End the lines using a strict {rhyme_scheme} rhyming pattern.
 3. FORMAT: Put exactly one vertical bar '|' in the middle of each line.
 4. POCKET: {pocket_instruction}
-5. STRIKE: {strike_zone}
+
 
 [DRAFT TO REWRITE]
 {draft_text}
