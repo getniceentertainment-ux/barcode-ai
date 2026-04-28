@@ -322,10 +322,10 @@ Write the draft now. Do not write action words like SNAP or STEP into the lyrics
     full_prompt_draft = system_prompt + draft_prompt
     outputs = model(
         full_prompt_draft, 
-        max_tokens=64 * bars, 
+        max_tokens=40 * bars, 
         temperature=0.85, 
         top_p=0.9, 
-        repeat_penalty=1.15, 
+        repeat_penalty=1.25, 
         stop=["<|im_end|>"]
     )
     draft_text = outputs["choices"][0]["text"].strip()
@@ -354,10 +354,10 @@ Output ONLY the {bars} rewritten lines. Do not output rules, numbers, or headers
     full_prompt_refine = system_prompt + refine_prompt
     outputs_refine = model(
         full_prompt_refine, 
-        max_tokens=64 * bars, 
-        temperature=0.5, 
+        max_tokens=40 * bars, 
+        temperature=0.85, 
         top_p=0.9, 
-        repeat_penalty=1.1, 
+        repeat_penalty=1.25, 
         stop=["<|im_end|>"]
     )
     final_text = outputs_refine["choices"][0]["text"].strip()
