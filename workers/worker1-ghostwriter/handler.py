@@ -5,6 +5,7 @@ import re
 import runpod
 from llama_cpp import Llama
 from huggingface_hub import hf_hub_download
+import multiprocessing
 
 # --- PROPRIETARY GETNICE ENGINE CONFIG ---
 REPO_ID = "talo85/getnice" 
@@ -110,6 +111,7 @@ def init_model():
             n_gpu_layers=-1,
             flash_attn=True,
             n_batch=512,
+            n_threads=multiprocessing.cpu_count(), # <--- Add this to speed up prompt reading
             use_mlock=False
         )
         print("✅ GGUF ENGINE ACCELERATED.")
