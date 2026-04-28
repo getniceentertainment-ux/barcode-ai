@@ -331,22 +331,23 @@ Write the draft now. Do not write action words like SNAP or STEP into the lyrics
     draft_text = outputs["choices"][0]["text"].strip()
 
    # Strictly translate syllables to a physical word cap
-    word_cap = max(3, int(max_syllables * 0.8))
+    word_cap = max(2, int(max_syllables * 0.6))
 
     # 🚨 SURGICAL FIX: Restructured refinement to prevent rule-echoing and enforce word caps
     refine_prompt = f"""<|im_start|>user
 Rewrite the following draft to fix the rhythm.
 
-[CRITICAL RULES]
-1. LENGTH: DO NOT exceed {word_cap} words per line! Cut out unnecessary words. Be extremely brief.
+[CRITICAL MATH LAWS - DO NOT VIOLATE]
+1. LENGTH: YOU ARE RESTRICTED TO A MAXIMUM OF {word_cap} WORDS PER LINE. If a line has more than {word_cap} words, the system will crash. Be extremely brief.
 2. RHYME: End the lines using a strict {rhyme_scheme} rhyming pattern.
 3. FORMAT: Put exactly one vertical bar '|' in the middle of each line.
 4. POCKET: {pocket_instruction}
+5. STRIKE: {strike_zone}
 
 [DRAFT TO REWRITE]
 {draft_text}
 
-Output ONLY the {bars} rewritten lines. Do not output rules, numbers, or headers.
+Output ONLY the {bars} rewritten lines. Count your words.
 <|im_end|>
 <|im_start|>assistant
 """
@@ -355,9 +356,9 @@ Output ONLY the {bars} rewritten lines. Do not output rules, numbers, or headers
     outputs_refine = model(
         full_prompt_refine, 
         max_tokens=40 * bars, 
-        temperature=0.85, 
+        temperature=0.3, 
         top_p=0.9, 
-        repeat_penalty=1.25, 
+        repeat_penalty=1.05, 
         stop=["<|im_end|>"]
     )
     final_text = outputs_refine["choices"][0]["text"].strip()
@@ -377,6 +378,7 @@ Output ONLY the {bars} rewritten lines. Do not output rules, numbers, or headers
     if not banned_words_map: banned_words_map = {}
 
     for line in raw_lines:
+        # 1. Clean up garbage characters and action words
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
@@ -386,7 +388,15 @@ Output ONLY the {bars} rewritten lines. Do not output rules, numbers, or headers
             
         line = line.strip('|').strip().upper()
 
-        # Force the Pocket Punctuation
+        # 🚨 2. THE WORD GUILLOTINE 🚨
+        # Chop run-on sentences to save the MIDI sequencer BEFORE doing pipes or punctuation
+        words_in_line = line.split()
+        max_allowed_words = word_cap + 2 
+        
+        if len(words_in_line) > max_allowed_words:
+            line = " ".join(words_in_line[:max_allowed_words])
+
+        # 3. Force the Pocket Punctuation
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
             if not line.startswith("..."): line = "..." + line
         elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
@@ -396,7 +406,8 @@ Output ONLY the {bars} rewritten lines. Do not output rules, numbers, or headers
         elif "period" in pocket_instruction:
             line = line.rstrip('.,?!;') + "."
 
-        # The Indestructible Python Pipe Fallback
+        # 4. The Indestructible Python Pipe Fallback
+        # Ensures every single line has exactly one | perfectly in the middle
         parts = [p.strip() for p in line.split('|') if p.strip()]
         if len(parts) == 0:
             line = "YEAH | WE STAY IN MOTION"
@@ -410,13 +421,17 @@ Output ONLY the {bars} rewritten lines. Do not output rules, numbers, or headers
             right = " ".join(parts[mid_part:])
             line = f"{left} | {right}"
             
-        # Enhanced Deduplicator: Strip quotes before comparing to catch sneaky loops
+        # 5. Enhanced Deduplicator
+        # Prevents the AI from repeating the exact same line twice in a row
         clean_compare_line = line.replace('"', '').replace("'", "")
         if len(clean_lines) > 0 and clean_lines[-1].replace('"', '').replace("'", "") == clean_compare_line:
             continue 
             
+        # 6. Add the surviving, perfect line to the bucket
         if line: clean_lines.append(line)
     
+    # 🚨 7. THE PANIC PADDER 🚨
+    # If the AI didn't write enough lines to fill the requested bars, pad it out so the UI doesn't crash
     while len(clean_lines) < bars:
         safe_fallback = clean_lines[-1] if len(clean_lines) > 0 else "YEAH | WE STAY IN MOTION"
         clean_lines.append(safe_fallback.upper())
