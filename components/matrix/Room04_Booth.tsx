@@ -16,12 +16,17 @@ type LyricLine = { id: string; text: string; originalText: string; startTime: nu
 
 // --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR (FALLBACK ONLY) ---
 function estimateSyllables(word: string): number {
-  const w = word.toLowerCase().replace(/[^a-z]/g, '');
-  if (!w) return 1;
+  let w = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (!w) return 0;
   if (w.length <= 3) return 1;
-  let count = (w.match(/[aeiouy]+/g) || []).length;
-  if (w.endsWith('e') && !w.endsWith('le')) count--;
-  return Math.max(1, count);
+  
+  // Mirror the Python regex for silent endings
+  w = w.replace(/([^laeiouy]es|ed|[^laeiouy]e)$/, '');
+  w = w.replace(/^y/, '');
+  
+  // Count vowel clusters
+  const matches = w.match(/[aeiouy]{1,2}/g);
+  return Math.max(1, matches ? matches.length : 1);
 }
 
 // --- THE VISUAL SYLLABLE CHUNKER (FALLBACK ONLY) ---

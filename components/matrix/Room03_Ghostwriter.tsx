@@ -428,12 +428,24 @@ export default function Room03_Ghostwriter() {
       if (!res.ok) throw new Error("Refinement API Error");
 
       const data = await res.json();
-      const updatedLyrics = lyrics.replace(selectedLine, data.refinedLine);
-      setLyrics(updatedLyrics);
-      setGeneratedLyrics(updatedLyrics);
-      setRefineInstruction("");
-      setSelectedLine("");
-      if(addToast) addToast("Micro-refinement applied.", "success");
+      
+      if (data.refinedLine) {
+        // 1. EXTRACT THE TIMESTAMP (e.g., "(1:23) ") from the old line
+        const timeMatch = selectedLine.match(/^\(\d+:\d{2}\)\s*/);
+        const timePrefix = timeMatch ? timeMatch[0] : "";
+
+        // 2. GLUE IT TOGETHER so Room 4 timing doesn't break
+        const finalRefinedLine = `${timePrefix}${data.refinedLine}`;
+
+        // 3. UPDATE LOCAL STATE AND STORE
+        const updatedLyrics = lyrics.replace(selectedLine, finalRefinedLine);
+        setLyrics(updatedLyrics);
+        setGeneratedLyrics(updatedLyrics);
+        
+        setRefineInstruction("");
+        setSelectedLine("");
+        if(addToast) addToast("Micro-refinement applied.", "success");
+      }
       
     } catch (err: any) {
       if(addToast) addToast("Failed to refine line.", "error");
@@ -441,6 +453,7 @@ export default function Room03_Ghostwriter() {
       setIsRefining(false);
     }
   };
+
 
   return (
     <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500">

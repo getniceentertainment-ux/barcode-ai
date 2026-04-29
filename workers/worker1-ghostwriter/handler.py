@@ -14,6 +14,21 @@ HF_TOKEN = os.environ.get("HF_TOKEN")
 
 model = None
 
+def count_syllables(word):
+    """Accurately counts syllables in a word using linguistic vowel clustering."""
+    word = word.lower()
+    word = re.sub(r'[^a-z]', '', word)
+    if not word: return 0
+    if len(word) <= 3: return 1
+    
+    # Remove silent 'e', 'es', and 'ed'
+    word = re.sub(r'(?:[^laeiouy]es|ed|[^laeiouy]e)$', '', word)
+    word = re.sub(r'^y', '', word)
+    
+    # Count continuous vowel groups
+    matches = re.findall(r'[aeiouy]{1,2}', word)
+    return max(1, len(matches))
+
 def load_local_file(filename):
     """Reads the Intel files directly from the Docker container's hard drive."""
     filepath = os.path.join("/app", filename)
@@ -108,7 +123,7 @@ def init_model():
             n_gpu_layers=-1,
             flash_attn=True,
             n_batch=512,
-            n_threads=multiprocessing.cpu_count(),
+            n_threads=multiprocessing.cpu_count(), 
             use_mlock=False
         )
         print("✅ GGUF ENGINE ACCELERATED.")
@@ -261,7 +276,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         active_strikes = [v for v in pattern_array if v != 6]
         accent_target = len(active_strikes)
         
-        # Softened Accent Math - Minimum 5 words guaranteed
         estimated_words = max(5, int(max_syllables * 0.8)) 
         
         dna_constraint = f"""
@@ -328,7 +342,6 @@ Write the draft now. Do not write action words like SNAP or STEP into the lyrics
     )
     draft_text = outputs["choices"][0]["text"].strip()
 
-    # Pass 2 Safe Word Cap
     word_cap = max(5, int(max_syllables * 0.8))
 
     refine_prompt = f"""<|im_start|>user
@@ -347,7 +360,7 @@ Output ONLY the {bars} rewritten lines. Count your words.
 <|im_end|>
 <|im_start|>assistant
 """
-    # PASS 2: The Refinement (Creative enough to stop loops, strict enough to follow rules)
+    # PASS 2: The Refinement 
     full_prompt_refine = system_prompt + refine_prompt
     outputs_refine = model(
         full_prompt_refine, 
@@ -358,9 +371,7 @@ Output ONLY the {bars} rewritten lines. Count your words.
         stop=["<|im_end|>"]
     )
     
-    # 🚨 SYNTAX BUG FIXED HERE 🚨
     final_text = outputs_refine["choices"][0]["text"].strip()
-
     final_text = final_text.replace("<|im_end|>", "").strip()
     final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
     final_text = re.sub(r'\[.*?\]', '', final_text) 
@@ -377,7 +388,7 @@ Output ONLY the {bars} rewritten lines. Count your words.
     if not banned_words_map: banned_words_map = {}
 
     for line in raw_lines:
-        # NEW: Aggressively strip numbers from the start of the line (e.g., "1.", "2)", "[3]")
+        # Aggressively strip numbers and letter labels (A:)
         line = re.sub(r'^([a-zA-Z][:.-]\s*|[\d\.\)\]\s]+)', '', line).strip()
         
         # 1. Clean up garbage characters and action words
@@ -386,15 +397,34 @@ Output ONLY the {bars} rewritten lines. Count your words.
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
         for action_word in ["SNAP", "STEP", "HOLD", "GLIDE", "GHOST", "EXTREME-DRAG"]:
             line = re.sub(rf'\b{action_word}\b', '', line, flags=re.IGNORECASE).strip()
-            
-        line = line.strip('|').strip().upper()
 
-        # THE SMART WORD GUILLOTINE
+        # Strip the pipe temporarily to do the math
+        line = line.replace('|', '').strip().upper()
+
+        # 🚨 THE REVERSE SYLLABLE GUILLOTINE 🚨
         words_in_line = line.split()
-        max_allowed_words = word_cap + 5
+        allowed_words = []
+        current_syls = 0
+        buffer_limit = max_syllables + 2 
         
-        if len(words_in_line) > max_allowed_words:
-            line = " ".join(words_in_line[:max_allowed_words]) + "..."
+        # Read the sentence BACKWARDS to protect the rhyme
+        for w in reversed(words_in_line):
+            syls = count_syllables(w)
+            if current_syls + syls > buffer_limit:
+                break 
+            allowed_words.insert(0, w) # Insert at the front to rebuild the sentence
+            current_syls += syls
+
+        if len(allowed_words) == 0:
+            allowed_words = ["YEAH", "WE", "STAY", "IN", "MOTION"]
+
+        # If we chopped the front, add the pickup syncopation
+        if len(allowed_words) < len(words_in_line):
+            allowed_words[0] = "..." + allowed_words[0]
+
+        # Re-apply the perfectly balanced Room 4 Pipe
+        mid = max(1, len(allowed_words) // 2)
+        line = " ".join(allowed_words[:mid]) + " | " + " ".join(allowed_words[mid:])
 
         # FORCE POCKET PUNCTUATION
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
@@ -406,34 +436,15 @@ Output ONLY the {bars} rewritten lines. Count your words.
         elif "period" in pocket_instruction:
             line = line.rstrip('.,?!;') + "."
 
-        # THE MUSICAL PIPE FALLBACK
-        parts = [p.strip() for p in line.split('|') if p.strip()]
-        if len(parts) == 0:
-            line = "YEAH | WE STAY IN MOTION"
-        elif len(parts) == 1:
-            if "," in parts[0]:
-                line = parts[0].replace(",", " |", 1)
-            else:
-                words = parts[0].split()
-                mid = max(1, len(words) // 2)
-                line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
-        else:
-            mid_part = max(1, len(parts) // 2)
-            left = " ".join(parts[:mid_part])
-            right = " ".join(parts[mid_part:])
-            line = f"{left} | {right}"
-            
-        # 4. Enhanced Deduplicator
+        # Enhanced Deduplicator
         clean_compare_line = line.replace('"', '').replace("'", "")
         if len(clean_lines) > 0 and clean_lines[-1].replace('"', '').replace("'", "") == clean_compare_line:
             continue 
 
         # 🚨 THE GHOST KILLER 🚨
-        # If the cleanup regex stripped the line down to just a number or a tiny word, discard it!
         if len(line) < 4:
             continue
 
-        # 5. Add the surviving, perfect line to the bucket    
         if line: clean_lines.append(line)
     
     # THE PANIC PADDER
@@ -500,17 +511,18 @@ CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Output
         refined_line = outputs["choices"][0]["text"].strip()
         refined_line = refined_line.replace("<|im_end|>", "").strip()
         refined_line = re.sub(r'^["\']|["\']$', '', refined_line).upper() 
+        
         # MICRO-REFINEMENT SAFETY NET: Ensure the pipe exists for Room 4
         if "|" not in refined_line:
             parts = refined_line.split(",")
             if len(parts) > 1:
-                refined_line = parts[0] + " |" + ",".join(parts[1:])
+                refined_line = parts[0] + " | " + ",".join(parts[1:])
             else:
                 words = refined_line.split()
                 mid = max(1, len(words) // 2)
                 refined_line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
                 
-                return {"refinedLine": refined_line}
+        return {"refinedLine": refined_line}
 
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [])
