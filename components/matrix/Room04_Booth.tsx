@@ -10,26 +10,23 @@ import { supabase } from "../../lib/supabase";
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
-// SURGICAL FIX: Enforced strict typing so the Grid knows these properties exist
 type WordMapping = { id: string; word: string; startTime: number; duration: number; slot: number; isWordEnd?: boolean };
 type LyricLine = { id: string; text: string; originalText: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[]; barIndex: number };
 
-// --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR (FALLBACK ONLY) ---
+// --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR ---
 function estimateSyllables(word: string): number {
   let w = word.toLowerCase().replace(/[^a-z]/g, '');
   if (!w) return 0;
   if (w.length <= 3) return 1;
   
-  // Mirror the Python regex for silent endings
   w = w.replace(/([^laeiouy]es|ed|[^laeiouy]e)$/, '');
   w = w.replace(/^y/, '');
   
-  // Count vowel clusters
   const matches = w.match(/[aeiouy]{1,2}/g);
   return Math.max(1, matches ? matches.length : 1);
 }
 
-// --- THE VISUAL SYLLABLE CHUNKER (FALLBACK ONLY) ---
+// --- THE VISUAL SYLLABLE CHUNKER ---
 function chunkWordForVisuals(word: string): string[] {
   const match = word.match(/^([^a-zA-Z]*)([a-zA-Z\']+)([^a-zA-Z]*)$/);
   if (!match || match[2].length <= 3) return [word];
@@ -69,11 +66,11 @@ function chunkWordForVisuals(word: string): string[] {
   return chunks.filter(c => c.length > 0);
 }
 
-// --- TTS SILENCE TRIMMER (Kills Dead Air) ---
+// --- TTS SILENCE TRIMMER (Fix 5: Pad increased, threshold lowered to protect consonants) ---
 function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
   let startOffset = 0;
   let endOffset = buffer.length;
-  const threshold = 0.03; 
+  const threshold = 0.015; // Lowered from 0.03 to protect 'P' and 'B' attacks
   
   for (let c = 0; c < buffer.numberOfChannels; c++) {
     const data = buffer.getChannelData(c);
@@ -87,7 +84,7 @@ function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
       if (Math.abs(data[i]) > threshold) { lastSignal = i; break; }
     }
     
-    const pad = Math.floor(buffer.sampleRate * 0.08); 
+    const pad = Math.floor(buffer.sampleRate * 0.12); // Increased padding from 0.08 to prevent clipping
     if (c === 0) {
       startOffset = Math.max(0, firstSignal - pad);
       endOffset = Math.min(data.length, lastSignal + pad);
@@ -205,55 +202,27 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
-// --- THE MACRO-RHYTHMIC FLOW VAULT ---
 const FLOW_VAULT: Record<string, number[][]> = {
-  "getnice_hybrid": [
-    [4, 2, 2,  3, 1, 4,  2, 2, 2, 2,  4, 4], 
-    [3, 1, 2, 2],
-    [6, 2, 4, 2, 2] 
-  ],
-  "chopper": [
-    [1, 1, 1, 1], 
-    [2, 1, 1, 1, 1, 2] 
-  ],
-  "heartbeat": [
-    [2, 2, 2, 2], 
-    [4, 2, 2, 4, 4] 
-  ],
-  "triplet": [
-    [3, 3, 2], 
-    [2, 2, 2, 3, 3, 4] 
-  ],
-  "lazy": [
-    [4, 2, 2], 
-    [6, 2, 8] 
-  ]
+  "getnice_hybrid": [[4, 2, 2,  3, 1, 4,  2, 2, 2, 2,  4, 4], [3, 1, 2, 2], [6, 2, 4, 2, 2]],
+  "chopper": [[1, 1, 1, 1], [2, 1, 1, 1, 1, 2]],
+  "heartbeat": [[2, 2, 2, 2], [4, 2, 2, 4, 4]],
+  "triplet": [[3, 3, 2], [2, 2, 2, 3, 3, 4]],
+  "lazy": [[4, 2, 2], [6, 2, 8]]
 };
 
-// --- ORPHEUS PUPPETEER: Maps Math & Structure to Semantic Tags ---
+// --- ORPHEUS PUPPETEER ---
 function getOrpheusTags(sectionType: string, patternArray: number[]): string {
   let tags = [];
 
-  // 1. Structural Contour (Hook vs. Verse)
-  if (sectionType === "HOOK") {
-    tags.push("[singsong]", "[excited]", "[loud]"); // Melodic, maximum energy
-  } else if (sectionType === "INTRO" || sectionType === "OUTRO") {
-    tags.push("[conversational]", "[confident]"); // Stripped [casual] so it doesn't get lazy
-  } else {
-    // VERSES
-    tags.push("[intense]", "[passionate]", "[authoritatively]"); // Pure projection and swagger
-  }
+  if (sectionType === "HOOK") tags.push("[singsong]", "[excited]", "[loud]");
+  else if (sectionType === "INTRO" || sectionType === "OUTRO") tags.push("[conversational]", "[confident]");
+  else tags.push("[intense]", "[passionate]", "[authoritatively]");
 
-  // 2. Rhythmic Puppeteering (Analyzing the Array)
   const avgDensity = patternArray.reduce((a, b) => a + b, 0) / patternArray.length;
 
-  if (avgDensity <= 1.5) {
-    tags.push("[rapid babbling]", "[urgent]"); // Adds urgency to fast flows
-  } else if (avgDensity >= 4) {
-    tags.push("[lazy]", "[dropping tone]"); 
-  } else if (patternArray.includes(3)) {
-    tags.push("[bouncing]"); 
-  }
+  if (avgDensity <= 1.5) tags.push("[rapid babbling]", "[urgent]"); 
+  else if (avgDensity >= 4) tags.push("[lazy]", "[dropping tone]"); 
+  else if (patternArray.includes(3)) tags.push("[bouncing]"); 
 
   return tags.join(" ");
 }
@@ -308,7 +277,6 @@ export default function Room04_Booth() {
   const teleprompterRef = useRef<HTMLDivElement>(null);
   const timeDisplayRef = useRef<HTMLDivElement>(null);
 
-  // --- HIGH-PERFORMANCE rAF SYNC REFS ---
   const animationFrameRef = useRef<number>();
   const lastActiveLineRef = useRef<number>(-1);
   const isPlayingRef = useRef(false);
@@ -317,7 +285,6 @@ export default function Room04_Booth() {
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
-  // --- 1. THE SNAKING DRAG & DROP LOGIC ---
   const handleDragStart = (e: React.DragEvent, lineId: string, syllableId: string, originalSlot: number) => {
     e.dataTransfer.setData("application/json", JSON.stringify({ lineId, syllableId, originalSlot }));
   };
@@ -333,7 +300,6 @@ export default function Room04_Booth() {
     const delta = targetSlot - originalSlot;
     if (delta === 0) return;
 
-    // 🚨 FIX 3: Route Drag & Drop update to local lyricLines so the Grid mathematically updates
     setLyricLines(prev => prev.map(line => {
       if (line.id === targetLineId && !line.isHeader && line.words) {
         const targetIndex = line.words.findIndex(w => w.id === syllableId);
@@ -368,7 +334,6 @@ export default function Room04_Booth() {
     setGuideProgress(0);
     
     try {
-      // 🚨 FIX 4: Guide reads from the mathematically accurate local state, not the stale store
       const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
       if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
@@ -380,59 +345,60 @@ export default function Room04_Booth() {
 
       for (let i = 0; i < parsedLines.length; i++) {
               const line = parsedLines[i];
-              
-              // 🚨 FIX 2: Restore Guide Progress Percentage
               setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
 
               try {
-                // 🚨 THE ORPHEUS PUPPETEER PAYLOAD
-                // Identify the section type (e.g., HOOK, VERSE) by finding the closest header before this line
                 const activeHeaderLine = parsedLines.slice(0, i).reverse().find(l => l.text.startsWith('['));
                 const sectionType = activeHeaderLine ? activeHeaderLine.text.replace(/\[|\]/g, '') : "VERSE";
 
-                // Extract the pattern associated with this flow style to determine rhythm
                 const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
                 const activePattern = activeVariations[i % activeVariations.length];
 
-                // Generate the specific bracket tags for Orpheus
                 const semanticTags = getOrpheusTags(sectionType, activePattern);
 
-                // 🚨 SURGICAL FIX: The Swag Delivery Override
                 let rawText = line.text.replace(/\|/g, '').trim();
 
-                // Ground the sentence for natural breathing
                 let swaggerText = rawText;
                 if (!swaggerText.endsWith('.') && !swaggerText.endsWith(',') && !swaggerText.endsWith('!') && !swaggerText.endsWith('?')) {
                     swaggerText = swaggerText + ".";
                 }
 
-                // CAPITALIZING the text forces the Orpheus model to project with maximum vocal weight
-                const aggressiveText = swaggerText.toUpperCase();
+                // 🚨 FIX 1 & 3: Speed Calculation & Removal of .toUpperCase() Hack
+                const avgDensity = activePattern.reduce((a, b) => a + b, 0) / activePattern.length;
+                let dynamicSpeed = 1.0;
+                
+                // If it's a tight chopper flow, Orpheus needs to speak faster so the math aligns
+                if (avgDensity <= 1.5) dynamicSpeed = 1.35; 
+                else if (avgDensity <= 2) dynamicSpeed = 1.15; 
+                else if (avgDensity >= 4) dynamicSpeed = 0.85; // Lazy drawl
 
                 const res = await fetch('/api/audio/generate-guide', {
                   method: 'POST',
-                  // ... rest of the fetch request remains exactly the same                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ 
-                    lyrics: aggressiveText, 
+                    lyrics: swaggerText, // Sent natural casing
                     bpm: preciseBpm,
-                    gender: useMatrixStore.getState().gwGender || "male",
-                    pitch: "low",
-                    style: "aggressive", // Hint for the backend if applicable
-                    semanticTags: semanticTags // <-- Sending the puppet strings to the backend
+                    semanticTags: semanticTags,
+                    speed: dynamicSpeed // Pass the calculated speed warp
                   })
                 });
                 
                 if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
 
                 const arrayBuffer = await res.arrayBuffer();
-                const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+                let audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+                
+                // Trim the raw TTS to prevent clipping
+                audioBuffer = trimTTSBuffer(offlineCtx, audioBuffer);
                 
                 const mappedWords = line.words;
                 if (!mappedWords || mappedWords.length === 0) continue;
 
-                // 🚨 FIX 1: Restore Proportional Crossfade Audio Logic (Syllable Syncing)
                 const ttsDuration = audioBuffer.duration;
                 const mathLineDuration = line.lineDuration || 2;
+                
+                // 🚨 FIX 4: Dynamic Tail Bleed based on flow density
+                const tailBleed = avgDensity <= 2 ? 0.12 : 0.35;
 
                 mappedWords.forEach((wObj) => {
                   if (!wObj.word.trim()) return;
@@ -441,8 +407,9 @@ export default function Room04_Booth() {
                   const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
                   const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
 
-                  const tailBleed = 0.35; 
                   const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
+
+                  if (safeExtractDuration <= 0) return; // Prevent node crash on exact edges
 
                   const source = offlineCtx.createBufferSource();
                   source.buffer = audioBuffer;
@@ -457,7 +424,7 @@ export default function Room04_Booth() {
                   source.connect(gainNode);
                   gainNode.connect(offlineCtx.destination);
                   
-                  source.start(wObj.startTime, ttsOffset, safeExtractDuration);
+                  source.start(wObj.startTime, Math.max(0, ttsOffset), safeExtractDuration);
                 });
 
               } catch (lineErr) {
@@ -470,7 +437,6 @@ export default function Room04_Booth() {
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
 
-      // 🚨 SURGICAL FIX: Bumped the default TTS guide track volume from 0.3 up to 0.85 for massive projection punch
       addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.85, offsetBars: 0 });
       if (addToast) addToast("High-fidelity aggressive audio glued to visual metronome.", "success");
     } catch (err: any) {
@@ -543,7 +509,6 @@ export default function Room04_Booth() {
     } finally { setIsProcessingTrim(false); }
   };
 
-  // --- THE HIGH-PERFORMANCE VISUAL SYNC ENGINE ---
   const updateVisualsRef = useRef<() => void>(() => {});
   
   updateVisualsRef.current = () => {
@@ -551,14 +516,13 @@ export default function Room04_Booth() {
     
     const time = wavesurferRef.current.getCurrentTime();
     
-    // 🚨 SURGICAL FIX: Prevent 60FPS React state churn by updating DOM directly
     if (timeDisplayRef.current) {
         const mins = Math.floor(time / 60).toString().padStart(2, '0');
         const secs = Math.floor(time % 60).toString().padStart(2, '0');
         timeDisplayRef.current.innerText = `${mins}:${secs}`;
     }
 
-    const visualTime = time; // 🚨 SURGICAL FIX: 0 offset to perfectly match the vocal guide audio time.
+    const visualTime = time; 
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
@@ -686,7 +650,7 @@ export default function Room04_Booth() {
       activeSourcesRef.current = [];
 
       vocalStems.forEach(stem => {
-        if (stem.isMuted) return; // <-- SURGICAL FIX
+        if (stem.isMuted) return; 
         const buffer = stemBuffersRef.current.get(stem.id);
         if (buffer) {
           const source = audioCtxRef.current!.createBufferSource();
@@ -912,34 +876,25 @@ export default function Room04_Booth() {
     if (lastParsedLyricsRef.current === generatedLyrics) return; 
     lastParsedLyricsRef.current = generatedLyrics;
 
-    // 1. DECONSTRUCT LLM OUTPUT INTO CATEGORIZED POOLS
     const rawLines = generatedLyrics.split('\n');
     const llmPools: Record<string, string[]> = { HOOK: [], VERSE: [], INTRO: [], OUTRO: [] };
     let activePoolHeader = "";
 
     rawLines.forEach(line => {
       const trimmed = line.trim();
-      // Detect [HOOK], [VERSE], etc. and set the active pool
       if (trimmed.startsWith('[') && trimmed.includes(']')) {
         activePoolHeader = trimmed.split(' ')[0].replace(/[^A-Z]/g, '');
         if (!llmPools[activePoolHeader]) llmPools[activePoolHeader] = [];
       } else if (activePoolHeader && trimmed.length > 0) {
-        // 🚨 CRITICAL SHIELD: Strip the timestamp FIRST, so the regex can actually "see" the metadata
         let cleanLine = trimmed.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
-        
-        // Assassinate Hallucinations
         if (cleanLine.match(/^(Written:|Vocal:|Bars:|Total:|Vocal Cadence:)/i)) return;
-        
-        // Strip backend pipe tags and clean spacing
         cleanLine = cleanLine.replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
-        
         if (cleanLine && cleanLine !== "[Instrumental Break]") {
           llmPools[activePoolHeader].push(cleanLine);
         }
       }
     });
 
-    // 2. MAP BLUEPRINT TO THE POOLS USING POINTERS
     const parsed: LyricLine[] = [];
     let lineIdCounter = 0;
     const poolPointers: Record<string, number> = { HOOK: 0, VERSE: 0, INTRO: 0, OUTRO: 0 };
@@ -950,7 +905,6 @@ export default function Room04_Booth() {
       const blockDurationSecs = bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
-      // Add UI Header
       parsed.push({ 
         id: `hdr-${lineIdCounter++}`, 
         barIndex: blockStartBar, 
@@ -969,16 +923,10 @@ export default function Room04_Booth() {
         const currentPool = llmPools[bp.type] || [];
         const pointer = poolPointers[bp.type] || 0;
         
-        // 🚨 THE MASTER ALIGNMENT: 
-        // The Python backend (handler.py) enforces EXACTLY 1 line per bar.
-        // Therefore, we pull exactly 'bp.bars' lines to maintain 1:1 sync.
         const linesToTake = bp.bars;
         linesForThisBlock = currentPool.slice(pointer, pointer + linesToTake);
-        
-        // Update pointer so the NEXT segment picks up exactly where this one left off
         poolPointers[bp.type] = pointer + linesForThisBlock.length;
         
-        // Safety Fallback
         if (linesForThisBlock.length === 0) linesForThisBlock = ["(Empty Section Cache)"];
       }
 
@@ -991,7 +939,6 @@ export default function Room04_Booth() {
           : activeVariations[index % activeVariations.length];
 
       linesForThisBlock.forEach((textLine) => {
-        // --- PRESERVED SYLLABLE & WORD MAPPING LOGIC ---
         const rawWords = textLine.split(/\s+/).filter(w => w.length > 0);
         const mappedWords: WordMapping[] = [];
         let totalLineSteps = 0;
@@ -1061,7 +1008,6 @@ export default function Room04_Booth() {
       });
       trimWavesurferRef.current.on('error', (err) => console.warn("Trim WaveSurfer Soft-fail:", err));
       
-      // 🚨 FIX 4: Guaranteed WaveSurfer Slicer Load Fallback
       const safeUrl = trimmingStem.blob ? URL.createObjectURL(trimmingStem.blob) : trimmingStem.url;
       trimWavesurferRef.current.load(safeUrl).catch(e => console.warn("Trim Load Aborted:", e.message));
       
@@ -1136,7 +1082,6 @@ export default function Room04_Booth() {
                 </div>
 
                 <div className="space-y-4 pb-20">
-                  {/* 🚨 FIX 3: Renders from lyricLines directly */}
                   {lyricLines.filter(l => !l.isHeader).map((line) => (
                     <div key={line.id} className="bg-black border border-[#222] rounded overflow-hidden">
                       <div className="text-[8px] font-mono text-[#555] p-1 bg-[#0a0a0a] border-b border-[#111] truncate">{line.text}</div>
@@ -1284,7 +1229,7 @@ export default function Room04_Booth() {
             <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Timeline Layers</h4>
             <div className="space-y-3">
               {vocalStems.map(s => {
-                const isMuted = s.isMuted; // <-- SURGICAL FIX
+                const isMuted = s.isMuted; 
                 return (
                 <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
                   <div className="flex justify-between items-center mb-3">
