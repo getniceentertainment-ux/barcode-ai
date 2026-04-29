@@ -266,19 +266,23 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         active_strikes = [v for v in pattern_array if v != 6]
         accent_target = len(active_strikes)
         
-        estimated_words = max(3, int(max_syllables * 0.75)) # Translates syllables to a rough word cap
-        dna_constraint = f"""
+        estimated_words = max(5, int(max_syllables * 0.8)) # Translates syllables to a rough word cap
+
+
+# FIX 2: Softened the Accent Target so the AI doesn't panicdna_constraint = f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. LENGTH LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables (approx {estimated_words} words) per line. Be concise. If you write long sentences, the software will crash.
-2. RHYTHMIC ACCENTS: Anchor your line on exactly {accent_target} heavy stressed words.
+1. LENGTH LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables (approx {estimated_words} words) per line. Be concise.
+2. RHYTHMIC ACCENTS: Create a groove with approximately {accent_target} heavy rhythmic bounces. 
 3. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
 4. POCKET PLACEMENT: {pocket_instruction}
 """
         dna_law += f"\n{dna_constraint}"
     else:
+        # Guarantee minimum words here as well
+        estimated_words = max(5, int(max_syllables * 0.8))
         dna_law += f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line. If you exceed this, the software will crash.
+1. LENGTH LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables (approx {estimated_words} words) per line.
 2. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
 3. POCKET PLACEMENT: {pocket_instruction}
 """
@@ -330,19 +334,17 @@ Write the draft now. Do not write action words like SNAP or STEP into the lyrics
     )
     draft_text = outputs["choices"][0]["text"].strip()
 
-   # Strictly translate syllables to a physical word cap
-    word_cap = max(2, int(max_syllables * 0.6))
+# FIX 3: Update the word cap for Pass 2 to be mathematically safe
+    word_cap = max(6, int(max_syllables * 0.8))
 
-    # 🚨 SURGICAL FIX: Restructured refinement to prevent rule-echoing and enforce word caps
     refine_prompt = f"""<|im_start|>user
 Rewrite the following draft to fix the rhythm.
 
 [CRITICAL MATH LAWS - DO NOT VIOLATE]
-1. LENGTH: YOU ARE RESTRICTED TO A MAXIMUM OF {word_cap} WORDS PER LINE. If a line has more than {word_cap} words, the system will crash. Be extremely brief.
+1. LENGTH: YOU ARE RESTRICTED TO A MAXIMUM OF {word_cap} WORDS PER LINE.
 2. RHYME: End the lines using a strict {rhyme_scheme} rhyming pattern.
 3. FORMAT: Put exactly one vertical bar '|' in the middle of each line.
 4. POCKET: {pocket_instruction}
-
 
 [DRAFT TO REWRITE]
 {draft_text}
@@ -351,17 +353,16 @@ Output ONLY the {bars} rewritten lines. Count your words.
 <|im_end|>
 <|im_start|>assistant
 """
-    # PASS 2: The Refinement
+    # FIX 4: Re-tune the Refinement Pass to stop looping
     full_prompt_refine = system_prompt + refine_prompt
     outputs_refine = model(
         full_prompt_refine, 
         max_tokens=40 * bars, 
-        temperature=0.3, 
+        temperature=0.6,       # Let the AI be slightly creative to avoid looping
         top_p=0.9, 
-        repeat_penalty=1.05, 
+        repeat_penalty=1.15,   # Punish it if it tries to repeat the exact same line
         stop=["<|im_end|>"]
-    )
-    final_text = outputs_refine["choices"][0]["text"].strip()
+    )    final_text = outputs_refine["choices"][0]["text"].strip()
 
     final_text = final_text.replace("<|im_end|>", "").strip()
     final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
