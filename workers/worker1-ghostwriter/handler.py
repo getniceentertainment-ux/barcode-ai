@@ -391,7 +391,7 @@ Output ONLY the {bars} rewritten lines. Count your words.
         # 🚨 2. THE WORD GUILLOTINE 🚨
         # Chop run-on sentences to save the MIDI sequencer BEFORE doing pipes or punctuation
         words_in_line = line.split()
-        max_allowed_words = word_cap + 2 
+        max_allowed_words = word_cap + 3 
         
         if len(words_in_line) > max_allowed_words:
             line = " ".join(words_in_line[:max_allowed_words])
