@@ -171,7 +171,7 @@ def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle
         short_ref = "\n".join([line for line in flow_reference.split('\n') if line.strip()][:4])
         flow_mimicry = f"""[VOCAL CADENCE BLUEPRINT]
 "{short_ref}"
--> Use this quote ONLY for thematic vibe and rhyme placement. YOU MUST STRICTLY OBEY THE DYNAMIC SYLLABLE LIMIT FOR THE SECTION OVER THIS REFERENCE."""
+CRITICAL: Use this quote ONLY for thematic vibe and rhyme placement. YOU MUST STRICTLY OBEY THE DYNAMIC SYLLABLE LIMIT FOR THE SECTION OVER THIS REFERENCE."""
 
     explicit_directive = "5. EXPLICIT CONTENT RATING: This is a raw, uncensored street track. You MUST organically use harsh profanity to emphasize aggression." if is_explicit else "5. CLEAN RATING: Keep the lyrics strictly radio-clean. Do not use profanity."
 
@@ -423,11 +423,17 @@ Output ONLY the {bars} rewritten lines. Count your words.
             right = " ".join(parts[mid_part:])
             line = f"{left} | {right}"
             
-        # ENHANCED DEDUPLICATOR
+        # 4. Enhanced Deduplicator
         clean_compare_line = line.replace('"', '').replace("'", "")
         if len(clean_lines) > 0 and clean_lines[-1].replace('"', '').replace("'", "") == clean_compare_line:
             continue 
-            
+
+        # 🚨 THE GHOST KILLER 🚨
+        # If the cleanup regex stripped the line down to just a number or a tiny word, discard it!
+        if len(line) < 4:
+            continue
+
+        # 5. Add the surviving, perfect line to the bucket    
         if line: clean_lines.append(line)
     
     # THE PANIC PADDER
@@ -506,9 +512,9 @@ CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Output
         seconds_per_bar = (60.0 / bpm) * 4.0
 
         pocket_instruction = "End every line with a period (.)."
-        if pocket == "chainlink": pocket_instruction = "SYNCOPATION (CHAIN-LINK): Bleed across the bar lines. End lines with a comma (,)."
-        elif pocket == "pickup": pocket_instruction = "SYNCOPATION (PICKUP): Start lines with an ellipsis (...)."
-        elif pocket == "cascade": pocket_instruction = "THE CASCADE MODE: Use heavy enjambment. End lines mid-phrase with no punctuation."
+        if pocket == "chainlink": pocket_instruction = "Bleed across the bar lines. End lines with a comma (,)."
+        elif pocket == "pickup": pocket_instruction = "Start lines with an ellipsis (...)."
+        elif pocket == "cascade": pocket_instruction = "Use heavy enjambment. End lines mid-phrase with no punctuation."
 
         final_lyrics = ""
         last_verse_context = ""
