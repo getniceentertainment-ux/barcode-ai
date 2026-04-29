@@ -500,7 +500,17 @@ CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Output
         refined_line = outputs["choices"][0]["text"].strip()
         refined_line = refined_line.replace("<|im_end|>", "").strip()
         refined_line = re.sub(r'^["\']|["\']$', '', refined_line).upper() 
-        return {"refinedLine": refined_line}
+        # MICRO-REFINEMENT SAFETY NET: Ensure the pipe exists for Room 4
+        if "|" not in refined_line:
+            parts = refined_line.split(",")
+            if len(parts) > 1:
+                refined_line = parts[0] + " |" + ",".join(parts[1:])
+            else:
+                words = refined_line.split()
+                mid = max(1, len(words) // 2)
+                refined_line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
+                
+                return {"refinedLine": refined_line}
 
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [])
