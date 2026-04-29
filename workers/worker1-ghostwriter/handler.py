@@ -292,7 +292,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     if "HOOK" in section_type.upper():
         if hook_type == "bouncy": hook_context = "[HOOK OVERRIDE]\nBOUNCY & REPETITIVE: Repeat short, punchy 2-word or 3-word phrases back-to-back."
         elif hook_type == "triplet": hook_context = "[HOOK OVERRIDE]\nRHYTHMIC MATH: Write entirely in groups of 3 syllables (triplets)."
-        elif hook_type == "symmetry": hook_context = "[HOOK OVERRIDE]\nSPLIT STRUCTURE: You MUST write in an A-B-A-B structural pattern."
+        elif hook_type == "symmetry": hook_context = "[HOOK OVERRIDE]\nSPLIT STRUCTURE: Write in an alternating A-B-A-B concept pattern. DO NOT actually write the letters 'A' or 'B' in the lyrics."
         elif hook_type == "prime": hook_context = "[HOOK OVERRIDE]\nSYNCOPATION MATH: Force an odd-numbered syllable count."
         else: hook_context = "[HOOK OVERRIDE]\nSPACIOUS & ANTHEMIC: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse."
 
@@ -378,7 +378,7 @@ Output ONLY the {bars} rewritten lines. Count your words.
 
     for line in raw_lines:
         # NEW: Aggressively strip numbers from the start of the line (e.g., "1.", "2)", "[3]")
-        line = re.sub(r'^[\d\.\)\]\s]+', '', line)
+        line = re.sub(r'^([a-zA-Z][:.-]\s*|[\d\.\)\]\s]+)', '', line).strip()
         
         # 1. Clean up garbage characters and action words
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
