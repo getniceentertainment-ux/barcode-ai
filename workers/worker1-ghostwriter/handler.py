@@ -31,7 +31,6 @@ def load_rag_intel():
     return "Market Intel: Focus on node growth and independent street equity."
 
 def load_street_slang(style="getnice_hybrid"):
-    # Fix: Initialize words list immediately so it's defined before use
     words = [] 
     
     drill_slang = ["opp", "spin the block", "motion", "clearance", "stick", "mop", "nina", "hammer", "drill", "crash out", "walk down", "tote", "strapped", "blicky", "hollows"]
@@ -83,13 +82,11 @@ def load_cultural_context():
 
 def init_model():
     global model
-    # RunPod Serverless ALWAYS mounts to this exact path
     mount_path = "/runpod-volume"
     model_path = os.path.join(mount_path, FILENAME)
     
     print(f"Checking for Matrix Model at: {model_path}")
     
-    # Check if the volume is actually mounted and if the file exists
     if os.path.exists(model_path):
         print(f"✅ VOLUME DATA FOUND. Size: {os.path.getsize(model_path) / (1024**3):.2f} GB")
         print("Skipping download. Loading directly into VRAM...")
@@ -111,7 +108,7 @@ def init_model():
             n_gpu_layers=-1,
             flash_attn=True,
             n_batch=512,
-            n_threads=multiprocessing.cpu_count(), # <--- Add this to speed up prompt reading
+            n_threads=multiprocessing.cpu_count(),
             use_mlock=False
         )
         print("✅ GGUF ENGINE ACCELERATED.")
@@ -132,7 +129,7 @@ def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle
 - Status: Motion, up, eating, big body, steppin', active
 - Action: Sliding, spinning, crashing out, pressing
 - Vehicles: Foreign, whip, coupe, scat, hellcat, ghost, maybach
-- Foul" Nigga, Fuck Em', Fuck You, Bitch Ass, Lil Nigga, Dick, Cock, Pussy, Bitch, Shit, Fish Scale, Cocaine, Cola, Spliff
+- Foul: Nigga, Fuck Em', Fuck You, Bitch Ass, Lil Nigga, Dick, Cock, Pussy, Bitch, Shit, Fish Scale, Cocaine, Cola, Spliff
 - Dynamic Additions: {", ".join(load_street_slang(style))}
 """
     else:
@@ -187,7 +184,6 @@ def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle
     }
     active_persona = style_personas.get(style, "Modern Trap")
 
-    # 🚨 SURGICAL FIX: The "Fear of God" Prompt injected directly into the core system instructions.
     return f"""<|im_start|>system
 [SYSTEM DIRECTIVE: THE MODERN TRAP ICON]
 You are a chart-topping {active_persona} artist. You do not speak in complex poetry, riddles, or medieval metaphors. You speak in literal, flex-heavy, repetitive street language. Your syntax is simple, punchy, and highly rhythmic. You focus on money, loyalty, survival, and designer lifestyles.
@@ -250,7 +246,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     if model is None:
         return [f"ERROR | SOVEREIGN ENGINE NOT READY. CHECK LOGS."]
 
-    # THE ZERO-BAR FIREWALL (Protects the runtime from crashing)
     try:
         bars = int(bars)
     except (ValueError, TypeError):
@@ -266,10 +261,10 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         active_strikes = [v for v in pattern_array if v != 6]
         accent_target = len(active_strikes)
         
-        estimated_words = max(5, int(max_syllables * 0.8)) # Translates syllables to a rough word cap
-
-
-# FIX 2: Softened the Accent Target so the AI doesn't panicdna_constraint = f"""
+        # Softened Accent Math - Minimum 5 words guaranteed
+        estimated_words = max(5, int(max_syllables * 0.8)) 
+        
+        dna_constraint = f"""
 [ULTIMATUM: MATH & RHYTHM]
 1. LENGTH LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables (approx {estimated_words} words) per line. Be concise.
 2. RHYTHMIC ACCENTS: Create a groove with approximately {accent_target} heavy rhythmic bounces. 
@@ -278,7 +273,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 """
         dna_law += f"\n{dna_constraint}"
     else:
-        # Guarantee minimum words here as well
         estimated_words = max(5, int(max_syllables * 0.8))
         dna_law += f"""
 [ULTIMATUM: MATH & RHYTHM]
@@ -334,7 +328,7 @@ Write the draft now. Do not write action words like SNAP or STEP into the lyrics
     )
     draft_text = outputs["choices"][0]["text"].strip()
 
-# FIX 3: Update the word cap for Pass 2 to be mathematically safe
+    # Pass 2 Safe Word Cap
     word_cap = max(6, int(max_syllables * 0.8))
 
     refine_prompt = f"""<|im_start|>user
@@ -353,16 +347,19 @@ Output ONLY the {bars} rewritten lines. Count your words.
 <|im_end|>
 <|im_start|>assistant
 """
-    # FIX 4: Re-tune the Refinement Pass to stop looping
+    # PASS 2: The Refinement (Creative enough to stop loops, strict enough to follow rules)
     full_prompt_refine = system_prompt + refine_prompt
     outputs_refine = model(
         full_prompt_refine, 
         max_tokens=40 * bars, 
-        temperature=0.6,       # Let the AI be slightly creative to avoid looping
+        temperature=0.6,       
         top_p=0.9, 
-        repeat_penalty=1.15,   # Punish it if it tries to repeat the exact same line
+        repeat_penalty=1.15,   
         stop=["<|im_end|>"]
-    )    final_text = outputs_refine["choices"][0]["text"].strip()
+    )
+    
+    # 🚨 SYNTAX BUG FIXED HERE 🚨
+    final_text = outputs_refine["choices"][0]["text"].strip()
 
     final_text = final_text.replace("<|im_end|>", "").strip()
     final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
@@ -379,7 +376,6 @@ Output ONLY the {bars} rewritten lines. Count your words.
     if not banned_words_map: banned_words_map = {}
 
     for line in raw_lines:
-        # 1. Clean up garbage characters and action words
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
@@ -389,36 +385,31 @@ Output ONLY the {bars} rewritten lines. Count your words.
             
         line = line.strip('|').strip().upper()
 
-        # 🚨 THE SMART WORD GUILLOTINE 🚨
-        # Prevents run-on sentences while preserving musicality
+        # THE SMART WORD GUILLOTINE
         words_in_line = line.split()
         max_allowed_words = word_cap + 3
         
         if len(words_in_line) > max_allowed_words:
-            # Chop the sentence and add an ellipsis for a musical fade-out
             line = " ".join(words_in_line[:max_allowed_words]) + "..."
 
-        # 2. Force the Pocket Punctuation
+        # FORCE POCKET PUNCTUATION
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
             if not line.startswith("..."): line = "..." + line
         elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
             line = line.rstrip('.,?!;') + ","
         elif "CASCADE" in pocket_instruction:
-            line = line.rstrip('.,?!;') # Force strip all ending punctuation for cascade
+            line = line.rstrip('.,?!;')
         elif "period" in pocket_instruction:
             line = line.rstrip('.,?!;') + "."
 
-        # 3. The MUSICAL Pipe Fallback
+        # THE MUSICAL PIPE FALLBACK
         parts = [p.strip() for p in line.split('|') if p.strip()]
         if len(parts) == 0:
             line = "YEAH | WE STAY IN MOTION"
         elif len(parts) == 1:
-            # If the AI forgot the pipe, look for a natural breath (a comma) to split the bar!
             if "," in parts[0]:
-                # Split at the first comma to maintain the natural musical flow
                 line = parts[0].replace(",", " |", 1)
             else:
-                # Only use the 50/50 split as an absolute last resort
                 words = parts[0].split()
                 mid = max(1, len(words) // 2)
                 line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
@@ -428,17 +419,14 @@ Output ONLY the {bars} rewritten lines. Count your words.
             right = " ".join(parts[mid_part:])
             line = f"{left} | {right}"
             
-        # 4. Enhanced Deduplicator
-        # Prevents the AI from repeating the exact same line twice in a row
+        # ENHANCED DEDUPLICATOR
         clean_compare_line = line.replace('"', '').replace("'", "")
         if len(clean_lines) > 0 and clean_lines[-1].replace('"', '').replace("'", "") == clean_compare_line:
             continue 
             
-        # 5. Add the surviving, perfect line to the bucket
         if line: clean_lines.append(line)
     
-    # 🚨 6. THE PANIC PADDER 🚨
-    # If the AI didn't write enough lines to fill the requested bars, pad it out so the UI doesn't crash
+    # THE PANIC PADDER
     while len(clean_lines) < bars:
         safe_fallback = clean_lines[-1] if len(clean_lines) > 0 else "YEAH | WE STAY IN MOTION"
         clean_lines.append(safe_fallback.upper())
@@ -448,8 +436,6 @@ Output ONLY the {bars} rewritten lines. Count your words.
 def handler(event):
     global model
     
-    # --- RENDEZVOUS CHECK ---
-    # Ensure model is initialized before proceeding
     if model is None:
         print("Model not initialized. Attempting manual boot...")
         init_model()
@@ -590,9 +576,7 @@ CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Output
 
         return {"lyrics": final_lyrics.strip()}
 
-# Manual boot call at start of container
 init_model() 
 
 if __name__ == "__main__":
-    # The worker only starts talking to RunPod AFTER init_model() finishes
     runpod.serverless.start({"handler": handler})
