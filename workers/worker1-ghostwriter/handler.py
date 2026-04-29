@@ -366,7 +366,8 @@ Output ONLY the {bars} rewritten lines. Count your words.
     final_text = re.sub(r'\[.*?\]', '', final_text) 
     final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE) 
     
-    banned_starts = ('+', '-', 'here are', 'sure', 'i can', '###', 'please generate', 'output:', 'note:', 'rewritten:')
+    banned_starts = ('+', '-', 'here are', 'sure', 'i can', '###', 'please generate', 'output:', 'note:', 'rewritten', 'here is', 'the rewritten')
+    
     raw_lines = [
         line.strip() for line in final_text.split('\n') 
         if line.strip() and len(line.strip()) > 5 and not line.lower().strip().startswith(banned_starts)
@@ -376,10 +377,13 @@ Output ONLY the {bars} rewritten lines. Count your words.
     if not banned_words_map: banned_words_map = {}
 
     for line in raw_lines:
+        # NEW: Aggressively strip numbers from the start of the line (e.g., "1.", "2)", "[3]")
+        line = re.sub(r'^[\d\.\)\]\s]+', '', line)
+        
+        # 1. Clean up garbage characters and action words
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
-        
         for action_word in ["SNAP", "STEP", "HOLD", "GLIDE", "GHOST", "EXTREME-DRAG"]:
             line = re.sub(rf'\b{action_word}\b', '', line, flags=re.IGNORECASE).strip()
             
