@@ -329,7 +329,9 @@ export default function EntryGateway() {
             <br/><br/>
             <span className="text-white font-bold">Stop waiting to be discovered. Build your anthem today.</span>
           </p>
-          
+
+          <blockquote class="twitter-tweet" data-media-max-width="560"><p lang="en" dir="ltr"><a href="https://twitter.com/musicisdigital?ref_src=twsrc%5Etfw">@musicisdigital</a> <a href="https://twitter.com/UMG?ref_src=twsrc%5Etfw">@UMG</a> <a href="https://twitter.com/AiMusicVideos?ref_src=twsrc%5Etfw">@AiMusicVideos</a> <a href="https://twitter.com/hashtag/MUSICINDUSTRY?src=hash&amp;ref_src=twsrc%5Etfw">#MUSICINDUSTRY</a> <a href="https://twitter.com/hashtag/HIPHOP?src=hash&amp;ref_src=twsrc%5Etfw">#HIPHOP</a> <a href="https://twitter.com/hashtag/AIMUSIC?src=hash&amp;ref_src=twsrc%5Etfw">#AIMUSIC</a> <a href="https://twitter.com/hashtag/musiclegend?src=hash&amp;ref_src=twsrc%5Etfw">#musiclegend</a> <a href="https://twitter.com/hashtag/BARCODEAI?src=hash&amp;ref_src=twsrc%5Etfw">#BARCODEAI</a> <br><br>FULL WALKTHORUGH AT DOUBLE SPEED ROOMS 1 THRU 11. <a href="https://t.co/LssTApI7rd">https://t.co/LssTApI7rd</a><br><br>Worlds First AI Record Label! A Future <a href="https://twitter.com/hashtag/WalledGarden?src=hash&amp;ref_src=twsrc%5Etfw">#WalledGarden</a> Industry Standard! <a href="https://t.co/asGFFJ8KLz">pic.twitter.com/asGFFJ8KLz</a></p>&mdash; Bar-Code.ai (@BarCodeAI) <a href="https://twitter.com/BarCodeAI/status/2049627935951224923?ref_src=twsrc%5Etfw">April 29, 2026</a></blockquote> <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
           <button onClick={() => setAuthStep("auth")} className="bg-[#E60000] text-white font-oswald text-lg md:text-xl px-12 py-6 uppercase tracking-[0.2em] font-bold relative group hover:bg-red-700 transition-all shadow-[0_0_40px_rgba(230,0,0,0.4)] flex items-center gap-3">
             Enter The Studio (Free) 
             <ArrowRight size={24} className="group-hover:translate-x-2 transition-transform" />
