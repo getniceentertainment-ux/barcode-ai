@@ -436,6 +436,7 @@ for line in raw_lines:
         clean_lines.append(safe_fallback.upper())
         
     return clean_lines[:bars]
+
 def handler(event):
     global model
     
