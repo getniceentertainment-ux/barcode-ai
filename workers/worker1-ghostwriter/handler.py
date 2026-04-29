@@ -374,10 +374,10 @@ Output ONLY the {bars} rewritten lines. Count your words.
         if line.strip() and len(line.strip()) > 5 and not line.lower().strip().startswith(banned_starts)
     ]
     
-    clean_lines = []
+clean_lines = []
     if not banned_words_map: banned_words_map = {}
 
-for line in raw_lines:
+    for line in raw_lines:
         # 1. Clean up garbage characters and action words
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
@@ -436,7 +436,6 @@ for line in raw_lines:
         clean_lines.append(safe_fallback.upper())
         
     return clean_lines[:bars]
-
 def handler(event):
     global model
     
