@@ -329,7 +329,7 @@ Write the draft now. Do not write action words like SNAP or STEP into the lyrics
     draft_text = outputs["choices"][0]["text"].strip()
 
     # Pass 2 Safe Word Cap
-    word_cap = max(6, int(max_syllables * 0.8))
+    word_cap = max(5, int(max_syllables * 0.8))
 
     refine_prompt = f"""<|im_start|>user
 Rewrite the following draft to fix the rhythm.
@@ -391,7 +391,7 @@ Output ONLY the {bars} rewritten lines. Count your words.
 
         # THE SMART WORD GUILLOTINE
         words_in_line = line.split()
-        max_allowed_words = word_cap + 3
+        max_allowed_words = word_cap + 5
         
         if len(words_in_line) > max_allowed_words:
             line = " ".join(words_in_line[:max_allowed_words]) + "..."
