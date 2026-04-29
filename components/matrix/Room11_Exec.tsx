@@ -92,7 +92,7 @@ export default function Room11_Exec() {
     if (data?.daily_schedule) {
       for (let i = 0; i < day; i++) {
         if (data.daily_schedule[i]) {
-          spent += data.daily_schedule[i].auto_ad_spend || 0;
+          spent += Number(data.daily_schedule[i].auto_ad_spend) || 0;
         }
       }
     }
@@ -232,11 +232,12 @@ export default function Room11_Exec() {
       setCurrentDay(nextDay);
       calculateStreams(updatedCampaign, nextDay);
       
-      if (todayData.auto_ad_spend > 0) {
+      const autoAdSpend = Number(todayData.auto_ad_spend) || 0;
+      if (autoAdSpend > 0) {
          useMatrixStore.setState((state) => ({ 
            userSession: state.userSession ? { 
              ...state.userSession, 
-             marketingCredits: (state.userSession as any).marketingCredits - todayData.auto_ad_spend 
+             marketingCredits: (state.userSession as any).marketingCredits - autoAdSpend 
            } as any : null 
          }));
       }
@@ -455,7 +456,7 @@ export default function Room11_Exec() {
                     <Zap size={16} className="absolute top-6 right-6 text-green-500" />
                     <p className="text-[9px] font-mono text-[#555] uppercase tracking-widest mb-3 font-bold">Algorithmic Network Push</p>
                     <p className="font-oswald text-4xl font-bold text-green-500 tracking-tighter">
-                      ${todayTask.auto_ad_spend?.toFixed(2) || "0.00"}
+                      ${Number(todayTask.auto_ad_spend || 0).toFixed(2)}
                     </p>
                     <p className="text-[9px] font-mono text-[#555] uppercase mt-2">Deducted from Ad Advance</p>
                   </div>

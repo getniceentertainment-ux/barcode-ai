@@ -19,10 +19,11 @@ export async function POST(req: Request) {
 
     const logs: string[] = [];
     const execType = taskData.execution_type;
+    const autoAdSpend = Number(taskData.auto_ad_spend) || 0;
 
-    if (taskData.auto_ad_spend > 0) {
+    if (autoAdSpend > 0) {
       if (!track.upstream_deal_signed) throw new Error("Ad spend unavailable for Independent nodes.");
-      logs.push(`[FINANCE] Success: Disbursed $${taskData.auto_ad_spend} from Label Advance.`);
+      logs.push(`[FINANCE] Success: Disbursed $${autoAdSpend} from Label Advance.`);
     }
 
     logs.push(`[API] Success: Node Directive ${execType} deployed.`);

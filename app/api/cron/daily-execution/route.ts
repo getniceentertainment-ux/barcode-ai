@@ -48,8 +48,9 @@ export async function GET(req: Request) {
 
       try {
         // --- A. AUTOMATED AD SPEND (FAN CRM ACQUISITION) ---
-        if (execType === "auto_ad_spend" || taskData.auto_ad_spend > 0) {
-          const spendAmount = taskData.auto_ad_spend || 0;
+        const autoAdSpend = Number(taskData.auto_ad_spend) || 0;
+        if (execType === "auto_ad_spend" || autoAdSpend > 0) {
+          const spendAmount = autoAdSpend;
           if (spendAmount > 0) {
             const { data: profile } = await supabaseAdmin
               .from('profiles')
