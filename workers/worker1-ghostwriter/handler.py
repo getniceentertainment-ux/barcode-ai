@@ -377,7 +377,7 @@ Output ONLY the {bars} rewritten lines. Count your words.
     clean_lines = []
     if not banned_words_map: banned_words_map = {}
 
-    for line in raw_lines:
+for line in raw_lines:
         # 1. Clean up garbage characters and action words
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
@@ -388,15 +388,9 @@ Output ONLY the {bars} rewritten lines. Count your words.
             
         line = line.strip('|').strip().upper()
 
-        # 🚨 2. THE WORD GUILLOTINE 🚨
-        # Chop run-on sentences to save the MIDI sequencer BEFORE doing pipes or punctuation
-        words_in_line = line.split()
-        max_allowed_words = word_cap + 3 
-        
-        if len(words_in_line) > max_allowed_words:
-            line = " ".join(words_in_line[:max_allowed_words])
+        # (THE WORD GUILLOTINE HAS BEEN REMOVED TO PRESERVE MUSICALITY)
 
-        # 3. Force the Pocket Punctuation
+        # 2. Force the Pocket Punctuation
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
             if not line.startswith("..."): line = "..." + line
         elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
@@ -406,38 +400,42 @@ Output ONLY the {bars} rewritten lines. Count your words.
         elif "period" in pocket_instruction:
             line = line.rstrip('.,?!;') + "."
 
-        # 4. The Indestructible Python Pipe Fallback
-        # Ensures every single line has exactly one | perfectly in the middle
+        # 3. The MUSICAL Pipe Fallback
         parts = [p.strip() for p in line.split('|') if p.strip()]
         if len(parts) == 0:
             line = "YEAH | WE STAY IN MOTION"
         elif len(parts) == 1:
-            words = parts[0].split()
-            mid = max(1, len(words) // 2)
-            line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
+            # If the AI forgot the pipe, look for a natural breath (a comma) to split the bar!
+            if "," in parts[0]:
+                # Split at the first comma to maintain the natural musical flow
+                line = parts[0].replace(",", " |", 1)
+            else:
+                # Only use the 50/50 split as an absolute last resort
+                words = parts[0].split()
+                mid = max(1, len(words) // 2)
+                line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
         else:
             mid_part = max(1, len(parts) // 2)
             left = " ".join(parts[:mid_part])
             right = " ".join(parts[mid_part:])
             line = f"{left} | {right}"
             
-        # 5. Enhanced Deduplicator
+        # 4. Enhanced Deduplicator
         # Prevents the AI from repeating the exact same line twice in a row
         clean_compare_line = line.replace('"', '').replace("'", "")
         if len(clean_lines) > 0 and clean_lines[-1].replace('"', '').replace("'", "") == clean_compare_line:
             continue 
             
-        # 6. Add the surviving, perfect line to the bucket
+        # 5. Add the surviving, perfect line to the bucket
         if line: clean_lines.append(line)
     
-    # 🚨 7. THE PANIC PADDER 🚨
+    # 🚨 6. THE PANIC PADDER 🚨
     # If the AI didn't write enough lines to fill the requested bars, pad it out so the UI doesn't crash
     while len(clean_lines) < bars:
         safe_fallback = clean_lines[-1] if len(clean_lines) > 0 else "YEAH | WE STAY IN MOTION"
         clean_lines.append(safe_fallback.upper())
         
     return clean_lines[:bars]
-
 def handler(event):
     global model
     
