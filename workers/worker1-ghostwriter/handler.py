@@ -374,7 +374,7 @@ Output ONLY the {bars} rewritten lines. Count your words.
         if line.strip() and len(line.strip()) > 5 and not line.lower().strip().startswith(banned_starts)
     ]
     
-clean_lines = []
+    clean_lines = []
     if not banned_words_map: banned_words_map = {}
 
     for line in raw_lines:
@@ -388,7 +388,14 @@ clean_lines = []
             
         line = line.strip('|').strip().upper()
 
-        # (THE WORD GUILLOTINE HAS BEEN REMOVED TO PRESERVE MUSICALITY)
+        # 🚨 THE SMART WORD GUILLOTINE 🚨
+        # Prevents run-on sentences while preserving musicality
+        words_in_line = line.split()
+        max_allowed_words = word_cap + 3
+        
+        if len(words_in_line) > max_allowed_words:
+            # Chop the sentence and add an ellipsis for a musical fade-out
+            line = " ".join(words_in_line[:max_allowed_words]) + "..."
 
         # 2. Force the Pocket Punctuation
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
@@ -436,6 +443,7 @@ clean_lines = []
         clean_lines.append(safe_fallback.upper())
         
     return clean_lines[:bars]
+
 def handler(event):
     global model
     
