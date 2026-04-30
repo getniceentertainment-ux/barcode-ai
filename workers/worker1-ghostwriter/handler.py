@@ -235,21 +235,13 @@ You are a chart-topping {active_persona} artist. You do not speak in complex poe
 
 def translate_dna_to_topline(pattern_array, section_type, energy):
     if not pattern_array: return ""
-    sequence = []
-    for v in pattern_array:
-        if v == 1: sequence.append("SNAP")
-        elif v == 2: sequence.append("STEP")
-        elif v == 3: sequence.append("GLIDE")
-        elif v in [4, 5]: sequence.append("HOLD")
-        elif v == 6: sequence.append("GHOST")
-        elif v > 6: sequence.append("EXTREME-DRAG")
-        else: sequence.append("STEP")
     
-    energy_directive = "INTONATION: Standard trap delivery, pocketed and confident."
-    if energy <= 1: energy_directive = "INTONATION: Whisper, low-velocity consonants."
-    elif energy >= 4: energy_directive = "INTONATION: Aggressive, high-velocity consonants."
+    energy_directive = "Standard trap delivery, pocketed and confident."
+    if energy <= 1: energy_directive = "Whisper, low-velocity consonants."
+    elif energy >= 4: energy_directive = "Aggressive, high-velocity consonants."
         
-    return f"""
+    return f"Vocal tone: {energy_directive}"
+
 [RHYTHMIC SEQUENCE]
 Rhythm DNA: {" -> ".join(sequence)}
 🚨 CRITICAL: DO NOT WRITE THE WORDS "SNAP", "STEP", "HOLD", "GLIDE", "GHOST", OR "DRAG" IN THE LYRICS! These are invisible rhythmic timing instructions.
@@ -424,10 +416,18 @@ Output ONLY the {bars} rewritten lines. Count your words.
         if len(allowed_words) == 0:
             continue
             
-        # 🚨 THE PUNCTUATION FIX: Strip punctuation from the words so we can add it cleanly at the end
+        #🚨 THE PUNCTUATION FIX: Strip punctuation from the words so we can add it cleanly at the end
         allowed_words = [re.sub(r'[^\w\s]', '', w) for w in allowed_words if w.strip()]
         if len(allowed_words) == 0:
             continue
+
+        # 🚨 SAFE POCKET INJECTION: Glues the punctuation cleanly INSIDE the pipes
+        if "SYNCOPATION (PICKUP)" in pocket_instruction:
+            allowed_words[0] = "..." + allowed_words[0]
+        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
+            allowed_words[-1] = allowed_words[-1] + ","
+        elif "period" in pocket_instruction:
+            allowed_words[-1] = allowed_words[-1] + "."
 
         if current_style == "triplet":
             n = len(allowed_words)
@@ -447,14 +447,6 @@ Output ONLY the {bars} rewritten lines. Count your words.
         else:
             mid = max(1, len(allowed_words) // 2)
             formatted_line = " ".join(allowed_words[:mid]) + " | " + " ".join(allowed_words[mid:])
-
-        # 🚨 SAFE POCKET INJECTION: Glues the punctuation cleanly outside the pipes
-        if "SYNCOPATION (PICKUP)" in pocket_instruction:
-            formatted_line = "..." + formatted_line
-        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
-            formatted_line = formatted_line + ","
-        elif "period" in pocket_instruction:
-            formatted_line = formatted_line + "."
 
         if len(formatted_line.replace(".", "").replace("|", "").replace(",", "").strip()) < 3:
             continue
