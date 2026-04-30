@@ -383,6 +383,8 @@ Output ONLY the {bars} rewritten lines. Count your words.
     clean_payloads = []
     if not banned_words_map: banned_words_map = {}
 
+    current_style = style.lower()
+
     for line in raw_lines:
         line = re.sub(r'^([a-zA-Z][:.-]\s*|[\d\.\)\]\s]+)', '', line).strip()
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
@@ -396,7 +398,16 @@ Output ONLY the {bars} rewritten lines. Count your words.
         words_in_line = line.split()
         allowed_words = []
         current_syls = 0
-        buffer_limit = max_syllables + 6 # Increased buffer to prevent aggressive chopping
+        
+        # 🚨 Dynamic Syllable Starvation Enforcement
+        if current_style == "lazy":
+            buffer_limit = max_syllables + 1  
+        elif current_style == "triplet":
+            buffer_limit = max_syllables + 1  
+        elif current_style == "chopper":
+            buffer_limit = max_syllables + 2  
+        else:
+            buffer_limit = max_syllables + 4  
         
         for w in reversed(words_in_line):
             syls = count_syllables(w)
@@ -409,10 +420,7 @@ Output ONLY the {bars} rewritten lines. Count your words.
             continue
 
         # --- THE DATASET VISUALIZER ---
-        current_style = style.lower()
-        
         if current_style == "triplet":
-            # TRIPLET: 4 chunks separated by 3 pipes 
             n = len(allowed_words)
             q, r = divmod(n, 4)
             chunks = []
@@ -425,15 +433,21 @@ Output ONLY the {bars} rewritten lines. Count your words.
             formatted_line = " | ".join(chunks)
 
         elif current_style in ["chopper", "lazy"]:
-            # CHOPPER/LAZY: Wrapped in pipes [cite: 4, 7]
             formatted_line = f"| {' '.join(allowed_words)} |"
 
         else:
-            # HEARTBEAT/HYBRID: Split evenly with 1 middle pipe [cite: 2, 3]
             mid = max(1, len(allowed_words) // 2)
             formatted_line = " ".join(allowed_words[:mid]) + " | " + " ".join(allowed_words[mid:])
 
-        # Ghost line removal
+        if "SYNCOPATION (PICKUP)" in pocket_instruction:
+            if not formatted_line.startswith("..."): formatted_line = "..." + formatted_line
+        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
+            formatted_line = formatted_line.rstrip('.,?!;') + ","
+        elif "CASCADE" in pocket_instruction:
+            formatted_line = formatted_line.rstrip('.,?!;')
+        elif "period" in pocket_instruction:
+            formatted_line = formatted_line.rstrip('.,?!;') + "."
+
         if len(formatted_line.replace(".", "").replace("|", "").replace(",", "").strip()) < 3:
             continue
 
@@ -449,19 +463,27 @@ Output ONLY the {bars} rewritten lines. Count your words.
             "words": allowed_words
         })
     
-    # --- DYNAMIC FALLBACKS ---
-    fallback_pool = [
-        ["YEAH", "WE", "STAY", "IN", "MOTION"],
-        ["ALL", "DAY", "WE", "ON", "THE", "GRIND"],
-        ["SECURE", "THE", "BAG", "WATCH", "THE", "PLAY"],
-        ["MONEY", "UP", "NEVER", "LOOK", "BEHIND"]
-    ]
+    # 🚨 Syllable-Strict Fallbacks
+    if current_style == "lazy":
+        fallback_pool = [
+            ["SLID", "ING", "IN", "DARK"],         
+            ["LEAV", "ING", "OUR", "MARK"],        
+            ["RUN", "THE", "WHOLE", "TOWN"],       
+            ["NEV", "ER", "BACK", "DOWN"]          
+        ]
+    else:
+        fallback_pool = [
+            ["YEAH", "WE", "STAY", "IN", "MO", "TION"],     
+            ["ALL", "DAY", "WE", "ON", "THE", "GRIND"],     
+            ["SE", "CURE", "THE", "BAG", "TO", "DAY"],      
+            ["MON", "EY", "UP", "NEV", "ER", "BLIND"]       
+        ]
+        
     fallback_idx = 0
     
     while len(clean_payloads) < bars:
         fallback_words = fallback_pool[fallback_idx % len(fallback_pool)]
         
-        # Apply the exact same formatting rules to the fallbacks
         if current_style == "triplet":
             n = len(fallback_words)
             q, r = divmod(n, 4)
@@ -580,7 +602,7 @@ Output: ALL CAPS rewritten line ONLY.
                     pattern_desc=section.get("patternDesc", "Std"), 
                     pattern_array=section.get("patternArray", []), 
                     pocket_instruction=pocket_instruction, prompt_topic=topic,
-                    style=style,
+                    style=style, # <--- THIS IS THE ONLY OTHER THING YOU NEED TO ENSURE IS THERE
                     section_index=index, hook_type=hook_type, flow_evolution=flow_evolution,
                     current_energy=current_energy, banned_words_map=banned_words_map
                 )
