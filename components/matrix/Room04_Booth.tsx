@@ -375,12 +375,14 @@ export default function Room04_Booth() {
                 if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
 
                 const arrayBuffer = await res.arrayBuffer();
-                const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+                const rawAudioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+                
+                // 🚨 THE SYNC FIX: Strip the microscopic neural dead-air BEFORE the math calculates
+                const audioBuffer = trimTTSBuffer(offlineCtx, rawAudioBuffer);
                 
                 const mappedWords = line.words;
                 if (!mappedWords || mappedWords.length === 0) continue;
 
-                // 🚨 FIX 1: Restore Proportional Crossfade Audio Logic (Syllable Syncing)
                 const ttsDuration = audioBuffer.duration;
                 const mathLineDuration = line.lineDuration || 2;
 
