@@ -576,7 +576,7 @@ Output: ALL CAPS rewritten line ONLY.
                     current_energy=current_energy, banned_words_map=banned_words_map
                 )
                 if "HOOK" in sec_type and saved_hook_payloads is None: saved_hook_payloads = section_payloads
-                if "VERSE" in sec_type: last_verse_context = "\n".join([p["text"] for p in section_payloads[-4:]])
+                if "VERSE" in sec_type: last_verse_context = last_verse_context = "\n".join(section_payloads[-4:])
             
             for i, line in enumerate(section_payloads):
                 line_time = (start_bar + i) * seconds_per_bar
