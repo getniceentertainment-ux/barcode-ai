@@ -344,6 +344,16 @@ export default function Room04_Booth() {
       const OfflineCtxClass = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
       const offlineCtx = new OfflineCtxClass(1, Math.ceil(sampleRate * renderDuration), sampleRate);
 
+      // 🚨 ECHO FIX: Build a BPM-synced "Vocal Throw" Delay Bus
+      const delayNode = offlineCtx.createDelay(2.0);
+      delayNode.delayTime.value = 60 / preciseBpm; // Quarter-note trap echo
+      const feedbackGain = offlineCtx.createGain();
+      feedbackGain.gain.value = 0.20; // 20% low wet echo volume
+      
+      delayNode.connect(feedbackGain);
+      feedbackGain.connect(delayNode);
+      delayNode.connect(offlineCtx.destination);
+
       for (let i = 0; i < parsedLines.length; i++) {
         const line = parsedLines[i];
         
@@ -386,32 +396,39 @@ export default function Room04_Booth() {
           // 🚨 TWEAK 2: Find the visual delay of the first word, so we don't chop the audio buffer!
           const firstWordOffset = mappedWords[0].startTime - line.startTime;
 
-          mappedWords.forEach((wObj) => {
-            if (!wObj.word.trim()) return;
+          mappedWords.forEach((wObj, wIdx) => {
+                  if (!wObj.word.trim()) return;
 
-            // Subtract the pickup offset so 0.0s of the audio matches the first spoken word
-            const relativeWordStart = (wObj.startTime - line.startTime) - firstWordOffset;
-            const ttsOffset = Math.max(0, (relativeWordStart / mathLineDuration) * ttsDuration);
-            const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
+                  // 🚨 BLEED FIX: Detect the last word and give it massive room to breathe
+                  const isLastWord = wIdx === mappedWords.length - 1;
+                  const tailBleed = isLastWord ? 1.5 : 0.35; 
 
-            const tailBleed = 0.35; 
-            const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
+                  const relativeWordStart = (wObj.startTime - line.startTime) - firstWordOffset;
+                  const ttsOffset = Math.max(0, (relativeWordStart / mathLineDuration) * ttsDuration);
+                  const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
 
-            const source = offlineCtx.createBufferSource();
-            source.buffer = audioBuffer;
-            source.playbackRate.value = 1.0; 
+                  const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
 
-            const gainNode = offlineCtx.createGain();
-            gainNode.gain.setValueAtTime(0, wObj.startTime);
-            gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
-            gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-            gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
+                  const source = offlineCtx.createBufferSource();
+                  source.buffer = audioBuffer;
+                  source.playbackRate.value = 1.0; 
 
-            source.connect(gainNode);
-            gainNode.connect(offlineCtx.destination);
-            
-            source.start(wObj.startTime, ttsOffset, safeExtractDuration);
-          });
+                  const gainNode = offlineCtx.createGain();
+                  gainNode.gain.setValueAtTime(0, wObj.startTime);
+                  gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.02); // Softer attack to stop pops
+                  gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
+                  gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
+
+                  source.connect(gainNode);
+                  gainNode.connect(offlineCtx.destination);
+                  
+                  // 🚨 ECHO FIX: Throw ONLY the last word into the delay bus
+                  if (isLastWord) {
+                      gainNode.connect(delayNode);
+                  }
+                  
+                  source.start(wObj.startTime, ttsOffset, safeExtractDuration);
+                });
 
         } catch (lineErr) {
           console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
