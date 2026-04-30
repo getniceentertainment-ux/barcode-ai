@@ -243,6 +243,9 @@ def translate_dna_to_topline(pattern_array, section_type, energy):
     return f"Vocal tone: {energy_directive}"
 
 def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, rhyme_scheme, pattern_desc, pattern_array, pocket_instruction, prompt_topic, style="getnice_hybrid", section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
+    global model
+    if model is None:
+        return []
     
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
@@ -282,7 +285,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast." if ("VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 8) else ""
     energy_rules = "\n[ENERGY CLIMAX]: Pack the pocket. Write dense, aggressive rhymes." if current_energy == 4 else ""
 
-    # Keep the LLM from writing huge paragraphs for low-syllable flows
     word_hint = ""
     if max_syllables <= 7:
         word_hint = "CRITICAL: Write extremely short fragments. 2 or 3 words MAXIMUM per line."
@@ -305,11 +307,19 @@ Write the draft now. Output raw lines only.
 <|im_end|>
 <|im_start|>assistant
 """
-    inputs = tokenizer(system_prompt + draft_prompt, return_tensors="pt").to("cuda")
-    outputs = model.generate(**inputs, max_new_tokens=64 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id)
-    draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
+    full_prompt_draft = system_prompt + draft_prompt
+    
+    # 🚨 RESTORED Llama_cpp SYNTAX 🚨
+    outputs = model(
+        full_prompt_draft, 
+        max_tokens=64 * bars, 
+        temperature=0.85, 
+        top_p=0.9, 
+        repeat_penalty=1.15, 
+        stop=["<|im_end|>"]
+    )
+    draft_text = outputs["choices"][0]["text"].strip()
 
-    # Removed the "Count your words" command and punctuation commands so it stops hallucinating
     refine_prompt = f"""<|im_start|>user
 [THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
 You drafted this {bars}-bar {section_type.upper()}:
@@ -324,9 +334,18 @@ Output ONLY the final {bars} lines now.
 <|im_end|>
 <|im_start|>assistant
 """
-    inputs_refine = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
-    outputs_refine = model.generate(**inputs_refine, max_new_tokens=64 * bars, temperature=0.5, top_p=0.9, repetition_penalty=1.1, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id)
-    final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
+    full_prompt_refine = system_prompt + refine_prompt
+    
+    # 🚨 RESTORED Llama_cpp SYNTAX 🚨
+    outputs_refine = model(
+        full_prompt_refine, 
+        max_tokens=64 * bars, 
+        temperature=0.5,       
+        top_p=0.9, 
+        repeat_penalty=1.1,   
+        stop=["<|im_end|>"]
+    )
+    final_text = outputs_refine["choices"][0]["text"].strip()
 
     final_text = final_text.replace("<|im_end|>", "").strip()
     final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
@@ -347,7 +366,6 @@ Output ONLY the final {bars} lines now.
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
         
-        # Kill LLM math hallucinations ("5 WORDS", "3X")
         line = re.sub(r'\b\d+[xX\+\-\*]+\d*\b', '', line)
         line = re.sub(r'\b\d+\s*WORDS?\b', '', line, flags=re.IGNORECASE)
         
@@ -360,7 +378,6 @@ Output ONLY the final {bars} lines now.
         allowed_words = []
         current_syls = 0
         
-        # Dynamic starvation math
         if current_style == "lazy": buffer_limit = max_syllables + 1  
         elif current_style == "triplet": buffer_limit = max_syllables + 1  
         elif current_style == "chopper": buffer_limit = max_syllables + 2  
@@ -373,12 +390,10 @@ Output ONLY the final {bars} lines now.
             allowed_words.insert(0, w)
             current_syls += syls
 
-        # Strip all random punctuation from the raw words
         allowed_words = [re.sub(r'[^\w\s]', '', w) for w in allowed_words if w.strip()]
         if len(allowed_words) == 0:
             continue
 
-        # Add requested punctuation to the final word BEFORE pipes
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
             allowed_words[0] = "..." + allowed_words[0]
         elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
@@ -386,7 +401,6 @@ Output ONLY the final {bars} lines now.
         elif "period" in pocket_instruction:
             allowed_words[-1] = allowed_words[-1] + "."
 
-        # Draw the Dataset-Accurate Pipes
         if current_style == "triplet":
             n = len(allowed_words)
             q, r = divmod(n, 4)
@@ -410,14 +424,12 @@ Output ONLY the final {bars} lines now.
             continue
 
         clean_compare_line = formatted_line.replace('"', '').replace("'", "")
-        # ONLY delete duplicate lines if it is a VERSE. Hooks need to repeat!
         if "VERSE" in section_type.upper():
             if len(clean_lines) > 0 and clean_lines[-1].replace('"', '').replace("'", "") == clean_compare_line:
                 continue 
             
         clean_lines.append(formatted_line)
     
-    # Dataset-Accurate Fallbacks
     if current_style == "lazy":
         fallback_pool = [
             ["SLIDING", "IN", "DARK"],         
@@ -454,6 +466,13 @@ Output ONLY the final {bars} lines now.
         else:
             mid = max(1, len(fallback_words) // 2)
             safe_line = " ".join(fallback_words[:mid]) + " | " + " ".join(fallback_words[mid:])
+
+        if "SYNCOPATION (PICKUP)" in pocket_instruction and not safe_line.startswith("...|"):
+            safe_line = safe_line.replace("| ", "| ...")
+        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction and not safe_line.endswith(", |"):
+            safe_line = safe_line.replace(" |", ", |")
+        elif "period" in pocket_instruction and not safe_line.endswith(". |"):
+            safe_line = safe_line.replace(" |", ". |")
 
         clean_lines.append(safe_line)
         fallback_idx += 1
