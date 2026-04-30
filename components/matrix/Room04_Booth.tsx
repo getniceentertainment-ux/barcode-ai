@@ -942,106 +942,77 @@ export default function Room04_Booth() {
           const hasPickup = textLine.startsWith('...');
           const cleanText = textLine.replace(/^\.\.\./, '').replace(/\|/g, '').trim();
           const pureWords = cleanText.split(/\s+/).filter(w => w.length > 0);
-
-          const K = activePattern.length;
-          let groupedWords: string[] = [];
-
-          // 1. PROPORTIONAL BUCKETING: Put more words in larger rhythmic slots
-          if (pureWords.length === 0) {
-              groupedWords = [];
-          } else if (pureWords.length <= K) {
-              groupedWords = pureWords;
-          } else {
-              // Lock the final rhyming word to the final strike zone
-              const lastWord = pureWords.pop() || "";
-              const remainingWords = pureWords;
-              
-              const earlyPattern = activePattern.slice(0, K - 1);
-              const earlyStepsSum = earlyPattern.reduce((a, b) => a + b, 0) || 1;
-
-              let currentIndex = 0;
-              for (let i = 0; i < K - 1; i++) {
-                  let stepsForThisBucket = earlyPattern[i];
-                  
-                  // Dynamically allocate words based on how many steps this bucket holds
-                  let wordsForThisBucket = Math.round((stepsForThisBucket / earlyStepsSum) * remainingWords.length);
-                  
-                  // Catch any rounding remainders on the last early bucket
-                  if (i === K - 2) {
-                      wordsForThisBucket = remainingWords.length - currentIndex;
-                  }
-                  
-                  // Ensure every bucket gets at least 1 word if possible
-                  wordsForThisBucket = Math.max(1, Math.min(wordsForThisBucket, remainingWords.length - currentIndex - (K - 2 - i)));
-                  
-                  const chunk = remainingWords.slice(currentIndex, currentIndex + wordsForThisBucket).join(' ');
-                  if (chunk) groupedWords.push(chunk);
-                  currentIndex += wordsForThisBucket;
-              }
-              groupedWords.push(lastWord);
-          }
-
-          const patternSum = activePattern.reduce((a, b) => a + b, 0) || 16;
-          const timePerStep = timeForLine / patternSum;
-
-          let localWordTime = currentFlowTime;
-          let currentStepOffset = 0;
-          
-          if (hasPickup) {
-              currentStepOffset += 4;
-              localWordTime += (4 * timePerStep);
-          }
-
           const mappedWords: any[] = [];
-          
-          // 🚨 THE FIX: A Global Line Tracker so buckets cannot bleed into each other
-          let nextAvailableVisualSlot = currentStepOffset;
 
-          groupedWords.forEach((wordChunk, idx) => {
-              const stepsRequired = Number(activePattern[idx % activePattern.length]) || 2;
+          let totalLineSteps = 0;
+          let tempPatternIndex = 0;
+
+          // 1. SYLLABLE MATH: Use your original vowel-chunker to calculate the true rhythm!
+          const wordChunksArray = pureWords.map(w => {
+            const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
+            chunks.forEach(() => {
+              const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
+              totalLineSteps += isNaN(stepVal) ? 2 : stepVal; 
+              tempPatternIndex++;
+            });
+            return chunks;
+          });
+
+          // 2. Adjust for specific syncopation pockets (Pickups and Chain-links)
+          const cleanTextEnd = textLine.trim().slice(-1);
+          if (cleanTextEnd === '.') totalLineSteps += 4;
+          else if (cleanTextEnd === ',') totalLineSteps += 1;
+
+          const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
+          let localWordTime = currentFlowTime;
+          const lineStartTime = currentFlowTime;
+
+          if (hasPickup) localWordTime += (4 * timePerStep);
+
+          let patternIndex = 0;
+          let nextAvailableVisualSlot = 0; // 🚨 THE UI ANTI-STACK GUARD
+
+          // 3. Map the syllables to the exact audio transients and visual blocks
+          wordChunksArray.forEach((chunks) => {
+            chunks.forEach((chunk, cIdx) => {
+              const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
+              patternIndex++;
+
               const chunkDuration = stepsRequired * timePerStep;
-
-              const actualWords = wordChunk.split(' ').filter(w => w.length > 0);
-              const durationPerWord = chunkDuration / actualWords.length;
               
-              actualWords.forEach((singleWord, subIdx) => {
-                  // 1. Where does the word mathematically want to go?
-                  let idealSlot = Math.floor(currentStepOffset + (subIdx * (stepsRequired / actualWords.length)));
-                  
-                  // 2. THE WALL: Force it to the next empty block on the physical grid
-                  let finalSlot = Math.max(idealSlot, nextAvailableVisualSlot);
+              // Where does the audio math want this syllable to land visually?
+              let idealSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForLine) * 16)));
+              
+              // THE WALL: Prevent syllables from physically stacking on top of each other
+              let finalSlot = Math.max(idealSlot, nextAvailableVisualSlot);
 
-                  mappedWords.push({
-                      id: `word-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-                      word: singleWord, 
-                      slot: finalSlot, // Render at the safe, unshared slot
-                      startTime: localWordTime + (subIdx * durationPerWord), 
-                      duration: durationPerWord, 
-                      isWordEnd: true
-                  });
-                  
-                  // 3. Claim this block so absolutely nothing can stack on top of it
-                  nextAvailableVisualSlot = finalSlot + 1;
+              mappedWords.push({
+                id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+                word: chunk.replace(/\|/g, ''),
+                slot: finalSlot,
+                startTime: localWordTime,
+                duration: chunkDuration, 
+                isWordEnd: (cIdx === chunks.length - 1)
               });
-
-              // The audio timing stays perfectly aligned to your Flow Vault
-              currentStepOffset += stepsRequired;
+              
               localWordTime += chunkDuration;
+              nextAvailableVisualSlot = finalSlot + 1; // Claim the visual space!
+            });
           });
 
           parsed.push({ 
             id: `line-${lineIdCounter++}`,
-            barIndex: Math.floor(currentFlowTime / secondsPerBar),
-            text: textLine, 
+            barIndex: Math.floor(lineStartTime / secondsPerBar),
+            text: textLine.replace(/\|/g, ''), 
             originalText: textLine,
-            startTime: currentFlowTime, 
+            startTime: lineStartTime, 
             lineDuration: timeForLine, 
             isHeader: false, 
-            timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
+            timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
             words: mappedWords 
           });
-          
-          currentFlowTime += timeForLine;
+
+          currentFlowTime += timeForLine; 
         });
     });
 
