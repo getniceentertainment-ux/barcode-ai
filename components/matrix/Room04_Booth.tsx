@@ -939,13 +939,12 @@ export default function Room04_Booth() {
           : activeVariations[index % activeVariations.length];
 
       linesForThisBlock.forEach((textLine) => {
-          // 1. Extract words and detect pickups
+          // 1. Extract words AND scrub the pipes from the teleprompter vision
           const hasPickup = textLine.startsWith('...');
           const cleanText = textLine.replace(/^\.\.\./, '').replace(/\|/g, '').trim();
           const pureWords = cleanText.split(/\s+/).filter(w => w.length > 0);
 
           // 2. MATH LOCK: Group the words to perfectly match the rhythmic slots in your DNA
-          // This stops the frontend from "compressing" the beat when there are extra words.
           const K = activePattern.length;
           let groupedWords: string[] = [];
 
@@ -954,7 +953,6 @@ export default function Room04_Booth() {
           } else if (pureWords.length <= K) {
               groupedWords = pureWords;
           } else {
-              // Group extra words cleanly to preserve grammar without breaking the snare hits
               const lastWord = pureWords.pop() || "";
               const buckets = K - 1;
               
@@ -970,7 +968,7 @@ export default function Room04_Booth() {
               }
           }
 
-          // 3. TIME LOCK: Calculate absolute 16th note duration based strictly on the DNA pattern
+          // 3. TIME LOCK: Calculate absolute 16th note duration
           const patternSum = activePattern.reduce((a, b) => a + b, 0) || 16;
           const timePerStep = timeForLine / patternSum;
 
@@ -983,36 +981,24 @@ export default function Room04_Booth() {
           }
 
           const mappedWords: any[] = [];
-          const midIndex = Math.max(1, Math.floor(groupedWords.length / 2));
 
           groupedWords.forEach((wordChunk, idx) => {
-              // Inject the visual pipe in the middle
-              if (idx === midIndex) {
-                  mappedWords.push({
-                      id: `pipe-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-                      word: "|",
-                      slot: currentStepOffset,
-                      startTime: localWordTime,
-                      duration: 0,
-                      isWordEnd: true
-                  });
-              }
-
               const stepsRequired = Number(activePattern[idx % activePattern.length]) || 2;
               const chunkDuration = stepsRequired * timePerStep;
 
-              // Break the grouped bucket back down for the visual bouncing ball
-              const subChunks = chunkWordForVisuals(wordChunk);
-              const subDuration = chunkDuration / subChunks.length;
+              // 4. SMOOTH HIGHLIGHT FIX: Break the bucket back down into individual words
+              // This divides the time evenly so the teleprompter highlights one word at a time!
+              const actualWords = wordChunk.split(' ').filter(w => w.length > 0);
+              const durationPerWord = chunkDuration / actualWords.length;
               
-              subChunks.forEach((subChunk, subIdx) => {
+              actualWords.forEach((singleWord, subIdx) => {
                   mappedWords.push({
-                      id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-                      word: subChunk,
-                      slot: currentStepOffset,
-                      startTime: localWordTime + (subIdx * subDuration),
-                      duration: subDuration,
-                      isWordEnd: (subIdx === subChunks.length - 1)
+                      id: `word-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+                      word: singleWord, 
+                      slot: currentStepOffset, 
+                      startTime: localWordTime + (subIdx * durationPerWord), 
+                      duration: durationPerWord, 
+                      isWordEnd: true
                   });
               });
 
@@ -1020,18 +1006,10 @@ export default function Room04_Booth() {
               localWordTime += chunkDuration;
           });
 
-          // Fallback if the pipe belongs at the very end
-          if (midIndex === groupedWords.length) {
-              mappedWords.push({
-                  id: `pipe-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-                  word: "|", slot: currentStepOffset, startTime: localWordTime, duration: 0, isWordEnd: true
-              });
-          }
-
           parsed.push({ 
             id: `line-${lineIdCounter++}`,
             barIndex: Math.floor(currentFlowTime / secondsPerBar),
-            text: textLine,
+            text: textLine, // Keeps the pipe in the raw payload for your dataset!
             originalText: textLine,
             startTime: currentFlowTime, 
             lineDuration: timeForLine, 
