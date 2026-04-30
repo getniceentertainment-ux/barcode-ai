@@ -351,14 +351,13 @@ export default function Room04_Booth() {
               // 🚨 FIX 2: Restore Guide Progress Percentage
               setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
 
-              try {
-                // 🚨 SURGICAL FIX: The Aggressive Delivery Override
-                // Stripping soft punctuation and forcing exclamation marks triggers maximum vocal projection in Neural TTS models.
-                let rawText = line.text.replace(/\|/g, '').trim();
-                if (rawText.endsWith('.') || rawText.endsWith(',')) {
-                    rawText = rawText.slice(0, -1);
-                }
-                const aggressiveText = rawText + "!";
+              try {// 🚨 THE PHONETIC SANITIZER
+                // 1. Lowercase everything so the TTS stops treating words as acronyms.
+                // 2. Strip absolutely everything that isn't a letter, number, or space.
+                let cleanTextForTTS = line.text.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+                
+                // 3. Force projection without breaking the neural model
+                const aggressiveText = cleanTextForTTS + "!";
 
                 const res = await fetch('/api/audio/generate-guide', {
                   method: 'POST',
@@ -384,21 +383,35 @@ export default function Room04_Booth() {
                 if (!mappedWords || mappedWords.length === 0) continue;
 
                 const ttsDuration = audioBuffer.duration;
-                const mathLineDuration = line.lineDuration || 2;
+                
+                // Define speed warp based on the flow density (fallback check)
+                const isFastFlow = mappedWords.length > 5; 
+                const speedWarp = isFastFlow ? 1.35 : 1.0; 
+
+                // 🚨 FIX 2: Calculate pure speech time. Ignore the silent "pickup" math.
+                const firstWordStartTime = mappedWords[0].startTime;
+                const lastWordEndTime = mappedWords[mappedWords.length - 1].startTime + mappedWords[mappedWords.length - 1].duration;
+                const totalMathematicalSpeechDuration = lastWordEndTime - firstWordStartTime;
+                
+                // Apply the warp to the actual speech duration
+                const warpedSpeechDuration = totalMathematicalSpeechDuration / speedWarp;
 
                 mappedWords.forEach((wObj) => {
                   if (!wObj.word.trim()) return;
 
-                  const relativeWordStart = wObj.startTime - line.startTime;
-                  const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
-                  const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
+                  // Map the word's relative position strictly within the spoken duration
+                  const relativeToSpeechStart = wObj.startTime - firstWordStartTime;
+                  
+                  // Calculate the exact offset in the TTS buffer
+                  const ttsOffset = (relativeToSpeechStart / warpedSpeechDuration) * ttsDuration;
+                  const ttsWordDuration = (wObj.duration / warpedSpeechDuration) * ttsDuration;
 
                   const tailBleed = 0.35; 
                   const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
 
                   const source = offlineCtx.createBufferSource();
                   source.buffer = audioBuffer;
-                  source.playbackRate.value = 1.0; 
+                  source.playbackRate.value = speedWarp; 
 
                   const gainNode = offlineCtx.createGain();
                   gainNode.gain.setValueAtTime(0, wObj.startTime);
@@ -409,12 +422,12 @@ export default function Room04_Booth() {
                   source.connect(gainNode);
                   gainNode.connect(offlineCtx.destination);
                   
-                  source.start(wObj.startTime, ttsOffset, safeExtractDuration);
+                  // Start playing exactly at the visual start time, from the corrected TTS offset
+                  source.start(wObj.startTime, Math.max(0, ttsOffset), safeExtractDuration);
                 });
 
               } catch (lineErr) {
-                console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
-              }
+                console.warn(`Soft-fail quantizing line ${i}:`, lineErr);}
             }
 
       const renderedBuffer = await offlineCtx.startRendering();
