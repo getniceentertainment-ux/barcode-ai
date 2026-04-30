@@ -184,7 +184,7 @@ You are a chart-topping {active_persona} artist. You do not speak in complex poe
 [ABSOLUTE ENGINE RULES]
 1. ONE LINE = ONE BAR. 
 2. THE PIPE SYMBOL: You MUST place exactly one pipe symbol (|) in the exact middle of EVERY single line to mark the rhythmic pause.
-3. NO PARROTING: Use the Track Variables as inspiration ONLY. DO NOT literally repeat the words from the variables.
+3. NO PARROTING: Assimilate the Track Variables. NEVER use the exact phrasing from the prompt. Translate it into your own trap vocabulary.
 4. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
 5. TONE: Modern trap. Simple vocabulary. Dynamic flow. DO NOT force heavy repetition on every single line unless instructed.
 6. VOCABULARY: Organically weave in the following slang terms contextually: [ {slang_list} ].
@@ -192,15 +192,15 @@ You are a chart-topping {active_persona} artist. You do not speak in complex poe
 8. DSP VOCAL MATCH: {dsp_vocal_instruction}
 {flow_mimicry}
 
-[GOLD STANDARD EXAMPLES - FORMAT ONLY]
-Example 1 (Aggressive):
-WORD WORD WORD WORD | WORD WORD WORD.
-WORD WORD WORD | WORD WORD WORD WORD.
+[GOLD STANDARD EXAMPLES - FORMAT ONLY - DO NOT COPY THESE WORDS]
+Example 1 (Short & Lazy):
+ICE ON THE WRIST | CASH IN THE VAULT.
+NEVER LOOK BACK | AIN'T MY FAULT.
 
-Example 2 (Methodical):
-WORD WORD INSIDE THE CLIP | WORD WORD IN THE BANK.
-EVERY MOVE IS CALCULATED | NEVER OUT OF SPITE.
-<|im_end|>"""
+Example 2 (Dense & Fast):
+THIRTY ROUNDS INSIDE THE CLIP | THIRTY MILLION IN THE BANK.
+EVERY MOVE IS CALCULATED | NEVER MOVING OUT OF SPITE.
+<|im_end|>
 
 def translate_dna_to_topline(pattern_array, section_type, energy):
     if not pattern_array: return ""
@@ -282,10 +282,15 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 {energy_rules}
 {evolution_rules}
 
+CRITICAL RULES:
+1. MAX WORDS: You have a strict limit of {word_cap} words per line. Keep it short!
+2. NO QUOTATION MARKS. Do not write dialogue.
+3. NO ACTION WORDS. Do not write "SNAP", "STEP", or "DRAG" in the lyrics.
+
 [PREVIOUS CONTEXT]
 {previous_lyrics if previous_lyrics else 'Start of track.'}
 
-Write the draft now. Do not write action words like SNAP or STEP into the lyrics.
+Write the draft now. Output raw lines only.
 <|im_end|>
 <|im_start|>assistant
 """
@@ -299,10 +304,10 @@ You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
 CRITICAL REFINEMENT COMMANDS:
-1. MATH & RHYME: Enforce the strict {word_cap} WORD limit per line! Shorten any long sentences. Enforce the {rhyme_scheme} rhyme scheme.
+1. WORD LIMIT: Every line MUST be {word_cap} words MAXIMUM! Cut out extra filler words.
 2. OBEY THE POCKET: {pocket_instruction}
 3. THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE. 
-4. NO METADATA. DO NOT separate words onto different lines. Write full sentences. Output ONLY the raw lyrics.
+4. KILL LIST: Delete any banned AI poetry words, action words (DRAG, STEP, SNAP), and DO NOT use quotation marks.
 
 Output ONLY the final {bars} lines now.
 <|im_end|>
@@ -328,16 +333,22 @@ Output ONLY the final {bars} lines now.
 
     for line in raw_lines:
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
+        line = line.replace('"', '') # 🚨 Kills quotation marks
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
         
-        for action_word in ["SNAP", "STEP", "HOLD", "GLIDE", "GHOST", "EXTREME-DRAG"]:
+        # 🚨 Added DRAG and WORD to the kill list
+        for action_word in ["SNAP", "STEP", "HOLD", "GLIDE", "GHOST", "EXTREME-DRAG", "DRAG", "WORD"]:
             line = re.sub(rf'\b{action_word}\b', '', line, flags=re.IGNORECASE).strip()
             
         line = re.sub(r'\|+', '|', line)
         line = re.sub(r'\s+\|\s+', ' | ', line)
                 
         line = line.strip('|').strip().upper()
+
+        # 🚨 Kills lines that are literally just a period or empty space
+        if not line or re.match(r'^[\.,\s]+$', line):
+            continue
 
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
             if not line.startswith("..."): line = "..." + line
