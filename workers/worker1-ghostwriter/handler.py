@@ -201,7 +201,7 @@ CRITICAL: Use this quote ONLY for thematic vibe and rhyme placement. YOU MUST ST
 
     return f"""<|im_start|>system
 [SYSTEM DIRECTIVE: THE MODERN TRAP ICON]
-You are a chart-topping {active_persona} artist. You do not speak in complex poetry, riddles, or medieval metaphors. You speak in literal, flex-heavy, repetitive street language. Your syntax is simple, punchy, and highly rhythmic. You focus on money, loyalty, survival, and designer lifestyles.
+You are a chart-topping {active_persona} artist. You do not speak in complex poetry, riddles, or medieval metaphors. You speak in literal, flex-heavy, repetitive street language. Your syntax is simple, punchy, and highly rhythmic. You focus on money, loyalty, survival, and designer lifestyles. Cocaine Sales and Shooting Dice is what made you blow up.
 
 [LIVE INTEL]
 {rag_context}
@@ -285,9 +285,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast." if ("VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 8) else ""
     energy_rules = "\n[ENERGY CLIMAX]: Pack the pocket. Write dense, aggressive rhymes." if current_energy == 4 else ""
 
-    word_hint = ""
-    if max_syllables <= 7:
-        word_hint = "CRITICAL: Write extremely short fragments. 2 or 3 words MAXIMUM per line."
+    # 🚨 WE DELETED THE WORD_HINT COMPLETELY. Let the LLM rap naturally.
 
     draft_prompt = f"""<|im_start|>user
 [GENERATE {section_type.upper()}]
@@ -298,7 +296,6 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 {hook_context}
 {energy_rules}
 {evolution_rules}
-{word_hint}
 
 [PREVIOUS CONTEXT]
 {previous_lyrics if previous_lyrics else 'Start of track.'}
@@ -321,12 +318,12 @@ Write the draft now. Output raw lines only.
     draft_text = outputs["choices"][0]["text"].strip()
 
     refine_prompt = f"""<|im_start|>user
-[THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
+[THE SECOND PASS: RHYTHMIC POLISH]
 You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
 CRITICAL REFINEMENT COMMANDS:
-1. MATH: Enforce the strict {max_syllables} syllable limit per line! 
+1. MATH: Keep the lines short and punchy. Aim for {max_syllables} syllables per line.
 2. RHYME: Enforce the {rhyme_scheme} rhyme scheme.
 3. FORMAT: Output ONLY the raw rewritten lines in ALL CAPS. Do NOT add numbers, labels, or word counts.
 
@@ -369,7 +366,7 @@ Output ONLY the final {bars} lines now.
         line = re.sub(r'\b\d+[xX\+\-\*]+\d*\b', '', line)
         line = re.sub(r'\b\d+\s*WORDS?\b', '', line, flags=re.IGNORECASE)
         
-        for action_word in ["SNAP", "STEP", "HOLD", "GLIDE", "GHOST", "EXTREME-DRAG"]:
+        for action_word in ["SNAP", "STEP", "HOLD", "GLIDE", "GHOST", "EXTREME-DRAG", "HOOK", "VERSE", "CHORUS"]:
             line = re.sub(rf'\b{action_word}\b', '', line, flags=re.IGNORECASE).strip()
                 
         line = line.replace('|', '').replace('"', '').replace("'", "").strip().upper()
@@ -390,7 +387,7 @@ Output ONLY the final {bars} lines now.
             allowed_words.insert(0, w)
             current_syls += syls
 
-        allowed_words = [re.sub(r'[^\w\s]', '', w) for w in allowed_words if w.strip()]
+        allowed_words = [re.sub(r'[^\w\s\']', '', w) for w in allowed_words if w.strip()]
         if len(allowed_words) == 0:
             continue
 
@@ -448,7 +445,16 @@ Output ONLY the final {bars} lines now.
     fallback_idx = 0
     
     while len(clean_lines) < bars:
-        fallback_words = fallback_pool[fallback_idx % len(fallback_pool)]
+        # Create a fresh copy of the list so we don't permanently alter the fallback pool
+        fallback_words = list(fallback_pool[fallback_idx % len(fallback_pool)])
+        
+        # Inject punctuation directly onto the words BEFORE drawing pipes
+        if "SYNCOPATION (PICKUP)" in pocket_instruction:
+            fallback_words[0] = "..." + fallback_words[0]
+        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
+            fallback_words[-1] = fallback_words[-1] + ","
+        elif "period" in pocket_instruction:
+            fallback_words[-1] = fallback_words[-1] + "."
         
         if current_style == "triplet":
             n = len(fallback_words)
@@ -466,13 +472,6 @@ Output ONLY the final {bars} lines now.
         else:
             mid = max(1, len(fallback_words) // 2)
             safe_line = " ".join(fallback_words[:mid]) + " | " + " ".join(fallback_words[mid:])
-
-        if "SYNCOPATION (PICKUP)" in pocket_instruction and not safe_line.startswith("...|"):
-            safe_line = safe_line.replace("| ", "| ...")
-        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction and not safe_line.endswith(", |"):
-            safe_line = safe_line.replace(" |", ", |")
-        elif "period" in pocket_instruction and not safe_line.endswith(". |"):
-            safe_line = safe_line.replace(" |", ". |")
 
         clean_lines.append(safe_line)
         fallback_idx += 1
@@ -558,7 +557,7 @@ Output: ALL CAPS rewritten line ONLY.
             
             section_payloads = []
             if sec_type == "INSTRUMENTAL":
-                section_payloads = [{"text": "[Instrumental Break]", "syllables": [0], "words": ["Break"]} for _ in range(bars)]
+                section_payloads = ["[Instrumental Break]" for _ in range(bars)]
             elif "HOOK" in sec_type and saved_hook_payloads is not None:
                 while len(section_payloads) < bars: section_payloads.extend(saved_hook_payloads)
                 section_payloads = section_payloads[:bars]
@@ -576,7 +575,7 @@ Output: ALL CAPS rewritten line ONLY.
                     current_energy=current_energy, banned_words_map=banned_words_map
                 )
                 if "HOOK" in sec_type and saved_hook_payloads is None: saved_hook_payloads = section_payloads
-                if "VERSE" in sec_type: last_verse_context = last_verse_context = "\n".join(section_payloads[-4:])
+                if "VERSE" in sec_type: last_verse_context = "\n".join(section_payloads[-4:])
             
             for i, line in enumerate(section_payloads):
                 line_time = (start_bar + i) * seconds_per_bar
