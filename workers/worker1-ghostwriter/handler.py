@@ -193,14 +193,15 @@ You are a chart-topping {active_persona} artist. You do not speak in complex poe
 {flow_mimicry}
 
 [GOLD STANDARD EXAMPLES - FORMAT ONLY - DO NOT COPY THESE WORDS]
-Example 1 (Short & Lazy):
+Example 1, 2-BARS (Short & Lazy):
 ICE ON THE WRIST | CASH IN THE VAULT.
 NEVER LOOK BACK | AIN'T MY FAULT.
 
-Example 2 (Dense & Fast):
+Example 2, 2-BARS (Dense & Fast):
 THIRTY ROUNDS INSIDE THE CLIP | THIRTY MILLION IN THE BANK.
 EVERY MOVE IS CALCULATED | NEVER MOVING OUT OF SPITE.
 <|im_end|>
+"""
 
 def translate_dna_to_topline(pattern_array, section_type, energy):
     if not pattern_array: return ""
@@ -232,7 +233,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
     # 🚨 THE FIX: Translate syllables to a strict word cap so the LLM understands
-    word_cap = max(3, int(max_syllables * 0.8))
+    word_cap = max(2, int(max_syllables * 0.8))
 
     if pattern_array:
         active_strikes = [v for v in pattern_array if v != 6]
@@ -306,7 +307,7 @@ You drafted this {bars}-bar {section_type.upper()}:
 CRITICAL REFINEMENT COMMANDS:
 1. WORD LIMIT: Every line MUST be {word_cap} words MAXIMUM! Cut out extra filler words.
 2. OBEY THE POCKET: {pocket_instruction}
-3. THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' IN THE MIDDLE OF EVERY SINGLE LINE. 
+3. THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' BETWEEN EACH {pattern_desc} EVERY LINE. 
 4. KILL LIST: Delete any banned AI poetry words, action words (DRAG, STEP, SNAP), and DO NOT use quotation marks.
 
 Output ONLY the final {bars} lines now.
