@@ -993,6 +993,9 @@ export default function Room04_Booth() {
           }
 
           const mappedWords: any[] = [];
+          
+          // 🚨 THE FIX: A Global Line Tracker so buckets cannot bleed into each other
+          let nextAvailableVisualSlot = currentStepOffset;
 
           groupedWords.forEach((wordChunk, idx) => {
               const stepsRequired = Number(activePattern[idx % activePattern.length]) || 2;
@@ -1001,28 +1004,27 @@ export default function Room04_Booth() {
               const actualWords = wordChunk.split(' ').filter(w => w.length > 0);
               const durationPerWord = chunkDuration / actualWords.length;
               
-              let previousSlot = -1;
-              
               actualWords.forEach((singleWord, subIdx) => {
-                  // Distribute the visual slots evenly across the bucket
-                  let calculatedSlot = currentStepOffset + Math.round(subIdx * (stepsRequired / actualWords.length));
+                  // 1. Where does the word mathematically want to go?
+                  let idealSlot = Math.floor(currentStepOffset + (subIdx * (stepsRequired / actualWords.length)));
                   
-                  // 2. ANTI-STACK GUARD: Force the slot forward if it tries to overlap the last word
-                  if (subIdx > 0 && calculatedSlot <= previousSlot) {
-                      calculatedSlot = previousSlot + 1;
-                  }
-                  previousSlot = calculatedSlot;
+                  // 2. THE WALL: Force it to the next empty block on the physical grid
+                  let finalSlot = Math.max(idealSlot, nextAvailableVisualSlot);
 
                   mappedWords.push({
                       id: `word-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
                       word: singleWord, 
-                      slot: calculatedSlot, 
+                      slot: finalSlot, // Render at the safe, unshared slot
                       startTime: localWordTime + (subIdx * durationPerWord), 
                       duration: durationPerWord, 
                       isWordEnd: true
                   });
+                  
+                  // 3. Claim this block so absolutely nothing can stack on top of it
+                  nextAvailableVisualSlot = finalSlot + 1;
               });
 
+              // The audio timing stays perfectly aligned to your Flow Vault
               currentStepOffset += stepsRequired;
               localWordTime += chunkDuration;
           });
