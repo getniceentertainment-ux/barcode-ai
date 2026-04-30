@@ -311,6 +311,11 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast." if ("VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 8) else ""
     energy_rules = "\n[ENERGY CLIMAX]: Pack the pocket. Write dense, aggressive rhymes." if current_energy == 4 else ""
 
+    # 🚨 ADD THIS: Tell the LLM to stop writing massive sentences for short flows
+    word_hint = ""
+    if max_syllables <= 7:
+        word_hint = "CRITICAL: Write extremely short fragments. 2 or 3 words MAXIMUM per line. Do not write full sentences."
+
     draft_prompt = f"""<|im_start|>user
 [GENERATE {section_type.upper()}]
 - REQUIRED: {bars} bars.
@@ -390,6 +395,11 @@ Output ONLY the {bars} rewritten lines. Count your words.
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
+        
+        # 🚨 THE CLEANER: Destroy LLM math hallucinations and weird quotes
+        line = re.sub(r'\b\d+[xX\+\-\*]+\d*\b', '', line)
+        line = line.replace('"', '').replace("'", "")
+        
         for action_word in ["SNAP", "STEP", "HOLD", "GLIDE", "GHOST", "EXTREME-DRAG"]:
             line = re.sub(rf'\b{action_word}\b', '', line, flags=re.IGNORECASE).strip()
 
@@ -399,15 +409,10 @@ Output ONLY the {bars} rewritten lines. Count your words.
         allowed_words = []
         current_syls = 0
         
-        # 🚨 Dynamic Syllable Starvation Enforcement
-        if current_style == "lazy":
-            buffer_limit = max_syllables + 1  
-        elif current_style == "triplet":
-            buffer_limit = max_syllables + 1  
-        elif current_style == "chopper":
-            buffer_limit = max_syllables + 2  
-        else:
-            buffer_limit = max_syllables + 4  
+        if current_style == "lazy": buffer_limit = max_syllables + 1  
+        elif current_style == "triplet": buffer_limit = max_syllables + 1  
+        elif current_style == "chopper": buffer_limit = max_syllables + 2  
+        else: buffer_limit = max_syllables + 4  
         
         for w in reversed(words_in_line):
             syls = count_syllables(w)
@@ -418,8 +423,12 @@ Output ONLY the {bars} rewritten lines. Count your words.
 
         if len(allowed_words) == 0:
             continue
+            
+        # 🚨 THE PUNCTUATION FIX: Strip punctuation from the words so we can add it cleanly at the end
+        allowed_words = [re.sub(r'[^\w\s]', '', w) for w in allowed_words if w.strip()]
+        if len(allowed_words) == 0:
+            continue
 
-        # --- THE DATASET VISUALIZER ---
         if current_style == "triplet":
             n = len(allowed_words)
             q, r = divmod(n, 4)
@@ -439,20 +448,18 @@ Output ONLY the {bars} rewritten lines. Count your words.
             mid = max(1, len(allowed_words) // 2)
             formatted_line = " ".join(allowed_words[:mid]) + " | " + " ".join(allowed_words[mid:])
 
+        # 🚨 SAFE POCKET INJECTION: Glues the punctuation cleanly outside the pipes
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
-            if not formatted_line.startswith("..."): formatted_line = "..." + formatted_line
+            formatted_line = "..." + formatted_line
         elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
-            formatted_line = formatted_line.rstrip('.,?!;') + ","
-        elif "CASCADE" in pocket_instruction:
-            formatted_line = formatted_line.rstrip('.,?!;')
+            formatted_line = formatted_line + ","
         elif "period" in pocket_instruction:
-            formatted_line = formatted_line.rstrip('.,?!;') + "."
+            formatted_line = formatted_line + "."
 
         if len(formatted_line.replace(".", "").replace("|", "").replace(",", "").strip()) < 3:
             continue
 
-        clean_compare_line = formatted_line.replace('"', '').replace("'", "")
-        if len(clean_payloads) > 0 and clean_payloads[-1]["text"].replace('"', '').replace("'", "") == clean_compare_line:
+        if len(clean_payloads) > 0 and clean_payloads[-1]["text"] == formatted_line:
             continue 
 
         syllables_list = [count_syllables(w) for w in allowed_words]
