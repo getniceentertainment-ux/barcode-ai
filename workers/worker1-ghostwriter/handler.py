@@ -221,7 +221,7 @@ def translate_dna_to_topline(pattern_array, section_type, energy):
     return f"""
 [RHYTHMIC SEQUENCE]
 Rhythm DNA: {" -> ".join(sequence)}
-🚨 CRITICAL: DO NOT WRITE THE WORDS "SNAP", "STEP", "HOLD", "GLIDE", "GHOST", OR "DRAG" IN THE LYRICS! These are invisible rhythmic timing instructions.
+CRITICAL: DO NOT WRITE THE WORDS "SNAP", "STEP", "HOLD", "GLIDE", "GHOST", OR "DRAG" IN THE LYRICS! These are invisible rhythmic timing instructions.
 {energy_directive}
 """
 
