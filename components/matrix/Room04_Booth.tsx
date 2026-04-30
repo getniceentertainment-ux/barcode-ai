@@ -987,15 +987,18 @@ export default function Room04_Booth() {
               const chunkDuration = stepsRequired * timePerStep;
 
               // 4. SMOOTH HIGHLIGHT FIX: Break the bucket back down into individual words
-              // This divides the time evenly so the teleprompter highlights one word at a time!
               const actualWords = wordChunk.split(' ').filter(w => w.length > 0);
               const durationPerWord = chunkDuration / actualWords.length;
+              
+              // 🚨 NEW: Calculate how many visual slots each word gets within this chunk's space
+              const slotsPerWord = stepsRequired / actualWords.length;
               
               actualWords.forEach((singleWord, subIdx) => {
                   mappedWords.push({
                       id: `word-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
                       word: singleWord, 
-                      slot: currentStepOffset, 
+                      // 🚨 THE FIX: Spread the visual blocks out so they don't stack on top of each other!
+                      slot: Math.floor(currentStepOffset + (subIdx * slotsPerWord)), 
                       startTime: localWordTime + (subIdx * durationPerWord), 
                       duration: durationPerWord, 
                       isWordEnd: true
