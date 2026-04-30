@@ -243,40 +243,25 @@ def translate_dna_to_topline(pattern_array, section_type, energy):
     return f"Vocal tone: {energy_directive}"
 
 def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, rhyme_scheme, pattern_desc, pattern_array, pocket_instruction, prompt_topic, style="getnice_hybrid", section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
-    global model
-    if model is None:
-        return []
-
-    try:
-        bars = int(bars)
-    except (ValueError, TypeError):
-        bars = 0
-        
-    if bars <= 0:
-        return []
-
+    
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
     if pattern_array:
         active_strikes = [v for v in pattern_array if v != 6]
         accent_target = len(active_strikes)
-        estimated_words = max(5, int(max_syllables * 0.8)) 
         
         dna_constraint = f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. LENGTH LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables (approx {estimated_words} words) per line. Be concise.
-2. RHYTHMIC ACCENTS: Create a groove with approximately {accent_target} heavy rhythmic bounces. 
+1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line.
+2. RHYTHMIC ACCENTS: Anchor your line on exactly {accent_target} heavy stressed words.
 3. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
-4. POCKET PLACEMENT: {pocket_instruction}
 """
         dna_law += f"\n{dna_constraint}"
     else:
-        estimated_words = max(5, int(max_syllables * 0.8))
         dna_law += f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. LENGTH LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables (approx {estimated_words} words) per line.
+1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line.
 2. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
-3. POCKET PLACEMENT: {pocket_instruction}
 """
 
     if section_type.upper() == "HOOK": 
@@ -290,17 +275,17 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     if "HOOK" in section_type.upper():
         if hook_type == "bouncy": hook_context = "[HOOK OVERRIDE]\nBOUNCY & REPETITIVE: Repeat short, punchy 2-word or 3-word phrases back-to-back."
         elif hook_type == "triplet": hook_context = "[HOOK OVERRIDE]\nRHYTHMIC MATH: Write entirely in groups of 3 syllables (triplets)."
-        elif hook_type == "symmetry": hook_context = "[HOOK OVERRIDE]\nSPLIT STRUCTURE: Write in an alternating A-B-A-B concept pattern. DO NOT actually write the letters 'A' or 'B' in the lyrics."
+        elif hook_type == "symmetry": hook_context = "[HOOK OVERRIDE]\nSPLIT STRUCTURE: You MUST write in an A-B-A-B structural pattern."
         elif hook_type == "prime": hook_context = "[HOOK OVERRIDE]\nSYNCOPATION MATH: Force an odd-numbered syllable count."
         else: hook_context = "[HOOK OVERRIDE]\nSPACIOUS & ANTHEMIC: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse."
 
     evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast." if ("VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 8) else ""
     energy_rules = "\n[ENERGY CLIMAX]: Pack the pocket. Write dense, aggressive rhymes." if current_energy == 4 else ""
 
-    #ADD THIS: Tell the LLM to stop writing massive sentences for short flows
+    # Keep the LLM from writing huge paragraphs for low-syllable flows
     word_hint = ""
     if max_syllables <= 7:
-        word_hint = "CRITICAL: Write extremely short fragments. 2 or 3 words MAXIMUM per line. Do not write full sentences."
+        word_hint = "CRITICAL: Write extremely short fragments. 2 or 3 words MAXIMUM per line."
 
     draft_prompt = f"""<|im_start|>user
 [GENERATE {section_type.upper()}]
@@ -311,90 +296,71 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 {hook_context}
 {energy_rules}
 {evolution_rules}
+{word_hint}
 
 [PREVIOUS CONTEXT]
 {previous_lyrics if previous_lyrics else 'Start of track.'}
 
-Write the draft now. Do not write action words like SNAP or STEP into the lyrics. Do not output section headers, just the pure lines.
+Write the draft now. Output raw lines only.
 <|im_end|>
 <|im_start|>assistant
 """
-    full_prompt_draft = system_prompt + draft_prompt
-    outputs = model(
-        full_prompt_draft, 
-        max_tokens=40 * bars, 
-        temperature=0.85, 
-        top_p=0.9, 
-        repeat_penalty=1.25, 
-        stop=["<|im_end|>"]
-    )
-    draft_text = outputs["choices"][0]["text"].strip()
+    inputs = tokenizer(system_prompt + draft_prompt, return_tensors="pt").to("cuda")
+    outputs = model.generate(**inputs, max_new_tokens=64 * bars, temperature=0.85, top_p=0.9, repetition_penalty=1.15, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id)
+    draft_text = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip()
 
-    word_cap = max(5, int(max_syllables * 0.8))
-
+    # Removed the "Count your words" command and punctuation commands so it stops hallucinating
     refine_prompt = f"""<|im_start|>user
-Rewrite the following draft to fix the rhythm.
+[THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
+You drafted this {bars}-bar {section_type.upper()}:
+"{draft_text}"
 
-[CRITICAL MATH LAWS - DO NOT VIOLATE]
-1. LENGTH: YOU ARE RESTRICTED TO A MAXIMUM OF {word_cap} WORDS PER LINE.
-2. RHYME: End the lines using a strict {rhyme_scheme} rhyming pattern.
-3. FORMAT: Put exactly one vertical bar '|' in the middle of each line.
-4. POCKET: {pocket_instruction}
+CRITICAL REFINEMENT COMMANDS:
+1. MATH: Enforce the strict {max_syllables} syllable limit per line! 
+2. RHYME: Enforce the {rhyme_scheme} rhyme scheme.
+3. FORMAT: Output ONLY the raw rewritten lines in ALL CAPS. Do NOT add numbers, labels, or word counts.
 
-[DRAFT TO REWRITE]
-{draft_text}
-
-Output ONLY the {bars} rewritten lines. Count your words.
+Output ONLY the final {bars} lines now.
 <|im_end|>
 <|im_start|>assistant
 """
-    full_prompt_refine = system_prompt + refine_prompt
-    outputs_refine = model(
-        full_prompt_refine, 
-        max_tokens=40 * bars, 
-        temperature=0.6,       
-        top_p=0.9, 
-        repeat_penalty=1.15,   
-        stop=["<|im_end|>"]
-    )
-    
-    final_text = outputs_refine["choices"][0]["text"].strip()
+    inputs_refine = tokenizer(system_prompt + refine_prompt, return_tensors="pt").to("cuda")
+    outputs_refine = model.generate(**inputs_refine, max_new_tokens=64 * bars, temperature=0.5, top_p=0.9, repetition_penalty=1.1, pad_token_id=tokenizer.eos_token_id, eos_token_id=tokenizer.eos_token_id)
+    final_text = tokenizer.decode(outputs_refine[0][inputs_refine['input_ids'].shape[1]:], skip_special_tokens=True).strip()
+
     final_text = final_text.replace("<|im_end|>", "").strip()
     final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
     final_text = re.sub(r'\[.*?\]', '', final_text) 
     final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE) 
     
-    banned_starts = ('+', '-', 'here are', 'sure', 'i can', '###', 'please generate', 'output:', 'note:', 'rewritten', 'here is', 'the rewritten')
-    
+    banned_starts = ('+', '-', 'here are', 'sure', 'i can', '###', 'please generate', 'output:', 'note:', 'rewritten:')
     raw_lines = [
         line.strip() for line in final_text.split('\n') 
         if line.strip() and len(line.strip()) > 5 and not line.lower().strip().startswith(banned_starts)
     ]
     
-    clean_payloads = []
-    if not banned_words_map: banned_words_map = {}
-
+    clean_lines = []
     current_style = style.lower()
 
     for line in raw_lines:
-        line = re.sub(r'^([a-zA-Z][:.-]\s*|[\d\.\)\]\s]+)', '', line).strip()
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
         
-        #THE CLEANER: Destroy LLM math hallucinations and weird quotes
+        # Kill LLM math hallucinations ("5 WORDS", "3X")
         line = re.sub(r'\b\d+[xX\+\-\*]+\d*\b', '', line)
-        line = line.replace('"', '').replace("'", "")
+        line = re.sub(r'\b\d+\s*WORDS?\b', '', line, flags=re.IGNORECASE)
         
         for action_word in ["SNAP", "STEP", "HOLD", "GLIDE", "GHOST", "EXTREME-DRAG"]:
             line = re.sub(rf'\b{action_word}\b', '', line, flags=re.IGNORECASE).strip()
-
-        line = line.replace('|', '').strip().upper()
+                
+        line = line.replace('|', '').replace('"', '').replace("'", "").strip().upper()
 
         words_in_line = line.split()
         allowed_words = []
         current_syls = 0
         
+        # Dynamic starvation math
         if current_style == "lazy": buffer_limit = max_syllables + 1  
         elif current_style == "triplet": buffer_limit = max_syllables + 1  
         elif current_style == "chopper": buffer_limit = max_syllables + 2  
@@ -407,15 +373,12 @@ Output ONLY the {bars} rewritten lines. Count your words.
             allowed_words.insert(0, w)
             current_syls += syls
 
-        if len(allowed_words) == 0:
-            continue
-            
-        #THE PUNCTUATION FIX: Strip punctuation from the words so we can add it cleanly at the end
+        # Strip all random punctuation from the raw words
         allowed_words = [re.sub(r'[^\w\s]', '', w) for w in allowed_words if w.strip()]
         if len(allowed_words) == 0:
             continue
 
-        #SAFE POCKET INJECTION: Glues the punctuation cleanly INSIDE the pipes
+        # Add requested punctuation to the final word BEFORE pipes
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
             allowed_words[0] = "..." + allowed_words[0]
         elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
@@ -423,6 +386,7 @@ Output ONLY the {bars} rewritten lines. Count your words.
         elif "period" in pocket_instruction:
             allowed_words[-1] = allowed_words[-1] + "."
 
+        # Draw the Dataset-Accurate Pipes
         if current_style == "triplet":
             n = len(allowed_words)
             q, r = divmod(n, 4)
@@ -445,36 +409,33 @@ Output ONLY the {bars} rewritten lines. Count your words.
         if len(formatted_line.replace(".", "").replace("|", "").replace(",", "").strip()) < 3:
             continue
 
-        if len(clean_payloads) > 0 and clean_payloads[-1]["text"] == formatted_line:
-            continue 
-
-        syllables_list = [count_syllables(w) for w in allowed_words]
-        
-        clean_payloads.append({
-            "text": formatted_line,
-            "syllables": syllables_list,
-            "words": allowed_words
-        })
+        clean_compare_line = formatted_line.replace('"', '').replace("'", "")
+        # ONLY delete duplicate lines if it is a VERSE. Hooks need to repeat!
+        if "VERSE" in section_type.upper():
+            if len(clean_lines) > 0 and clean_lines[-1].replace('"', '').replace("'", "") == clean_compare_line:
+                continue 
+            
+        clean_lines.append(formatted_line)
     
-    # 🚨 Syllable-Strict Fallbacks
+    # Dataset-Accurate Fallbacks
     if current_style == "lazy":
         fallback_pool = [
-            ["SLID", "ING", "IN", "DARK"],         
-            ["LEAV", "ING", "OUR", "MARK"],        
+            ["SLIDING", "IN", "DARK"],         
+            ["LEAVING", "OUR", "MARK"],        
             ["RUN", "THE", "WHOLE", "TOWN"],       
-            ["NEV", "ER", "BACK", "DOWN"]          
+            ["NEVER", "BACK", "DOWN"]          
         ]
     else:
         fallback_pool = [
-            ["YEAH", "WE", "STAY", "IN", "MO", "TION"],     
+            ["YEAH", "WE", "STAY", "IN", "MOTION"],     
             ["ALL", "DAY", "WE", "ON", "THE", "GRIND"],     
-            ["SE", "CURE", "THE", "BAG", "TO", "DAY"],      
-            ["MON", "EY", "UP", "NEV", "ER", "BLIND"]       
+            ["SECURE", "THE", "BAG", "TODAY"],      
+            ["MONEY", "UP", "NEVER", "BLIND"]       
         ]
         
     fallback_idx = 0
     
-    while len(clean_payloads) < bars:
+    while len(clean_lines) < bars:
         fallback_words = fallback_pool[fallback_idx % len(fallback_pool)]
         
         if current_style == "triplet":
@@ -494,14 +455,10 @@ Output ONLY the {bars} rewritten lines. Count your words.
             mid = max(1, len(fallback_words) // 2)
             safe_line = " ".join(fallback_words[:mid]) + " | " + " ".join(fallback_words[mid:])
 
-        clean_payloads.append({
-            "text": safe_line,
-            "syllables": [count_syllables(w) for w in fallback_words],
-            "words": fallback_words
-        })
+        clean_lines.append(safe_line)
         fallback_idx += 1
         
-    return clean_payloads[:bars]
+    return clean_lines[:bars]
 
 def handler(event):
     global model
@@ -558,10 +515,10 @@ Output: ALL CAPS rewritten line ONLY.
         dynamic_array = job_input.get("dynamic_array", [2, 2, 2, 2, 2, 2, 2, 2])
         seconds_per_bar = (60.0 / bpm) * 4.0
 
-        pocket_instruction = "End every line with a period (.)."
-        if pocket == "chainlink": pocket_instruction = "End lines with a comma (,)."
-        elif pocket == "pickup": pocket_instruction = "Start lines with ellipsis (...)."
-        elif pocket == "cascade": pocket_instruction = "No punctuation."
+        pocket_instruction = "period"
+        if pocket == "chainlink": pocket_instruction = "SYNCOPATION (CHAIN-LINK)"
+        elif pocket == "pickup": pocket_instruction = "SYNCOPATION (PICKUP)"
+        elif pocket == "cascade": pocket_instruction = "cascade"
 
         final_lyrics = ""
         structured_blueprint_data = []
