@@ -9,29 +9,28 @@ import {
 import { useMatrixStore } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
 
-// --- 🚨 THE UPGRADED 100% PROPRIETARY GETNICE MACRO-RHYTHMIC VAULT ---
-// We now globally encode Syllable Maximums and Rhyme Schemes directly into the DNA.
-const FLOW_VAULT: Record<string, {array: number[], name: string, desc: string, maxSyllables: number, rhymeScheme: string}[]> = {
+// --- THE 100% PROPRIETARY GETNICE MACRO-RHYTHMIC VAULT ---
+const FLOW_VAULT: Record<string, {array: number[], name: string, desc: string}[]> = {
   "getnice_hybrid": [
-    { array: [4, 2, 2, 3, 1, 4, 2, 2, 2, 2, 4, 4], name: "Chain-Link Pivot", desc: "Long massive hold on the 1-count, followed by 2 standard syllables, then a long stretch, a rapid snap, and another massive hold.", maxSyllables: 12, rhymeScheme: "AABB" },
-    { array: [3, 1, 2, 2], name: "Platinum Bounce", desc: "1 long stretched syllable, 1 very fast rapid syllable, and 2 standard medium syllables. Repeat this bounce.", maxSyllables: 10, rhymeScheme: "ABAB" },
-    { array: [6, 2, 4, 2, 2], name: "Late Drop", desc: "Leave the 1-count totally empty (a pickup/rest), then drop a massive hold on the 2-count followed by standard syllables.", maxSyllables: 9, rhymeScheme: "AAAA" }
+    { array: [4, 2, 2, 3, 1, 4, 2, 2, 2, 2, 4, 4], name: "Chain-Link Pivot", desc: "Long massive hold on the 1-count, followed by 2 standard syllables, then a long stretch, a rapid snap, and another massive hold. Very dynamic push-and-pull." },
+    { array: [3, 1, 2, 2], name: "Platinum Bounce", desc: "1 long stretched syllable, 1 very fast rapid syllable, and 2 standard medium syllables. Repeat this bounce." },
+    { array: [6, 2, 4, 2, 2], name: "Late Drop", desc: "Leave the 1-count totally empty (a pickup/rest), then drop a massive hold on the 2-count followed by standard syllables." }
   ],
   "chopper": [
-    { array: [1, 1, 1, 1], name: "Machine Gun", desc: "All rapid-fire, ultra-fast 16th-note syllables. No long stretches. Relentless.", maxSyllables: 16, rhymeScheme: "AAAA" },
-    { array: [2, 1, 1, 1, 1, 2], name: "Stutter Step", desc: "A standard syllable, followed by four ultra-fast rapid syllables, ending on a standard syllable.", maxSyllables: 14, rhymeScheme: "AABB" }
+    { array: [1, 1, 1, 1], name: "Machine Gun", desc: "All rapid-fire, ultra-fast 16th-note syllables. No long stretches. Relentless." },
+    { array: [2, 1, 1, 1, 1, 2], name: "Stutter Step", desc: "A standard syllable, followed by four ultra-fast rapid syllables, ending on a standard syllable." }
   ],
   "heartbeat": [
-    { array: [2, 2, 2, 2], name: "Steady Anchor", desc: "All standard, steady 8th-note syllables. Methodical, calm, and heavy.", maxSyllables: 10, rhymeScheme: "AABB" },
-    { array: [4, 2, 2, 4, 4], name: "Delayed Pocket", desc: "A massive hold, two standard syllables, then two more massive holds. Very lazy and behind the beat.", maxSyllables: 8, rhymeScheme: "ABAB" }
+    { array: [2, 2, 2, 2], name: "Steady Anchor", desc: "All standard, steady 8th-note syllables. Methodical, calm, and heavy." },
+    { array: [4, 2, 2, 4, 4], name: "Delayed Pocket", desc: "A massive hold, two standard syllables, then two more massive holds. Very lazy and behind the beat." }
   ],
   "triplet": [
-    { array: [3, 3, 2], name: "Standard Triplet", desc: "Two long stretched syllables followed by a standard syllable. The classic triplet trap flow.", maxSyllables: 12, rhymeScheme: "AAAA" },
-    { array: [2, 2, 2, 3, 3, 4], name: "Atmospheric Stagger", desc: "Three standard syllables, two long stretches, and a massive hold. A wavy, staggered rhythm.", maxSyllables: 11, rhymeScheme: "AABB" }
+    { array: [3, 3, 2], name: "Standard Triplet", desc: "Two long stretched syllables followed by a standard syllable. The classic triplet trap flow." },
+    { array: [2, 2, 2, 3, 3, 4], name: "Atmospheric Stagger", desc: "Three standard syllables, two long stretches, and a massive hold. A wavy, staggered rhythm." }
   ],
   "lazy": [
-    { array: [4, 2, 2], name: "Standard Drawl", desc: "A massive lazy hold followed by two standard syllables. Slow and dragged out.", maxSyllables: 7, rhymeScheme: "AABB" },
-    { array: [6, 2, 8], name: "Extreme Drag", desc: "An extreme delayed hold, a standard syllable, and an enormously long stretched finish.", maxSyllables: 5, rhymeScheme: "AAAA" }
+    { array: [4, 2, 2], name: "Standard Drawl", desc: "A massive lazy hold followed by two standard syllables. Slow and dragged out." },
+    { array: [6, 2, 8], name: "Extreme Drag", desc: "An extreme delayed hold, a standard syllable, and an enormously long stretched finish." }
   ]
 };
 
@@ -107,15 +106,12 @@ export default function Room03_Ghostwriter() {
       let activeName = "";
       let activeDesc = "";
       let activeArray: number[] = [];
-      let activeMaxSyllables = 10;
-      let activeRhymeScheme = "AABB";
       
       if (block.type === 'HOOK') {
           activeName = hookLabels[gwHookType as string] || "Custom Hook";
           activeDesc = `Topline Override Active: ${activeName}`;
+          // --- SURGICAL REPAIR: Ensure Hooks pull a baseline rhythmic array ---
           activeArray = variations[0].array; 
-          activeMaxSyllables = variations[0].maxSyllables;
-          activeRhymeScheme = variations[0].rhymeScheme;
       } else if (block.type === 'VERSE') {
           const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
           
@@ -136,8 +132,6 @@ export default function Room03_Ghostwriter() {
           verseCounter++;
           
           activeArray = selected.array;
-          activeMaxSyllables = selected.maxSyllables;
-          activeRhymeScheme = selected.rhymeScheme;
 
           const pocketLabels: Record<string, string> = {
             standard: "Std",
@@ -158,14 +152,13 @@ export default function Room03_Ghostwriter() {
           needsUpdate = true;
       }
       
+      // --- COMPLETING YOUR CUT-OFF CODE HERE ---
       const updated = { 
         ...block, 
         startBar: start,
         patternArray: activeArray, 
         patternName: activeName,
-        patternDesc: activeDesc,
-        maxSyllables: activeMaxSyllables, // <-- INJECTED INTO STATE
-        rhymeScheme: activeRhymeScheme    // <-- INJECTED INTO STATE
+        patternDesc: activeDesc
       };
       
       cursor = start + block.bars;
@@ -271,6 +264,7 @@ export default function Room03_Ghostwriter() {
       finalFlowEvolution = (gwStyle === "chopper" || gwStyle === "triplet") ? "switch" : "static";
     }
 
+    // --- SURGICAL FIX: Removed Pipe formatting to clear Cognitive Overload ---
     const systemConstraint = `ABSOLUTE ENGINE RULES:
 1. RAW LYRICS ONLY: You must ONLY output the lyrics.
 2. COMPOUND RHYMING: Use 2- or 3-syllable compound rhymes on the structural accents.
@@ -305,8 +299,6 @@ export default function Room03_Ghostwriter() {
           tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
-          isExplicit: true, // 🚨 PASSED DOWN TO AI
-          bannedWordsMap: {}, // <-- SURGICAL FIX: Wired up to prevent backend fallbacks. Populate this later via your RAG Intel.
           strikeZone: gwStrikeZone,
           hookType: finalHookType,             
           flowEvolution: finalFlowEvolution,   
@@ -315,8 +307,8 @@ export default function Room03_Ghostwriter() {
           scale: scale,
           contour: (audioData as any)?.contour || "drops into a lower, cadential register",
           dynamic_array: (audioData as any)?.dynamic_array,
+          systemConstraint: systemConstraint, 
           blueprint: blueprint.flatMap(b => {
-            // PASSING THE VAULT DATA DOWN TO THE API
             if (b.type === "VERSE" && b.bars > 8) {
               return [
                 { 
@@ -324,18 +316,14 @@ export default function Room03_Ghostwriter() {
                   bars: 8, 
                   startBar: (b as any).startBar,
                   patternDesc: (b as any).patternDesc,
-                  patternArray: (b as any).patternArray,
-                  maxSyllables: (b as any).maxSyllables, // <-- NEW
-                  rhymeScheme: (b as any).rhymeScheme   // <-- NEW
+                  patternArray: (b as any).patternArray
                 },
                 { 
                   type: b.type, 
                   bars: b.bars - 8, 
                   startBar: (b as any).startBar + 8, 
                   patternDesc: (b as any).patternDesc,
-                  patternArray: (b as any).patternArray,
-                  maxSyllables: (b as any).maxSyllables, // <-- NEW
-                  rhymeScheme: (b as any).rhymeScheme   // <-- NEW
+                  patternArray: (b as any).patternArray
                 }
               ];
             }
@@ -344,9 +332,7 @@ export default function Room03_Ghostwriter() {
               bars: b.bars, 
               startBar: (b as any).startBar,
               patternDesc: (b as any).patternDesc,
-              patternArray: (b as any).patternArray,
-              maxSyllables: (b as any).maxSyllables, // <-- NEW
-              rhymeScheme: (b as any).rhymeScheme    // <-- NEW
+              patternArray: (b as any).patternArray
             };
           })
         })
@@ -375,6 +361,9 @@ export default function Room03_Ghostwriter() {
             let rawLyrics = statusData.output.lyrics || "";
             let cleanedLyrics = rawLyrics
               .replace(/\(pipe symbol.*?\)/gi, '') 
+              .replace(/\|(?:\s*\|)+/g, '') 
+              .replace(/(\(\d+:\d{2}\)\s*)\|\s*/gm, '$1') 
+              .replace(/\|\s*$/gm, '') 
               .replace(/(\(\d+:\d{2}\)\s*)(?:\d+(?:st|nd|rd|th)? Line:|Line \d+:|Hook:|Verse:|Chorus:|Intro:|Outro:)\s*/gmi, '$1')
               .trim();
 
@@ -425,24 +414,12 @@ export default function Room03_Ghostwriter() {
       if (!res.ok) throw new Error("Refinement API Error");
 
       const data = await res.json();
-      
-      if (data.refinedLine) {
-        // 1. EXTRACT THE TIMESTAMP (e.g., "(1:23) ") from the old line
-        const timeMatch = selectedLine.match(/^\(\d+:\d{2}\)\s*/);
-        const timePrefix = timeMatch ? timeMatch[0] : "";
-
-        // 2. GLUE IT TOGETHER so Room 4 timing doesn't break
-        const finalRefinedLine = `${timePrefix}${data.refinedLine}`;
-
-        // 3. UPDATE LOCAL STATE AND STORE
-        const updatedLyrics = lyrics.replace(selectedLine, finalRefinedLine);
-        setLyrics(updatedLyrics);
-        setGeneratedLyrics(updatedLyrics);
-        
-        setRefineInstruction("");
-        setSelectedLine("");
-        if(addToast) addToast("Micro-refinement applied.", "success");
-      }
+      const updatedLyrics = lyrics.replace(selectedLine, data.refinedLine);
+      setLyrics(updatedLyrics);
+      setGeneratedLyrics(updatedLyrics);
+      setRefineInstruction("");
+      setSelectedLine("");
+      if(addToast) addToast("Micro-refinement applied.", "success");
       
     } catch (err: any) {
       if(addToast) addToast("Failed to refine line.", "error");
@@ -450,7 +427,6 @@ export default function Room03_Ghostwriter() {
       setIsRefining(false);
     }
   };
-
 
   return (
     <div className="flex h-full bg-[#050505] border border-[#222] rounded-lg overflow-hidden animate-in fade-in duration-500">

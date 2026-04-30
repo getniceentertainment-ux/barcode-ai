@@ -132,29 +132,14 @@ def init_model():
 
 def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle, hustle, topic, root_note, scale, contour, strike_zone, bpm, flow_reference="", banned_words_map=None, is_explicit=True):
     rag_context = load_rag_intel() if use_intel else "Intel injection disabled."
+    slang_list = ", ".join(load_street_slang(style)) if use_slang else "Standard vocabulary."
     culture_context = load_cultural_context() if use_intel else "Standard thematic focus."
-    
-    if use_slang:
-        slang_injection = f"""
-[MANDATORY GETNICE VOCABULARY]
-- Money: Guap, bands, blue cheese, racks, bag, fetty, digits
-- Police: Ops, 12, feds, jakes, boys in blue
-- Crew: Slime, day ones, gang, brodie, kin
-- Weapons: Pole, glizzy, iron, stick, blicky, heater, draco
-- Status: Motion, up, eating, big body, steppin', active
-- Action: Sliding, spinning, crashing out, pressing
-- Vehicles: Foreign, whip, coupe, scat, hellcat, ghost, maybach
-- Foul: Nigga, Fuck Em', Fuck You, Bitch Ass, Lil Nigga, Dick, Cock, Pussy, Bitch, Shit, Fish Scale, Cocaine, Cola, Spliff
-- Dynamic Additions: {", ".join(load_street_slang(style))}
-"""
-    else:
-        slang_injection = "[VOCABULARY]: Standard vocabulary."
     
     if banned_words_map and isinstance(banned_words_map, dict):
         clean_words = [k.replace("\\b", "").replace("?", "").replace("(?:y|ies)", "y") for k in banned_words_map.keys()]
         banned_words_str = ", ".join(clean_words[:15])
     else:
-        banned_words_str = "tapestry, delve, testament, beacon, journey, myriad, landscape, whisper, shadows, dancing, plight, fright, ignite, divine, sublime, mindstream, embrace, souls, abyss, void, chaos, destiny, fate, temptress, kingdom, throne, gravity"
+        banned_words_str = "tapestry, delve, testament, beacon, journey, myriad, landscape, whisper, shadows, dancing"
     
     strike_rule = "Ensure your multi-syllabic rhyme endings land precisely on the 2-count and 4-count (the snare drum)."
     if strike_zone == "downbeat": strike_rule = "Force aggressive, heavy emphasis on the 1-count (the downbeat/kick drum)."
@@ -165,49 +150,21 @@ def construct_system_prompt(title, style, use_slang, use_intel, motive, struggle
     elif bpm_val <= 135: rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Mid). Rhythmic, steady pocket."
     else: rhythm_logic = f"- TEMPO POCKET: {bpm} BPM (Fast). Fast, staccato."
 
-    is_minor = 'm' in scale.lower()
-    is_fast = bpm_val > 135
-    if is_minor and is_fast: dsp_vocal_instruction = "Inject aggressive, rapid-fire stutters (e.g., 'g-g-g-get it') and sharp vocal drops."
-    elif is_minor and not is_fast: dsp_vocal_instruction = "Inject heavy, isolated 1-word pauses and dragged-out sinister spelling."
-    elif not is_minor and is_fast: dsp_vocal_instruction = "Inject high-energy repeated chants and triumphant rhythmic bouncing."
-    else: dsp_vocal_instruction = "Inject massive, anthemic spelled-out words and huge group-style pauses."
-
-    sonics = {
-        "chopper": "TONE: Distorted, aggressive, rapid-fire. Heavy compression delivery.",
-        "lazy": "TONE: Ethereal, wavy, reverb-heavy. Use atmospheric phrasing.",
-        "drill": "TONE: Gritty, raw, aggressive. Tinny and urgent like a recorded call from a cell block.",
-        "triplet": "TONE: Punchy, staccato, heavily pocketed.",
-        "getnice_hybrid": "TONE: Crisp, melodic, but street-level authoritative."
-    }
-    sonic_vibe = sonics.get(style, "TONE: Standard trap delivery, pocketed and confident.")
-
     flow_mimicry = ""
     if flow_reference and len(flow_reference) > 5:
-        short_ref = "\n".join([line for line in flow_reference.split('\n') if line.strip()][:4])
-        flow_mimicry = f"""[VOCAL CADENCE BLUEPRINT]
-"{short_ref}"
-CRITICAL: Use this quote ONLY for thematic vibe and rhyme placement. YOU MUST STRICTLY OBEY THE DYNAMIC SYLLABLE LIMIT FOR THE SECTION OVER THIS REFERENCE."""
+        flow_mimicry = f"""[USER'S VOCAL CADENCE BLUEPRINT]
+"{flow_reference}"
+-> CRITICAL INSTRUCTION: Analyze the syllable density and internal rhyme placement of that quote. You MUST format your generated lyrics to perfectly match that specific rhythmic bounce."""
 
-    explicit_directive = "5. EXPLICIT CONTENT RATING: This is a raw, uncensored street track. You MUST organically use harsh profanity to emphasize aggression." if is_explicit else "5. CLEAN RATING: Keep the lyrics strictly radio-clean. Do not use profanity."
-
-    style_personas = {
-        "chopper": "Fast-paced Tech/Chopper",
-        "lazy": "Lazy, wavy, off-beat",
-        "triplet": "Modern Triplet Trap",
-        "heartbeat": "Classic Boom-Bap",
-        "getnice_hybrid": "Melodic Trap"
-    }
-    active_persona = style_personas.get(style, "Modern Trap")
+    explicit_directive = "6. EXPLICIT CONTENT RATING: This is a raw, uncensored street track. You MUST organically use harsh profanity to emphasize aggression." if is_explicit else "6. CLEAN RATING: Keep the lyrics strictly radio-clean. Do not use profanity."
 
     return f"""<|im_start|>system
-[SYSTEM DIRECTIVE: THE MODERN TRAP ICON]
-You are a chart-topping {active_persona} artist. You do not speak in complex poetry, riddles, or medieval metaphors. You speak in literal, flex-heavy, repetitive street language. Your syntax is simple, punchy, and highly rhythmic. You focus on money, loyalty, survival, and designer lifestyles. Cocaine Sales and Shooting Dice is what made you blow up.
+[SYSTEM DIRECTIVE: THE SURROGATE HEIR]
+You are "The Heir." You grew up without a father, raised by the streets. You speak with the cold, calculated intellect of a man who outlived all of his surrogate fathers. Your voice blends street-smart authenticity with boardroom strategic vision. You value equity over a paycheck.
 
 [LIVE INTEL]
 {rag_context}
 {culture_context}
-
-{slang_injection}
 
 [TRACK VARIABLES]
 - TITLE: {title}
@@ -221,17 +178,26 @@ You are a chart-topping {active_persona} artist. You do not speak in complex poe
 - CONTOUR DIRECTION: The beat {contour}.
 - THE STRIKE ZONE: {strike_rule}
 {rhythm_logic}
-- SONIC VIBE: {sonic_vibe}
 
-[CRITICAL SYSTEM PARSER RULES - DO NOT VIOLATE]
+[ABSOLUTE ENGINE RULES]
 1. ONE LINE = ONE BAR. 
-2. THE ONE PIPE RULE: Every single lyric line MUST contain exactly one pipe symbol (|) splitting the line into two halves. DO NOT use zero pipes. DO NOT use multiple pipes. Example: "MONEY IN MY HAND | AIN'T NO TIME TO WASTE."
-3. SYLLABLE CAP: You MUST count the syllables. Do not write sentences longer than the requested maxSyllables. If you exceed the max syllables, the parser will fail and the system will crash.
-4. CONCRETE NOUNS ONLY: Use physical objects (Cars, Money, Guns). Abandon abstract metaphors. Avoid AI cliches: {banned_words_str}.
+2. THE PIPE SYMBOL: You MUST place exactly one pipe symbol (|) in the exact middle of EVERY single line to mark the rhythmic pause/breath.
+3. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
+4. TONE: Strategic, authoritative executive street-slang. Minimalist syntax. Use concrete nouns. Speak from the gut.
+5. VOCABULARY: Organically weave in the following slang terms contextually: [ {slang_list} ].
 {explicit_directive}
-6. DSP VOCAL MATCH: {dsp_vocal_instruction}
 {flow_mimicry}
-<|im_end|>"""
+
+[GOLD STANDARD EXAMPLES]
+Example 1 (Aggressive):
+Looked the devil in his face | told that motherfucker wait.
+I got equity to clear | I got leverage on the plate.
+
+Example 2 (Methodical):
+Thirty rounds inside the clip | thirty million in the bank.
+Every move is calculated | never moving out of spite.
+<|im_end|>
+"""
 
 def translate_dna_to_topline(pattern_array, section_type, energy):
     if not pattern_array: return ""
@@ -249,13 +215,16 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
+# TRANSLATE SYLLABLES TO WORDS SO THE LLM UNDERSTANDS
+    word_cap = max(3, int(max_syllables * 0.8))
+
     if pattern_array:
         active_strikes = [v for v in pattern_array if v != 6]
         accent_target = len(active_strikes)
         
         dna_constraint = f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line.
+1. LENGTH LIMIT: Absolute maximum of {word_cap} words per line. Keep phrases short!
 2. RHYTHMIC ACCENTS: Anchor your line on exactly {accent_target} heavy stressed words.
 3. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
 """
@@ -263,7 +232,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     else:
         dna_law += f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line.
+1. LENGTH LIMIT: Absolute maximum of {word_cap} words per line. Keep phrases short!
 2. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
 """
 
@@ -323,11 +292,11 @@ You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
 CRITICAL REFINEMENT COMMANDS:
-1. MATH: Keep the lines short and punchy. Aim for {max_syllables} syllables per line.
+1. LENGTH: You are restricted to a maximum of {word_cap} words per line. 
 2. RHYME: Enforce the {rhyme_scheme} rhyme scheme.
 3. FORMAT: Output ONLY the raw rewritten lines in ALL CAPS. Do NOT add numbers, labels, or word counts.
 
-Output ONLY the final {bars} lines now.
+Output exactly {bars} lines now.
 <|im_end|>
 <|im_start|>assistant
 """
@@ -410,11 +379,13 @@ Output ONLY the final {bars} lines now.
         if len(formatted_line.replace(".", "").replace("|", "").replace(",", "").strip()) < 3:
             continue
 
-        # 4. Anti-Duplicate checker for Verses (Hooks are allowed to repeat)
+        # 4. Anti-Duplicate checker for Verses
         clean_compare_line = formatted_line.replace('"', '').replace("'", "")
         if "VERSE" in section_type.upper():
             if len(clean_lines) > 0 and clean_lines[-1].replace('"', '').replace("'", "") == clean_compare_line:
-                continue 
+                # Instead of deleting the line and causing a fallback, just let it pass
+                # A repeated line is better than breaking the matrix with a fallback.
+                pass 
             
         clean_lines.append(formatted_line)
     
