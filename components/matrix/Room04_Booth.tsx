@@ -348,7 +348,7 @@ export default function Room04_Booth() {
       const delayNode = offlineCtx.createDelay(2.0);
       delayNode.delayTime.value = 60 / preciseBpm; // Quarter-note trap echo
       const feedbackGain = offlineCtx.createGain();
-      feedbackGain.gain.value = 0.10; // 20% low wet echo volume
+      feedbackGain.gain.value = 0.05; // 20% low wet echo volume
       
       delayNode.connect(feedbackGain);
       feedbackGain.connect(delayNode);
