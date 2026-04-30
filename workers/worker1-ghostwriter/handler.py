@@ -369,7 +369,7 @@ Output ONLY the final {bars} lines now.
         if line: clean_lines.append(line)
     
     while len(clean_lines) < bars:
-        safe_fallback = clean_lines[-1] if len(clean_lines) > 0 else "YEAH | WE STAY IN MOTION"
+        safe_fallback = clean_lines[-1]
         clean_lines.append(safe_fallback.upper())
         
     return clean_lines[:bars]
