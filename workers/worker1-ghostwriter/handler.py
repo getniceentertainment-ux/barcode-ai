@@ -256,7 +256,7 @@ Rhythm DNA: {" -> ".join(sequence)}
 {energy_directive}
 """
 
-def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, rhyme_scheme, pattern_desc, pattern_array, pocket_instruction, prompt_topic, section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
+def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, rhyme_scheme, pattern_desc, pattern_array, pocket_instruction, prompt_topic, style="getnice_hybrid", section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
     global model
     if model is None:
         return []
@@ -396,7 +396,7 @@ Output ONLY the {bars} rewritten lines. Count your words.
         words_in_line = line.split()
         allowed_words = []
         current_syls = 0
-        buffer_limit = max_syllables + 2 
+        buffer_limit = max_syllables + 6 # Increased buffer to prevent aggressive chopping
         
         for w in reversed(words_in_line):
             syls = count_syllables(w)
@@ -406,31 +406,41 @@ Output ONLY the {bars} rewritten lines. Count your words.
             current_syls += syls
 
         if len(allowed_words) == 0:
-            allowed_words = ["YEAH", "WE", "STAY", "IN", "MOTION"]
+            continue
 
-        if len(allowed_words) < len(words_in_line):
-            allowed_words[0] = "..." + allowed_words[0]
+        # --- THE DATASET VISUALIZER ---
+        current_style = style.lower()
+        
+        if current_style == "triplet":
+            # TRIPLET: 4 chunks separated by 3 pipes 
+            n = len(allowed_words)
+            q, r = divmod(n, 4)
+            chunks = []
+            idx = 0
+            for i in range(4):
+                size = q + (1 if i < r else 0)
+                if size > 0:
+                    chunks.append(" ".join(allowed_words[idx:idx+size]))
+                    idx += size
+            formatted_line = " | ".join(chunks)
 
-        mid = max(1, len(allowed_words) // 2)
-        formatted_line = " ".join(allowed_words[:mid]) + " | " + " ".join(allowed_words[mid:])
+        elif current_style in ["chopper", "lazy"]:
+            # CHOPPER/LAZY: Wrapped in pipes [cite: 4, 7]
+            formatted_line = f"| {' '.join(allowed_words)} |"
 
-        if "SYNCOPATION (PICKUP)" in pocket_instruction:
-            if not formatted_line.startswith("..."): formatted_line = "..." + formatted_line
-        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
-            formatted_line = formatted_line.rstrip('.,?!;') + ","
-        elif "CASCADE" in pocket_instruction:
-            formatted_line = formatted_line.rstrip('.,?!;')
-        elif "period" in pocket_instruction:
-            formatted_line = formatted_line.rstrip('.,?!;') + "."
+        else:
+            # HEARTBEAT/HYBRID: Split evenly with 1 middle pipe [cite: 2, 3]
+            mid = max(1, len(allowed_words) // 2)
+            formatted_line = " ".join(allowed_words[:mid]) + " | " + " ".join(allowed_words[mid:])
+
+        # Ghost line removal
+        if len(formatted_line.replace(".", "").replace("|", "").replace(",", "").strip()) < 3:
+            continue
 
         clean_compare_line = formatted_line.replace('"', '').replace("'", "")
         if len(clean_payloads) > 0 and clean_payloads[-1]["text"].replace('"', '').replace("'", "") == clean_compare_line:
             continue 
 
-        if len(formatted_line) < 4:
-            continue
-
-        # 🚨 THE SYLLABLE MAP: This is what the frontend needs to stop guessing 🚨
         syllables_list = [count_syllables(w) for w in allowed_words]
         
         clean_payloads.append({
@@ -439,13 +449,42 @@ Output ONLY the {bars} rewritten lines. Count your words.
             "words": allowed_words
         })
     
+    # --- DYNAMIC FALLBACKS ---
+    fallback_pool = [
+        ["YEAH", "WE", "STAY", "IN", "MOTION"],
+        ["ALL", "DAY", "WE", "ON", "THE", "GRIND"],
+        ["SECURE", "THE", "BAG", "WATCH", "THE", "PLAY"],
+        ["MONEY", "UP", "NEVER", "LOOK", "BEHIND"]
+    ]
+    fallback_idx = 0
+    
     while len(clean_payloads) < bars:
-        safe_line = "YEAH | WE STAY IN MOTION"
+        fallback_words = fallback_pool[fallback_idx % len(fallback_pool)]
+        
+        # Apply the exact same formatting rules to the fallbacks
+        if current_style == "triplet":
+            n = len(fallback_words)
+            q, r = divmod(n, 4)
+            chunks = []
+            idx = 0
+            for i in range(4):
+                size = q + (1 if i < r else 0)
+                if size > 0:
+                    chunks.append(" ".join(fallback_words[idx:idx+size]))
+                    idx += size
+            safe_line = " | ".join(chunks)
+        elif current_style in ["chopper", "lazy"]:
+            safe_line = f"| {' '.join(fallback_words)} |"
+        else:
+            mid = max(1, len(fallback_words) // 2)
+            safe_line = " ".join(fallback_words[:mid]) + " | " + " ".join(fallback_words[mid:])
+
         clean_payloads.append({
             "text": safe_line,
-            "syllables": [1, 1, 1, 1, 2],
-            "words": ["YEAH", "WE", "STAY", "IN", "MOTION"]
+            "syllables": [count_syllables(w) for w in fallback_words],
+            "words": fallback_words
         })
+        fallback_idx += 1
         
     return clean_payloads[:bars]
 
@@ -541,6 +580,7 @@ Output: ALL CAPS rewritten line ONLY.
                     pattern_desc=section.get("patternDesc", "Std"), 
                     pattern_array=section.get("patternArray", []), 
                     pocket_instruction=pocket_instruction, prompt_topic=topic,
+                    style=style,
                     section_index=index, hook_type=hook_type, flow_evolution=flow_evolution,
                     current_energy=current_energy, banned_words_map=banned_words_map
                 )
