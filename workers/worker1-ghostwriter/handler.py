@@ -244,7 +244,7 @@ def translate_dna_to_topline(pattern_array, section_type, energy):
 
 [RHYTHMIC SEQUENCE]
 Rhythm DNA: {" -> ".join(sequence)}
-🚨 CRITICAL: DO NOT WRITE THE WORDS "SNAP", "STEP", "HOLD", "GLIDE", "GHOST", OR "DRAG" IN THE LYRICS! These are invisible rhythmic timing instructions.
+#🚨 CRITICAL: DO NOT WRITE THE WORDS "SNAP", "STEP", "HOLD", "GLIDE", "GHOST", OR "DRAG" IN THE LYRICS! These are invisible rhythmic timing instructions.
 {energy_directive}
 """
 
@@ -303,7 +303,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast." if ("VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 8) else ""
     energy_rules = "\n[ENERGY CLIMAX]: Pack the pocket. Write dense, aggressive rhymes." if current_energy == 4 else ""
 
-    # 🚨 ADD THIS: Tell the LLM to stop writing massive sentences for short flows
+    #ADD THIS: Tell the LLM to stop writing massive sentences for short flows
     word_hint = ""
     if max_syllables <= 7:
         word_hint = "CRITICAL: Write extremely short fragments. 2 or 3 words MAXIMUM per line. Do not write full sentences."
@@ -388,7 +388,7 @@ Output ONLY the {bars} rewritten lines. Count your words.
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
         
-        # 🚨 THE CLEANER: Destroy LLM math hallucinations and weird quotes
+        #THE CLEANER: Destroy LLM math hallucinations and weird quotes
         line = re.sub(r'\b\d+[xX\+\-\*]+\d*\b', '', line)
         line = line.replace('"', '').replace("'", "")
         
@@ -416,12 +416,12 @@ Output ONLY the {bars} rewritten lines. Count your words.
         if len(allowed_words) == 0:
             continue
             
-        #🚨 THE PUNCTUATION FIX: Strip punctuation from the words so we can add it cleanly at the end
+        #THE PUNCTUATION FIX: Strip punctuation from the words so we can add it cleanly at the end
         allowed_words = [re.sub(r'[^\w\s]', '', w) for w in allowed_words if w.strip()]
         if len(allowed_words) == 0:
             continue
 
-        # 🚨 SAFE POCKET INJECTION: Glues the punctuation cleanly INSIDE the pipes
+        #SAFE POCKET INJECTION: Glues the punctuation cleanly INSIDE the pipes
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
             allowed_words[0] = "..." + allowed_words[0]
         elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
