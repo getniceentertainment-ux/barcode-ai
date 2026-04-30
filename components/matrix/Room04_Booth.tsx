@@ -334,30 +334,12 @@ export default function Room04_Booth() {
     setIsGeneratingGuide(true);
     setGuideProgress(0);
     
-    try {
-      // 🚨 FIX 4: Guide reads from the mathematically accurate local state, not the stale store
-      const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
-      if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
-
-      const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
-      const sampleRate = 44100;
-      
-      const OfflineCtxClass = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
-      const offlineCtx = new OfflineCtxClass(1, Math.ceil(sampleRate * renderDuration), sampleRate);
-
-      for (let i = 0; i < parsedLines.length; i++) {
-              const line = parsedLines[i];
-              
-              // 🚨 FIX 2: Restore Guide Progress Percentage
-              setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
-
-              try {// 🚨 THE PHONETIC SANITIZER
-                // 1. Lowercase everything so the TTS stops treating words as acronyms.
-                // 2. Strip absolutely everything that isn't a letter, number, or space.
-                let cleanTextForTTS = line.text.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-                
-                // 3. Force projection without breaking the neural model
-                const aggressiveText = cleanTextForTTS + "!";
+    try {// 🚨 TWEAK 1: Strip leading "..." so it doesn't pause, and force lowercase so it stops spelling acronyms
+                let rawText = line.text.replace(/\|/g, '').replace(/^\.\.\./, '').trim();
+                if (rawText.endsWith('.') || rawText.endsWith(',')) {
+                    rawText = rawText.slice(0, -1);
+                }
+                const aggressiveText = (rawText + "!").toLowerCase();
 
                 const res = await fetch('/api/audio/generate-guide', {
                   method: 'POST',
@@ -383,35 +365,25 @@ export default function Room04_Booth() {
                 if (!mappedWords || mappedWords.length === 0) continue;
 
                 const ttsDuration = audioBuffer.duration;
-                
-                // Define speed warp based on the flow density (fallback check)
-                const isFastFlow = mappedWords.length > 5; 
-                const speedWarp = isFastFlow ? 1.35 : 1.0; 
+                const mathLineDuration = line.lineDuration || 2;
 
-                // 🚨 FIX 2: Calculate pure speech time. Ignore the silent "pickup" math.
-                const firstWordStartTime = mappedWords[0].startTime;
-                const lastWordEndTime = mappedWords[mappedWords.length - 1].startTime + mappedWords[mappedWords.length - 1].duration;
-                const totalMathematicalSpeechDuration = lastWordEndTime - firstWordStartTime;
-                
-                // Apply the warp to the actual speech duration
-                const warpedSpeechDuration = totalMathematicalSpeechDuration / speedWarp;
+                // 🚨 TWEAK 2: Find the visual delay of the first word, so we don't chop the audio buffer!
+                const firstWordOffset = mappedWords[0].startTime - line.startTime;
 
                 mappedWords.forEach((wObj) => {
                   if (!wObj.word.trim()) return;
 
-                  // Map the word's relative position strictly within the spoken duration
-                  const relativeToSpeechStart = wObj.startTime - firstWordStartTime;
-                  
-                  // Calculate the exact offset in the TTS buffer
-                  const ttsOffset = (relativeToSpeechStart / warpedSpeechDuration) * ttsDuration;
-                  const ttsWordDuration = (wObj.duration / warpedSpeechDuration) * ttsDuration;
+                  // Subtract the pickup offset so 0.0s of the audio matches the first spoken word
+                  const relativeWordStart = (wObj.startTime - line.startTime) - firstWordOffset;
+                  const ttsOffset = Math.max(0, (relativeWordStart / mathLineDuration) * ttsDuration);
+                  const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
 
                   const tailBleed = 0.35; 
                   const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
 
                   const source = offlineCtx.createBufferSource();
                   source.buffer = audioBuffer;
-                  source.playbackRate.value = speedWarp; 
+                  source.playbackRate.value = 1.0; 
 
                   const gainNode = offlineCtx.createGain();
                   gainNode.gain.setValueAtTime(0, wObj.startTime);
@@ -422,12 +394,12 @@ export default function Room04_Booth() {
                   source.connect(gainNode);
                   gainNode.connect(offlineCtx.destination);
                   
-                  // Start playing exactly at the visual start time, from the corrected TTS offset
-                  source.start(wObj.startTime, Math.max(0, ttsOffset), safeExtractDuration);
+                  source.start(wObj.startTime, ttsOffset, safeExtractDuration);
                 });
 
               } catch (lineErr) {
-                console.warn(`Soft-fail quantizing line ${i}:`, lineErr);}
+                console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
+              }
             }
 
       const renderedBuffer = await offlineCtx.startRendering();
@@ -436,7 +408,7 @@ export default function Room04_Booth() {
       const takeId = `GUIDE_${Date.now()}`;
 
       // 🚨 SURGICAL FIX: Bumped the default TTS guide track volume from 0.3 up to 0.85 for massive projection punch
-      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.85, offsetBars: 0 });
+      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.95, offsetBars: 0 });
       if (addToast) addToast("High-fidelity aggressive audio glued to visual metronome.", "success");
     } catch (err: any) {
       console.error(err);
