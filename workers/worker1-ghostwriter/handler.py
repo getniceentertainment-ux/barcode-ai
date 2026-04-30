@@ -242,12 +242,6 @@ def translate_dna_to_topline(pattern_array, section_type, energy):
         
     return f"Vocal tone: {energy_directive}"
 
-[RHYTHMIC SEQUENCE]
-Rhythm DNA: {" -> ".join(sequence)}
-#🚨 CRITICAL: DO NOT WRITE THE WORDS "SNAP", "STEP", "HOLD", "GLIDE", "GHOST", OR "DRAG" IN THE LYRICS! These are invisible rhythmic timing instructions.
-{energy_directive}
-"""
-
 def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, rhyme_scheme, pattern_desc, pattern_array, pocket_instruction, prompt_topic, style="getnice_hybrid", section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
     global model
     if model is None:
