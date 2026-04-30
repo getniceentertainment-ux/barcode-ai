@@ -939,36 +939,48 @@ export default function Room04_Booth() {
           : activeVariations[index % activeVariations.length];
 
       linesForThisBlock.forEach((textLine) => {
-          // 1. Extract words AND scrub the pipes from the teleprompter vision
           const hasPickup = textLine.startsWith('...');
           const cleanText = textLine.replace(/^\.\.\./, '').replace(/\|/g, '').trim();
           const pureWords = cleanText.split(/\s+/).filter(w => w.length > 0);
 
-          // 2. MATH LOCK: Group the words to perfectly match the rhythmic slots in your DNA
           const K = activePattern.length;
           let groupedWords: string[] = [];
 
+          // 1. PROPORTIONAL BUCKETING: Put more words in larger rhythmic slots
           if (pureWords.length === 0) {
               groupedWords = [];
           } else if (pureWords.length <= K) {
               groupedWords = pureWords;
           } else {
+              // Lock the final rhyming word to the final strike zone
               const lastWord = pureWords.pop() || "";
-              const buckets = K - 1;
+              const remainingWords = pureWords;
               
-              if (buckets <= 0) {
-                  groupedWords = [pureWords.join(' ') + " " + lastWord];
-              } else {
-                  const bucketSize = Math.ceil(pureWords.length / buckets);
-                  for (let i = 0; i < buckets; i++) {
-                      const chunk = pureWords.slice(i * bucketSize, (i + 1) * bucketSize).join(' ');
-                      if (chunk) groupedWords.push(chunk);
+              const earlyPattern = activePattern.slice(0, K - 1);
+              const earlyStepsSum = earlyPattern.reduce((a, b) => a + b, 0) || 1;
+
+              let currentIndex = 0;
+              for (let i = 0; i < K - 1; i++) {
+                  let stepsForThisBucket = earlyPattern[i];
+                  
+                  // Dynamically allocate words based on how many steps this bucket holds
+                  let wordsForThisBucket = Math.round((stepsForThisBucket / earlyStepsSum) * remainingWords.length);
+                  
+                  // Catch any rounding remainders on the last early bucket
+                  if (i === K - 2) {
+                      wordsForThisBucket = remainingWords.length - currentIndex;
                   }
-                  groupedWords.push(lastWord);
+                  
+                  // Ensure every bucket gets at least 1 word if possible
+                  wordsForThisBucket = Math.max(1, Math.min(wordsForThisBucket, remainingWords.length - currentIndex - (K - 2 - i)));
+                  
+                  const chunk = remainingWords.slice(currentIndex, currentIndex + wordsForThisBucket).join(' ');
+                  if (chunk) groupedWords.push(chunk);
+                  currentIndex += wordsForThisBucket;
               }
+              groupedWords.push(lastWord);
           }
 
-          // 3. TIME LOCK: Calculate absolute 16th note duration
           const patternSum = activePattern.reduce((a, b) => a + b, 0) || 16;
           const timePerStep = timeForLine / patternSum;
 
@@ -986,19 +998,25 @@ export default function Room04_Booth() {
               const stepsRequired = Number(activePattern[idx % activePattern.length]) || 2;
               const chunkDuration = stepsRequired * timePerStep;
 
-              // 4. SMOOTH HIGHLIGHT FIX: Break the bucket back down into individual words
               const actualWords = wordChunk.split(' ').filter(w => w.length > 0);
               const durationPerWord = chunkDuration / actualWords.length;
               
-              // 🚨 NEW: Calculate how many visual slots each word gets within this chunk's space
-              const slotsPerWord = stepsRequired / actualWords.length;
+              let previousSlot = -1;
               
               actualWords.forEach((singleWord, subIdx) => {
+                  // Distribute the visual slots evenly across the bucket
+                  let calculatedSlot = currentStepOffset + Math.round(subIdx * (stepsRequired / actualWords.length));
+                  
+                  // 2. ANTI-STACK GUARD: Force the slot forward if it tries to overlap the last word
+                  if (subIdx > 0 && calculatedSlot <= previousSlot) {
+                      calculatedSlot = previousSlot + 1;
+                  }
+                  previousSlot = calculatedSlot;
+
                   mappedWords.push({
                       id: `word-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
                       word: singleWord, 
-                      // 🚨 THE FIX: Spread the visual blocks out so they don't stack on top of each other!
-                      slot: Math.floor(currentStepOffset + (subIdx * slotsPerWord)), 
+                      slot: calculatedSlot, 
                       startTime: localWordTime + (subIdx * durationPerWord), 
                       duration: durationPerWord, 
                       isWordEnd: true
@@ -1012,7 +1030,7 @@ export default function Room04_Booth() {
           parsed.push({ 
             id: `line-${lineIdCounter++}`,
             barIndex: Math.floor(currentFlowTime / secondsPerBar),
-            text: textLine, // Keeps the pipe in the raw payload for your dataset!
+            text: textLine, 
             originalText: textLine,
             startTime: currentFlowTime, 
             lineDuration: timeForLine, 
