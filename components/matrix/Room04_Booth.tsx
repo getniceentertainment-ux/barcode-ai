@@ -335,7 +335,7 @@ export default function Room04_Booth() {
     setGuideProgress(0);
     
     try {
-      // 🚨 TWEAK 1: Strip leading "..." so it doesn't pause, and force lowercase so it stops spelling acronyms
+                // 🚨 TWEAK 1: Strip leading "..." so it doesn't pause, and force lowercase so it stops spelling acronyms
                 let rawText = line.text.replace(/\|/g, '').replace(/^\.\.\./, '').trim();
                 if (rawText.endsWith('.') || rawText.endsWith(',')) {
                     rawText = rawText.slice(0, -1);
