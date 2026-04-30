@@ -335,80 +335,94 @@ export default function Room04_Booth() {
     setGuideProgress(0);
     
     try {
-                // 🚨 TWEAK 1: Strip leading "..." so it doesn't pause, and force lowercase so it stops spelling acronyms
-                let rawText = line.text.replace(/\|/g, '').replace(/^\.\.\./, '').trim();
-                if (rawText.endsWith('.') || rawText.endsWith(',')) {
-                    rawText = rawText.slice(0, -1);
-                }
-                const aggressiveText = (rawText + "!").toLowerCase();
+      const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
+      if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
-                const res = await fetch('/api/audio/generate-guide', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ 
-                    lyrics: aggressiveText, 
-                    bpm: preciseBpm,
-                    gender: useMatrixStore.getState().gwGender || "male",
-                    pitch: "low",
-                    style: "aggressive" // Hint for the backend if applicable
-                  })
-                });
-                
-                if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
+      const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
+      const sampleRate = 44100;
+      
+      const OfflineCtxClass = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
+      const offlineCtx = new OfflineCtxClass(1, Math.ceil(sampleRate * renderDuration), sampleRate);
 
-                const arrayBuffer = await res.arrayBuffer();
-                const rawAudioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-                
-                // 🚨 THE SYNC FIX: Strip the microscopic neural dead-air BEFORE the math calculates
-                const audioBuffer = trimTTSBuffer(offlineCtx, rawAudioBuffer);
-                
-                const mappedWords = line.words;
-                if (!mappedWords || mappedWords.length === 0) continue;
+      for (let i = 0; i < parsedLines.length; i++) {
+        const line = parsedLines[i];
+        
+        setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
 
-                const ttsDuration = audioBuffer.duration;
-                const mathLineDuration = line.lineDuration || 2;
+        try {
+          // 🚨 TWEAK 1: Strip leading "..." so it doesn't pause, and force lowercase so it stops spelling acronyms
+          let rawText = line.text.replace(/\|/g, '').replace(/^\.\.\./, '').trim();
+          if (rawText.endsWith('.') || rawText.endsWith(',')) {
+              rawText = rawText.slice(0, -1);
+          }
+          const aggressiveText = (rawText + "!").toLowerCase();
 
-                // 🚨 TWEAK 2: Find the visual delay of the first word, so we don't chop the audio buffer!
-                const firstWordOffset = mappedWords[0].startTime - line.startTime;
+          const res = await fetch('/api/audio/generate-guide', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              lyrics: aggressiveText, 
+              bpm: preciseBpm,
+              gender: useMatrixStore.getState().gwGender || "male",
+              pitch: "low",
+              style: "aggressive" // Hint for the backend if applicable
+            })
+          });
+          
+          if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
 
-                mappedWords.forEach((wObj) => {
-                  if (!wObj.word.trim()) return;
+          const arrayBuffer = await res.arrayBuffer();
+          const rawAudioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+          
+          // 🚨 THE SYNC FIX: Strip the microscopic neural dead-air BEFORE the math calculates
+          const audioBuffer = trimTTSBuffer(offlineCtx, rawAudioBuffer);
+          
+          const mappedWords = line.words;
+          if (!mappedWords || mappedWords.length === 0) continue;
 
-                  // Subtract the pickup offset so 0.0s of the audio matches the first spoken word
-                  const relativeWordStart = (wObj.startTime - line.startTime) - firstWordOffset;
-                  const ttsOffset = Math.max(0, (relativeWordStart / mathLineDuration) * ttsDuration);
-                  const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
+          const ttsDuration = audioBuffer.duration;
+          const mathLineDuration = line.lineDuration || 2;
 
-                  const tailBleed = 0.35; 
-                  const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
+          // 🚨 TWEAK 2: Find the visual delay of the first word, so we don't chop the audio buffer!
+          const firstWordOffset = mappedWords[0].startTime - line.startTime;
 
-                  const source = offlineCtx.createBufferSource();
-                  source.buffer = audioBuffer;
-                  source.playbackRate.value = 1.0; 
+          mappedWords.forEach((wObj) => {
+            if (!wObj.word.trim()) return;
 
-                  const gainNode = offlineCtx.createGain();
-                  gainNode.gain.setValueAtTime(0, wObj.startTime);
-                  gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
-                  gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-                  gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
+            // Subtract the pickup offset so 0.0s of the audio matches the first spoken word
+            const relativeWordStart = (wObj.startTime - line.startTime) - firstWordOffset;
+            const ttsOffset = Math.max(0, (relativeWordStart / mathLineDuration) * ttsDuration);
+            const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
 
-                  source.connect(gainNode);
-                  gainNode.connect(offlineCtx.destination);
-                  
-                  source.start(wObj.startTime, ttsOffset, safeExtractDuration);
-                });
+            const tailBleed = 0.35; 
+            const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
 
-              } catch (lineErr) {
-                console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
-              }
-            }
+            const source = offlineCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.playbackRate.value = 1.0; 
+
+            const gainNode = offlineCtx.createGain();
+            gainNode.gain.setValueAtTime(0, wObj.startTime);
+            gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
+            gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
+            gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
+
+            source.connect(gainNode);
+            gainNode.connect(offlineCtx.destination);
+            
+            source.start(wObj.startTime, ttsOffset, safeExtractDuration);
+          });
+
+        } catch (lineErr) {
+          console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
+        }
+      } // <--- THIS WAS THE BRACKET YOU WERE MISSING!
 
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
 
-      // 🚨 SURGICAL FIX: Bumped the default TTS guide track volume from 0.3 up to 0.85 for massive projection punch
       addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.95, offsetBars: 0 });
       if (addToast) addToast("High-fidelity aggressive audio glued to visual metronome.", "success");
     } catch (err: any) {
