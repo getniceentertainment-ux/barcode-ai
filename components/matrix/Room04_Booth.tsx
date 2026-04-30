@@ -939,63 +939,109 @@ export default function Room04_Booth() {
           : activeVariations[index % activeVariations.length];
 
       linesForThisBlock.forEach((textLine) => {
-        const rawWords = textLine.split(/\s+/).filter(w => w.length > 0);
-        const mappedWords: WordMapping[] = [];
-        let totalLineSteps = 0;
-        let tempPatternIndex = 0;
+          // 1. Extract words and detect pickups
+          const hasPickup = textLine.startsWith('...');
+          const cleanText = textLine.replace(/^\.\.\./, '').replace(/\|/g, '').trim();
+          const pureWords = cleanText.split(/\s+/).filter(w => w.length > 0);
 
-        if (textLine.startsWith('...')) totalLineSteps += 4;
-        
-        const wordChunksArray = rawWords.map(w => {
-          const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
-          chunks.forEach(() => {
-            const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
-            totalLineSteps += isNaN(stepVal) ? 2 : stepVal;
-            tempPatternIndex++;
+          // 2. MATH LOCK: Group the words to perfectly match the rhythmic slots in your DNA
+          // This stops the frontend from "compressing" the beat when there are extra words.
+          const K = activePattern.length;
+          let groupedWords: string[] = [];
+
+          if (pureWords.length === 0) {
+              groupedWords = [];
+          } else if (pureWords.length <= K) {
+              groupedWords = pureWords;
+          } else {
+              // Group extra words cleanly to preserve grammar without breaking the snare hits
+              const lastWord = pureWords.pop() || "";
+              const buckets = K - 1;
+              
+              if (buckets <= 0) {
+                  groupedWords = [pureWords.join(' ') + " " + lastWord];
+              } else {
+                  const bucketSize = Math.ceil(pureWords.length / buckets);
+                  for (let i = 0; i < buckets; i++) {
+                      const chunk = pureWords.slice(i * bucketSize, (i + 1) * bucketSize).join(' ');
+                      if (chunk) groupedWords.push(chunk);
+                  }
+                  groupedWords.push(lastWord);
+              }
+          }
+
+          // 3. TIME LOCK: Calculate absolute 16th note duration based strictly on the DNA pattern
+          const patternSum = activePattern.reduce((a, b) => a + b, 0) || 16;
+          const timePerStep = timeForLine / patternSum;
+
+          let localWordTime = currentFlowTime;
+          let currentStepOffset = 0;
+          
+          if (hasPickup) {
+              currentStepOffset += 4;
+              localWordTime += (4 * timePerStep);
+          }
+
+          const mappedWords: any[] = [];
+          const midIndex = Math.max(1, Math.floor(groupedWords.length / 2));
+
+          groupedWords.forEach((wordChunk, idx) => {
+              // Inject the visual pipe in the middle
+              if (idx === midIndex) {
+                  mappedWords.push({
+                      id: `pipe-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+                      word: "|",
+                      slot: currentStepOffset,
+                      startTime: localWordTime,
+                      duration: 0,
+                      isWordEnd: true
+                  });
+              }
+
+              const stepsRequired = Number(activePattern[idx % activePattern.length]) || 2;
+              const chunkDuration = stepsRequired * timePerStep;
+
+              // Break the grouped bucket back down for the visual bouncing ball
+              const subChunks = chunkWordForVisuals(wordChunk);
+              const subDuration = chunkDuration / subChunks.length;
+              
+              subChunks.forEach((subChunk, subIdx) => {
+                  mappedWords.push({
+                      id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+                      word: subChunk,
+                      slot: currentStepOffset,
+                      startTime: localWordTime + (subIdx * subDuration),
+                      duration: subDuration,
+                      isWordEnd: (subIdx === subChunks.length - 1)
+                  });
+              });
+
+              currentStepOffset += stepsRequired;
+              localWordTime += chunkDuration;
           });
-          return chunks;
-        });
 
-        const cleanTextEnd = textLine.slice(-1);
-        if (cleanTextEnd === '.') totalLineSteps += 4;
-        else if (cleanTextEnd === ',') totalLineSteps += 1;
+          // Fallback if the pipe belongs at the very end
+          if (midIndex === groupedWords.length) {
+              mappedWords.push({
+                  id: `pipe-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+                  word: "|", slot: currentStepOffset, startTime: localWordTime, duration: 0, isWordEnd: true
+              });
+          }
 
-        const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
-        let localWordTime = currentFlowTime;
-        if (textLine.startsWith('...')) localWordTime += (4 * timePerStep);
-
-        let patternIndex = 0;
-        wordChunksArray.forEach((chunks) => {
-          chunks.forEach((chunk, cIdx) => {
-            const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
-            patternIndex++;
-            const chunkDuration = stepsRequired * timePerStep;
-            const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - currentFlowTime) / timeForLine) * 16)));
-            mappedWords.push({
-              id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-              word: chunk.replace(/\|/g, ''),
-              slot: mappedSlot,
-              startTime: localWordTime,
-              duration: chunkDuration,
-              isWordEnd: (cIdx === chunks.length - 1)
-            });
-            localWordTime += chunkDuration;
+          parsed.push({ 
+            id: `line-${lineIdCounter++}`,
+            barIndex: Math.floor(currentFlowTime / secondsPerBar),
+            text: textLine,
+            originalText: textLine,
+            startTime: currentFlowTime, 
+            lineDuration: timeForLine, 
+            isHeader: false, 
+            timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
+            words: mappedWords 
           });
+          
+          currentFlowTime += timeForLine;
         });
-
-        parsed.push({ 
-          id: `line-${lineIdCounter++}`,
-          barIndex: Math.floor(currentFlowTime / secondsPerBar),
-          text: textLine.replace(/\|/g, ''), 
-          originalText: textLine,
-          startTime: currentFlowTime, 
-          lineDuration: timeForLine, 
-          isHeader: false, 
-          timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
-          words: mappedWords 
-        });
-        currentFlowTime += timeForLine;
-      });
     });
 
     setLyricLines(parsed);

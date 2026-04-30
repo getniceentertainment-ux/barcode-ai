@@ -359,38 +359,27 @@ Output ONLY the final {bars} lines now.
     current_style = style.lower()
 
     for line in raw_lines:
+        # 1. Clean out the LLM hallucinations and action words
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
-        
         line = re.sub(r'\b\d+[xX\+\-\*]+\d*\b', '', line)
         line = re.sub(r'\b\d+\s*WORDS?\b', '', line, flags=re.IGNORECASE)
         
         for action_word in ["SNAP", "STEP", "HOLD", "GLIDE", "GHOST", "EXTREME-DRAG", "HOOK", "VERSE", "CHORUS"]:
             line = re.sub(rf'\b{action_word}\b', '', line, flags=re.IGNORECASE).strip()
                 
-        line = line.replace('|', '').replace('"', '').replace("'", "").strip().upper()
+        # DO NOT strip apostrophes here so words like "AIN'T" survive
+        line = line.replace('|', '').replace('"', '').strip().upper()
 
+        # 🚨 THE GUILLOTINE IS DEAD. Just split the words and keep all of them.
         words_in_line = line.split()
-        allowed_words = []
-        current_syls = 0
+        allowed_words = [re.sub(r'[^\w\s\']', '', w) for w in words_in_line if w.strip()]
         
-        if current_style == "lazy": buffer_limit = max_syllables + 1  
-        elif current_style == "triplet": buffer_limit = max_syllables + 1  
-        elif current_style == "chopper": buffer_limit = max_syllables + 2  
-        else: buffer_limit = max_syllables + 4  
-        
-        for w in reversed(words_in_line):
-            syls = count_syllables(w)
-            if current_syls + syls > buffer_limit:
-                break 
-            allowed_words.insert(0, w)
-            current_syls += syls
-
-        allowed_words = [re.sub(r'[^\w\s\']', '', w) for w in allowed_words if w.strip()]
         if len(allowed_words) == 0:
             continue
 
+        # 2. Inject requested pocket punctuation to the final word safely
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
             allowed_words[0] = "..." + allowed_words[0]
         elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
@@ -398,6 +387,7 @@ Output ONLY the final {bars} lines now.
         elif "period" in pocket_instruction:
             allowed_words[-1] = allowed_words[-1] + "."
 
+        # 3. Draw the pipes based on the Flow Style, without deleting ANY words
         if current_style == "triplet":
             n = len(allowed_words)
             q, r = divmod(n, 4)
@@ -420,6 +410,7 @@ Output ONLY the final {bars} lines now.
         if len(formatted_line.replace(".", "").replace("|", "").replace(",", "").strip()) < 3:
             continue
 
+        # 4. Anti-Duplicate checker for Verses (Hooks are allowed to repeat)
         clean_compare_line = formatted_line.replace('"', '').replace("'", "")
         if "VERSE" in section_type.upper():
             if len(clean_lines) > 0 and clean_lines[-1].replace('"', '').replace("'", "") == clean_compare_line:
