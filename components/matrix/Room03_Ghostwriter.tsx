@@ -375,9 +375,6 @@ export default function Room03_Ghostwriter() {
             let rawLyrics = statusData.output.lyrics || "";
             let cleanedLyrics = rawLyrics
               .replace(/\(pipe symbol.*?\)/gi, '') 
-              .replace(/\|(?:\s*\|)+/g, '') 
-              .replace(/(\(\d+:\d{2}\)\s*)\|\s*/gm, '$1') 
-              .replace(/\|\s*$/gm, '') 
               .replace(/(\(\d+:\d{2}\)\s*)(?:\d+(?:st|nd|rd|th)? Line:|Line \d+:|Hook:|Verse:|Chorus:|Intro:|Outro:)\s*/gmi, '$1')
               .trim();
 
