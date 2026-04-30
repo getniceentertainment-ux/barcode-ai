@@ -578,9 +578,9 @@ Output: ALL CAPS rewritten line ONLY.
                 if "HOOK" in sec_type and saved_hook_payloads is None: saved_hook_payloads = section_payloads
                 if "VERSE" in sec_type: last_verse_context = "\n".join([p["text"] for p in section_payloads[-4:]])
             
-            for i, p in enumerate(section_payloads):
+            for i, line in enumerate(section_payloads):
                 line_time = (start_bar + i) * seconds_per_bar
-                final_lyrics += f"({int(line_time // 60)}:{int(line_time % 60):02d}) {p['text']}\n"
+                final_lyrics += f"({int(line_time // 60)}:{int(line_time % 60):02d}) {line}\n"
             
             structured_blueprint_data.append({
                 "type": sec_type,
