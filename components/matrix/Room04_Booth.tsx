@@ -201,27 +201,27 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
 }
 
 // --- THE MACRO-RHYTHMIC FLOW VAULT ---
-const FLOW_VAULT: Record<string, number[][]> = {
+const FLOW_VAULT: Record<string, {array: number[], name: string, desc: string, maxSyllables: number, rhymeScheme: string}[]> = {
   "getnice_hybrid": [
-    [4, 2, 2,  3, 1, 4,  2, 2, 2, 2,  4, 4], 
-    [3, 1, 2, 2],
-    [6, 2, 4, 2, 2] 
+    { array: [4, 2, 2, 3, 1, 4, 2, 2, 2, 2, 4, 4], name: "Chain-Link Pivot", desc: "Long massive hold on the 1-count...", maxSyllables: 12, rhymeScheme: "AABB" },
+    { array: [3, 1, 2, 2], name: "Platinum Bounce", desc: "1 long stretched syllable...", maxSyllables: 10, rhymeScheme: "ABAB" },
+    { array: [6, 2, 4, 2, 2], name: "Late Drop", desc: "Leave the 1-count totally empty...", maxSyllables: 9, rhymeScheme: "AAAA" }
   ],
   "chopper": [
-    [1, 1, 1, 1], 
-    [2, 1, 1, 1, 1, 2] 
+    { array: [1, 1, 1, 1], name: "Machine Gun", desc: "All rapid-fire, ultra-fast 16th-note syllables.", maxSyllables: 16, rhymeScheme: "AAAA" },
+    { array: [2, 1, 1, 1, 1, 2], name: "Stutter Step", desc: "A standard syllable, followed by four ultra-fast...", maxSyllables: 14, rhymeScheme: "AABB" }
   ],
   "heartbeat": [
-    [2, 2, 2, 2], 
-    [4, 2, 2, 4, 4] 
+    { array: [2, 2, 2, 2], name: "Steady Anchor", desc: "All standard, steady 8th-note syllables.", maxSyllables: 10, rhymeScheme: "AABB" },
+    { array: [4, 2, 2, 4, 4], name: "Delayed Pocket", desc: "A massive hold, two standard syllables...", maxSyllables: 8, rhymeScheme: "ABAB" }
   ],
   "triplet": [
-    [3, 3, 2], 
-    [2, 2, 2, 3, 3, 4] 
+    { array: [3, 3, 2], name: "Standard Triplet", desc: "Two long stretched syllables...", maxSyllables: 12, rhymeScheme: "AAAA" },
+    { array: [2, 2, 2, 3, 3, 4], name: "Atmospheric Stagger", desc: "Three standard syllables...", maxSyllables: 11, rhymeScheme: "AABB" }
   ],
   "lazy": [
-    [4, 2, 2], 
-    [6, 2, 8] 
+    { array: [4, 2, 2], name: "Standard Drawl", desc: "A massive lazy hold followed by two standard...", maxSyllables: 7, rhymeScheme: "AABB" },
+    { array: [6, 2, 8], name: "Extreme Drag", desc: "An extreme delayed hold...", maxSyllables: 5, rhymeScheme: "AAAA" }
   ]
 };
 
@@ -809,7 +809,7 @@ export default function Room04_Booth() {
         mediaSourceRef.current = audioCtxRef.current.createMediaStreamSource(mediaStreamRef.current);
       }
       
-      const LATENCY_OFFSET = 0.06; 
+      const LATENCY_OFFSET = 0.00; 
       const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
       let padTime = Math.max(0, currentWS_Time - LATENCY_OFFSET);
       
@@ -982,9 +982,7 @@ export default function Room04_Booth() {
         const currentPool = llmPools[bp.type] || [];
         const pointer = poolPointers[bp.type] || 0;
         
-        // 🚨 THE MASTER ALIGNMENT: 
-        // The Python backend (handler.py) enforces EXACTLY 1 line per bar.
-        // Therefore, we pull exactly 'bp.bars' lines to maintain 1:1 sync.
+        // Pull exactly 'bp.bars' lines to maintain 1:1 sync.
         const linesToTake = bp.bars;
         linesForThisBlock = currentPool.slice(pointer, pointer + linesToTake);
         
@@ -998,13 +996,15 @@ export default function Room04_Booth() {
       const timeForLine = blockDurationSecs / linesForThisBlock.length;
       let currentFlowTime = blockStartTime;
 
+      // 🚨 VAULT UPGRADE FIX: Extract the .array from the new object DNA for the visual slicer
       const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
+      const currentVaultObject = activeVariations[index % activeVariations.length];
+      
       let activePattern = (bp as any).patternArray?.length > 0 
           ? (bp as any).patternArray 
-          : activeVariations[index % activeVariations.length];
+          : currentVaultObject.array;
 
       linesForThisBlock.forEach((textLine) => {
-        // --- PRESERVED SYLLABLE & WORD MAPPING LOGIC ---
         const rawWords = textLine.split(/\s+/).filter(w => w.length > 0);
         const mappedWords: WordMapping[] = [];
         let totalLineSteps = 0;
@@ -1037,6 +1037,7 @@ export default function Room04_Booth() {
             patternIndex++;
             const chunkDuration = stepsRequired * timePerStep;
             const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - currentFlowTime) / timeForLine) * 16)));
+            
             mappedWords.push({
               id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
               word: chunk.replace(/\|/g, ''),
