@@ -365,35 +365,32 @@ export default function Room04_Booth() {
         setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
 
         try {
-          // 🚨 THE PUNCTUATION SANITIZER
-          // Strip the visual pipe '|' and ellipses
-          let rawText = line.text.replace(/\|/g, '').replace(/\.\.\./g, ', ');
+          // 🚨 THE PUNCTUATION SANITIZER (FRONTEND SCRUBBER)
+          // 1. Strip the visual pipe '|' completely
+          let rawText = line.text.replace(/\|/g, '');
           
-          // 🚨 FIX: Nuke weird punctuation clusters like ",." or ".." that choke the TTS
-          // If it sees multiple commas/periods grouped together, it flattens them into a single comma.
-          rawText = rawText.replace(/[,.]{2,}/g, ',');
+          // 2. Crush any weird internal clusters (e.g., "THING,." becomes "THING,")
+          rawText = rawText.replace(/[,.?!;]{2,}/g, ',');
           
+          // 3. RUTHLESS END-OF-LINE SCRUB: Rip ALL punctuation off the absolute end of the string
+          rawText = rawText.replace(/[.,?!;]+$/, '');
+          
+          // 4. Clean up any weird double spaces
           rawText = rawText.replace(/\s+/g, ' ').trim();
           
           let safeText = rawText.toLowerCase();
           
           // 🚨 THE UPGRADED PHONETIC SMUGGLER
-          // DO NOT use spaces to break words (e.g. "f ck"). It causes TTS to stutter and mumble.
-          // Use phonetic homophones so the AI pronounces the explicit word naturally.
           const flaggedWords: { [key: string]: string } = {
             'kill': 'keel', 'murder': 'merder', 'shoot': 'shewt', 'gun': 'guhn',
-            'bitch': 'bich', 'fuck': 'fuhk', 
-            'shit': 'shiht', // <-- Removed the space here so it doesn't stutter!
-            'blood': 'bluhd',
-            'dead': 'dehd', // <-- Changed from 'ded' to beat the slang filter
-            'die': 'dahy', 'drugs': 'drahgs', 'pills': 'pilz',
+            'bitch': 'bich', 'fuck': 'fuhk', 'shit': 'shiht', 'blood': 'bluhd',
+            'dead': 'dehd', 'die': 'dahy', 'drugs': 'drahgs', 'pills': 'pilz',
             'crack': 'krak', 'dope': 'dohp', 'thug': 'thuhg', 'prison': 'prizin',
             'threats': 'threts', 'thugger': 'thuhger', 'nigga': 'nihgah', 'niggaz': 'nihgahz',
             'ass': 'ahs', 'hoes': 'hoez', 'hoe': 'hoh',
-            
-            // 🚨 PHRASE BYPASSES (For highly contextual safety triggers)
             "when i'm dead": "wen aym dehd",
-            "im dead": "aym dehd"
+            "im dead": "aym dehd",
+            "brick": "brik"
           };
           
           Object.keys(flaggedWords).forEach(bad => {
@@ -401,7 +398,7 @@ export default function Room04_Booth() {
             safeText = safeText.replace(regex, flaggedWords[bad]);
           });
 
-          // End with a single period so it finishes the thought cleanly
+          // 5. Add EXACTLY ONE period at the end for the hard TTS stop.
           const aggressiveText = safeText + "."; 
 
           const res = await fetch('/api/audio/generate-guide', {
