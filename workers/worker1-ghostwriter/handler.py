@@ -270,6 +270,30 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         elif hook_type == "prime": hook_context = "[HOOK OVERRIDE]\nSYNCOPATION MATH: Force an odd-numbered syllable count."
         else: hook_context = "[HOOK OVERRIDE]\nSPACIOUS & ANTHEMIC: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse."
 
+    # 1. BUILD THE DRAFT PROMPT
+    draft_prompt = f"""<|im_start|>user
+[GENERATE {section_type.upper()}]
+- REQUIRED: EXACTLY {bars} BARS (LINES). You must generate exactly {bars} lines.
+- TOPIC: '{prompt_topic}'
+- NARRATIVE ARC: {arc_instruction}
+{dna_law}
+{hook_context}
+{energy_rules}
+{evolution_rules}
+
+CRITICAL RULES:
+1. MAX WORDS: You have a strict limit of {word_cap} words per line. Keep it short! If the flow reference is long, IGNORE its length and chop your lines down to {word_cap} words.
+2. EXACT COUNT: Output exactly {bars} lines. Do not stop early.
+3. NO LABELS: Do not write A, B, Verse, or Hook.
+<|im_end|>
+<|im_start|>assistant
+"""
+    # 2. GENERATE THE DRAFT TEXT
+    # 🚨 GGUF INFERENCE FORMAT
+    outputs = model(system_prompt + draft_prompt, max_tokens=64 * bars, temperature=0.85, top_p=0.9, repeat_penalty=1.15, stop=["<|im_end|>"])
+    draft_text = outputs["choices"][0]["text"].strip()
+
+    # 3. BUILD THE REFINE PROMPT (Now draft_text exists safely!)
     refine_prompt = f"""<|im_start|>user
 [THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
 You drafted this {bars}-bar {section_type.upper()}:
@@ -286,26 +310,7 @@ Output ONLY the final {bars} lines now.
 <|im_end|>
 <|im_start|>assistant
 """
-    # 🚨 GGUF INFERENCE FORMAT
-    outputs = model(system_prompt + draft_prompt, max_tokens=64 * bars, temperature=0.85, top_p=0.9, repeat_penalty=1.15, stop=["<|im_end|>"])
-    draft_text = outputs["choices"][0]["text"].strip()
-
-    refine_prompt = f"""<|im_start|>user
-[THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
-You drafted this {bars}-bar {section_type.upper()}:
-"{draft_text}"
-
-CRITICAL REFINEMENT COMMANDS:
-1. WORD LIMIT: Every line MUST be {word_cap} words MAXIMUM! Cut out extra filler words.
-2. EXACT COUNT: You must return EXACTLY {bars} lines. Count them before finishing.
-3. OBEY THE POCKET: {pocket_instruction}
-4. THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' BETWEEN EACH {pattern_desc} EVERY LINE. 
-5. KILL LIST: Delete "A,", "B,", "A:", "B:", action words (DRAG, STEP), and quotation marks.
-
-Output ONLY the final {bars} lines now.
-<|im_end|>
-<|im_start|>assistant
-"""
+    # 4. GENERATE THE FINAL TEXT
     # 🚨 GGUF INFERENCE FORMAT
     outputs_refine = model(system_prompt + refine_prompt, max_tokens=64 * bars, temperature=0.5, top_p=0.9, repeat_penalty=1.1, stop=["<|im_end|>"])
     final_text = outputs_refine["choices"][0]["text"].strip()
