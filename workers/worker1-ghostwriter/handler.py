@@ -275,7 +275,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 
     draft_prompt = f"""<|im_start|>user
 [GENERATE {section_type.upper()}]
-- REQUIRED: {bars} bars.
+- REQUIRED: EXACTLY {bars} BARS (LINES). You must generate exactly {bars} lines.
 - TOPIC: '{prompt_topic}'
 - NARRATIVE ARC: {arc_instruction}
 {dna_law}
@@ -284,14 +284,9 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 {evolution_rules}
 
 CRITICAL RULES:
-1. MAX WORDS: You have a strict limit of {word_cap} words per line. Keep it short!
-2. NO QUOTATION MARKS. Do not write dialogue.
-3. NO ACTION WORDS. Do not write "SNAP", "STEP", or "DRAG" in the lyrics.
-
-[PREVIOUS CONTEXT]
-{previous_lyrics if previous_lyrics else 'Start of track.'}
-
-Write the draft now. Output raw lines only.
+1. MAX WORDS: You have a strict limit of {word_cap} words per line. Keep it short! If the flow reference is long, IGNORE its length and chop your lines down to {word_cap} words.
+2. EXACT COUNT: Output exactly {bars} lines. Do not stop early.
+3. NO LABELS: Do not write A, B, Verse, or Hook.
 <|im_end|>
 <|im_start|>assistant
 """
@@ -306,9 +301,10 @@ You drafted this {bars}-bar {section_type.upper()}:
 
 CRITICAL REFINEMENT COMMANDS:
 1. WORD LIMIT: Every line MUST be {word_cap} words MAXIMUM! Cut out extra filler words.
-2. OBEY THE POCKET: {pocket_instruction}
-3. THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' BETWEEN EACH {pattern_desc} EVERY LINE. 
-4. KILL LIST: Delete any banned AI poetry words, action words (DRAG, STEP, SNAP), and DO NOT use quotation marks.
+2. EXACT COUNT: You must return EXACTLY {bars} lines. Count them before finishing.
+3. OBEY THE POCKET: {pocket_instruction}
+4. THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' BETWEEN EACH {pattern_desc} EVERY LINE. 
+5. KILL LIST: Delete "A,", "B,", "A:", "B:", action words (DRAG, STEP), and quotation marks.
 
 Output ONLY the final {bars} lines now.
 <|im_end|>

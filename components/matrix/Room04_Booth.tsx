@@ -938,13 +938,13 @@ export default function Room04_Booth() {
         if (cleanLine.match(/^(Written:|Vocal:|Bars:|Total:|Vocal Cadence:)/i)) return;
         
         // Strip backend pipe tags and clean spacing
-        cleanLine = cleanLine.replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
+        cleanLine = cleanLine.replace(/^(?:[A-Z][,:\)]|\s*\[[A-Z]\]\s*|(?:Verse|Hook|Chorus)[^:]*:)\s*/i, '');
         
         // 🚨 THE GLOBAL FRONTEND UI SCRUBBER 
         // This targets ANY clustered punctuation (like ",." or "..") and crushes it down to just the first character.
         // E.g., "THING,." becomes "THING,". 
         // This cleans the Teleprompter/Grid while safely preserving the math pauses!
-        cleanLine = cleanLine.replace(/([,.?!;])[,.?!;]+/g, '$1');
+        cleanLine = cleanLine.replace(/\s+[A-Z][,;.]*$/i, '');
         
         if (cleanLine && cleanLine !== "[Instrumental Break]") {
           llmPools[activePoolHeader].push(cleanLine);
