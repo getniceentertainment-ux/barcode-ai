@@ -269,6 +269,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         elif hook_type == "symmetry": hook_context = "[HOOK OVERRIDE]\nSPLIT STRUCTURE: Write in an alternating rhyme scheme. NEVER print 'A-B-A-B' or shorthand like 'X2'. Write out every single word."
         elif hook_type == "prime": hook_context = "[HOOK OVERRIDE]\nSYNCOPATION MATH: Force an odd-numbered syllable count."
         else: hook_context = "[HOOK OVERRIDE]\nSPACIOUS & ANTHEMIC: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse."
+
 2. Upgrade the Refinement Prompt's Kill List
 A little further down, find the refine_prompt string. Add "X2" and "A-B-A-B" to the kill list:
 
