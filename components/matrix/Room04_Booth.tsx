@@ -349,10 +349,10 @@ export default function Room04_Booth() {
       delayNode.delayTime.value = 60 / preciseBpm; // Quarter-note trap echo
       
       const feedbackGain = offlineCtx.createGain();
-      feedbackGain.gain.value = 0.25; // How many times it repeats
+      feedbackGain.gain.value = 0.333; // How many times it repeats
       
       const wetGain = offlineCtx.createGain();
-      wetGain.gain.value = 0.08; // How LOUD the echo is in the background
+      wetGain.gain.value = 0.15; // How LOUD the echo is in the background
       
       delayNode.connect(feedbackGain);
       feedbackGain.connect(delayNode);
