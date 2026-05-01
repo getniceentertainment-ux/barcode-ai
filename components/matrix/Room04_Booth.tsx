@@ -348,7 +348,7 @@ export default function Room04_Booth() {
       const delayNode = offlineCtx.createDelay(2.0);
       delayNode.delayTime.value = 60 / preciseBpm; // Quarter-note trap echo
       const feedbackGain = offlineCtx.createGain();
-      feedbackGain.gain.value = 0.05; // 20% low wet echo volume
+      feedbackGain.gain.value = 0.01; // 20% low wet echo volume
       
       delayNode.connect(feedbackGain);
       feedbackGain.connect(delayNode);
@@ -401,7 +401,7 @@ export default function Room04_Booth() {
 
                   // 🚨 BLEED FIX: Detect the last word and give it massive room to breathe
                   const isLastWord = wIdx === mappedWords.length - 1;
-                  const tailBleed = isLastWord ? 1.5 : 0.35; 
+                  const tailBleed = isLastWord ? 1.0 : 0.15; 
 
                   const relativeWordStart = (wObj.startTime - line.startTime) - firstWordOffset;
                   const ttsOffset = Math.max(0, (relativeWordStart / mathLineDuration) * ttsDuration);
