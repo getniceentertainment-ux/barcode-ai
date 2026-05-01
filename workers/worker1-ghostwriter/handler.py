@@ -445,8 +445,11 @@ Output: ALL CAPS rewritten line ONLY.
             start_bar = section.get("startBar", current_cumulative_bar)
             vault_max_syllables = section.get("maxSyllables", 10)
             vault_rhyme_scheme = section.get("rhymeScheme", "AABB")
-            base_energy = dynamic_array[index % len(dynamic_array)]
-            current_energy = max(3, base_energy) if "HOOK" in sec_type else base_energy
+            
+            # 🚨 THE SURGICAL FIX: Pull energy directly from the Vault DNA!
+            current_energy = section.get("patternEnergy", 2)
+            if "HOOK" in sec_type: 
+                current_energy = max(3, current_energy) # Ensure hooks stay big
             
             final_lyrics += f"\n[{sec_type} - {bars} BARS | ENERGY: {current_energy}/4]\n"
             

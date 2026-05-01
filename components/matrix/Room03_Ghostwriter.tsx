@@ -11,7 +11,7 @@ import { supabase } from "../../lib/supabase";
 
 // --- 🚨 THE UPGRADED 100% PROPRIETARY GETNICE MACRO-RHYTHMIC VAULT ---
 // We now globally encode Syllable Maximums and Rhyme Schemes directly into the DNA.
-const FLOW_VAULT: Record<string, {array: number[], name: string, desc: string, maxSyllables: number, rhymeScheme: string}[]> = {
+const FLOW_VAULT:Record<string, {array: number[], name: string, desc: string, maxSyllables: number, rhymeScheme: string, energy: number}[]>= {
   "getnice_hybrid": [
     { array: [4, 2, 2, 3, 1, 4, 2, 2, 2, 2, 4, 4], name: "Chain-Link Pivot", desc: "Long massive hold on the 1-count, followed by 2 standard syllables, then a long stretch, a rapid snap, and another massive hold.", maxSyllables: 12, rhymeScheme: "AABB" },
     { array: [3, 1, 2, 2], name: "Platinum Bounce", desc: "1 long stretched syllable, 1 very fast rapid syllable, and 2 standard medium syllables. Repeat this bounce.", maxSyllables: 10, rhymeScheme: "ABAB" },
@@ -109,6 +109,7 @@ export default function Room03_Ghostwriter() {
       let activeArray: number[] = [];
       let activeMaxSyllables = 10;
       let activeRhymeScheme = "AABB";
+      let activeEnergy = 2; // <-- ADD THIS
       
       if (block.type === 'HOOK') {
           activeName = hookLabels[gwHookType as string] || "Custom Hook";
@@ -116,6 +117,7 @@ export default function Room03_Ghostwriter() {
           activeArray = variations[0].array; 
           activeMaxSyllables = variations[0].maxSyllables;
           activeRhymeScheme = variations[0].rhymeScheme;
+          activeEnergy = 4; // Hooks generally default to high energy/anthemic delivery
       } else if (block.type === 'VERSE') {
           const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
           
@@ -138,6 +140,7 @@ export default function Room03_Ghostwriter() {
           activeArray = selected.array;
           activeMaxSyllables = selected.maxSyllables;
           activeRhymeScheme = selected.rhymeScheme;
+          activeEnergy = selected.energy;
 
           const pocketLabels: Record<string, string> = {
             standard: "Std",
@@ -164,9 +167,9 @@ export default function Room03_Ghostwriter() {
         patternArray: activeArray, 
         patternName: activeName,
         patternDesc: activeDesc,
-        maxSyllables: activeMaxSyllables, // <-- INJECTED INTO STATE
-        rhymeScheme: activeRhymeScheme    // <-- INJECTED INTO STATE
-      };
+        maxSyllables: activeMaxSyllables,
+        rhymeScheme: activeRhymeScheme,
+        patternEnergy: activeEnergy // <-- INJECT IT INTO THE BLUEPRINT DNA};
       
       cursor = start + block.bars;
       return updated;
@@ -326,7 +329,8 @@ export default function Room03_Ghostwriter() {
                   patternDesc: (b as any).patternDesc,
                   patternArray: (b as any).patternArray,
                   maxSyllables: (b as any).maxSyllables, // <-- NEW
-                  rhymeScheme: (b as any).rhymeScheme   // <-- NEW
+                  rhymeScheme: (b as any).rhymeScheme,
+                  patternEnergy: (b as any).patternEnergy   // <-- NEW
                 },
                 { 
                   type: b.type, 
@@ -335,7 +339,8 @@ export default function Room03_Ghostwriter() {
                   patternDesc: (b as any).patternDesc,
                   patternArray: (b as any).patternArray,
                   maxSyllables: (b as any).maxSyllables, // <-- NEW
-                  rhymeScheme: (b as any).rhymeScheme   // <-- NEW
+                  rhymeScheme: (b as any).rhymeScheme
+                  patternEnergy: (b as any).patternEnergy    // <-- NEW
                 }
               ];
             }
@@ -346,7 +351,8 @@ export default function Room03_Ghostwriter() {
               patternDesc: (b as any).patternDesc,
               patternArray: (b as any).patternArray,
               maxSyllables: (b as any).maxSyllables, // <-- NEW
-              rhymeScheme: (b as any).rhymeScheme    // <-- NEW
+              rhymeScheme: (b as any).rhymeScheme
+                  patternEnergy: (b as any).patternEnergy     // <-- NEW
             };
           })
         })

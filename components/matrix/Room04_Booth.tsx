@@ -201,7 +201,7 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
 }
 
 // --- THE MACRO-RHYTHMIC FLOW VAULT ---
-const FLOW_VAULT: Record<string, {array: number[], name: string, desc: string, maxSyllables: number, rhymeScheme: string}[]> = {
+const FLOW_VAULT:Record<string, {array: number[], name: string, desc: string, maxSyllables: number, rhymeScheme: string, energy: number}[]>= {
   "getnice_hybrid": [
     { array: [4, 2, 2, 3, 1, 4, 2, 2, 2, 2, 4, 4], name: "Chain-Link Pivot", desc: "Long massive hold on the 1-count...", maxSyllables: 12, rhymeScheme: "AABB" },
     { array: [3, 1, 2, 2], name: "Platinum Bounce", desc: "1 long stretched syllable...", maxSyllables: 10, rhymeScheme: "ABAB" },
