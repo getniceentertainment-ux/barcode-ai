@@ -366,30 +366,30 @@ export default function Room04_Booth() {
 
         try {
           // 🚨 THE PUNCTUATION SANITIZER
-          // Strip the visual pipe '|' and any weird double-punctuation like ",." that causes mumbling
-          let rawText = line.text.replace(/\|/g, '').replace(/^\.\.\./, '');
-          rawText = rawText.replace(/[,.]+/g, ' ').replace(/\s+/g, ' ').trim();
+          // Strip the visual pipe '|' and ellipses, but KEEP commas for TTS breath marks and bounce
+          let rawText = line.text.replace(/\|/g, '').replace(/\.\.\./g, ', ');
+          rawText = rawText.replace(/\s+/g, ' ').trim();
           
           let safeText = rawText.toLowerCase();
           
-          // 🚨 THE EXPANDED PHONETIC SMUGGLER
-          // We break up the visual words so the AI filter reads it as nonsense, 
-          // but the audio engine pronounces it perfectly.
+          // 🚨 THE UPGRADED PHONETIC SMUGGLER
+          // DO NOT use spaces to break words (e.g. "f ck"). It causes TTS to stutter and mumble.
+          // Use phonetic homophones so the AI pronounces the explicit word naturally.
           const flaggedWords: { [key: string]: string } = {
-            'kill': 'k ill', 'murder': 'murdar', 'shoot': 'sh oot', 'gun': 'g un',
-            'bitch': 'b tech', 'fuck': 'f ck', 'shit': 'sh t', 'blood': 'bl ood',
-            'dead': 'd ead', 'die': 'd ie', 'drugs': 'dr ugs', 'pills': 'p ills',
-            'crack': 'cr ack', 'dope': 'd ope', 'thug': 'th ug', 'prison': 'pris in',
-            'threats': 'thr eats', 'thugger': 'th ugger'
+            'kill': 'keel', 'murder': 'merder', 'shoot': 'shewt', 'gun': 'guhn',
+            'bitch': 'bich', 'fuck': 'fuhk', 'shit': 'shih t', 'blood': 'bluhd',
+            'dead': 'ded', 'die': 'dye', 'drugs': 'drahgs', 'pills': 'pilz',
+            'crack': 'krak', 'dope': 'dohp', 'thug': 'thuhg', 'prison': 'prizin',
+            'threats': 'threts', 'thugger': 'thuhger', 'nigga': 'nihgah', 'niggaz': 'nihgahz',
+            'ass': 'ahs', 'hoes': 'hoez', 'hoe': 'hoh'
           };
           
           Object.keys(flaggedWords).forEach(bad => {
-            // Use regex to ensure we replace whole words, not just fragments
             const regex = new RegExp(`\\b${bad}\\b`, 'g');
             safeText = safeText.replace(regex, flaggedWords[bad]);
           });
 
-          // End with a single period so it finishes the thought cleanly without yelling
+          // End with a single period so it finishes the thought cleanly
           const aggressiveText = safeText + "."; 
 
           const res = await fetch('/api/audio/generate-guide', {
