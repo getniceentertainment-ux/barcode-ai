@@ -241,17 +241,17 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         
         dna_constraint = f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. WORD LIMIT: YOU MUST USE NO MORE than {word_cap} words per line. Keep phrases punchy!
+1. HARD WORD CAP: You are physically restricted to a MAXIMUM of {word_cap} words per line. If a line has {word_cap + 1} words, the system will crash. Use short, punchy fragments only.
 2. RHYTHMIC ACCENTS: Anchor your line on exactly {accent_target} heavy stressed words.
-3. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
+3. RHYME SCHEME: Strictly follow {rhyme_scheme} end-rhymes. NEVER print the letters "{rhyme_scheme}" in the text.
 4. POCKET PLACEMENT: {pocket_instruction}
 """
         dna_law += f"\n{dna_constraint}"
     else:
         dna_law += f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. WORD LIMIT: YOU MUST USE NO MORE than {word_cap} words per line. Keep phrases punchy!
-2. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
+1. HARD WORD CAP: You are physically restricted to a MAXIMUM of {word_cap} words per line. Use short fragments.
+2. RHYME SCHEME: Strictly follow {rhyme_scheme} end-rhymes. NEVER print the letters "{rhyme_scheme}".
 3. POCKET PLACEMENT: {pocket_instruction}
 """
 
@@ -260,33 +260,32 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     elif section_index == 0: 
         arc_instruction = "THE ANAPHORA LAW (VERSE 1): Conversational storytelling. Establish the setting. NEVER repeat the same line twice in a row."
     else: 
-        arc_instruction = "THE ANAPHORA LAW (VERSE CONTINUED): Dynamic variance. Mix conversational bars with brief flexes. NEVER repeat the same line twice in a row. Evolve the narrative."
+        arc_instruction = "THE ANAPHORA LAW (VERSE CONTINUED): Dynamic variance. Evolve the narrative. NEVER repeat the same line twice in a row."
 
     hook_context = ""
     if "HOOK" in section_type.upper():
         if hook_type == "bouncy": hook_context = "[HOOK OVERRIDE]\nBOUNCY & REPETITIVE: Repeat short, punchy 2-word or 3-word phrases back-to-back."
         elif hook_type == "triplet": hook_context = "[HOOK OVERRIDE]\nRHYTHMIC MATH: Write entirely in groups of 3 syllables (triplets)."
-        elif hook_type == "symmetry": hook_context = "[HOOK OVERRIDE]\nSPLIT STRUCTURE: You MUST write in an A-B-A-B structural pattern."
+        elif hook_type == "symmetry": hook_context = "[HOOK OVERRIDE]\nSPLIT STRUCTURE: Write in an alternating rhyme scheme. NEVER print 'A-B-A-B' or shorthand like 'X2'. Write out every single word."
         elif hook_type == "prime": hook_context = "[HOOK OVERRIDE]\nSYNCOPATION MATH: Force an odd-numbered syllable count."
         else: hook_context = "[HOOK OVERRIDE]\nSPACIOUS & ANTHEMIC: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse."
+2. Upgrade the Refinement Prompt's Kill List
+A little further down, find the refine_prompt string. Add "X2" and "A-B-A-B" to the kill list:
 
-    evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast." if ("VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 8) else ""
-    energy_rules = "\n[ENERGY CLIMAX]: Pack the pocket. Write dense, aggressive rhymes." if current_energy == 4 else ""
+Python
+    refine_prompt = f"""<|im_start|>user
+[THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
+You drafted this {bars}-bar {section_type.upper()}:
+"{draft_text}"
 
-    draft_prompt = f"""<|im_start|>user
-[GENERATE {section_type.upper()}]
-- REQUIRED: EXACTLY {bars} BARS (LINES). You must generate exactly {bars} lines.
-- TOPIC: '{prompt_topic}'
-- NARRATIVE ARC: {arc_instruction}
-{dna_law}
-{hook_context}
-{energy_rules}
-{evolution_rules}
+CRITICAL REFINEMENT COMMANDS:
+1. WORD LIMIT: Every line MUST be {word_cap} words MAXIMUM! Cut out extra filler words.
+2. EXACT COUNT: You must return EXACTLY {bars} lines. Count them before finishing.
+3. OBEY THE POCKET: {pocket_instruction}
+4. THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' BETWEEN EACH {pattern_desc} EVERY LINE. 
+5. KILL LIST: Delete "A,", "B,", "A:", "B:", "X2", "x2", "A-B-A-B", action words (DRAG, STEP), and quotation marks.
 
-CRITICAL RULES:
-1. MAX WORDS: You have a strict limit of {word_cap} words per line. Keep it short! If the flow reference is long, IGNORE its length and chop your lines down to {word_cap} words.
-2. EXACT COUNT: Output exactly {bars} lines. Do not stop early.
-3. NO LABELS: Do not write A, B, Verse, or Hook.
+Output ONLY the final {bars} lines now.
 <|im_end|>
 <|im_start|>assistant
 """
@@ -350,9 +349,9 @@ Output ONLY the final {bars} lines now.
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
             if not line.startswith("..."): line = "..." + line
         elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
-            if not line.endswith(","): line = line + ","
+            line = line + ","
         elif "period" in pocket_instruction:
-            if not line.endswith("."): line = line + "."
+            line = line + "."
 
         if '|' not in line: 
             words = line.split()
