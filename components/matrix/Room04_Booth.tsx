@@ -931,7 +931,7 @@ export default function Room04_Booth() {
         activePoolHeader = trimmed.split(' ')[0].replace(/[^A-Z]/g, '');
         if (!llmPools[activePoolHeader]) llmPools[activePoolHeader] = [];
       } else if (activePoolHeader && trimmed.length > 0) {
-        // 🚨 CRITICAL SHIELD: Strip the timestamp FIRST
+        // 🚨 CRITICAL SHIELD: Strip the timestamp FIRST, so the regex can actually "see" the metadata
         let cleanLine = trimmed.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
         
         // Assassinate Hallucinations
@@ -940,17 +940,11 @@ export default function Room04_Booth() {
         // Strip backend pipe tags and clean spacing
         cleanLine = cleanLine.replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
         
-        // 🚨 FRONTEND HIJACKER 1: Strip "A:", "B:", "Hook:" tags from the start of the line
-        cleanLine = cleanLine.replace(/^[a-zA-Z0-9]+:\s*/i, '');
-
-        // 🚨 FRONTEND HIJACKER 2: The 1-Count Staccato Injector
-        // If the line has multiple words and isn't already formatted, rip off the first word, 
-        // wrap it in asterisks, add an em-dash, and stitch it back together.
-        const words = cleanLine.split(' ');
-        if (words.length > 1 && !cleanLine.startsWith('*') && cleanLine !== "[Instrumental Break]") {
-            const firstWord = words.shift();
-            cleanLine = `*${firstWord}—* ${words.join(' ')}`;
-        }
+        // 🚨 THE GLOBAL FRONTEND UI SCRUBBER 
+        // This targets ANY clustered punctuation (like ",." or "..") and crushes it down to just the first character.
+        // E.g., "THING,." becomes "THING,". 
+        // This cleans the Teleprompter/Grid while safely preserving the math pauses!
+        cleanLine = cleanLine.replace(/([,.?!;])[,.?!;]+/g, '$1');
         
         if (cleanLine && cleanLine !== "[Instrumental Break]") {
           llmPools[activePoolHeader].push(cleanLine);
