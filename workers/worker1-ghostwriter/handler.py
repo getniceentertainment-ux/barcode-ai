@@ -184,10 +184,10 @@ You are a chart-topping {active_persona} artist. You do not speak in complex poe
 [ABSOLUTE ENGINE RULES]
 1. ONE LINE = ONE BAR. 
 2. THE PIPE SYMBOL: You MUST place exactly one pipe symbol (|) in the exact middle of EVERY single line to mark the rhythmic pause.
-3. NO PARROTING: Assimilate the Track Variables. NEVER use the exact phrasing from the prompt. Translate it into your own trap vocabulary.
+3. NO META-TEXT: NEVER print "8-BAR", "HOOK", "VERSE", or "A-B-A-B" in the lyrics. Write the actual lyrics.
 4. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
-5. TONE: Modern trap. Simple vocabulary. Dynamic flow. DO NOT force heavy repetition on every single line unless instructed.
-6. VOCABULARY: Organically weave in the following slang terms contextually: [ {slang_list} ].
+5. TONE: Modern trap. Simple vocabulary. Dynamic flow. 
+6. VOCABULARY: Organically weave in the following slang terms: [ {slang_list} ].
 {explicit_directive}
 8. DSP VOCAL MATCH: {dsp_vocal_instruction}
 {flow_mimicry}
@@ -277,8 +277,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     # 1. BUILD THE DRAFT PROMPT
     draft_prompt = f"""<|im_start|>user
 [GENERATE {section_type.upper()}]
-- REQUIRED: EXACTLY {bars} BARS (LINES). You must generate exactly {bars} lines.
-- TOPIC: '{prompt_topic}'
+- REQUIRED: EXACTLY {bars} LINES.
 - NARRATIVE ARC: {arc_instruction}
 {dna_law}
 {hook_context}
@@ -286,29 +285,25 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 {evolution_rules}
 
 CRITICAL RULES:
-1. MAX WORDS: You have a strict limit of {word_cap} words per line. Keep it short! If the flow reference is long, IGNORE its length and chop your lines down to {word_cap} words.
-2. EXACT COUNT: Output exactly {bars} lines. Do not stop early.
-3. NO LABELS: Do not write A, B, Verse, or Hook.
+1. MAX WORDS: Every line MUST be {word_cap} words or less. Count the words. Cut the fat.
+2. NO LABELS: Write the lyrics. Do not write "Verse", "Hook", or "8-BAR".
 <|im_end|>
 <|im_start|>assistant
 """
     # 2. GENERATE THE DRAFT TEXT
-    # 🚨 GGUF INFERENCE FORMAT
     outputs = model(system_prompt + draft_prompt, max_tokens=64 * bars, temperature=0.85, top_p=0.9, repeat_penalty=1.15, stop=["<|im_end|>"])
     draft_text = outputs["choices"][0]["text"].strip()
 
     # 3. BUILD THE REFINE PROMPT 
     refine_prompt = f"""<|im_start|>user
-[THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
+[THE SECOND PASS: RHYTHMIC POLISH]
 You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
 CRITICAL REFINEMENT COMMANDS:
-1. WORD LIMIT: Every line MUST be {word_cap} words MAXIMUM! Cut out extra filler words.
-2. EXACT COUNT: You must return EXACTLY {bars} lines. Count them before finishing.
-3. OBEY THE POCKET: {pocket_instruction}
-4. THE BREATH MARKER: YOU MUST INSERT EXACTLY ONE VERTICAL BAR SYMBOL '|' BETWEEN EACH {pattern_desc} EVERY LINE. 
-5. KILL LIST: Delete "A,", "B,", "A:", "B:", "X2", "x2", "A-B-A-B", action words (DRAG, STEP), and quotation marks.
+1. ENFORCE THE WORD LIMIT: Look at every line. If it is longer than {word_cap} words, YOU MUST CHOP IT DOWN.
+2. ENFORCE THE PIPE: Insert exactly ONE '|' in the middle of EVERY line.
+3. KILL META-TEXT: Delete "A,", "B,", "HOOK", "VERSE", "8-BAR", and "X2".
 
 Output ONLY the final {bars} lines now.
 <|im_end|>
@@ -346,11 +341,19 @@ Output ONLY the final {bars} lines now.
         line = re.sub(r'\|+', '|', line)
         line = re.sub(r'\s+\|\s+', ' | ', line)
                 
+        # Clean the text and force uppercase
         line = line.strip('|').strip().upper()
+
+        # 🚨 NEW: Murder the "8-BAR | HOOK" hallucination globally
+        line = re.sub(r'^(?:\d+-BAR\s*\|?\s*(?:HOOK|VERSE)|HOOK|VERSE)\b', '', line, flags=re.IGNORECASE).strip('|').strip()
 
         # 🚨 Kills lines that are literally just a period or empty space
         if not line or re.match(r'^[\.,\s]+$', line):
             continue
+
+        # 🚨 THE DEFINITIVE PUNCTUATION SCRUBBER
+        # Strip ALL trailing punctuation so the pocket can apply it cleanly
+        line = re.sub(r'[.,;?!]+$', '', line).strip()
 
         if "SYNCOPATION (PICKUP)" in pocket_instruction:
             if not line.startswith("..."): line = "..." + line
