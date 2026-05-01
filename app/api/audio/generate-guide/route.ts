@@ -14,8 +14,11 @@ export async function POST(req: Request) {
     if (bpm && bpm > 130) pacingTag = "[fast]";
     else if (bpm && bpm < 90) pacingTag = "[slow]";
 
+    // 🚨 SWAGGER INJECTION: Add specific stylistic acting cues based on the vibe
+    let swaggerTag = "[confident] [rhythmic] [swagger]";
+
     // Combine the base rap tag, the dynamic grid math tags, the pacing, and the lyrics
-    const steerableLyrics = `[rap] [projecting] ${semanticTags || ""} ${pacingTag} ${lyrics}`.replace(/\s+/g, ' ').trim();
+    const steerableLyrics = `[rap] ${swaggerTag} ${semanticTags || ""} ${pacingTag} ${lyrics}`.replace(/\s+/g, ' ').trim();
 
     // Dynamically apply the calculated speed multiplier (fallback to 1.0)
     const finalSpeed = speed ? parseFloat(speed) : 1.0;
