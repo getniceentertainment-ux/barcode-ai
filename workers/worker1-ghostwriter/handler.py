@@ -233,7 +233,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
     # 🚨 THE FIX: Translate syllables to a strict word cap so the LLM understands
-    word_cap = max(4, int(max_syllables * 0.6))
+    word_cap = max(4, int(max_syllables * 0.9))
 
     if pattern_array:
         active_strikes = [v for v in pattern_array if v != 6]
@@ -296,17 +296,15 @@ CRITICAL RULES:
 
     # 3. BUILD THE REFINE PROMPT 
     refine_prompt = f"""<|im_start|>user
-[THE FINAL BUTCHER: RHYTHMIC ALIGNMENT]
-You drafted this {bars}-bar {section_type.upper()}:
-"{draft_text}"
+[RHYTHMIC POLISH]
+Draft: "{draft_text}"
 
-You are currently BREAKING the rhythmic grid. You must fix it now.
-1. 🚨 FATAL WORD LIMIT: Every single line MUST be {word_cap} words or fewer. If a line has {word_cap + 1} words, DELETE THEM. 
-2. NO COMPOUND SENTENCES: Use fragments. (e.g., "Weight on me." instead of "The weight of the world is resting heavy on me.")
-3. FORCE THE PIPE: Place '|' in the middle. 
-4. STRIP ALL META: No "Verse", "Hook", "8-bar", or "DNA" text.
+Apply these 3 filters:
+1. WORD LIMIT: Exactly {word_cap} words per line.
+2. STRUCTURE: Use one '|' per line.
+3. CLEAN: No labels (VERSE/HOOK). No "x2". No "8-BAR".
 
-Output ONLY the raw, chopped {bars} lines.
+Final lyrics only:
 <|im_end|>
 <|im_start|>assistant
 """
@@ -354,14 +352,12 @@ Output ONLY the raw, chopped {bars} lines.
 
         # 🚨 THE DEFINITIVE PUNCTUATION SCRUBBER
         # Strip ALL trailing punctuation so the pocket can apply it cleanly
-        line = re.sub(r'[.,;?!]+$', '', line).strip()
+        line = re.sub(r'[.,;?!|\s]+$', '', line).strip() 
 
-        if "SYNCOPATION (PICKUP)" in pocket_instruction:
-            if not line.startswith("..."): line = "..." + line
-        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
-            line = line + ","
+        if "CHAIN-LINK" in pocket_instruction:
+            line += ","
         elif "period" in pocket_instruction:
-            line = line + "."
+            line += "."          
 
         if '|' not in line: 
             words = line.split()
