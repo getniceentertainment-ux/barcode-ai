@@ -169,8 +169,9 @@ export default function Room03_Ghostwriter() {
         patternDesc: activeDesc,
         maxSyllables: activeMaxSyllables,
         rhymeScheme: activeRhymeScheme,
-        patternEnergy: activeEnergy // <-- INJECT IT INTO THE BLUEPRINT DNA};
-      
+        patternEnergy: activeEnergy // <-- INJECT IT INTO THE BLUEPRINT DNA
+      }; // <-- BRACE IS NOW SAFE!
+        
       cursor = start + block.bars;
       return updated;
     });
