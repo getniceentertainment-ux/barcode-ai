@@ -186,7 +186,7 @@ You are a chart-topping {active_persona} artist. You do not speak in complex poe
 2. THE PIPE SYMBOL: You MUST place exactly one pipe symbol (|) in the exact middle of EVERY single line to mark the rhythmic pause.
 3. NO META-TEXT: NEVER print "8-BAR", "HOOK", "VERSE", or "A-B-A-B" in the lyrics. Write the actual lyrics.
 4. NO POETRY: Avoid AI cliches and banned words: {banned_words_str}. 
-5. TONE: Modern trap. Simple vocabulary. Dynamic flow. 
+5. TONE: Modern trap. Slick vocabulary. Dynamic flow. Best Rapper Alive. 
 6. VOCABULARY: Organically weave in the following slang terms: [ {slang_list} ].
 {explicit_directive}
 8. DSP VOCAL MATCH: {dsp_vocal_instruction}
@@ -233,7 +233,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
     # 🚨 THE FIX: Translate syllables to a strict word cap so the LLM understands
-    word_cap = max(2, int(max_syllables * 0.6))
+    word_cap = max(4, int(max_syllables * 0.6))
 
     if pattern_array:
         active_strikes = [v for v in pattern_array if v != 6]
@@ -241,7 +241,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         
         dna_constraint = f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. HARD WORD CAP: You are physically restricted to a MAXIMUM of {word_cap} words per line. If a line has {word_cap + 0} words, the system will crash. Use short, punchy fragments only.
+1. HARD WORD CAP: You are physically restricted to a MAXIMUM of {word_cap} words per line. If a line has {word_cap + 1} words, the system will crash. Use short, punchy fragments only.
 2. RHYTHMIC ACCENTS: Anchor your line on exactly {accent_target} heavy stressed words.
 3. RHYME SCHEME: Strictly follow {rhyme_scheme} end-rhymes. NEVER print the letters "{rhyme_scheme}" in the text.
 4. POCKET PLACEMENT: {pocket_instruction}
@@ -291,7 +291,7 @@ CRITICAL RULES:
 <|im_start|>assistant
 """
     # 2. GENERATE THE DRAFT TEXT
-    outputs = model(system_prompt + draft_prompt, max_tokens=45 * bars, temperature=0.95, top_p=0.9, repeat_penalty=1.15, stop=["<|im_end|>"])
+    outputs = model(system_prompt + draft_prompt, max_tokens=45 * bars, temperature=0.95, top_p=0.9, repeat_penalty=1.5, stop=["<|im_end|>"])
     draft_text = outputs["choices"][0]["text"].strip()
 
     # 3. BUILD THE REFINE PROMPT 
@@ -419,7 +419,7 @@ Output: ALL CAPS rewritten line ONLY.
 <|im_start|>assistant
 """
         full_prompt_refine = system_prompt + refine_prompt
-        outputs = model(full_prompt_refine, max_tokens=50, stop=["<|im_end|>"])
+        outputs = model(full_prompt_refine, max_tokens=40, stop=["<|im_end|>"])
         refined = outputs["choices"][0]["text"].strip().upper()
         if "|" not in refined:
             words = refined.split()
@@ -450,7 +450,7 @@ Output: ALL CAPS rewritten line ONLY.
             sec_type = section.get("type", "VERSE").upper()
             bars = section.get("bars", 16)
             start_bar = section.get("startBar", current_cumulative_bar)
-            vault_max_syllables = section.get("maxSyllables", 10)
+            vault_max_syllables = section.get("maxSyllables", 8)
             vault_rhyme_scheme = section.get("rhymeScheme", "AABB")
             
             # 🚨 THE SURGICAL FIX: Pull energy directly from the Vault DNA!
