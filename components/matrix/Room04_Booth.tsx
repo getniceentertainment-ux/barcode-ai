@@ -367,8 +367,7 @@ export default function Room04_Booth() {
         try {
           // 🚨 THE PUNCTUATION SANITIZER
           // Strip the visual pipe '|' and ellipses
-	  let rawText = line.text.replace(/[|*]/g, '').replace(/^\.\.\./, '');
-          rawText = rawText.replace(/[,.]+/g, ' ').replace(/\s+/g, ' ').trim();
+          let rawText = line.text.replace(/\|/g, '').replace(/\.\.\./g, ', ');
           
           // 🚨 FIX: Nuke weird punctuation clusters like ",." or ".." that choke the TTS
           // If it sees multiple commas/periods grouped together, it flattens them into a single comma.
