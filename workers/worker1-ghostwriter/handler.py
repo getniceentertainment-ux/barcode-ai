@@ -296,16 +296,17 @@ CRITICAL RULES:
 
     # 3. BUILD THE REFINE PROMPT 
     refine_prompt = f"""<|im_start|>user
-[THE SECOND PASS: RHYTHMIC POLISH]
+[THE FINAL BUTCHER: RHYTHMIC ALIGNMENT]
 You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
-CRITICAL REFINEMENT COMMANDS:
-1. ENFORCE THE WORD LIMIT: Look at every line. If it is longer than {word_cap} words, YOU MUST CHOP IT DOWN.
-2. ENFORCE THE PIPE: Insert exactly ONE '|' in the middle of EVERY line.
-3. KILL META-TEXT: Delete "A,", "B,", "HOOK", "VERSE", "8-BAR", and "X2".
+You are currently BREAKING the rhythmic grid. You must fix it now.
+1. 🚨 FATAL WORD LIMIT: Every single line MUST be {word_cap} words or fewer. If a line has {word_cap + 1} words, DELETE THEM. 
+2. NO COMPOUND SENTENCES: Use fragments. (e.g., "Weight on me." instead of "The weight of the world is resting heavy on me.")
+3. FORCE THE PIPE: Place '|' in the middle. 
+4. STRIP ALL META: No "Verse", "Hook", "8-bar", or "DNA" text.
 
-Output ONLY the final {bars} lines now.
+Output ONLY the raw, chopped {bars} lines.
 <|im_end|>
 <|im_start|>assistant
 """

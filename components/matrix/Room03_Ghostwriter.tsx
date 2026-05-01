@@ -107,7 +107,7 @@ export default function Room03_Ghostwriter() {
       let activeName = "";
       let activeDesc = "";
       let activeArray: number[] = [];
-      let activeMaxSyllables = 10;
+      let activeMaxSyllables = 8;
       let activeRhymeScheme = "AABB";
       let activeEnergy = 2; // <-- ADD THIS
       
@@ -277,7 +277,7 @@ export default function Room03_Ghostwriter() {
 
     const systemConstraint = `ABSOLUTE ENGINE RULES:
 1. RAW LYRICS ONLY: You must ONLY output the lyrics.
-2. COMPOUND RHYMING: Use 2- or 3-syllable compound rhymes on the structural accents.
+2. COMPOUND RHYMING: Use 2 or 3 compound rhymes on the structural accents.
 3. PITCH INTONATION: Align your vowel choices to the pitch contour of the beat. Use closed/heavy vowels for pitch drops, and open/elongated vowels for tension rises.`;
 
     const keyParts = audioData?.key ? audioData.key.split(" ") : ["C", "minor"];
