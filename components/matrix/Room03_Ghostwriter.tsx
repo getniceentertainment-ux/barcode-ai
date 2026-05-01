@@ -329,9 +329,9 @@ export default function Room03_Ghostwriter() {
                   startBar: (b as any).startBar,
                   patternDesc: (b as any).patternDesc,
                   patternArray: (b as any).patternArray,
-                  maxSyllables: (b as any).maxSyllables, // <-- NEW
-                  rhymeScheme: (b as any).rhymeScheme,
-                  patternEnergy: (b as any).patternEnergy   // <-- NEW
+                  maxSyllables: (b as any).maxSyllables,
+                  rhymeScheme: (b as any).rhymeScheme,    // <-- COMMA ADDED
+                  patternEnergy: (b as any).patternEnergy 
                 },
                 { 
                   type: b.type, 
@@ -339,9 +339,9 @@ export default function Room03_Ghostwriter() {
                   startBar: (b as any).startBar + 8, 
                   patternDesc: (b as any).patternDesc,
                   patternArray: (b as any).patternArray,
-                  maxSyllables: (b as any).maxSyllables, // <-- NEW
-                  rhymeScheme: (b as any).rhymeScheme
-                  patternEnergy: (b as any).patternEnergy    // <-- NEW
+                  maxSyllables: (b as any).maxSyllables,
+                  rhymeScheme: (b as any).rhymeScheme,    // <-- COMMA ADDED
+                  patternEnergy: (b as any).patternEnergy 
                 }
               ];
             }
@@ -351,9 +351,9 @@ export default function Room03_Ghostwriter() {
               startBar: (b as any).startBar,
               patternDesc: (b as any).patternDesc,
               patternArray: (b as any).patternArray,
-              maxSyllables: (b as any).maxSyllables, // <-- NEW
-              rhymeScheme: (b as any).rhymeScheme
-                  patternEnergy: (b as any).patternEnergy     // <-- NEW
+              maxSyllables: (b as any).maxSyllables,
+              rhymeScheme: (b as any).rhymeScheme,        // <-- COMMA ADDED
+              patternEnergy: (b as any).patternEnergy 
             };
           })
         })
