@@ -270,6 +270,10 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         elif hook_type == "prime": hook_context = "[HOOK OVERRIDE]\nSYNCOPATION MATH: Force an odd-numbered syllable count."
         else: hook_context = "[HOOK OVERRIDE]\nSPACIOUS & ANTHEMIC: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse."
 
+    # 🚨 CRITICAL RESTORE: These variables MUST exist before draft_prompt is built!
+    evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast." if ("VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 8) else ""
+    energy_rules = "\n[ENERGY CLIMAX]: Pack the pocket. Write dense, aggressive rhymes." if current_energy == 4 else ""
+
     # 1. BUILD THE DRAFT PROMPT
     draft_prompt = f"""<|im_start|>user
 [GENERATE {section_type.upper()}]
@@ -293,7 +297,7 @@ CRITICAL RULES:
     outputs = model(system_prompt + draft_prompt, max_tokens=64 * bars, temperature=0.85, top_p=0.9, repeat_penalty=1.15, stop=["<|im_end|>"])
     draft_text = outputs["choices"][0]["text"].strip()
 
-    # 3. BUILD THE REFINE PROMPT (Now draft_text exists safely!)
+    # 3. BUILD THE REFINE PROMPT 
     refine_prompt = f"""<|im_start|>user
 [THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
 You drafted this {bars}-bar {section_type.upper()}:
