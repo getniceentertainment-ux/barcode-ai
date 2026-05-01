@@ -233,7 +233,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
     # 🚨 THE FIX: Translate syllables to a strict word cap so the LLM understands
-    word_cap = max(2, int(max_syllables * 0.8))
+    word_cap = max(2, int(max_syllables * 0.6))
 
     if pattern_array:
         active_strikes = [v for v in pattern_array if v != 6]
@@ -241,7 +241,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
         
         dna_constraint = f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. HARD WORD CAP: You are physically restricted to a MAXIMUM of {word_cap} words per line. If a line has {word_cap + 1} words, the system will crash. Use short, punchy fragments only.
+1. HARD WORD CAP: You are physically restricted to a MAXIMUM of {word_cap} words per line. If a line has {word_cap + 0} words, the system will crash. Use short, punchy fragments only.
 2. RHYTHMIC ACCENTS: Anchor your line on exactly {accent_target} heavy stressed words.
 3. RHYME SCHEME: Strictly follow {rhyme_scheme} end-rhymes. NEVER print the letters "{rhyme_scheme}" in the text.
 4. POCKET PLACEMENT: {pocket_instruction}
@@ -285,13 +285,13 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 {evolution_rules}
 
 CRITICAL RULES:
-1. MAX WORDS: Every line MUST be {word_cap} words or less. Count the words. Cut the fat.
+1. MAX WORDS: Every line MUST be equal to {word_cap} words or less. Count the words. Cut the fat.
 2. NO LABELS: Write the lyrics. Do not write "Verse", "Hook", or "8-BAR".
 <|im_end|>
 <|im_start|>assistant
 """
     # 2. GENERATE THE DRAFT TEXT
-    outputs = model(system_prompt + draft_prompt, max_tokens=64 * bars, temperature=0.85, top_p=0.9, repeat_penalty=1.15, stop=["<|im_end|>"])
+    outputs = model(system_prompt + draft_prompt, max_tokens=45 * bars, temperature=0.95, top_p=0.9, repeat_penalty=1.15, stop=["<|im_end|>"])
     draft_text = outputs["choices"][0]["text"].strip()
 
     # 3. BUILD THE REFINE PROMPT 
@@ -311,7 +311,7 @@ Output ONLY the final {bars} lines now.
 """
     # 4. GENERATE THE FINAL TEXT
     # 🚨 GGUF INFERENCE FORMAT
-    outputs_refine = model(system_prompt + refine_prompt, max_tokens=64 * bars, temperature=0.5, top_p=0.9, repeat_penalty=1.1, stop=["<|im_end|>"])
+    outputs_refine = model(system_prompt + refine_prompt, max_tokens=40 * bars, temperature=0.35, top_p=0.9, repeat_penalty=1.3, stop=["<|im_end|>"])
     final_text = outputs_refine["choices"][0]["text"].strip()
 
     final_text = final_text.replace("<|im_end|>", "").strip()
