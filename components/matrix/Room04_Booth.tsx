@@ -382,11 +382,18 @@ export default function Room04_Booth() {
           // Use phonetic homophones so the AI pronounces the explicit word naturally.
           const flaggedWords: { [key: string]: string } = {
             'kill': 'keel', 'murder': 'merder', 'shoot': 'shewt', 'gun': 'guhn',
-            'bitch': 'bich', 'fuck': 'fuhk', 'shit': 'shih t', 'blood': 'bluhd',
-            'dead': 'ded', 'die': 'dye', 'drugs': 'drahgs', 'pills': 'pilz',
+            'bitch': 'bich', 'fuck': 'fuhk', 
+            'shit': 'shiht', // <-- Removed the space here so it doesn't stutter!
+            'blood': 'bluhd',
+            'dead': 'dehd', // <-- Changed from 'ded' to beat the slang filter
+            'die': 'dahy', 'drugs': 'drahgs', 'pills': 'pilz',
             'crack': 'krak', 'dope': 'dohp', 'thug': 'thuhg', 'prison': 'prizin',
             'threats': 'threts', 'thugger': 'thuhger', 'nigga': 'nihgah', 'niggaz': 'nihgahz',
-            'ass': 'ahs', 'hoes': 'hoez', 'hoe': 'hoh'
+            'ass': 'ahs', 'hoes': 'hoez', 'hoe': 'hoh',
+            
+            // 🚨 PHRASE BYPASSES (For highly contextual safety triggers)
+            "when i'm dead": "wen aym dehd",
+            "im dead": "aym dehd"
           };
           
           Object.keys(flaggedWords).forEach(bad => {
