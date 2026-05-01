@@ -389,7 +389,7 @@ export default function Room04_Booth() {
             'die': 'dahy', 'drugs': 'drahgs', 'pills': 'pilz',
             'crack': 'krak', 'dope': 'dohp', 'thug': 'thuhg', 'prison': 'prizin',
             'threats': 'threts', 'thugger': 'thuhger', 'nigga': 'nihgah', 'niggaz': 'nihgahz',
-            'ass': 'ahs', 'hoes': 'hoez', 'hoe': 'hoh', 'brick': 'brik', 'hustle': 'huzzle', 'counting': 'countin'',
+            'ass': 'ahs', 'hoes': 'hoez', 'hoe': 'hoh', 'brick': 'brik', 'hustle': 'huzzle', 'counting': 'countin',
             
             // 🚨 PHRASE BYPASSES (For highly contextual safety triggers)
             "when i'm dead": "wen aym dehd",
