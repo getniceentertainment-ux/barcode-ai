@@ -347,12 +347,19 @@ export default function Room04_Booth() {
       // 🚨 ECHO FIX: Build a BPM-synced "Vocal Throw" Delay Bus
       const delayNode = offlineCtx.createDelay(2.0);
       delayNode.delayTime.value = 60 / preciseBpm; // Quarter-note trap echo
+      
+      // Feedback = How long the echo repeats before dying out
       const feedbackGain = offlineCtx.createGain();
-      feedbackGain.gain.value = 0.01; // 20% low wet echo volume
+      feedbackGain.gain.value = 0.25; 
+      
+      // 🚨 NEW WET GAIN: This is the actual VOLUME of the echo
+      const wetGain = offlineCtx.createGain();
+      wetGain.gain.value = 0.08; // <-- Adjust this to make the echo quieter or louder in the mix
       
       delayNode.connect(feedbackGain);
       feedbackGain.connect(delayNode);
-      delayNode.connect(offlineCtx.destination);
+      delayNode.connect(wetGain); // Route delay through the volume knob
+      wetGain.connect(offlineCtx.destination); // Send to master
 
       for (let i = 0; i < parsedLines.length; i++) {
         const line = parsedLines[i];
@@ -399,9 +406,16 @@ export default function Room04_Booth() {
           mappedWords.forEach((wObj, wIdx) => {
                   if (!wObj.word.trim()) return;
 
-                  // 🚨 BLEED FIX: Detect the last word and give it massive room to breathe
+                  // 🚨 THE EVERY-OTHER-BAR ECHO LOGIC
+                  // 'i' is the line index. i % 2 !== 0 means it only fires on alternating lines
+                  const isEveryOtherBar = i % 2 !== 0; 
                   const isLastWord = wIdx === mappedWords.length - 1;
-                  const tailBleed = isLastWord ? 1.0 : 0.15; 
+                  
+                  // Only trigger the echo throw if it is the last word AND an alternating bar
+                  const triggerEcho = isLastWord && isEveryOtherBar;
+                  
+                  // Give it massive breathing room if it's an echo bar, otherwise choke it tight
+                  const tailBleed = triggerEcho ? 1.0 : 0.15; 
 
                   const relativeWordStart = (wObj.startTime - line.startTime) - firstWordOffset;
                   const ttsOffset = Math.max(0, (relativeWordStart / mathLineDuration) * ttsDuration);
@@ -415,15 +429,15 @@ export default function Room04_Booth() {
 
                   const gainNode = offlineCtx.createGain();
                   gainNode.gain.setValueAtTime(0, wObj.startTime);
-                  gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.02); // Softer attack to stop pops
+                  gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.02); 
                   gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
                   gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
 
                   source.connect(gainNode);
                   gainNode.connect(offlineCtx.destination);
                   
-                  // 🚨 ECHO FIX: Throw ONLY the last word into the delay bus
-                  if (isLastWord) {
+                  // 🚨 ECHO FIX: Throw ONLY the last word of alternating bars into the delay bus
+                  if (triggerEcho) {
                       gainNode.connect(delayNode);
                   }
                   
