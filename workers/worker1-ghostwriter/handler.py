@@ -390,7 +390,7 @@ Output ONLY the final {bars} lines now.
     current_style = style.lower()
 
     for line in raw_lines:
-        line = line.replace('[', '').replace(']', '').replace('(', '').replace(')')
+        line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
         
@@ -406,10 +406,10 @@ Output ONLY the final {bars} lines now.
         allowed_words = []
         current_syls = 0
         
-        if current_style == "lazy": buffer_limit = max_syllables + 1  
-        elif current_style == "triplet": buffer_limit = max_syllables + 1  
-        elif current_style == "chopper": buffer_limit = max_syllables + 1  
-        else: buffer_limit = max_syllables + 1  
+        if current_style == "lazy": buffer_limit = max_syllables + 0  
+        elif current_style == "triplet": buffer_limit = max_syllables + 0  
+        elif current_style == "chopper": buffer_limit = max_syllables + 0  
+        else: buffer_limit = max_syllables + 0  
         
         for w in reversed(words_in_line):
             syls = count_syllables(w)
