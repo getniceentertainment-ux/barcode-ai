@@ -217,25 +217,53 @@ export default function Room04_Booth() {
         timeDisplayRef.current.innerText = `${mins}:${secs}`;
     }
 
-    // 🚨 AUTOMATIC BPM-SYNCED LOOKAHEAD
-    const visualTime = time;
+    // The sweet spot clock (30ms monitor latency offset)
+    const visualTime = time + 0.03; 
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
       let currentLineIndex = -1;
 
+      // 🚨 DYNAMIC LINE BOUNDARY FIX 🚨
+      // Instead of rigid math, we find the real start time based on the actual words!
       for (let i = 0; i < quantizedLines.length; i++) {
         const line = quantizedLines[i];
         if (line.isHeader) continue;
 
-        const nextLine = quantizedLines.slice(i + 1).find(l => !l.isHeader);
-        const endTime = nextLine ? nextLine.startTime : (line.startTime + (line.lineDuration || 2));
+        let realStartTime = line.startTime;
+        if (line.words && line.words.length > 0) {
+            realStartTime = Math.min(...line.words.map(w => w.startTime));
+        }
+
+        let nextRealStart = Infinity;
+        for (let j = i + 1; j < quantizedLines.length; j++) {
+            const nLine = quantizedLines[j];
+            if (!nLine.isHeader && nLine.words && nLine.words.length > 0) {
+                nextRealStart = Math.min(...nLine.words.map(w => w.startTime));
+                break;
+            }
+        }
+
+        // If it's the very last line, keep it active until its last word ends + 2 seconds
+        if (nextRealStart === Infinity && line.words && line.words.length > 0) {
+            nextRealStart = Math.max(...line.words.map(w => w.startTime + w.duration)) + 2;
+        }
+
+        // The line stays fully active until the very first word of the NEXT line hits
+        if (visualTime >= realStartTime && visualTime < nextRealStart) {
+            currentLineIndex = i;
+        }
+      }
+
+      // 🚨 RENDER THE ACTIVE LINE AND BALL
+      for (let i = 0; i < quantizedLines.length; i++) {
+        const line = quantizedLines[i];
+        if (line.isHeader) continue;
 
         const lineNode = lineNodes[i] as HTMLElement;
         if (!lineNode) continue;
 
-        if (visualTime >= line.startTime && visualTime < endTime) {
-          currentLineIndex = i;
+        if (i === currentLineIndex) {
           lineNode.classList.add('bg-[#E60000]/10', 'border-[#E60000]');
           lineNode.classList.remove('border-transparent');
 
@@ -273,6 +301,7 @@ export default function Room04_Booth() {
             }
           });
         } else {
+          // Line is inactive - reset everything
           lineNode.classList.remove('bg-[#E60000]/10', 'border-[#E60000]');
           lineNode.classList.add('border-transparent');
           
@@ -304,15 +333,17 @@ export default function Room04_Booth() {
         }
         lastActiveLineRef.current = currentLineIndex;
       }
-    }
-  };
-
-  const animationTick = () => {
-    updateVisualsRef.current();
-    if (isPlayingRef.current || isRecordingRef.current) {
-      animationFrameRef.current = requestAnimationFrame(animationTick);
-    } else {
-      animationFrameRef.current = undefined;
+    } else if (isReviewMode) {
+      const slotNodes = document.querySelectorAll('.midi-slot');
+      slotNodes.forEach(node => {
+         const slotStart = parseFloat(node.getAttribute('data-start') || "0");
+         const slotEnd = parseFloat(node.getAttribute('data-end') || "0");
+         if (visualTime >= slotStart && visualTime < slotEnd) {
+             node.classList.add('bg-white/20');
+         } else {
+             node.classList.remove('bg-white/20');
+         }
+      });
     }
   };
 
