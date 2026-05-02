@@ -36,5 +36,9 @@ ENV LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 
 # Move the code in
 COPY handler.py .
+COPY syl_ref.json .
+COPY dictionary.json .
+COPY master_index.json .
+COPY Daily_Briefing.txt .
 
 CMD ["python3", "-u", "handler.py"]
