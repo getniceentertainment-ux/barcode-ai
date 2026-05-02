@@ -217,8 +217,8 @@ export default function Room04_Booth() {
         timeDisplayRef.current.innerText = `${mins}:${secs}`;
     }
 
-    // The sweet spot clock (30ms monitor latency offset)
-    const visualTime = time; 
+    // 🚨 ZERO LATENCY CLOCK
+    const visualTime = time + 0.03; 
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
@@ -231,7 +231,6 @@ export default function Room04_Booth() {
         const lineNode = lineNodes[i] as HTMLElement;
         if (!lineNode) continue;
 
-        // 1. DYNAMIC LINE BACKGROUND
         let realStartTime = line.startTime;
         let realEndTime = line.startTime + (line.lineDuration || 2);
 
@@ -249,7 +248,6 @@ export default function Room04_Booth() {
             }
         }
 
-        // Stretch the background highlight until the next line starts, OR until the last word finishes!
         const highlightEnd = Math.max(realEndTime, nextRealStart === Infinity ? realEndTime + 2 : nextRealStart);
 
         if (visualTime >= realStartTime && visualTime < highlightEnd) {
@@ -261,8 +259,6 @@ export default function Room04_Booth() {
              lineNode.classList.add('border-transparent');
         }
 
-        // 🚨 2. INDEPENDENT WORD PROCESSING 🚨
-        // We process the balls and words REGARDLESS of the line background!
         const chunks = lineNode.querySelectorAll('.syllable-chunk');
         line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
@@ -270,7 +266,6 @@ export default function Room04_Booth() {
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             
             if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
-                // Word is active!
                 chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
                 chunkNode.classList.remove('text-[#444]', 'text-[#888]');
                 
@@ -283,7 +278,6 @@ export default function Room04_Booth() {
                     ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
                 }
             } else if (visualTime >= wObj.startTime + wObj.duration) {
-                // Word is finished
                 chunkNode.classList.add('text-[#888]');
                 chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
                 if (ballNode) {
@@ -291,7 +285,6 @@ export default function Room04_Booth() {
                     ballNode.style.transform = `translateX(-50%) translateY(0px)`;
                 }
             } else {
-                // Word hasn't happened yet
                 chunkNode.classList.add('text-[#444]');
                 chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
                 if (ballNode) {
@@ -302,7 +295,6 @@ export default function Room04_Booth() {
         });
       }
 
-      // Smooth Auto-Scrolling
       if (autoScroll && activeScrollIndex !== -1 && activeScrollIndex !== lastActiveLineRef.current) {
         const activeNode = lineNodes[activeScrollIndex] as HTMLElement;
         if (activeNode) {
@@ -311,7 +303,6 @@ export default function Room04_Booth() {
         lastActiveLineRef.current = activeScrollIndex;
       }
     } else if (isReviewMode) {
-      // Live MIDI Grid Playhead
       const slotNodes = document.querySelectorAll('.midi-slot');
       slotNodes.forEach(node => {
          const slotStart = parseFloat(node.getAttribute('data-start') || "0");
@@ -890,9 +881,11 @@ export default function Room04_Booth() {
                           return (
                             <div 
                               key={slotIndex}
+                              data-start={line.startTime + (slotIndex * ((line.lineDuration || 2) / 16))}
+                              data-end={line.startTime + ((slotIndex + 1) * ((line.lineDuration || 2) / 16))}
                               onDragOver={(e) => e.preventDefault()}
                               onDrop={(e) => handleDrop(e, line.id, slotIndex)}
-                              className={`flex-1 border-r border-[#111] relative flex items-center justify-center
+                              className={`midi-slot flex-1 border-r border-[#111] relative flex items-center justify-center transition-colors duration-75
                                 ${isDownbeat ? 'bg-[#151515]' : ''} 
                                 ${isSnare ? 'bg-[#2a0505]' : ''}
                               `}
@@ -934,7 +927,6 @@ export default function Room04_Booth() {
                     {line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
                     
                     {/* 🚨 THE 16-STEP GRID FIX */}
-                    {/* We turn the entire line into a 16-column grid to physically mirror the MIDI slots */}
                     <div className="flex-1 w-full grid items-center relative min-h-[2rem]" style={{ gridTemplateColumns: 'repeat(16, minmax(0, 1fr))' }}>
                       {(() => {
                         const wordGroups: QuantizedSyllable[][] = [];
@@ -950,17 +942,13 @@ export default function Room04_Booth() {
                         if (currentGroup.length > 0) wordGroups.push(currentGroup);
 
                         return wordGroups.map((group, gIdx) => {
-                          // Extract the exact 0-15 MIDI slot this word belongs to
                           const firstSlot = group[0].slot;
-                          
                           return (
                             <span 
                               key={gIdx} 
                               className="inline-flex whitespace-nowrap absolute"
-                              // 🚨 MAGIC ALIGNMENT: Force the word to physically sit in its exact MIDI column!
                               style={{ 
                                 left: `${(firstSlot / 16) * 100}%`, 
-                                // Prevent overlapping text from breaking the UI
                                 zIndex: 10 + gIdx 
                               }}
                             >
@@ -977,6 +965,7 @@ export default function Room04_Booth() {
                         });
                       })()}
                     </div>
+                  </div>
                 );
               })}
               
