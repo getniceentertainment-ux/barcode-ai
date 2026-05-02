@@ -68,7 +68,7 @@ function chunkWordForVisuals(word: string): string[] {
 function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
   let startOffset = 0;
   let endOffset = buffer.length;
-  const threshold = 0.08; 
+  const threshold = 0.03; 
   
   for (let c = 0; c < buffer.numberOfChannels; c++) {
     const data = buffer.getChannelData(c);
@@ -201,34 +201,34 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
 }
 
 // --- THE MACRO-RHYTHMIC FLOW VAULT ---
-const FLOW_VAULT:Record<string, {array: number[], name: string, desc: string, maxSyllables: number, rhymeScheme: string, energy: number}[]>= {
+const FLOW_VAULT: Record<string, number[][]> = {
   "getnice_hybrid": [
-    { array: [4, 2, 2, 3, 1, 4, 2, 2, 2, 2, 4, 4], name: "Chain-Link Pivot", desc: "Long massive hold on the 1-count...", maxSyllables: 12, rhymeScheme: "AABB" },
-    { array: [3, 1, 2, 2], name: "Platinum Bounce", desc: "1 long stretched syllable...", maxSyllables: 10, rhymeScheme: "ABAB" },
-    { array: [6, 2, 4, 2, 2], name: "Late Drop", desc: "Leave the 1-count totally empty...", maxSyllables: 9, rhymeScheme: "AAAA" }
+    [4, 2, 2,  3, 1, 4,  2, 2, 2, 2,  4, 4], 
+    [3, 1, 2, 2],
+    [6, 2, 4, 2, 2] 
   ],
   "chopper": [
-    { array: [1, 1, 1, 1], name: "Machine Gun", desc: "All rapid-fire, ultra-fast 16th-note syllables.", maxSyllables: 16, rhymeScheme: "AAAA" },
-    { array: [2, 1, 1, 1, 1, 2], name: "Stutter Step", desc: "A standard syllable, followed by four ultra-fast...", maxSyllables: 14, rhymeScheme: "AABB" }
+    [1, 1, 1, 1], 
+    [2, 1, 1, 1, 1, 2] 
   ],
   "heartbeat": [
-    { array: [2, 2, 2, 2], name: "Steady Anchor", desc: "All standard, steady 8th-note syllables.", maxSyllables: 10, rhymeScheme: "AABB" },
-    { array: [4, 2, 2, 4, 4], name: "Delayed Pocket", desc: "A massive hold, two standard syllables...", maxSyllables: 8, rhymeScheme: "ABAB" }
+    [2, 2, 2, 2], 
+    [4, 2, 2, 4, 4] 
   ],
   "triplet": [
-    { array: [3, 3, 2], name: "Standard Triplet", desc: "Two long stretched syllables...", maxSyllables: 12, rhymeScheme: "AAAA" },
-    { array: [2, 2, 2, 3, 3, 4], name: "Atmospheric Stagger", desc: "Three standard syllables...", maxSyllables: 11, rhymeScheme: "AABB" }
+    [3, 3, 2], 
+    [2, 2, 2, 3, 3, 4] 
   ],
   "lazy": [
-    { array: [4, 2, 2], name: "Standard Drawl", desc: "A massive lazy hold followed by two standard...", maxSyllables: 7, rhymeScheme: "AABB" },
-    { array: [6, 2, 8], name: "Extreme Drag", desc: "An extreme delayed hold...", maxSyllables: 5, rhymeScheme: "AAAA" }
+    [4, 2, 2], 
+    [6, 2, 8] 
   ]
 };
 
 export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
-    updateStemOffset, updateStemVolume, toggleStemMute, setActiveRoom, blueprint, userSession, 
+    updateStemOffset, updateStemVolume, setActiveRoom, blueprint, userSession, 
     addToast, gwStyle, quantizedLines, setQuantizedLines 
   } = useMatrixStore();
 
@@ -245,6 +245,7 @@ export default function Room04_Booth() {
 
   const [currentTimeDisplay, setCurrentTimeDisplay] = useState(0);
   const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
+  const [mutedStems, setMutedStems] = useState<Set<string>>(new Set());
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
 
   const [trimmingStem, setTrimmingStem] = useState<any | null>(null);
@@ -255,9 +256,10 @@ export default function Room04_Booth() {
 
   const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
 
-  const preciseBpm = audioData?.bpm || 120;
-  const secondsPerBar = (60 / preciseBpm) * 4;
-  const secondsPerSlot = secondsPerBar / 16;
+  const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
+  const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
+  const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
+  const secondsPerSlot = secondsPerBar / 16; 
 
   const trimWaveformRef = useRef<HTMLDivElement>(null);
   const trimWavesurferRef = useRef<WaveSurfer | null>(null);
@@ -272,7 +274,6 @@ export default function Room04_Booth() {
   const recordedChunksRef = useRef<Float32Array[]>([]);
   const workletLoadedRef = useRef(false);
   const teleprompterRef = useRef<HTMLDivElement>(null);
-  const timeDisplayRef = useRef<HTMLDivElement>(null);
 
   // --- HIGH-PERFORMANCE rAF SYNC REFS ---
   const animationFrameRef = useRef<number>();
@@ -334,6 +335,7 @@ export default function Room04_Booth() {
     setGuideProgress(0);
     
     try {
+      // 🚨 FIX 4: Guide reads from the mathematically accurate local state, not the stale store
       const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
       if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
@@ -343,144 +345,74 @@ export default function Room04_Booth() {
       const OfflineCtxClass = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
       const offlineCtx = new OfflineCtxClass(1, Math.ceil(sampleRate * renderDuration), sampleRate);
 
-      // 🚨 ECHO FIX: Build a BPM-synced "Vocal Throw" Delay Bus
-      const delayNode = offlineCtx.createDelay(2.0);
-      delayNode.delayTime.value = 60 / preciseBpm; // Quarter-note trap echo
-      
-      const feedbackGain = offlineCtx.createGain();
-      feedbackGain.gain.value = 0.333; // How many times it repeats
-      
-      const wetGain = offlineCtx.createGain();
-      wetGain.gain.value = 0.15; // How LOUD the echo is in the background
-      
-      delayNode.connect(feedbackGain);
-      feedbackGain.connect(delayNode);
-      delayNode.connect(wetGain);
-      wetGain.connect(offlineCtx.destination);
-
       for (let i = 0; i < parsedLines.length; i++) {
-        const line = parsedLines[i];
-        
-        setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
+              const line = parsedLines[i];
+              
+              // 🚨 FIX 2: Restore Guide Progress Percentage
+              setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
 
-        try {
-          // 🚨 THE PUNCTUATION SANITIZER
-          // Strip the visual pipe '|' and ellipses
-          let rawText = line.text.replace(/\|/g, '').replace(/\.\.\./g, ', ');
-          
-          // 🚨 FIX: Nuke weird punctuation clusters like ",." or ".." that choke the TTS
-          // If it sees multiple commas/periods grouped together, it flattens them into a single comma.
-          rawText = rawText.replace(/[,.]{2,}/g, ',');
-          
-          rawText = rawText.replace(/\s+/g, ' ').trim();
-          
-          let safeText = rawText.toLowerCase();
-          
-          // 🚨 THE UPGRADED PHONETIC SMUGGLER
-          // DO NOT use spaces to break words (e.g. "f ck"). It causes TTS to stutter and mumble.
-          // Use phonetic homophones so the AI pronounces the explicit word naturally.
-          const flaggedWords: { [key: string]: string } = {
-            'kill': 'keel', 'murder': 'merder', 'shoot': 'shewt', 'gun': 'guhn',
-            'bitch': 'bich', 'fuck': 'fuhk', 
-            'shit': 'shiht', // <-- Removed the space here so it doesn't stutter!
-            'blood': 'bluhd',
-            'dead': 'dehd', // <-- Changed from 'ded' to beat the slang filter
-            'die': 'dahy', 'drugs': 'drahgs', 'pills': 'pilz',
-            'crack': 'krak', 'dope': 'dohp', 'thug': 'thuhg', 'prison': 'prizin',
-            'threats': 'threts', 'thugger': 'thuhger', 'nigga': 'nihgah', 'niggaz': 'nihgahz',
-            'ass': 'ahs', 'hoes': 'hoez', 'hoe': 'hoh', 'brick': 'brik', 'hustle': 'huzzle', 'counting': 'countin',
-            
-            // 🚨 PHRASE BYPASSES (For highly contextual safety triggers)
-            "when i'm dead": "wen aym dehd",
-            "im dead": "aym dehd"
-          };
-          
-          Object.keys(flaggedWords).forEach(bad => {
-            const regex = new RegExp(`\\b${bad}\\b`, 'g');
-            safeText = safeText.replace(regex, flaggedWords[bad]);
-          });
+              try {
+                const res = await fetch('/api/audio/generate-guide', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ 
+                    lyrics: line.text.replace(/\|/g, ''), 
+                    bpm: preciseBpm,
+                    gender: useMatrixStore.getState().gwGender || "male",
+                    pitch: "low"
+                  })
+                });
+                
+                if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
 
-          // End with a single period so it finishes the thought cleanly
-          const aggressiveText = safeText + "."; 
+                const arrayBuffer = await res.arrayBuffer();
+                const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+                
+                const mappedWords = line.words;
+                if (!mappedWords || mappedWords.length === 0) continue;
 
-          const res = await fetch('/api/audio/generate-guide', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              lyrics: aggressiveText, 
-              bpm: preciseBpm,
-              gender: useMatrixStore.getState().gwGender || "male",
-              pitch: "low",
-              style: "aggressive"
-            })
-          });
-          
-          if (!res.ok) throw new Error("TTS API rate limit or disconnect.");
+                // 🚨 FIX 1: Restore Proportional Crossfade Audio Logic (Syllable Syncing)
+                const ttsDuration = audioBuffer.duration;
+                const mathLineDuration = line.lineDuration || 2;
 
-          const arrayBuffer = await res.arrayBuffer();
-          const rawAudioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-          const audioBuffer = trimTTSBuffer(offlineCtx, rawAudioBuffer);
-          
-          const mappedWords = line.words;
-          if (!mappedWords || mappedWords.length === 0) continue;
+                mappedWords.forEach((wObj) => {
+                  if (!wObj.word.trim()) return;
 
-          const ttsDuration = audioBuffer.duration;
-          const mathLineDuration = line.lineDuration || 2;
-          const firstWordOffset = mappedWords[0].startTime - line.startTime;
+                  const relativeWordStart = wObj.startTime - line.startTime;
+                  const ttsOffset = (relativeWordStart / mathLineDuration) * ttsDuration;
+                  const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
 
-          mappedWords.forEach((wObj, wIdx) => {
-            if (!wObj.word.trim()) return;
+                  const tailBleed = 0.35; 
+                  const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
 
-            const isLastWord = wIdx === mappedWords.length - 1;
-            const isEveryOtherLine = i % 2 !== 0; 
-            
-            // 🚨 SURGICAL FIX: Massive increase to tailBleed to prevent audio chopping
-            // Middle words now get 0.75s to finish playing, Last words get 1.5s
-            const tailBleed = isLastWord ? 1.5 : 0.75; 
+                  const source = offlineCtx.createBufferSource();
+                  source.buffer = audioBuffer;
+                  source.playbackRate.value = 1.0; 
 
-            const relativeWordStart = (wObj.startTime - line.startTime) - firstWordOffset;
-            const ttsOffset = Math.max(0, (relativeWordStart / mathLineDuration) * ttsDuration);
-            const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
+                  const gainNode = offlineCtx.createGain();
+                  gainNode.gain.setValueAtTime(0, wObj.startTime);
+                  gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.01); 
+                  gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
+                  gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
 
-            const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
+                  source.connect(gainNode);
+                  gainNode.connect(offlineCtx.destination);
+                  
+                  source.start(wObj.startTime, ttsOffset, safeExtractDuration);
+                });
 
-            const source = offlineCtx.createBufferSource();
-            source.buffer = audioBuffer;
-            source.playbackRate.value = 1.0; 
-
-            const gainNode = offlineCtx.createGain();
-            gainNode.gain.setValueAtTime(0, wObj.startTime);
-            gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.02); 
-            gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-            
-            // 🚨 SURGICAL FIX: Slower, exponential fade out instead of a hard linear drop
-            gainNode.gain.exponentialRampToValueAtTime(0.01, wObj.startTime + wObj.duration + tailBleed); 
-
-            source.connect(gainNode);
-            
-            // 🚨 THE ECHO FIX: Route only the final word of alternating lines to the Delay Bus
-            if (isLastWord && isEveryOtherLine) {
-                gainNode.connect(delayNode);
+              } catch (lineErr) {
+                console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
+              }
             }
-            
-            // ALWAYS route the dry vocal to the master so it never mutes
-            gainNode.connect(offlineCtx.destination);
-            
-            source.start(wObj.startTime, ttsOffset, safeExtractDuration);
-          });
-
-        } catch (lineErr) {
-          console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
-        }
-      } // <--- THIS WAS THE BRACKET YOU WERE MISSING!
 
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);
       const url = URL.createObjectURL(blob);
       const takeId = `GUIDE_${Date.now()}`;
 
-      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.95, offsetBars: 0 });
-      if (addToast) addToast("High-fidelity aggressive audio glued to visual metronome.", "success");
+      addVocalStem({ id: takeId, type: "Guide" as TrackType, url: url, blob: blob, volume: 0.3, offsetBars: 0 });
+      if (addToast) addToast("High-fidelity audio glued to visual metronome.", "success");
     } catch (err: any) {
       console.error(err);
       if (addToast) addToast("Guide Error: " + err.message, "error");
@@ -518,7 +450,15 @@ export default function Room04_Booth() {
     else setActiveRoom("05");
   };
 
-   const applyTrim = async () => {
+  const toggleMute = (id: string) => {
+    setMutedStems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const applyTrim = async () => {
     if (!trimmingStem) return;
     setIsProcessingTrim(true);
     try {
@@ -558,15 +498,9 @@ export default function Room04_Booth() {
     if (!wavesurferRef.current) return;
     
     const time = wavesurferRef.current.getCurrentTime();
-    
-    // 🚨 SURGICAL FIX: Prevent 60FPS React state churn by updating DOM directly
-    if (timeDisplayRef.current) {
-        const mins = Math.floor(time / 60).toString().padStart(2, '0');
-        const secs = Math.floor(time % 60).toString().padStart(2, '0');
-        timeDisplayRef.current.innerText = `${mins}:${secs}`;
-    }
+    setCurrentTimeDisplay(time); 
 
-    const visualTime = time; // 🚨 SURGICAL FIX: 0 offset to perfectly match the vocal guide audio time.
+    const visualTime = time + 0.08; 
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
@@ -683,7 +617,7 @@ export default function Room04_Booth() {
     const playheadTime = wavesurferRef.current.getCurrentTime();
 
     if (willPlay) {
-      const scheduleTime = audioCtxRef.current.currentTime; 
+      const scheduleTime = audioCtxRef.current.currentTime + 0.05; 
       wavesurferRef.current.play();
       
       if (!animationFrameRef.current) {
@@ -694,7 +628,7 @@ export default function Room04_Booth() {
       activeSourcesRef.current = [];
 
       vocalStems.forEach(stem => {
-        if (stem.isMuted) return; // <-- SURGICAL FIX
+        if (mutedStems.has(stem.id)) return;
         const buffer = stemBuffersRef.current.get(stem.id);
         if (buffer) {
           const source = audioCtxRef.current!.createBufferSource();
@@ -767,7 +701,7 @@ export default function Room04_Booth() {
       } finally { setIsUploading(false); }
     }
     
-    if (timeDisplayRef.current) timeDisplayRef.current.innerText = "00:00";
+    setCurrentTimeDisplay(0);
     updateVisualsRef.current(); 
   };
 
@@ -810,7 +744,7 @@ export default function Room04_Booth() {
         mediaSourceRef.current = audioCtxRef.current.createMediaStreamSource(mediaStreamRef.current);
       }
       
-      const LATENCY_OFFSET = 0.00; 
+      const LATENCY_OFFSET = 0.06; 
       const currentWS_Time = wavesurferRef.current?.getCurrentTime() || 0;
       let padTime = Math.max(0, currentWS_Time - LATENCY_OFFSET);
       
@@ -916,158 +850,133 @@ export default function Room04_Booth() {
   const lastParsedLyricsRef = useRef<string>("");
 
   useEffect(() => {
-    if (!generatedLyrics || !audioData || !blueprint) return;
-    if (lastParsedLyricsRef.current === generatedLyrics) return; 
+    if (!generatedLyrics) return;
+    if (lyricLines.length > 0 && lastParsedLyricsRef.current === generatedLyrics) return; 
     lastParsedLyricsRef.current = generatedLyrics;
 
-    // 1. DECONSTRUCT LLM OUTPUT INTO CATEGORIZED POOLS
-    const rawLines = generatedLyrics.split('\n');
-    const llmPools: Record<string, string[]> = { HOOK: [], VERSE: [], INTRO: [], OUTRO: [] };
-    let activePoolHeader = "";
+    const lines = generatedLyrics.split('\n');
+    
+    const sanitizedLines = lines.map(l => {
+      let text = l.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ').trim();
+      if (text.startsWith('[') && text.includes(']')) return { text, isHeader: true }; 
+      text = text.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').replace(/bars?\s*\d+\s*(?:-|to|and)?\s*\d*/gi, '').replace(/pipe\s*symbol/gi, '').replace(/\s+/g, ' ').trim();
+      text = text.replace(/,/g, ', ').replace(/\s+/g, ' ').trim();
+      return { text, isHeader: false };
+    }).filter(obj => obj.text.length > 0);
 
-    rawLines.forEach(line => {
-      const trimmed = line.trim();
-      // Detect [HOOK], [VERSE], etc. and set the active pool
-      if (trimmed.startsWith('[') && trimmed.includes(']')) {
-        activePoolHeader = trimmed.split(' ')[0].replace(/[^A-Z]/g, '');
-        if (!llmPools[activePoolHeader]) llmPools[activePoolHeader] = [];
-      } else if (activePoolHeader && trimmed.length > 0) {
-        // 🚨 CRITICAL SHIELD: Strip the timestamp FIRST, so the regex can actually "see" the metadata
-        let cleanLine = trimmed.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
-        
-        // Assassinate Hallucinations
-        if (cleanLine.match(/^(Written:|Vocal:|Bars:|Total:|Vocal Cadence:)/i)) return;
-        
-        // Strip backend pipe tags and clean spacing
-        cleanLine = cleanLine.replace(/^(?:[A-Z][,:\)]|\s*\[[A-Z]\]\s*|(?:Verse|Hook|Chorus)[^:]*:)\s*/i, '');
-        
-        // 🚨 THE GLOBAL FRONTEND UI SCRUBBER 
-        // This targets ANY clustered punctuation (like ",." or "..") and crushes it down to just the first character.
-        // E.g., "THING,." becomes "THING,". 
-        // This cleans the Teleprompter/Grid while safely preserving the math pauses!
-        cleanLine = cleanLine.replace(/([,;.!?])[,;.!?]+/g, '$1');
-      
-      if (cleanLine && cleanLine !== "[Instrumental Break]") {
-        llmPools[activePoolHeader].push(cleanLine);
-      }
-      }
+    const llmBlocks: { header: string, lines: typeof sanitizedLines }[] = [];
+    let currentLlmBlock = { header: "", lines: [] as typeof sanitizedLines };
+
+    sanitizedLines.forEach(obj => {
+      if (obj.isHeader) {
+        if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) llmBlocks.push(currentLlmBlock);
+        currentLlmBlock = { header: obj.text, lines: [] };
+      } else { currentLlmBlock.lines.push(obj); }
     });
+    if (currentLlmBlock.header || currentLlmBlock.lines.length > 0) llmBlocks.push(currentLlmBlock);
 
-    // 2. MAP BLUEPRINT TO THE POOLS USING POINTERS
     const parsed: LyricLine[] = [];
+    let runningBlockStartBar = 0;
     let lineIdCounter = 0;
-    const poolPointers: Record<string, number> = { HOOK: 0, VERSE: 0, INTRO: 0, OUTRO: 0 };
 
     blueprint.forEach((bp, index) => {
-      const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : (index * 8);
-      const bars = bp.bars || 8;
+      const blockData = llmBlocks[index] || { header: `[${bp.type}]`, lines: [] };
+      const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : runningBlockStartBar;
+      
+      const bars = bp.bars || (bp.type === "INSTRUMENTAL" ? 8 : 4);
       const blockDurationSecs = bars * secondsPerBar;
       const blockStartTime = blockStartBar * secondsPerBar;
 
-      // Add UI Header
-      parsed.push({ 
-        id: `hdr-${lineIdCounter++}`, 
-        barIndex: blockStartBar, 
-        text: `[${bp.type}]`, 
-        originalText: `[${bp.type}]`, 
-        startTime: blockStartTime, 
-        isHeader: true, 
-        words: [] 
-      });
-
-      let linesForThisBlock: string[] = [];
+      parsed.push({ id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] });
 
       if (bp.type === "INSTRUMENTAL") {
-        linesForThisBlock = Array(bars).fill("Mmm. Mmm.");
-      } else {
-        const currentPool = llmPools[bp.type] || [];
-        const pointer = poolPointers[bp.type] || 0;
-        
-        // Pull exactly 'bp.bars' lines to maintain 1:1 sync.
-        const linesToTake = bp.bars;
-        linesForThisBlock = currentPool.slice(pointer, pointer + linesToTake);
-        
-        // Update pointer so the NEXT segment picks up exactly where this one left off
-        poolPointers[bp.type] = pointer + linesForThisBlock.length;
-        
-        // Safety Fallback
-        if (linesForThisBlock.length === 0) linesForThisBlock = ["(Empty Section Cache)"];
+         const hums = Array(bars).fill("Mmm. Mmm.").join(" ");
+         blockData.lines = [{ text: hums, isHeader: false }];
       }
 
-      const timeForLine = blockDurationSecs / linesForThisBlock.length;
-      let currentFlowTime = blockStartTime;
+      const numLines = blockData.lines.length;
+      if (numLines > 0) {
+        const timeForThisLine = blockDurationSecs / numLines; 
+        let currentFlowTime = blockStartTime;
 
-      // 🚨 VAULT UPGRADE FIX: Extract the .array from the new object DNA for the visual slicer
-      const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-      const currentVaultObject = activeVariations[index % activeVariations.length];
-      
-      let activePattern = (bp as any).patternArray?.length > 0 
-          ? (bp as any).patternArray 
-          : currentVaultObject.array;
-
-      linesForThisBlock.forEach((textLine) => {
-        const rawWords = textLine.split(/\s+/).filter(w => w.length > 0);
-        const mappedWords: WordMapping[] = [];
-        let totalLineSteps = 0;
-        let tempPatternIndex = 0;
-
-        if (textLine.startsWith('...')) totalLineSteps += 4;
+        const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
+        let activePattern = activeVariations[index % activeVariations.length];
         
-        const wordChunksArray = rawWords.map(w => {
-          const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
-          chunks.forEach(() => {
-            const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
-            totalLineSteps += isNaN(stepVal) ? 2 : stepVal;
-            tempPatternIndex++;
-          });
-          return chunks;
-        });
+        if (Array.isArray((bp as any).patternArray) && (bp as any).patternArray.length > 0) {
+           activePattern = (bp as any).patternArray;
+        }
 
-        const cleanTextEnd = textLine.slice(-1);
-        if (cleanTextEnd === '.') totalLineSteps += 4;
-        else if (cleanTextEnd === ',') totalLineSteps += 1;
+        blockData.lines.forEach((lineObj) => {
+          const rawWords = lineObj.text.split(/\s+/).filter(w => w.length > 0);
+          const mappedWords: WordMapping[] = [];
 
-        const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
-        let localWordTime = currentFlowTime;
-        if (textLine.startsWith('...')) localWordTime += (4 * timePerStep);
+          let totalLineSteps = 0;
+          let tempPatternIndex = 0;
 
-        let patternIndex = 0;
-        wordChunksArray.forEach((chunks) => {
-          chunks.forEach((chunk, cIdx) => {
-            const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
-            patternIndex++;
-            const chunkDuration = stepsRequired * timePerStep;
-            const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - currentFlowTime) / timeForLine) * 16)));
-            
-            mappedWords.push({
-              id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-              word: chunk.replace(/\|/g, ''),
-              slot: mappedSlot,
-              startTime: localWordTime,
-              duration: chunkDuration,
-              isWordEnd: (cIdx === chunks.length - 1)
+          if (lineObj.text.trim().startsWith('...')) totalLineSteps += 4;
+
+          const wordChunksArray = rawWords.map(w => {
+            const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
+            chunks.forEach(() => {
+              const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
+              totalLineSteps += isNaN(stepVal) ? 2 : stepVal; 
+              tempPatternIndex++;
             });
-            localWordTime += chunkDuration;
+            return chunks;
           });
-        });
 
-        parsed.push({ 
-          id: `line-${lineIdCounter++}`,
-          barIndex: Math.floor(currentFlowTime / secondsPerBar),
-          text: textLine.replace(/\|/g, ''), 
-          originalText: textLine,
-          startTime: currentFlowTime, 
-          lineDuration: timeForLine, 
-          isHeader: false, 
-          timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
-          words: mappedWords 
+          const cleanTextEnd = lineObj.text.trim().slice(-1);
+          if (cleanTextEnd === '.') totalLineSteps += 4;
+          else if (cleanTextEnd === ',') totalLineSteps += 1;
+
+          const timePerStep = totalLineSteps > 0 ? timeForThisLine / totalLineSteps : 0;
+          let localWordTime = currentFlowTime;
+          const lineStartTime = currentFlowTime;
+
+          if (lineObj.text.trim().startsWith('...')) localWordTime += (4 * timePerStep);
+
+          let patternIndex = 0;
+
+          wordChunksArray.forEach((chunks) => {
+            chunks.forEach((chunk, cIdx) => {
+              const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
+              patternIndex++;
+
+              const chunkDuration = stepsRequired * timePerStep;
+              const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - lineStartTime) / timeForThisLine) * 16)));
+
+              mappedWords.push({
+                id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+                word: chunk.replace(/\|/g, ''),
+                slot: mappedSlot,
+                startTime: localWordTime,
+                duration: chunkDuration, 
+                isWordEnd: (cIdx === chunks.length - 1)
+              });
+              localWordTime += chunkDuration;
+            });
+          });
+
+          parsed.push({ 
+            id: `line-${lineIdCounter++}`,
+            barIndex: Math.floor(lineStartTime / secondsPerBar),
+            text: lineObj.text.replace(/\|/g, ''), 
+            originalText: lineObj.text,
+            startTime: lineStartTime, 
+            lineDuration: timeForThisLine, 
+            isHeader: false, 
+            timestamp: `(${Math.floor(lineStartTime / 60)}:${Math.floor(lineStartTime % 60).toString().padStart(2, '0')})`,
+            words: mappedWords 
+          });
+
+          currentFlowTime += timeForThisLine; 
         });
-        currentFlowTime += timeForLine;
-      });
+      }
+      runningBlockStartBar = blockStartBar + bars;
     });
-
+    
     setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle]);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle, lyricLines, setLyricLines]);
 
   useEffect(() => {
     if (trimmingStem && trimWaveformRef.current) {
@@ -1280,8 +1189,8 @@ export default function Room04_Booth() {
                  <span className="font-mono text-[9px] uppercase tracking-widest font-bold">Syncing storage node...</span>
                </div>
             )}
-            <div ref={timeDisplayRef} className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
-              00:00
+            <div className="font-mono text-3xl font-bold tracking-widest text-[#E60000]">
+              {Math.floor(currentTimeDisplay / 60).toString().padStart(2, '0')}:{Math.floor(currentTimeDisplay % 60).toString().padStart(2, '0')}
             </div>
           </div>
 
@@ -1299,7 +1208,7 @@ export default function Room04_Booth() {
             <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Timeline Layers</h4>
             <div className="space-y-3">
               {vocalStems.map(s => {
-                const isMuted = s.isMuted; // <-- SURGICAL FIX
+                const isMuted = mutedStems.has(s.id);
                 return (
                 <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
                   <div className="flex justify-between items-center mb-3">
@@ -1315,7 +1224,7 @@ export default function Room04_Booth() {
                     <div className="flex items-center gap-4">
                       <div className="flex items-center gap-2 mr-4">
                         <button onClick={() => setTrimmingStem(s)} className="text-[#888] hover:text-[#E60000] transition-colors"><Scissors size={14} /></button>
-                        <button onClick={() => toggleStemMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>{isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>
+                        <button onClick={() => toggleMute(s.id)} className={`transition-colors ${isMuted ? 'text-[#E60000]' : 'text-[#888] hover:text-white'}`}>{isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>
                       </div>
                       <button onClick={() => removeVocalStem(s.id)} className="text-[#333] group-hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
                     </div>
