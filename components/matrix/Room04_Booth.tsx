@@ -915,158 +915,78 @@ export default function Room04_Booth() {
   const lastParsedLyricsRef = useRef<string>("");
 
   useEffect(() => {
-    if (!generatedLyrics || !audioData || !blueprint) return;
-    if (lastParsedLyricsRef.current === generatedLyrics) return; 
-    lastParsedLyricsRef.current = generatedLyrics;
+    if (!generatedLyrics || !audioData) return;
+    
+    // Determine the active Strike Zone from the store
+    const strikeZone = useMatrixStore.getState().strikeZone || "snare"; // default to 2 & 4
+    
+    const lines = generatedLyrics.split('\n');
+    let currentBlockIndex = -1; 
+    let barOffsetWithinBlock = 0; 
 
-    // 1. DECONSTRUCT LLM OUTPUT INTO CATEGORIZED POOLS
-    const rawLines = generatedLyrics.split('\n');
-    const llmPools: Record<string, string[]> = { HOOK: [], VERSE: [], INTRO: [], OUTRO: [] };
-    let activePoolHeader = "";
-
-    rawLines.forEach(line => {
-      const trimmed = line.trim();
-      // Detect [HOOK], [VERSE], etc. and set the active pool
-      if (trimmed.startsWith('[') && trimmed.includes(']')) {
-        activePoolHeader = trimmed.split(' ')[0].replace(/[^A-Z]/g, '');
-        if (!llmPools[activePoolHeader]) llmPools[activePoolHeader] = [];
-      } else if (activePoolHeader && trimmed.length > 0) {
-        // 🚨 CRITICAL SHIELD: Strip the timestamp FIRST, so the regex can actually "see" the metadata
-        let cleanLine = trimmed.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
-        
-        // Assassinate Hallucinations
-        if (cleanLine.match(/^(Written:|Vocal:|Bars:|Total:|Vocal Cadence:)/i)) return;
-        
-        // Strip backend pipe tags and clean spacing
-        cleanLine = cleanLine.replace(/^(?:[A-Z][,:\)]|\s*\[[A-Z]\]\s*|(?:Verse|Hook|Chorus)[^:]*:)\s*/i, '');
-        
-        // 🚨 THE GLOBAL FRONTEND UI SCRUBBER 
-        // This targets ANY clustered punctuation (like ",." or "..") and crushes it down to just the first character.
-        // E.g., "THING,." becomes "THING,". 
-        // This cleans the Teleprompter/Grid while safely preserving the math pauses!
-        cleanLine = cleanLine.replace(/\s+[A-Z][,;.]*$/i, '');
-        
-        if (cleanLine && cleanLine !== "[Instrumental Break]") {
-          llmPools[activePoolHeader].push(cleanLine);
-        }
+    const parsed = lines.filter(l => l.trim()).map((text, i) => {
+      if (text.startsWith('[')) { 
+        currentBlockIndex++; 
+        barOffsetWithinBlock = 0; 
+        return { id: `line_${i}`, text, originalText: text, startTime: 0, isHeader: true, barIndex: 0 }; 
       }
-    });
-
-    // 2. MAP BLUEPRINT TO THE POOLS USING POINTERS
-    const parsed: LyricLine[] = [];
-    let lineIdCounter = 0;
-    const poolPointers: Record<string, number> = { HOOK: 0, VERSE: 0, INTRO: 0, OUTRO: 0 };
-
-    blueprint.forEach((bp, index) => {
-      const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : (index * 8);
-      const bars = bp.bars || 8;
-      const blockDurationSecs = bars * secondsPerBar;
-      const blockStartTime = blockStartBar * secondsPerBar;
-
-      // Add UI Header
-      parsed.push({ 
-        id: `hdr-${lineIdCounter++}`, 
-        barIndex: blockStartBar, 
-        text: `[${bp.type}]`, 
-        originalText: `[${bp.type}]`, 
-        startTime: blockStartTime, 
-        isHeader: true, 
-        words: [] 
-      });
-
-      let linesForThisBlock: string[] = [];
-
-      if (bp.type === "INSTRUMENTAL") {
-        linesForThisBlock = Array(bars).fill("Mmm. Mmm.");
-      } else {
-        const currentPool = llmPools[bp.type] || [];
-        const pointer = poolPointers[bp.type] || 0;
-        
-        // Pull exactly 'bp.bars' lines to maintain 1:1 sync.
-        const linesToTake = bp.bars;
-        linesForThisBlock = currentPool.slice(pointer, pointer + linesToTake);
-        
-        // Update pointer so the NEXT segment picks up exactly where this one left off
-        poolPointers[bp.type] = pointer + linesForThisBlock.length;
-        
-        // Safety Fallback
-        if (linesForThisBlock.length === 0) linesForThisBlock = ["(Empty Section Cache)"];
-      }
-
-      const timeForLine = blockDurationSecs / linesForThisBlock.length;
-      let currentFlowTime = blockStartTime;
-
-      // 🚨 VAULT UPGRADE FIX: Extract the .array from the new object DNA for the visual slicer
-      const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-      const currentVaultObject = activeVariations[index % activeVariations.length];
       
-      let activePattern = (bp as any).patternArray?.length > 0 
-          ? (bp as any).patternArray 
-          : currentVaultObject.array;
+      let blockStartBar = 0;
+      if (currentBlockIndex >= 0 && currentBlockIndex < blueprint.length) {
+        blockStartBar = (blueprint[currentBlockIndex] as any).startBar ?? 0;
+      }
+      const absoluteBar = blockStartBar + barOffsetWithinBlock;
+      const startTimeSec = absoluteBar * secondsPerBar;
+      
+      // 1. One Line = One Bar (Fixed from the previous 2-bar desync)
+      const lineDuration = secondsPerBar; 
+      
+      // 2. Identify the "Syllable Pockets"
+      const parts = text.split('|').map(p => p.trim());
+      const leftWords = parts[0]?.split(' ').filter(w => w.length > 0) || [];
+      const rightWords = parts[1]?.split(' ').filter(w => w.length > 0) || [];
+      const allWords = [...leftWords, ...rightWords];
 
-      linesForThisBlock.forEach((textLine) => {
-        const rawWords = textLine.split(/\s+/).filter(w => w.length > 0);
-        const mappedWords: WordMapping[] = [];
-        let totalLineSteps = 0;
-        let tempPatternIndex = 0;
-
-        if (textLine.startsWith('...')) totalLineSteps += 4;
+      const mappedWords = allWords.map((w, wIndex) => {
+        const sylCount = estimateSyllables(w);
         
-        const wordChunksArray = rawWords.map(w => {
-          const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
-          chunks.forEach(() => {
-            const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
-            totalLineSteps += isNaN(stepVal) ? 2 : stepVal;
-            tempPatternIndex++;
-          });
-          return chunks;
-        });
+        // --- 🚨 THE RHYTHMIC SNAP ENGINE 🚨 ---
+        let slot = 0;
+        const totalWords = allWords.length;
+        
+        if (wIndex === totalWords - 1) {
+          // THE RHYME: Always snap the last word to the Strike Target
+          // Snare (2 & 4) = Beat 4 = Slot 12
+          // Downbeat (1) = Slot 0 (of next bar, so Slot 15 fade)
+          slot = strikeZone === "downbeat" ? 0 : 12; 
+        } else if (wIndex < leftWords.length) {
+          // LEFT SIDE: Spread words between Slot 0 and Slot 8 (Beat 3)
+          slot = Math.floor((wIndex / Math.max(1, leftWords.length)) * 8);
+        } else {
+          // RIGHT SIDE: Spread words between Slot 8 and Slot 12 (Beat 4 Target)
+          const rightIndex = wIndex - leftWords.length;
+          slot = 8 + Math.floor((rightIndex / Math.max(1, rightWords.length)) * 4);
+        }
 
-        const cleanTextEnd = textLine.slice(-1);
-        if (cleanTextEnd === '.') totalLineSteps += 4;
-        else if (cleanTextEnd === ',') totalLineSteps += 1;
-
-        const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
-        let localWordTime = currentFlowTime;
-        if (textLine.startsWith('...')) localWordTime += (4 * timePerStep);
-
-        let patternIndex = 0;
-        wordChunksArray.forEach((chunks) => {
-          chunks.forEach((chunk, cIdx) => {
-            const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
-            patternIndex++;
-            const chunkDuration = stepsRequired * timePerStep;
-            const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - currentFlowTime) / timeForLine) * 16)));
-            
-            mappedWords.push({
-              id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-              word: chunk.replace(/\|/g, ''),
-              slot: mappedSlot,
-              startTime: localWordTime,
-              duration: chunkDuration,
-              isWordEnd: (cIdx === chunks.length - 1)
-            });
-            localWordTime += chunkDuration;
-          });
-        });
-
-        parsed.push({ 
-          id: `line-${lineIdCounter++}`,
-          barIndex: Math.floor(currentFlowTime / secondsPerBar),
-          text: textLine.replace(/\|/g, ''), 
-          originalText: textLine,
-          startTime: currentFlowTime, 
-          lineDuration: timeForLine, 
-          isHeader: false, 
-          timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
-          words: mappedWords 
-        });
-        currentFlowTime += timeForLine;
+        return {
+           id: `word_${i}_${wIndex}`, 
+           word: w,
+           startTime: startTimeSec + (slot * (lineDuration / 16)),
+           duration: (lineDuration / 16) * 1.5, // Slight overlap for flow
+           slot: slot,
+           isWordEnd: wIndex === leftWords.length - 1 || wIndex === totalWords - 1
+        };
       });
-    });
 
+      barOffsetWithinBlock++;
+      return { 
+        id: `line_${i}`, text, originalText: text, startTime: startTimeSec, 
+        isHeader: false, timestamp: `(${Math.floor(startTimeSec / 60)}:${Math.floor(startTimeSec % 60).toString().padStart(2, '0')})`,
+        words: mappedWords, barIndex: absoluteBar, lineDuration
+      };
+    });
     setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle]);
+  }, [generatedLyrics, audioData, blueprint, secondsPerBar]);
 
   useEffect(() => {
     if (trimmingStem && trimWaveformRef.current) {
