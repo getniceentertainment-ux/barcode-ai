@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { 
-  Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, ToggleLeft, ToggleRight, Crosshair, ListVideo
+  Mic, Square, Play, Pause, ArrowRight, Save, Trash2, ListMusic, ChevronLeft, ChevronRight, Volume2, VolumeX, Scissors, X, Loader2, Lock, Layers, Activity, Crosshair, ListVideo
 } from "lucide-react";
 import WaveSurfer from 'wavesurfer.js';
 import { useMatrixStore, QuantizedLine, QuantizedSyllable } from "../../store/useMatrixStore";
@@ -10,7 +10,7 @@ import { supabase } from "../../lib/supabase";
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
-// --- TTS SILENCE TRIMMER (Kills Dead Air) ---
+// --- TTS SILENCE TRIMMER ---
 function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
   let startOffset = 0;
   let endOffset = buffer.length;
@@ -48,7 +48,7 @@ function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
   return trimmed;
 }
 
-// --- BULLETPROOF AUDIO TRIMMING UTILITIES ---
+// --- AUDIO TRIMMING UTILITIES ---
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const numChannels = buffer.numberOfChannels;
   const sampleRate = buffer.sampleRate;
@@ -150,8 +150,8 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
 export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
-    updateStemOffset, updateStemVolume, toggleStemMute, setActiveRoom, blueprint, userSession, 
-    addToast, gwStyle, quantizedLines, shiftWord 
+    updateStemOffset, updateStemVolume, toggleStemMute, setActiveRoom, userSession, 
+    addToast, quantizedLines, shiftWord 
   } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -195,13 +195,15 @@ export default function Room04_Booth() {
   const timeDisplayRef = useRef<HTMLDivElement>(null);
 
   // --- HIGH-PERFORMANCE rAF SYNC REFS ---
-  // --- HIGH-PERFORMANCE rAF SYNC REFS ---
   const animationFrameRef = useRef<number>();
   const lastActiveLineRef = useRef<number>(-1);
   const isPlayingRef = useRef(false);
   const isRecordingRef = useRef(false);
 
-  // 🚨 PASTE THIS ENTIRE BLOCK HERE 🚨
+  const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
+  const hasEngToken = (userSession as any)?.has_engineering_token === true;
+
+  // --- THE HIGH-PERFORMANCE VISUAL SYNC ENGINE ---
   const updateVisualsRef = useRef<() => void>(() => {});
   
   updateVisualsRef.current = () => {
@@ -215,7 +217,7 @@ export default function Room04_Booth() {
         timeDisplayRef.current.innerText = `${mins}:${secs}`;
     }
 
-    // 🚨 THE AUTOMATIC BPM-SYNCED LOOKAHEAD IS HERE
+    // 🚨 AUTOMATIC BPM-SYNCED LOOKAHEAD
     const dynamicLookahead = preciseBpm > 0 ? (60 / preciseBpm) / 4 : 0.15; 
     const visualTime = time + dynamicLookahead; 
 
@@ -314,12 +316,8 @@ export default function Room04_Booth() {
       animationFrameRef.current = undefined;
     }
   };
-  // 🚨 END PASTE BLOCK 🚨
 
-  const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
-  const hasEngToken = (userSession as any)?.has_engineering_token === true;
-
-  // --- 1. THE SNAKING DRAG & DROP LOGIC (NOW CALLS STORE) ---
+  // --- SNAKING DRAG & DROP LOGIC ---
   const handleDragStart = (e: React.DragEvent, lineId: string, syllableId: string, originalSlot: number) => {
     e.dataTransfer.setData("application/json", JSON.stringify({ lineId, syllableId, originalSlot }));
   };
@@ -335,7 +333,6 @@ export default function Room04_Booth() {
     const delta = targetSlot - originalSlot;
     if (delta === 0) return;
 
-    // 🚨 ALL MATH DELEGATED TO THE STORE
     shiftWord(targetLineId, syllableId, delta);
   };
 
@@ -535,120 +532,6 @@ export default function Room04_Booth() {
       console.error("Trim math failed:", err);
       if (addToast) addToast(err.message || "Failed to slice audio.", "error");
     } finally { setIsProcessingTrim(false); }
-  };
-
-  // --- THE HIGH-PERFORMANCE VISUAL SYNC ENGINE ---
-  updateVisualsRef.current = () => {
-    if (!wavesurferRef.current) return;
-    
-    const time = wavesurferRef.current.getCurrentTime();
-    
-    if (timeDisplayRef.current) {
-        const mins = Math.floor(time / 60).toString().padStart(2, '0');
-        const secs = Math.floor(time % 60).toString().padStart(2, '0');
-        timeDisplayRef.current.innerText = `${mins}:${secs}`;
-    }
-
-    // 🚨 AUTOMATIC BPM-SYNCED LOOKAHEAD:
-    // This pushes the visual UI slightly ahead of the audio so you have time to read it.
-    // (60 / preciseBpm) = 1 Beat. Dividing by 4 pushes it exactly 1/16th note ahead.
-    const dynamicLookahead = (60 / preciseBpm) / 4; 
-    const visualTime = time + dynamicLookahead;
-
-    if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
-      const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
-      let currentLineIndex = -1;
-
-      for (let i = 0; i < quantizedLines.length; i++) {
-        const line = quantizedLines[i];
-        if (line.isHeader) continue;
-
-        const nextLine = quantizedLines.slice(i + 1).find(l => !l.isHeader);
-        const endTime = nextLine ? nextLine.startTime : (line.startTime + (line.lineDuration || 2));
-
-        const lineNode = lineNodes[i] as HTMLElement;
-        if (!lineNode) continue;
-
-        if (visualTime >= line.startTime && visualTime < endTime) {
-          currentLineIndex = i;
-          lineNode.classList.add('bg-[#E60000]/10', 'border-[#E60000]');
-          lineNode.classList.remove('border-transparent');
-
-          const chunks = lineNode.querySelectorAll('.syllable-chunk');
-          line.words?.forEach((wObj, wIdx) => {
-            const chunkNode = chunks[wIdx] as HTMLElement;
-            if (!chunkNode) return;
-            const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
-            
-            if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
-              chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
-              chunkNode.classList.remove('text-[#444]', 'text-[#888]');
-              if (ballNode) {
-                ballNode.classList.remove('hidden');
-                let progress = (visualTime - wObj.startTime) / wObj.duration;
-                progress = Math.max(0, Math.min(1, progress)); 
-                const maxBounce = Math.min(16, wObj.duration * 50); 
-                const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
-                ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
-              }
-            } else if (visualTime >= wObj.startTime + wObj.duration) {
-              chunkNode.classList.add('text-[#888]');
-              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
-              if (ballNode) {
-                ballNode.classList.add('hidden');
-                ballNode.style.transform = `translateX(-50%) translateY(0px)`;
-              }
-            } else {
-              chunkNode.classList.add('text-[#444]');
-              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
-              if (ballNode) {
-                ballNode.classList.add('hidden');
-                ballNode.style.transform = `translateX(-50%) translateY(0px)`;
-              }
-            }
-          });
-        } else {
-          lineNode.classList.remove('bg-[#E60000]/10', 'border-[#E60000]');
-          lineNode.classList.add('border-transparent');
-          
-          const chunks = lineNode.querySelectorAll('.syllable-chunk');
-          line.words?.forEach((wObj, wIdx) => {
-            const chunkNode = chunks[wIdx] as HTMLElement;
-            if (!chunkNode) return;
-            const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
-            if (ballNode) {
-              ballNode.classList.add('hidden');
-              ballNode.style.transform = `translateX(-50%) translateY(0px)`;
-            }
-
-            if (visualTime >= wObj.startTime + wObj.duration) {
-              chunkNode.classList.add('text-[#888]');
-              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
-            } else {
-              chunkNode.classList.add('text-[#444]');
-              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
-            }
-          });
-        }
-      }
-
-      if (autoScroll && currentLineIndex !== -1 && currentLineIndex !== lastActiveLineRef.current) {
-        const activeNode = lineNodes[currentLineIndex] as HTMLElement;
-        if (activeNode) {
-          teleprompterRef.current.scrollTo({ top: activeNode.offsetTop - 150, behavior: 'smooth' });
-        }
-        lastActiveLineRef.current = currentLineIndex;
-      }
-    }
-  };
-
-  const animationTick = () => {
-    updateVisualsRef.current();
-    if (isPlayingRef.current || isRecordingRef.current) {
-      animationFrameRef.current = requestAnimationFrame(animationTick);
-    } else {
-      animationFrameRef.current = undefined;
-    }
   };
 
   const togglePlayback = async () => {
