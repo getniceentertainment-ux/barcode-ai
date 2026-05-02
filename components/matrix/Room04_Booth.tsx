@@ -217,8 +217,8 @@ export default function Room04_Booth() {
         timeDisplayRef.current.innerText = `${mins}:${secs}`;
     }
 
-    // 🚨 ZERO LATENCY CLOCK
-    const visualTime = time + 0.03; 
+    // The sweet spot clock (30ms monitor latency offset)
+    const visualTime = time; 
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
@@ -231,6 +231,7 @@ export default function Room04_Booth() {
         const lineNode = lineNodes[i] as HTMLElement;
         if (!lineNode) continue;
 
+        // 1. DYNAMIC LINE BACKGROUND
         let realStartTime = line.startTime;
         let realEndTime = line.startTime + (line.lineDuration || 2);
 
@@ -248,6 +249,7 @@ export default function Room04_Booth() {
             }
         }
 
+        // Stretch the background highlight until the next line starts, OR until the last word finishes!
         const highlightEnd = Math.max(realEndTime, nextRealStart === Infinity ? realEndTime + 2 : nextRealStart);
 
         if (visualTime >= realStartTime && visualTime < highlightEnd) {
@@ -259,6 +261,8 @@ export default function Room04_Booth() {
              lineNode.classList.add('border-transparent');
         }
 
+        // 🚨 2. INDEPENDENT WORD PROCESSING 🚨
+        // We process the balls and words REGARDLESS of the line background!
         const chunks = lineNode.querySelectorAll('.syllable-chunk');
         line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
@@ -266,6 +270,7 @@ export default function Room04_Booth() {
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             
             if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
+                // Word is active!
                 chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
                 chunkNode.classList.remove('text-[#444]', 'text-[#888]');
                 
@@ -278,6 +283,7 @@ export default function Room04_Booth() {
                     ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
                 }
             } else if (visualTime >= wObj.startTime + wObj.duration) {
+                // Word is finished
                 chunkNode.classList.add('text-[#888]');
                 chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
                 if (ballNode) {
@@ -285,6 +291,7 @@ export default function Room04_Booth() {
                     ballNode.style.transform = `translateX(-50%) translateY(0px)`;
                 }
             } else {
+                // Word hasn't happened yet
                 chunkNode.classList.add('text-[#444]');
                 chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
                 if (ballNode) {
@@ -295,6 +302,7 @@ export default function Room04_Booth() {
         });
       }
 
+      // Smooth Auto-Scrolling
       if (autoScroll && activeScrollIndex !== -1 && activeScrollIndex !== lastActiveLineRef.current) {
         const activeNode = lineNodes[activeScrollIndex] as HTMLElement;
         if (activeNode) {
@@ -303,6 +311,7 @@ export default function Room04_Booth() {
         lastActiveLineRef.current = activeScrollIndex;
       }
     } else if (isReviewMode) {
+      // Live MIDI Grid Playhead
       const slotNodes = document.querySelectorAll('.midi-slot');
       slotNodes.forEach(node => {
          const slotStart = parseFloat(node.getAttribute('data-start') || "0");
@@ -881,11 +890,9 @@ export default function Room04_Booth() {
                           return (
                             <div 
                               key={slotIndex}
-                              data-start={line.startTime + (slotIndex * ((line.lineDuration || 2) / 16))}
-                              data-end={line.startTime + ((slotIndex + 1) * ((line.lineDuration || 2) / 16))}
                               onDragOver={(e) => e.preventDefault()}
                               onDrop={(e) => handleDrop(e, line.id, slotIndex)}
-                              className={`midi-slot flex-1 border-r border-[#111] relative flex items-center justify-center transition-colors duration-75
+                              className={`flex-1 border-r border-[#111] relative flex items-center justify-center
                                 ${isDownbeat ? 'bg-[#151515]' : ''} 
                                 ${isSnare ? 'bg-[#2a0505]' : ''}
                               `}
@@ -926,8 +933,7 @@ export default function Room04_Booth() {
                   <div key={i} className={`lyric-line-container mb-2 py-2 px-3 border-l-2 ${isActiveLine ? 'bg-[#E60000]/10 border-[#E60000]' : 'border-transparent'} flex items-start gap-3 transition-colors duration-200`}>
                     {line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
                     
-                    {/* 🚨 THE 16-STEP GRID FIX */}
-                    <div className="flex-1 w-full grid items-center relative min-h-[2rem]" style={{ gridTemplateColumns: 'repeat(16, minmax(0, 1fr))' }}>
+                    <span className="flex-1 leading-loose flex flex-wrap gap-y-2">
                       {(() => {
                         const wordGroups: QuantizedSyllable[][] = [];
                         let currentGroup: QuantizedSyllable[] = [];
@@ -941,30 +947,20 @@ export default function Room04_Booth() {
                         });
                         if (currentGroup.length > 0) wordGroups.push(currentGroup);
 
-                        return wordGroups.map((group, gIdx) => {
-                          const firstSlot = group[0].slot;
-                          return (
-                            <span 
-                              key={gIdx} 
-                              className="inline-flex whitespace-nowrap absolute"
-                              style={{ 
-                                left: `${(firstSlot / 16) * 100}%`, 
-                                zIndex: 10 + gIdx 
-                              }}
-                            >
-                              {group.map((wObj, wIdx) => {
-                                return (
-                                  <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
-                                    <span className="bouncing-ball hidden absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50"></span>
-                                    {wObj.word}
-                                  </span>
-                                );
-                              })}
-                            </span>
-                          );
-                        });
+                        return wordGroups.map((group, gIdx) => (
+                          <span key={gIdx} className="inline-flex whitespace-nowrap mr-2">
+                            {group.map((wObj, wIdx) => {
+                              return (
+                                <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
+                                  <span className="bouncing-ball hidden absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50"></span>
+                                  {wObj.word}
+                                </span>
+                              );
+                            })}
+                          </span>
+                        ));
                       })()}
-                    </div>
+                    </span>
                   </div>
                 );
               })}
