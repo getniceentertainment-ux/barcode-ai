@@ -25,24 +25,20 @@ def load_all_assets_to_ram():
     
     try:
         # Load Syllable Dictionary
-        if os.path.exists("/app/syl_ref.json"):
-            with open("/app/syl_ref.json", "r", encoding="utf-8") as f:
-                SYL_DICT = json.load(f)
+        with open("/app/syl_ref.json", "r", encoding="utf-8") as f:
+            SYL_DICT = json.load(f)
             
         # Load Slang Dictionary
-        if os.path.exists("/app/dictionary.json"):
-            with open("/app/dictionary.json", "r", encoding="utf-8") as f:
-                SLANG_DICT_DATA = json.load(f)
+        with open("/app/dictionary.json", "r", encoding="utf-8") as f:
+            SLANG_DICT_DATA = json.load(f)
             
         # Load Cultural Index
-        if os.path.exists("/app/master_index.json"):
-            with open("/app/master_index.json", "r", encoding="utf-8") as f:
-                CULTURE_DATA = json.load(f)
+        with open("/app/master_index.json", "r", encoding="utf-8") as f:
+            CULTURE_DATA = json.load(f)
             
         # Load Daily Briefing
-        if os.path.exists("/app/Daily_Briefing.txt"):
-            with open("/app/Daily_Briefing.txt", "r", encoding="utf-8") as f:
-                DAILY_BRIEFING = f.read().strip()
+        with open("/app/Daily_Briefing.txt", "r", encoding="utf-8") as f:
+            DAILY_BRIEFING = f.read().strip()
             
         print("✅ ALL ASSETS LOADED INTO RAM SUCCESSFULLY.")
     except Exception as e:
@@ -120,11 +116,13 @@ def load_cultural_context():
 def init_model():
     global model
     
-    # Load assets into RAM once on boot
+    # 🚨 Load the entire brain into RAM immediately on boot!
     load_all_assets_to_ram() 
     
     mount_path = "/runpod-volume"
     model_path = os.path.join(mount_path, FILENAME)
+    
+    print(f"Checking for Matrix Model at: {model_path}")
     
     if os.path.exists(model_path):
         print(f"✅ VOLUME DATA FOUND. Size: {os.path.getsize(model_path) / (1024**3):.2f} GB")
@@ -259,63 +257,36 @@ You are a chart-topping {active_persona} artist. You do not speak in complex poe
 
 def translate_dna_to_topline(pattern_array, section_type, energy):
     if not pattern_array: return ""
-    sequence = []
-    for v in pattern_array:
-        if v == 1: sequence.append("SNAP")
-        elif v == 2: sequence.append("STEP")
-        elif v == 3: sequence.append("GLIDE")
-        elif v in [4, 5]: sequence.append("HOLD")
-        elif v == 6: sequence.append("GHOST")
-        elif v > 6: sequence.append("EXTREME-DRAG")
-        else: sequence.append("STEP")
     
-    energy_directive = "INTONATION: Standard trap delivery, pocketed and confident."
-    if energy <= 1: energy_directive = "INTONATION: Whisper, low-velocity consonants."
-    elif energy >= 4: energy_directive = "INTONATION: Aggressive, high-velocity consonants."
+    energy_directive = "Standard trap delivery, pocketed and confident."
+    if energy <= 1: energy_directive = "Whisper, low-velocity consonants."
+    elif energy >= 4: energy_directive = "Aggressive, high-velocity consonants."
         
-    return f"""
-[RHYTHMIC SEQUENCE]
-Rhythm DNA: {" -> ".join(sequence)}
-🚨 CRITICAL: DO NOT WRITE THE WORDS "SNAP", "STEP", "HOLD", "GLIDE", "GHOST", OR "DRAG" IN THE LYRICS! These are invisible rhythmic timing instructions.
-{energy_directive}
-"""
+    return f"Vocal tone: {energy_directive}"
 
 def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syllables, rhyme_scheme, pattern_desc, pattern_array, pocket_instruction, prompt_topic, style="getnice_hybrid", section_index=0, anchor_hook=None, hook_type="chant", flow_evolution="static", current_energy=2, banned_words_map=None):
     global model
     if model is None:
-        return [f"ERROR | SOVEREIGN ENGINE NOT READY. CHECK LOGS."]
-
-    try:
-        bars = int(bars)
-    except (ValueError, TypeError):
-        bars = 0
-        
-    if bars <= 0:
-        print(f"⚠️ BLOCKED: Attempted to generate a section ({section_type}) with 0 bars.")
         return []
-
+    
     dna_law = translate_dna_to_topline(pattern_array, section_type.upper(), current_energy)
 
     if pattern_array:
         active_strikes = [v for v in pattern_array if v != 6]
         accent_target = len(active_strikes)
-        estimated_words = max(5, int(max_syllables * 0.8)) 
         
         dna_constraint = f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. LENGTH LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables (approx {estimated_words} words) per line. Be concise.
-2. RHYTHMIC ACCENTS: Create a groove with approximately {accent_target} heavy rhythmic bounces. 
+1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line.
+2. RHYTHMIC ACCENTS: Anchor your line on exactly {accent_target} heavy stressed words.
 3. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
-4. POCKET PLACEMENT: {pocket_instruction}
 """
         dna_law += f"\n{dna_constraint}"
     else:
-        estimated_words = max(5, int(max_syllables * 0.8))
         dna_law += f"""
 [ULTIMATUM: MATH & RHYTHM]
-1. LENGTH LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables (approx {estimated_words} words) per line.
+1. SYLLABLE LIMIT: YOU MUST USE NO MORE than {max_syllables} syllables per line.
 2. RHYME SCHEME: Strictly use {rhyme_scheme} end-rhymes.
-3. POCKET PLACEMENT: {pocket_instruction}
 """
 
     if section_type.upper() == "HOOK": 
@@ -329,12 +300,22 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     if "HOOK" in section_type.upper():
         if hook_type == "bouncy": hook_context = "[HOOK OVERRIDE]\nBOUNCY & REPETITIVE: Repeat short, punchy 2-word or 3-word phrases back-to-back."
         elif hook_type == "triplet": hook_context = "[HOOK OVERRIDE]\nRHYTHMIC MATH: Write entirely in groups of 3 syllables (triplets)."
-        elif hook_type == "symmetry": hook_context = "[HOOK OVERRIDE]\nSPLIT STRUCTURE: Write in an alternating A-B-A-B concept pattern. DO NOT actually write the letters 'A' or 'B' in the lyrics."
+        elif hook_type == "symmetry": hook_context = "[HOOK OVERRIDE]\nSPLIT STRUCTURE: You MUST write in an A-B-A-B structural pattern."
         elif hook_type == "prime": hook_context = "[HOOK OVERRIDE]\nSYNCOPATION MATH: Force an odd-numbered syllable count."
         else: hook_context = "[HOOK OVERRIDE]\nSPACIOUS & ANTHEMIC: Use long, drawn-out vowel sounds and echoing chants. DO NOT write a dense rap verse."
 
-    evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]\nHalfway through these {bars} bars, you MUST completely change your rhythmic cadence. Create a clear contrast." if ("VERSE" in section_type.upper() and flow_evolution == "switch" and bars >= 8) else ""
+    evolution_rules = ""
+    if "VERSE" in section_type.upper():
+        if flow_evolution == "switch" and bars >= 8:
+            evolution_rules = f"\n[MID-VERSE SWITCH-UP ACTIVE]: Halfway through these {bars} bars, completely change your rhythmic cadence. Create a clear contrast."
+        else:
+            # 🚨 THE NEW STATIC LOCK: Actively prevent the AI from rebelling mid-verse
+            evolution_rules = f"\n[STATIC CADENCE LOCKED]: You MUST maintain the exact same syllable density for all {bars} bars. DO NOT switch up the flow. DO NOT write longer sentences at the end of the verse."
     energy_rules = "\n[ENERGY CLIMAX]: Pack the pocket. Write dense, aggressive rhymes." if current_energy == 4 else ""
+
+    word_hint = ""
+    if max_syllables <= 4:
+        word_hint = "CRITICAL: Write extremely short fragments. 2 or 3 words MAXIMUM per line."
 
     draft_prompt = f"""<|im_start|>user
 [GENERATE {section_type.upper()}]
@@ -345,6 +326,7 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
 {hook_context}
 {energy_rules}
 {evolution_rules}
+{word_hint}
 
 [PREVIOUS CONTEXT]
 {previous_lyrics if previous_lyrics else 'Start of track.'}
@@ -353,95 +335,175 @@ Write the draft now. Output raw lines only.
 <|im_end|>
 <|im_start|>assistant
 """
-    # PASS 1: The Draft
     full_prompt_draft = system_prompt + draft_prompt
+    
+    # 🚨 RESTORED Llama_cpp SYNTAX 🚨
     outputs = model(
         full_prompt_draft, 
         max_tokens=64 * bars, 
         temperature=0.85, 
         top_p=0.9, 
-        repeat_penalty=1.25, 
+        repeat_penalty=1.15, 
         stop=["<|im_end|>"]
     )
     draft_text = outputs["choices"][0]["text"].strip()
 
     refine_prompt = f"""<|im_start|>user
-[THE SECOND PASS: RHYTHMIC POLISH]
-Draft:
+[THE SECOND PASS: POETRY ASSASSIN & RHYTHMIC POLISH]
+You drafted this {bars}-bar {section_type.upper()}:
 "{draft_text}"
 
-CRITICAL REFINEMENT:
-1. MATH: Obey the {max_syllables} syllable limit!
-2. RHYME: Enforce {rhyme_scheme}.
-3. FORMAT: Exactly one '|' in the middle of each line. ALL CAPS.
+CRITICAL REFINEMENT COMMANDS:
+1. MATH: Enforce the strict {max_syllables} syllable limit per line! 
+2. RHYME: Enforce the {rhyme_scheme} rhyme scheme.
+3. FORMAT: Output ONLY the raw rewritten lines in ALL CAPS. Do NOT add numbers, labels, or word counts.
 
-Output ONLY the {bars} final lines.
+Output ONLY the final {bars} lines now.
 <|im_end|>
 <|im_start|>assistant
 """
-    # PASS 2: The Refinement
     full_prompt_refine = system_prompt + refine_prompt
+    
+    # 🚨 RESTORED Llama_cpp SYNTAX 🚨
     outputs_refine = model(
         full_prompt_refine, 
         max_tokens=64 * bars, 
-        temperature=0.6,       
+        temperature=0.5,       
         top_p=0.9, 
-        repeat_penalty=1.15,   
+        repeat_penalty=1.1,   
         stop=["<|im_end|>"]
     )
-    
     final_text = outputs_refine["choices"][0]["text"].strip()
+
     final_text = final_text.replace("<|im_end|>", "").strip()
     final_text = re.sub(r'```.*?```', '', final_text, flags=re.DOTALL).replace("```", "")
     final_text = re.sub(r'\[.*?\]', '', final_text) 
     final_text = re.sub(r'^[\(\[]\d+:\d{2}[\)\]]\s*', '', final_text, flags=re.MULTILINE) 
     
-    banned_starts = ('+', '-', 'here are', 'sure', 'i can', '###', 'please generate', 'output:', 'note:', 'rewritten', 'here is', 'the rewritten')
-    
+    banned_starts = ('+', '-', 'here are', 'sure', 'i can', '###', 'please generate', 'output:', 'note:', 'rewritten:')
     raw_lines = [
         line.strip() for line in final_text.split('\n') 
         if line.strip() and len(line.strip()) > 5 and not line.lower().strip().startswith(banned_starts)
     ]
     
     clean_lines = []
-    if not banned_words_map: banned_words_map = {}
+    current_style = style.lower()
 
     for line in raw_lines:
-        # 1. Clean labels and system garbage
-        line = re.sub(r'^([a-zA-Z][:.-]\s*|[\d\.\)\]\s]+)', '', line).strip()
-        line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
+        line = line.replace('[', '').replace(']', '').replace('(', '').replace(')')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
         
-        # 2. Temporary pipe strip for re-formatting (Guillotine Removed)
+        line = re.sub(r'\b\d+[xX\+\-\*]+\d*\b', '', line)
+        line = re.sub(r'\b\d+\s*WORDS?\b', '', line, flags=re.IGNORECASE)
+        
+        for action_word in ["SNAP", "STEP", "HOLD", "GLIDE", "GHOST", "EXTREME-DRAG"]:
+            line = re.sub(rf'\b{action_word}\b', '', line, flags=re.IGNORECASE).strip()
+                
         line = line.replace('|', '').replace('"', '').replace("'", "").strip().upper()
+
         words_in_line = line.split()
+        allowed_words = []
+        current_syls = 0
+        
+        if current_style == "lazy": buffer_limit = max_syllables + 1  
+        elif current_style == "triplet": buffer_limit = max_syllables + 1  
+        elif current_style == "chopper": buffer_limit = max_syllables + 1  
+        else: buffer_limit = max_syllables + 1  
+        
+        for w in reversed(words_in_line):
+            syls = count_syllables(w)
+            if current_syls + syls > buffer_limit:
+                break 
+            allowed_words.insert(0, w)
+            current_syls += syls
 
-        if len(words_in_line) == 0:
-            words_in_line = ["YEAH", "WE", "STAY", "IN", "MOTION"]
+        allowed_words = [re.sub(r'[^\w\s]', '', w) for w in allowed_words if w.strip()]
+        if len(allowed_words) == 0:
+            continue
 
-        # Re-apply the Pipe for Room 04 UI (50/50 split)
-        # This ensures the visual grid stays balanced regardless of length.
-        mid = max(1, len(words_in_line) // 2)
-        line = " ".join(words_in_line[:mid]) + " | " + " ".join(words_in_line[mid:])
-
-        # 3. Apply Pocket Punctuation
-        if "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
-            line = line.rstrip('.,?!;') + ","
+        if "SYNCOPATION (PICKUP)" in pocket_instruction:
+            allowed_words[0] = "..." + allowed_words[0]
+        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
+            allowed_words[-1] = allowed_words[-1] + ","
         elif "period" in pocket_instruction:
-            line = line.rstrip('.,?!;') + "."
+            allowed_words[-1] = allowed_words[-1] + "."
 
-        # 4. Deduplicate and Save
-        clean_compare_line = line.replace('"', '').replace("'", "")
-        if len(clean_lines) > 0 and clean_lines[-1].replace('"', '').replace("'", "") == clean_compare_line:
-            continue 
+        if current_style == "triplet":
+            n = len(allowed_words)
+            q, r = divmod(n, 4)
+            chunks = []
+            idx = 0
+            for i in range(4):
+                size = q + (1 if i < r else 0)
+                if size > 0:
+                    chunks.append(" ".join(allowed_words[idx:idx+size]))
+                    idx += size
+            formatted_line = " | ".join(chunks)
+
+        elif current_style in ["chopper", "lazy"]:
+            formatted_line = f"| {' '.join(allowed_words)} |"
+
+        else:
+            mid = max(1, len(allowed_words) // 2)
+            formatted_line = " ".join(allowed_words[:mid]) + " | " + " ".join(allowed_words[mid:])
+
+        if len(formatted_line.replace(".", "").replace("|", "").replace(",", "").strip()) < 3:
+            continue
+
+        clean_compare_line = formatted_line.replace('"', '').replace("'", "")
+        if "VERSE" in section_type.upper():
+            if len(clean_lines) > 0 and clean_lines[-1].replace('"', '').replace("'", "") == clean_compare_line:
+                continue 
             
-        if line: clean_lines.append(line)
+        clean_lines.append(formatted_line)
     
-    # THE PANIC PADDER
+    if current_style == "lazy":
+        fallback_pool = [
+            ["SLIDING", "IN", "DARK"],         
+            ["LEAVING", "OUR", "MARK"],        
+            ["RUN", "THE", "WHOLE", "TOWN"],       
+            ["NEVER", "BACK", "DOWN"]          
+        ]
+    else:
+        fallback_pool = [
+            ["YEAH", "WE", "STAY", "IN", "MOTION"],     
+            ["ALL", "DAY", "WE", "ON", "THE", "GRIND"],     
+            ["SECURE", "THE", "BAG", "TODAY"],      
+            ["MONEY", "UP", "NEVER", "BLIND"]       
+        ]
+        
+    fallback_idx = 0
+    
     while len(clean_lines) < bars:
-        safe_fallback = clean_lines[-1] if len(clean_lines) > 0 else "YEAH | WE STAY IN MOTION"
-        clean_lines.append(safe_fallback.upper())
+        fallback_words = fallback_pool[fallback_idx % len(fallback_pool)]
+        
+        if current_style == "triplet":
+            n = len(fallback_words)
+            q, r = divmod(n, 4)
+            chunks = []
+            idx = 0
+            for i in range(4):
+                size = q + (1 if i < r else 0)
+                if size > 0:
+                    chunks.append(" ".join(fallback_words[idx:idx+size]))
+                    idx += size
+            safe_line = " | ".join(chunks)
+        elif current_style in ["chopper", "lazy"]:
+            safe_line = f"| {' '.join(fallback_words)} |"
+        else:
+            mid = max(1, len(fallback_words) // 2)
+            safe_line = " ".join(fallback_words[:mid]) + " | " + " ".join(fallback_words[mid:])
+
+        if "SYNCOPATION (PICKUP)" in pocket_instruction and not safe_line.startswith("...|"):
+            safe_line = safe_line.replace("| ", "| ...")
+        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction and not safe_line.endswith(", |"):
+            safe_line = safe_line.replace(" |", ", |")
+        elif "period" in pocket_instruction and not safe_line.endswith(". |"):
+            safe_line = safe_line.replace(" |", ". |")
+
+        clean_lines.append(safe_line)
+        fallback_idx += 1
         
     return clean_lines[:bars]
 
@@ -449,7 +511,7 @@ def handler(event):
     global model
     if model is None:
         init_model()
-        if model is None: return {"error": "Sovereign Engine failed to initialize."}
+        if model is None: return {"error": "Sovereign Engine failure."}
 
     job_input = event.get("input", {})
     task_type = job_input.get("task_type", "generate")
@@ -474,27 +536,23 @@ def handler(event):
     
     if task_type == "refine":
         original_line = job_input.get("originalLine", "")
-        instruction = job_input.get("instruction", "Make it hit harder.")
+        instruction = job_input.get("instruction", "Harder.")
         refine_prompt = f"""<|im_start|>user
-[MICRO-REFINEMENT PROTOCOL]
-Original Line: "{original_line}"
-Instruction: {instruction}
-CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Output ONLY the rewritten line in ALL CAPS.
+[MICRO-REFINEMENT]
+Line: "{original_line}"
+Rule: Include | in middle.
+Output: ALL CAPS rewritten line ONLY.
 <|im_end|>
 <|im_start|>assistant
 """
         full_prompt_refine = system_prompt + refine_prompt
-        outputs = model(full_prompt_refine, max_tokens=50, temperature=0.7, top_p=0.9, repeat_penalty=1.1, stop=["<|im_end|>"])
-        refined_line = outputs["choices"][0]["text"].strip().replace("<|im_end|>", "").strip()
-        refined_line = re.sub(r'^["\']|["\']$', '', refined_line).upper() 
-        
-        # MICRO-REFINEMENT PIPE FALLBACK
-        if "|" not in refined_line:
-            words = refined_line.split()
+        outputs = model(full_prompt_refine, max_tokens=50, stop=["<|im_end|>"])
+        refined = outputs["choices"][0]["text"].strip().upper()
+        if "|" not in refined:
+            words = refined.split()
             mid = max(1, len(words) // 2)
-            refined_line = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
-                
-        return {"refinedLine": refined_line}
+            refined = " ".join(words[:mid]) + " | " + " ".join(words[mid:])
+        return {"refinedLine": refined}
 
     if task_type == "generate":
         blueprint = job_input.get("blueprint", [])
@@ -503,8 +561,11 @@ CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Output
         pocket = job_input.get("pocket", "standard")
         dynamic_array = job_input.get("dynamic_array", [2, 2, 2, 2, 2, 2, 2, 2])
         seconds_per_bar = (60.0 / bpm) * 4.0
-        
-        pocket_instruction = "Start lines with an ellipsis (...)." if pocket == "pickup" else "End lines mid-phrase with no punctuation." if pocket == "cascade" else "Bleed across the bar lines. End lines with a comma (,)." if pocket == "chainlink" else "End every line with a period (.)."
+
+        pocket_instruction = "period"
+        if pocket == "chainlink": pocket_instruction = "SYNCOPATION (CHAIN-LINK)"
+        elif pocket == "pickup": pocket_instruction = "SYNCOPATION (PICKUP)"
+        elif pocket == "cascade": pocket_instruction = "cascade"
 
         final_lyrics = ""
         structured_blueprint_data = []
@@ -518,24 +579,36 @@ CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Output
             start_bar = section.get("startBar", current_cumulative_bar)
             vault_max_syllables = section.get("maxSyllables", 10)
             vault_rhyme_scheme = section.get("rhymeScheme", "AABB")
-
-            current_energy = max(3, dynamic_array[index % len(dynamic_array)]) if "HOOK" in sec_type else 1 if "INSTRUMENTAL" in sec_type else dynamic_array[index % len(dynamic_array)]
+            
+            # 🚨 THE CLEAN NOMENCLATURE: Determine current_energy right here
+            base_energy = dynamic_array[index % len(dynamic_array)]
+            current_energy = section.get("patternEnergy", base_energy)
+            
+            if "HOOK" in sec_type:
+                current_energy = max(3, current_energy)
+            elif "INSTRUMENTAL" in sec_type:
+                current_energy = 1
+                
             final_lyrics += f"\n[{sec_type} - {bars} BARS | ENERGY: {current_energy}/4]\n"
             
+            section_payloads = []
             if sec_type == "INSTRUMENTAL":
                 section_payloads = ["[Instrumental Break]" for _ in range(bars)]
             elif "HOOK" in sec_type and saved_hook_payloads is not None:
-                section_payloads = []
                 while len(section_payloads) < bars: section_payloads.extend(saved_hook_payloads)
                 section_payloads = section_payloads[:bars]
             else:
-                steering_context = "" if "HOOK" in sec_type else last_verse_context
-                combined_pattern_desc = f"{section.get('patternDesc', 'Std')}. DNA: {section.get('patternArray', [])}"
-
                 section_payloads = generate_section(
-                    system_prompt, steering_context, sec_type, bars, vault_max_syllables, vault_rhyme_scheme,
-                    combined_pattern_desc, section.get('patternArray', []), pocket_instruction, topic, style, index, None,
-                    hook_type, flow_evolution, current_energy, banned_words_map
+                    system_prompt=system_prompt, 
+                    previous_lyrics="" if "HOOK" in sec_type else last_verse_context,
+                    section_type=sec_type, bars=bars, 
+                    max_syllables=vault_max_syllables, rhyme_scheme=vault_rhyme_scheme,
+                    pattern_desc=section.get("patternDesc", "Std"), 
+                    pattern_array=section.get("patternArray", []), 
+                    pocket_instruction=pocket_instruction, prompt_topic=topic,
+                    style=style, 
+                    section_index=index, hook_type=hook_type, flow_evolution=flow_evolution,
+                    current_energy=current_energy, banned_words_map=banned_words_map
                 )
                 if "HOOK" in sec_type and saved_hook_payloads is None: saved_hook_payloads = section_payloads
                 if "VERSE" in sec_type: last_verse_context = "\n".join(section_payloads[-4:])
@@ -544,12 +617,18 @@ CRITICAL: You MUST include the pipe symbol (|) in the middle of the line. Output
                 line_time = (start_bar + i) * seconds_per_bar
                 final_lyrics += f"({int(line_time // 60)}:{int(line_time % 60):02d}) {line}\n"
             
-            structured_blueprint_data.append({"type": sec_type, "bars": bars, "startBar": start_bar, "lines": section_payloads})
+            structured_blueprint_data.append({
+                "type": sec_type,
+                "bars": bars,
+                "startBar": start_bar,
+                "lines": section_payloads
+            })
             current_cumulative_bar = start_bar + bars
 
-        return {"lyrics": final_lyrics.strip(), "matrix": structured_blueprint_data}
-
-init_model() 
+        return {
+            "lyrics": final_lyrics.strip(),
+            "matrix": structured_blueprint_data
+        }
 
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
