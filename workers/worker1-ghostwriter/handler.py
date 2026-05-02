@@ -390,7 +390,7 @@ Output ONLY the final {bars} lines now.
     current_style = style.lower()
 
     for line in raw_lines:
-        line = line.replace('[', '').replace(']', '').replace('(', '').replace(')')
+        line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
         line = re.sub(r'^(?:chorus|verse|hook|preface|bridge|intro|outro|line\s*\d+)[^A-Za-z0-9]*\s*', '', line, flags=re.IGNORECASE)
         line = re.sub(r'\bpipe\b', '', line, flags=re.IGNORECASE).strip()
         
