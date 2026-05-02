@@ -926,8 +926,8 @@ export default function Room04_Booth() {
                   <div key={i} className={`lyric-line-container mb-2 py-2 px-3 border-l-2 ${isActiveLine ? 'bg-[#E60000]/10 border-[#E60000]' : 'border-transparent'} flex items-start gap-3 transition-colors duration-200`}>
                     {line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
                     
-                    {/* 🚨 THE 16-STEP GRID FIX */}
-                    <div className="flex-1 w-full grid items-center relative min-h-[2rem]" style={{ gridTemplateColumns: 'repeat(16, minmax(0, 1fr))' }}>
+                    {/* 🚨 RESTORED CLEAN TELEPROMPTER FORMATTING */}
+                    <span className="flex-1 leading-loose flex flex-wrap gap-y-2">
                       {(() => {
                         const wordGroups: QuantizedSyllable[][] = [];
                         let currentGroup: QuantizedSyllable[] = [];
@@ -941,26 +941,20 @@ export default function Room04_Booth() {
                         });
                         if (currentGroup.length > 0) wordGroups.push(currentGroup);
 
-                        return wordGroups.map((group, gIdx) => {
-                          const firstSlot = group[0].slot;
-                          return (
-                            <span 
-                              key={gIdx} 
-                              className="inline-flex whitespace-nowrap absolute"
-                              style={{ 
-                                left: `${(firstSlot / 16) * 100}%`, 
-                                zIndex: 10 + gIdx 
-                              }}
-                            >
-                              {group.map((wObj, wIdx) => {
-                                return (
-                                  <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
-                                    <span className="bouncing-ball hidden absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50"></span>
-                                    {wObj.word}
-                                  </span>
-                                );
-                              })}
-                            </span>
+                        return wordGroups.map((group, gIdx) => (
+                          <span key={gIdx} className="inline-flex whitespace-nowrap mr-2">
+                            {group.map((wObj, wIdx) => {
+                              return (
+                                <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
+                                  <span className="bouncing-ball hidden absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50"></span>
+                                  {wObj.word}
+                                </span>
+                              );
+                            })}
+                          </span>
+                        ));
+                      })()}
+                    </span>
                           );
                         });
                       })()}
