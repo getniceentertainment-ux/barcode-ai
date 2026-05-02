@@ -347,6 +347,15 @@ export default function Room04_Booth() {
     }
   };
 
+  const animationTick = () => {
+    updateVisualsRef.current();
+    if (isPlayingRef.current || isRecordingRef.current) {
+      animationFrameRef.current = requestAnimationFrame(animationTick);
+    } else {
+      animationFrameRef.current = undefined;
+    }
+  };
+
   // --- SNAKING DRAG & DROP LOGIC ---
   const handleDragStart = (e: React.DragEvent, lineId: string, syllableId: string, originalSlot: number) => {
     e.dataTransfer.setData("application/json", JSON.stringify({ lineId, syllableId, originalSlot }));
