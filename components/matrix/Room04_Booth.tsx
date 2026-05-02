@@ -222,17 +222,22 @@ export default function Room04_Booth() {
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
-      let currentLineIndex = -1;
+      let activeScrollIndex = -1;
 
-      // 🚨 DYNAMIC LINE BOUNDARY FIX 🚨
-      // Instead of rigid math, we find the real start time based on the actual words!
       for (let i = 0; i < quantizedLines.length; i++) {
         const line = quantizedLines[i];
         if (line.isHeader) continue;
 
+        const lineNode = lineNodes[i] as HTMLElement;
+        if (!lineNode) continue;
+
+        // 1. DYNAMIC LINE BACKGROUND
         let realStartTime = line.startTime;
+        let realEndTime = line.startTime + (line.lineDuration || 2);
+
         if (line.words && line.words.length > 0) {
             realStartTime = Math.min(...line.words.map(w => w.startTime));
+            realEndTime = Math.max(...line.words.map(w => w.startTime + w.duration));
         }
 
         let nextRealStart = Infinity;
@@ -244,96 +249,69 @@ export default function Room04_Booth() {
             }
         }
 
-        // If it's the very last line, keep it active until its last word ends + 2 seconds
-        if (nextRealStart === Infinity && line.words && line.words.length > 0) {
-            nextRealStart = Math.max(...line.words.map(w => w.startTime + w.duration)) + 2;
+        // Stretch the background highlight until the next line starts, OR until the last word finishes!
+        const highlightEnd = Math.max(realEndTime, nextRealStart === Infinity ? realEndTime + 2 : nextRealStart);
+
+        if (visualTime >= realStartTime && visualTime < highlightEnd) {
+             activeScrollIndex = i;
+             lineNode.classList.add('bg-[#E60000]/10', 'border-[#E60000]');
+             lineNode.classList.remove('border-transparent');
+        } else {
+             lineNode.classList.remove('bg-[#E60000]/10', 'border-[#E60000]');
+             lineNode.classList.add('border-transparent');
         }
 
-        // The line stays fully active until the very first word of the NEXT line hits
-        if (visualTime >= realStartTime && visualTime < nextRealStart) {
-            currentLineIndex = i;
-        }
-      }
-
-      // 🚨 RENDER THE ACTIVE LINE AND BALL
-      for (let i = 0; i < quantizedLines.length; i++) {
-        const line = quantizedLines[i];
-        if (line.isHeader) continue;
-
-        const lineNode = lineNodes[i] as HTMLElement;
-        if (!lineNode) continue;
-
-        if (i === currentLineIndex) {
-          lineNode.classList.add('bg-[#E60000]/10', 'border-[#E60000]');
-          lineNode.classList.remove('border-transparent');
-
-          const chunks = lineNode.querySelectorAll('.syllable-chunk');
-          line.words?.forEach((wObj, wIdx) => {
+        // 🚨 2. INDEPENDENT WORD PROCESSING 🚨
+        // We process the balls and words REGARDLESS of the line background!
+        const chunks = lineNode.querySelectorAll('.syllable-chunk');
+        line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             
             if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
-              chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
-              chunkNode.classList.remove('text-[#444]', 'text-[#888]');
-              if (ballNode) {
-                ballNode.classList.remove('hidden');
-                let progress = (visualTime - wObj.startTime) / wObj.duration;
-                progress = Math.max(0, Math.min(1, progress)); 
-                const maxBounce = Math.min(16, wObj.duration * 50); 
-                const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
-                ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
-              }
+                // Word is active!
+                chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
+                chunkNode.classList.remove('text-[#444]', 'text-[#888]');
+                
+                if (ballNode) {
+                    ballNode.classList.remove('hidden');
+                    let progress = (visualTime - wObj.startTime) / wObj.duration;
+                    progress = Math.max(0, Math.min(1, progress)); 
+                    const maxBounce = Math.min(16, wObj.duration * 50); 
+                    const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
+                    ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
+                }
             } else if (visualTime >= wObj.startTime + wObj.duration) {
-              chunkNode.classList.add('text-[#888]');
-              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
-              if (ballNode) {
-                ballNode.classList.add('hidden');
-                ballNode.style.transform = `translateX(-50%) translateY(0px)`;
-              }
+                // Word is finished
+                chunkNode.classList.add('text-[#888]');
+                chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
+                if (ballNode) {
+                    ballNode.classList.add('hidden');
+                    ballNode.style.transform = `translateX(-50%) translateY(0px)`;
+                }
             } else {
-              chunkNode.classList.add('text-[#444]');
-              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
-              if (ballNode) {
-                ballNode.classList.add('hidden');
-                ballNode.style.transform = `translateX(-50%) translateY(0px)`;
-              }
+                // Word hasn't happened yet
+                chunkNode.classList.add('text-[#444]');
+                chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
+                if (ballNode) {
+                    ballNode.classList.add('hidden');
+                    ballNode.style.transform = `translateX(-50%) translateY(0px)`;
+                }
             }
-          });
-        } else {
-          // Line is inactive - reset everything
-          lineNode.classList.remove('bg-[#E60000]/10', 'border-[#E60000]');
-          lineNode.classList.add('border-transparent');
-          
-          const chunks = lineNode.querySelectorAll('.syllable-chunk');
-          line.words?.forEach((wObj, wIdx) => {
-            const chunkNode = chunks[wIdx] as HTMLElement;
-            if (!chunkNode) return;
-            const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
-            if (ballNode) {
-              ballNode.classList.add('hidden');
-              ballNode.style.transform = `translateX(-50%) translateY(0px)`;
-            }
-
-            if (visualTime >= wObj.startTime + wObj.duration) {
-              chunkNode.classList.add('text-[#888]');
-              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
-            } else {
-              chunkNode.classList.add('text-[#444]');
-              chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
-            }
-          });
-        }
+        });
       }
 
-      if (autoScroll && currentLineIndex !== -1 && currentLineIndex !== lastActiveLineRef.current) {
-        const activeNode = lineNodes[currentLineIndex] as HTMLElement;
+      // Smooth Auto-Scrolling
+      if (autoScroll && activeScrollIndex !== -1 && activeScrollIndex !== lastActiveLineRef.current) {
+        const activeNode = lineNodes[activeScrollIndex] as HTMLElement;
         if (activeNode) {
           teleprompterRef.current.scrollTo({ top: activeNode.offsetTop - 150, behavior: 'smooth' });
         }
-        lastActiveLineRef.current = currentLineIndex;
+        lastActiveLineRef.current = activeScrollIndex;
       }
     } else if (isReviewMode) {
+      // Live MIDI Grid Playhead
       const slotNodes = document.querySelectorAll('.midi-slot');
       slotNodes.forEach(node => {
          const slotStart = parseFloat(node.getAttribute('data-start') || "0");
@@ -344,15 +322,6 @@ export default function Room04_Booth() {
              node.classList.remove('bg-white/20');
          }
       });
-    }
-  };
-
-  const animationTick = () => {
-    updateVisualsRef.current();
-    if (isPlayingRef.current || isRecordingRef.current) {
-      animationFrameRef.current = requestAnimationFrame(animationTick);
-    } else {
-      animationFrameRef.current = undefined;
     }
   };
 
