@@ -422,8 +422,6 @@ export default function Room04_Booth() {
   };
 
   // --- THE HIGH-PERFORMANCE VISUAL SYNC ENGINE ---
-  const updateVisualsRef = useRef<() => void>(() => {});
-  
   updateVisualsRef.current = () => {
     if (!wavesurferRef.current) return;
     
@@ -435,7 +433,11 @@ export default function Room04_Booth() {
         timeDisplayRef.current.innerText = `${mins}:${secs}`;
     }
 
-    const visualTime = time;
+    // 🚨 AUTOMATIC BPM-SYNCED LOOKAHEAD:
+    // This pushes the visual UI slightly ahead of the audio so you have time to read it.
+    // (60 / preciseBpm) = 1 Beat. Dividing by 4 pushes it exactly 1/16th note ahead.
+    const dynamicLookahead = (60 / preciseBpm) / 4; 
+    const visualTime = time + dynamicLookahead;
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
