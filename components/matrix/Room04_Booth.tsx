@@ -955,10 +955,6 @@ export default function Room04_Booth() {
                         ));
                       })()}
                     </span>
-                          );
-                        });
-                      })()}
-                    </div>
                   </div>
                 );
               })}
