@@ -218,7 +218,7 @@ export default function Room04_Booth() {
     }
 
     // The sweet spot clock (30ms monitor latency offset)
-    const visualTime = time + 0.03; 
+    const visualTime = time; 
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
