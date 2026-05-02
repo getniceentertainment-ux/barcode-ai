@@ -218,7 +218,7 @@ export default function Room04_Booth() {
     }
 
     // 🚨 AUTOMATIC BPM-SYNCED LOOKAHEAD
-    const dynamicLookahead = preciseBpm > 0 ? (60 / preciseBpm) / 4 : 0.15; 
+    const dynamicLookahead = preciseBpm > 0 ? (60 / preciseBpm) / 16 : 0.04; 
     const visualTime = time + dynamicLookahead; 
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
