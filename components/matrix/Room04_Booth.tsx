@@ -218,8 +218,7 @@ export default function Room04_Booth() {
     }
 
     // 🚨 AUTOMATIC BPM-SYNCED LOOKAHEAD
-    const dynamicLookahead = preciseBpm > 0 ? (60 / preciseBpm) / 16 : 0.04; 
-    const visualTime = time + dynamicLookahead; 
+    const visualTime = time;
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
