@@ -266,7 +266,7 @@ Draft: "{draft_text}"
     clean_lines = []
     
     # FIX: Increased safety buffer from 2 to 6 to prevent aggressive mid-sentence chopping
-    safety_buffer = 6 
+    safety_buffer = 3 
 
     for line in raw_lines:
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '').replace('"', '').upper()

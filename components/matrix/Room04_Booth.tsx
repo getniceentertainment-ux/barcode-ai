@@ -255,10 +255,9 @@ export default function Room04_Booth() {
 
   const [trackDuration, setTrackDuration] = useState<number>((audioData as any)?.duration || 128);
 
-  const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
-  const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
-  const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
-  const secondsPerSlot = secondsPerBar / 16; 
+  const preciseBpm = audioData?.bpm || 120;
+  const secondsPerBar = (60 / preciseBpm) * 4;
+  const secondsPerSlot = secondsPerBar / 16;
 
   const trimWaveformRef = useRef<HTMLDivElement>(null);
   const trimWavesurferRef = useRef<WaveSurfer | null>(null);
@@ -946,11 +945,11 @@ export default function Room04_Booth() {
         // This targets ANY clustered punctuation (like ",." or "..") and crushes it down to just the first character.
         // E.g., "THING,." becomes "THING,". 
         // This cleans the Teleprompter/Grid while safely preserving the math pauses!
-        cleanLine = cleanLine.replace(/\s+[A-Z][,;.]*$/i, '');
-        
-        if (cleanLine && cleanLine !== "[Instrumental Break]") {
-          llmPools[activePoolHeader].push(cleanLine);
-        }
+        cleanLine = cleanLine.replace(/([,;.!?])[,;.!?]+/g, '$1');
+      
+      if (cleanLine && cleanLine !== "[Instrumental Break]") {
+        llmPools[activePoolHeader].push(cleanLine);
+      }
       }
     });
 
