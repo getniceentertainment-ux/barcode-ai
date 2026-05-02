@@ -157,16 +157,20 @@ def generate_section(system_prompt, previous_lyrics, section_type, bars, max_syl
     if model is None: return []
 
     # --- NARRATIVE ARC LOGIC ---
-    if section_index == 0:
-        arc_instruction = "Establish the setting and the origin. Ground the listener. DO NOT copy the hook verbatim."
-    elif section_type.upper() == "HOOK":
+    if section_type.upper() == "HOOK":
         arc_instruction = "Summarize the core theme. Make it highly repetitive and catchy."
-    elif section_index in [1, 2]:
-        arc_instruction = "Introduce new depth to the topic. Evolve the story. DO NOT copy the hook verbatim."
+    elif section_type.upper() == "INSTRUMENTAL":
+        arc_instruction = "This is an instrumental break. Leave it empty."
     else:
-        arc_instruction = "The resolution, the takeaway. High confidence, grounded reality."
+        # Catch-all for Verses, Bridges, Intros, and Outros
+        if section_index == 0:
+            arc_instruction = "Establish the setting and the origin. Ground the listener. CRITICAL: DO NOT copy the hook verbatim."
+        elif section_index <= 3:
+            arc_instruction = "Introduce new depth to the topic. Evolve the story. CRITICAL: DO NOT copy the hook verbatim."
+        else:
+            arc_instruction = "The resolution, the takeaway. High confidence, grounded reality. CRITICAL: DO NOT copy the hook verbatim. Write 100% new lyrics."
 
-    hook_context = f"\n[THE ANCHOR HOOK]:\n{anchor_hook}\n" if anchor_hook and section_type.upper() != "HOOK" else ""
+    hook_context = f"\n[THE ANCHOR HOOK (DO NOT REPEAT THIS)]:\n{anchor_hook}\n" if anchor_hook and section_type.upper() != "HOOK" else ""
 
     # --- DYNAMIC SYLLABLE MATH ---
     if current_energy == 1:
@@ -260,19 +264,26 @@ Draft: "{draft_text}"
     # --- THE SYLLABLE POLICE (POST-PROCESSING) ---
     raw_lines = [l.strip() for l in final_text.split('\n') if len(l.strip()) > 5]
     clean_lines = []
-    safety_buffer = 2 
+    
+    # FIX: Increased safety buffer from 2 to 6 to prevent aggressive mid-sentence chopping
+    safety_buffer = 6 
 
     for line in raw_lines:
         line = line.replace('[', '').replace(']', '').replace('(', '').replace(')', '').replace('"', '').upper()
         if any(meta in line for meta in ["FINAL LYRICS", "HOOK", "VERSE"]): continue
         words = line.split()
         allowed = []; cur_syl = 0
+        
         for w in words:
             s = count_syllables(w)
-            if cur_syl + s > (current_max_syllables + safety_buffer): break
+            if cur_syl + s > (current_max_syllables + safety_buffer): 
+                break # Hard cutoff only if it vastly exceeds the pocket limit
             allowed.append(w); cur_syl += s
+            
         if not allowed: continue
         final_line = " ".join(allowed)
+        
+        # Ensure the Pipe symbol isn't lost during the chop
         if '|' not in final_line and len(allowed) > 1:
             m = len(allowed)//2
             final_line = " ".join(allowed[:m]) + " | " + " ".join(allowed[m:])

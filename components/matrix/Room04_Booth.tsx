@@ -68,7 +68,7 @@ function chunkWordForVisuals(word: string): string[] {
 function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
   let startOffset = 0;
   let endOffset = buffer.length;
-  const threshold = 0.03; 
+  const threshold = 0.08; 
   
   for (let c = 0; c < buffer.numberOfChannels; c++) {
     const data = buffer.getChannelData(c);
@@ -432,12 +432,12 @@ export default function Room04_Booth() {
           mappedWords.forEach((wObj, wIdx) => {
             if (!wObj.word.trim()) return;
 
-            // 🚨 EXACT SYNC & BLEED RESTORED
             const isLastWord = wIdx === mappedWords.length - 1;
             const isEveryOtherLine = i % 2 !== 0; 
             
-            // Middle words get 0.35s. The LAST word of every line ALWAYS gets 1.0s so it doesn't get chopped.
-            const tailBleed = isLastWord ? 1.0 : 0.35; 
+            // 🚨 SURGICAL FIX: Massive increase to tailBleed to prevent audio chopping
+            // Middle words now get 0.75s to finish playing, Last words get 1.5s
+            const tailBleed = isLastWord ? 1.5 : 0.75; 
 
             const relativeWordStart = (wObj.startTime - line.startTime) - firstWordOffset;
             const ttsOffset = Math.max(0, (relativeWordStart / mathLineDuration) * ttsDuration);
@@ -453,7 +453,9 @@ export default function Room04_Booth() {
             gainNode.gain.setValueAtTime(0, wObj.startTime);
             gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.02); 
             gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
-            gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
+            
+            // 🚨 SURGICAL FIX: Slower, exponential fade out instead of a hard linear drop
+            gainNode.gain.exponentialRampToValueAtTime(0.01, wObj.startTime + wObj.duration + tailBleed); 
 
             source.connect(gainNode);
             
