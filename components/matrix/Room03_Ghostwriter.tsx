@@ -6,34 +6,9 @@ import {
   Loader2, Layout, ShieldCheck, Cpu, Activity, 
   ArrowRight, Lock, Plus, Minus
 } from "lucide-react";
-import { useMatrixStore } from "../../store/useMatrixStore";
+// 🚨 IMPORT FLOW_VAULT FROM THE STORE NOW
+import { useMatrixStore, FLOW_VAULT } from "../../store/useMatrixStore";
 import { supabase } from "../../lib/supabase";
-
-// --- 🚨 THE UPGRADED 100% PROPRIETARY GETNICE MACRO-RHYTHMIC VAULT ---
-// We now globally encode Syllable Maximums and Rhyme Schemes directly into the DNA.
-const FLOW_VAULT:Record<string, {array: number[], name: string, desc: string, maxSyllables: number, rhymeScheme: string, energy: number}[]>= {
-  "getnice_hybrid": [
-    { array: [4, 2, 2, 3, 1, 4, 2, 2, 2, 2, 4, 4], name: "Chain-Link Pivot", desc: "Long massive hold on the 1-count, followed by 2 standard syllables, then a long stretch, a rapid snap, and another massive hold.", maxSyllables: 12, rhymeScheme: "AABB" },
-    { array: [3, 1, 2, 2], name: "Platinum Bounce", desc: "1 long stretched syllable, 1 very fast rapid syllable, and 2 standard medium syllables. Repeat this bounce.", maxSyllables: 10, rhymeScheme: "ABAB" },
-    { array: [6, 2, 4, 2, 2], name: "Late Drop", desc: "Leave the 1-count totally empty (a pickup/rest), then drop a massive hold on the 2-count followed by standard syllables.", maxSyllables: 9, rhymeScheme: "AAAA" }
-  ],
-  "chopper": [
-    { array: [1, 1, 1, 1], name: "Machine Gun", desc: "All rapid-fire, ultra-fast 16th-note syllables. No long stretches. Relentless.", maxSyllables: 16, rhymeScheme: "AAAA" },
-    { array: [2, 1, 1, 1, 1, 2], name: "Stutter Step", desc: "A standard syllable, followed by four ultra-fast rapid syllables, ending on a standard syllable.", maxSyllables: 14, rhymeScheme: "AABB" }
-  ],
-  "heartbeat": [
-    { array: [2, 2, 2, 2], name: "Steady Anchor", desc: "All standard, steady 8th-note syllables. Methodical, calm, and heavy.", maxSyllables: 10, rhymeScheme: "AABB" },
-    { array: [4, 2, 2, 4, 4], name: "Delayed Pocket", desc: "A massive hold, two standard syllables, then two more massive holds. Very lazy and behind the beat.", maxSyllables: 8, rhymeScheme: "ABAB" }
-  ],
-  "triplet": [
-    { array: [3, 3, 2], name: "Standard Triplet", desc: "Two long stretched syllables followed by a standard syllable. The classic triplet trap flow.", maxSyllables: 12, rhymeScheme: "AAAA" },
-    { array: [2, 2, 2, 3, 3, 4], name: "Atmospheric Stagger", desc: "Three standard syllables, two long stretches, and a massive hold. A wavy, staggered rhythm.", maxSyllables: 11, rhymeScheme: "AABB" }
-  ],
-  "lazy": [
-    { array: [4, 2, 2], name: "Standard Drawl", desc: "A massive lazy hold followed by two standard syllables. Slow and dragged out.", maxSyllables: 7, rhymeScheme: "AABB" },
-    { array: [6, 2, 8], name: "Extreme Drag", desc: "An extreme delayed hold, a standard syllable, and an enormously long stretched finish.", maxSyllables: 5, rhymeScheme: "AAAA" }
-  ]
-};
 
 export default function Room03_Ghostwriter() {
   const { 
@@ -52,7 +27,7 @@ export default function Room03_Ghostwriter() {
   } = useMatrixStore();
 
   const [isGenerating, setIsGenerating] = useState(false);
-  const [lyrics, setLyrics] = useState(generatedLyrics || "");
+  // 🚨 REMOVED LOCAL LYRICS STATE: We use generatedLyrics directly from the store now.
   const [pollingAttempts, setPollingAttempts] = useState(0);
   const [uxState, setUxState] = useState("Initializing Secure API Handshake...");
   
@@ -87,6 +62,7 @@ export default function Room03_Ghostwriter() {
     if (blueprint.length === 0) return;
     
     let cursor = 0;
+    // 🚨 USING THE GLOBAL STORE VAULT
     const variations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
     let verseCounter = 0;
     
@@ -109,7 +85,7 @@ export default function Room03_Ghostwriter() {
       let activeArray: number[] = [];
       let activeMaxSyllables = 8;
       let activeRhymeScheme = "AABB";
-      let activeEnergy = 2; // <-- ADD THIS
+      let activeEnergy = 2; 
       
       if (block.type === 'HOOK') {
           activeName = hookLabels[gwHookType as string] || "Custom Hook";
@@ -117,7 +93,7 @@ export default function Room03_Ghostwriter() {
           activeArray = variations[0].array; 
           activeMaxSyllables = variations[0].maxSyllables;
           activeRhymeScheme = variations[0].rhymeScheme;
-          activeEnergy = 4; // Hooks generally default to high energy/anthemic delivery
+          activeEnergy = 4; 
       } else if (block.type === 'VERSE') {
           const verseVariations = variations.length > 1 ? variations.slice(1) : variations;
           
@@ -169,39 +145,32 @@ export default function Room03_Ghostwriter() {
         patternDesc: activeDesc,
         maxSyllables: activeMaxSyllables,
         rhymeScheme: activeRhymeScheme,
-        patternEnergy: activeEnergy // <-- INJECT IT INTO THE BLUEPRINT DNA
-      }; // <-- BRACE IS NOW SAFE!
+        patternEnergy: activeEnergy 
+      }; 
         
       cursor = start + block.bars;
       return updated;
     });
 
     if (needsUpdate) {
-        setBlueprint(synced);
+        setBlueprint(synced); // 🚨 This triggers calculateQuantizedTimeline instantly!
     }
-  }, [gwStyle, gwHookType, gwFlowEvolution, gwPocket, layoutHash, blueprint, audioData]);
+  }, [gwStyle, gwHookType, gwFlowEvolution, gwPocket, layoutHash, blueprint, audioData, setBlueprint]);
 
   // --- THE SMART LOCK BOUNCER (PREVENTS ENGINE CRASHES) ---
   useEffect(() => {
-    // Rule 1: Lazy Flow cannot handle Cascade pocket (Syllable Starvation)
     if (gwStyle === "lazy" && gwPocket === "cascade") {
       setGwPocket("standard");
       if (addToast) addToast("Cascade disabled: Lazy flow lacks syllable density.", "info");
     }
-    
-    // Rule 2: Chopper Flow cannot handle Spillover strike zone (Over-Stuffed Grid)
     if (gwStyle === "chopper" && gwStrikeZone === "spillover") {
       setGwStrikeZone("snare");
       if (addToast) addToast("Spillover disabled: Chopper grid is too dense.", "info");
     }
-
-    // Rule 3: Triplet Flow cannot handle Prime Hook (Math Mismatch)
     if (gwStyle === "triplet" && gwHookType === "prime") {
       setGwHookType("auto");
       if (addToast) addToast("Prime disabled: Clashes with Triplet math.", "info");
     }
-
-    // Rule 4: Pickup Pocket cannot handle Downbeat Strike Zone (Grid Collision)
     if (gwPocket === "pickup" && gwStrikeZone === "downbeat") {
       setGwStrikeZone("snare");
       if (addToast) addToast("Downbeat disabled: Clashes with Pickup pocket.", "info");
@@ -275,11 +244,6 @@ export default function Room03_Ghostwriter() {
       finalFlowEvolution = (gwStyle === "chopper" || gwStyle === "triplet") ? "switch" : "static";
     }
 
-    const systemConstraint = `ABSOLUTE ENGINE RULES:
-1. RAW LYRICS ONLY: You must ONLY output the lyrics.
-2. COMPOUND RHYMING: Use 2 or 3 compound rhymes on the structural accents.
-3. PITCH INTONATION: Align your vowel choices to the pitch contour of the beat. Use closed/heavy vowels for pitch drops, and open/elongated vowels for tension rises.`;
-
     const keyParts = audioData?.key ? audioData.key.split(" ") : ["C", "minor"];
     const rootNote = keyParts[0];
     const scale = keyParts.slice(1).join(" ");
@@ -309,10 +273,10 @@ export default function Room03_Ghostwriter() {
           tag: flowDNA?.tag,
           useSlang: gwUseSlang,
           useIntel: gwUseIntel,
-          isExplicit: true, // 🚨 PASSED DOWN TO AI
-          bannedWordsMap: {}, // <-- SURGICAL FIX: Wired up to prevent backend fallbacks. Populate this later via your RAG Intel.
+          isExplicit: true, 
+          bannedWordsMap: {}, 
           strikeZone: gwStrikeZone,
-          hookType: finalHookType,             
+          hookType: finalHookType,              
           flowEvolution: finalFlowEvolution,   
           pocket: gwPocket, 
           root_note: rootNote,
@@ -320,40 +284,21 @@ export default function Room03_Ghostwriter() {
           contour: (audioData as any)?.contour || "drops into a lower, cadential register",
           dynamic_array: (audioData as any)?.dynamic_array,
           blueprint: blueprint.flatMap(b => {
-            // PASSING THE VAULT DATA DOWN TO THE API
             if (b.type === "VERSE" && b.bars > 8) {
               return [
                 { 
-                  type: b.type, 
-                  bars: 8, 
-                  startBar: (b as any).startBar,
-                  patternDesc: (b as any).patternDesc,
-                  patternArray: (b as any).patternArray,
-                  maxSyllables: (b as any).maxSyllables,
-                  rhymeScheme: (b as any).rhymeScheme,    // <-- COMMA ADDED
-                  patternEnergy: (b as any).patternEnergy 
+                  type: b.type, bars: 8, startBar: (b as any).startBar, patternDesc: (b as any).patternDesc, patternArray: (b as any).patternArray,
+                  maxSyllables: (b as any).maxSyllables, rhymeScheme: (b as any).rhymeScheme, patternEnergy: (b as any).patternEnergy 
                 },
                 { 
-                  type: b.type, 
-                  bars: b.bars - 8, 
-                  startBar: (b as any).startBar + 8, 
-                  patternDesc: (b as any).patternDesc,
-                  patternArray: (b as any).patternArray,
-                  maxSyllables: (b as any).maxSyllables,
-                  rhymeScheme: (b as any).rhymeScheme,    // <-- COMMA ADDED
-                  patternEnergy: (b as any).patternEnergy 
+                  type: b.type, bars: b.bars - 8, startBar: (b as any).startBar + 8, patternDesc: (b as any).patternDesc, patternArray: (b as any).patternArray,
+                  maxSyllables: (b as any).maxSyllables, rhymeScheme: (b as any).rhymeScheme, patternEnergy: (b as any).patternEnergy 
                 }
               ];
             }
             return { 
-              type: b.type, 
-              bars: b.bars, 
-              startBar: (b as any).startBar,
-              patternDesc: (b as any).patternDesc,
-              patternArray: (b as any).patternArray,
-              maxSyllables: (b as any).maxSyllables,
-              rhymeScheme: (b as any).rhymeScheme,        // <-- COMMA ADDED
-              patternEnergy: (b as any).patternEnergy 
+              type: b.type, bars: b.bars, startBar: (b as any).startBar, patternDesc: (b as any).patternDesc, patternArray: (b as any).patternArray,
+              maxSyllables: (b as any).maxSyllables, rhymeScheme: (b as any).rhymeScheme, patternEnergy: (b as any).patternEnergy 
             };
           })
         })
@@ -388,7 +333,7 @@ export default function Room03_Ghostwriter() {
               .replace(/(\(\d+:\d{2}\)\s*)(?:\d+(?:st|nd|rd|th)? Line:|Line \d+:|Hook:|Verse:|Chorus:|Intro:|Outro:)\s*/gmi, '$1')
               .trim();
 
-            setLyrics(cleanedLyrics);
+            // 🚨 DIRECTLY UPDATE STORE ONLY! This immediately syncs the Booth timings!
             setGeneratedLyrics(cleanedLyrics);
             if(addToast) addToast(`Lyrics Synthesized.`, "success");
           } else if (statusData.status === 'FAILED') {
@@ -409,7 +354,7 @@ export default function Room03_Ghostwriter() {
   };
 
   const handleRefine = async () => {
-    if (!selectedLine || !refineInstruction) return;
+    if (!selectedLine || !refineInstruction || !generatedLyrics) return;
     setIsRefining(true);
     
     try {
@@ -435,9 +380,11 @@ export default function Room03_Ghostwriter() {
       if (!res.ok) throw new Error("Refinement API Error");
 
       const data = await res.json();
-      const updatedLyrics = lyrics.replace(selectedLine, data.refinedLine);
-      setLyrics(updatedLyrics);
+      
+      // 🚨 PUSH DIRECTLY TO STORE
+      const updatedLyrics = generatedLyrics.replace(selectedLine, data.refinedLine);
       setGeneratedLyrics(updatedLyrics);
+      
       setRefineInstruction("");
       setSelectedLine("");
       if(addToast) addToast("Micro-refinement applied.", "success");
@@ -639,7 +586,7 @@ export default function Room03_Ghostwriter() {
                </span>
              )}
              {audioData && <span className="text-[#E60000] font-mono text-[10px] uppercase tracking-widest">Locked to {Math.round(audioData.bpm)} BPM</span>}
-             <button onClick={() => {setLyrics(""); setGeneratedLyrics("");}} className="text-[#555] hover:text-white transition-colors"><RefreshCw size={14} /></button>
+             <button onClick={() => setGeneratedLyrics("")} className="text-[#555] hover:text-white transition-colors"><RefreshCw size={14} /></button>
            </div>
         </div>
 
@@ -719,7 +666,7 @@ export default function Room03_Ghostwriter() {
               <p className="font-oswald text-2xl uppercase tracking-widest font-bold mb-2">{uxState}</p>
               <p className="font-mono text-xs text-[#555]">Passing blueprint to GPU cluster... Attempt {pollingAttempts}</p>
             </div>
-          ) : lyrics ? (
+          ) : generatedLyrics ? (
             <div className="max-w-2xl mx-auto space-y-2 pb-32">
               <div className="flex items-center justify-between border-b border-[#222] pb-6 mb-8">
                 <div>
@@ -735,7 +682,7 @@ export default function Room03_Ghostwriter() {
                  let currentBlockIndex = -1;
                  let barOffsetWithinBlock = 0;
                  
-                 return lyrics.split('\n').map((line, i) => {
+                 return generatedLyrics.split('\n').map((line, i) => {
                    const text = line.trim();
                    if (!text) return null;
 

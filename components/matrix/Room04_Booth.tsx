@@ -10,60 +10,6 @@ import { supabase } from "../../lib/supabase";
 
 type TrackType = "Lead" | "Adlib" | "Double" | "Guide";
 
-// SURGICAL FIX: Enforced strict typing so the Grid knows these properties exist
-type WordMapping = { id: string; word: string; startTime: number; duration: number; slot: number; isWordEnd?: boolean };
-type LyricLine = { id: string; text: string; originalText: string; startTime: number; lineDuration?: number; isHeader: boolean; timestamp?: string; words?: WordMapping[]; barIndex: number };
-
-// --- GETNICE FRONTEND MATH: SYLLABLE ESTIMATOR (FALLBACK ONLY) ---
-function estimateSyllables(word: string): number {
-  const w = word.toLowerCase().replace(/[^a-z]/g, '');
-  if (!w) return 1;
-  if (w.length <= 3) return 1;
-  let count = (w.match(/[aeiouy]+/g) || []).length;
-  if (w.endsWith('e') && !w.endsWith('le')) count--;
-  return Math.max(1, count);
-}
-
-// --- THE VISUAL SYLLABLE CHUNKER (FALLBACK ONLY) ---
-function chunkWordForVisuals(word: string): string[] {
-  const match = word.match(/^([^a-zA-Z]*)([a-zA-Z\']+)([^a-zA-Z]*)$/);
-  if (!match || match[2].length <= 3) return [word];
-  
-  const pre = match[1];
-  const alpha = match[2];
-  const post = match[3];
-  
-  const vowelClusters = alpha.match(/[aeiouy]+/gi);
-  if (!vowelClusters || vowelClusters.length <= 1) return [word];
-  
-  const chunks = [];
-  let currentChunk = "";
-  
-  for (let i = 0; i < alpha.length; i++) {
-    currentChunk += alpha[i];
-    const isVowel = /[aeiouy]/i.test(alpha[i]);
-    const nextIsVowel = i + 1 < alpha.length ? /[aeiouy]/i.test(alpha[i+1]) : false;
-    
-    if (isVowel && !nextIsVowel && i + 2 < alpha.length) {
-      const remaining = alpha.slice(i + 1);
-      if (/[aeiouy]/i.test(remaining)) {
-        currentChunk += alpha[i+1];
-        chunks.push(currentChunk);
-        currentChunk = "";
-        i++; 
-      }
-    }
-  }
-  if (currentChunk) chunks.push(currentChunk);
-  
-  if (chunks.length > 0) {
-    chunks[0] = pre + chunks[0];
-    chunks[chunks.length - 1] = chunks[chunks.length - 1] + post;
-  }
-  
-  return chunks.filter(c => c.length > 0);
-}
-
 // --- TTS SILENCE TRIMMER (Kills Dead Air) ---
 function trimTTSBuffer(audioCtx: any, buffer: AudioBuffer): AudioBuffer {
   let startOffset = 0;
@@ -200,36 +146,12 @@ function encodeWAV(samples: Float32Array, sampleRate: number) {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
-// --- THE MACRO-RHYTHMIC FLOW VAULT ---
-const FLOW_VAULT:Record<string, {array: number[], name: string, desc: string, maxSyllables: number, rhymeScheme: string, energy: number}[]>= {
-  "getnice_hybrid": [
-    { array: [4, 2, 2, 3, 1, 4, 2, 2, 2, 2, 4, 4], name: "Chain-Link Pivot", desc: "Long massive hold on the 1-count...", maxSyllables: 12, rhymeScheme: "AABB" },
-    { array: [3, 1, 2, 2], name: "Platinum Bounce", desc: "1 long stretched syllable...", maxSyllables: 10, rhymeScheme: "ABAB" },
-    { array: [6, 2, 4, 2, 2], name: "Late Drop", desc: "Leave the 1-count totally empty...", maxSyllables: 9, rhymeScheme: "AAAA" }
-  ],
-  "chopper": [
-    { array: [1, 1, 1, 1], name: "Machine Gun", desc: "All rapid-fire, ultra-fast 16th-note syllables.", maxSyllables: 16, rhymeScheme: "AAAA" },
-    { array: [2, 1, 1, 1, 1, 2], name: "Stutter Step", desc: "A standard syllable, followed by four ultra-fast...", maxSyllables: 14, rhymeScheme: "AABB" }
-  ],
-  "heartbeat": [
-    { array: [2, 2, 2, 2], name: "Steady Anchor", desc: "All standard, steady 8th-note syllables.", maxSyllables: 10, rhymeScheme: "AABB" },
-    { array: [4, 2, 2, 4, 4], name: "Delayed Pocket", desc: "A massive hold, two standard syllables...", maxSyllables: 8, rhymeScheme: "ABAB" }
-  ],
-  "triplet": [
-    { array: [3, 3, 2], name: "Standard Triplet", desc: "Two long stretched syllables...", maxSyllables: 12, rhymeScheme: "AAAA" },
-    { array: [2, 2, 2, 3, 3, 4], name: "Atmospheric Stagger", desc: "Three standard syllables...", maxSyllables: 11, rhymeScheme: "AABB" }
-  ],
-  "lazy": [
-    { array: [4, 2, 2], name: "Standard Drawl", desc: "A massive lazy hold followed by two standard...", maxSyllables: 7, rhymeScheme: "AABB" },
-    { array: [6, 2, 8], name: "Extreme Drag", desc: "An extreme delayed hold...", maxSyllables: 5, rhymeScheme: "AAAA" }
-  ]
-};
 
 export default function Room04_Booth() {
   const { 
     generatedLyrics, audioData, vocalStems, addVocalStem, removeVocalStem, 
     updateStemOffset, updateStemVolume, toggleStemMute, setActiveRoom, blueprint, userSession, 
-    addToast, gwStyle, quantizedLines, setQuantizedLines 
+    addToast, gwStyle, quantizedLines, shiftWord 
   } = useMatrixStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -243,8 +165,6 @@ export default function Room04_Booth() {
   const [autoScroll, setAutoScroll] = useState(true);
   const [teleprompterEnabled, setTeleprompterEnabled] = useState(true);
 
-  const [currentTimeDisplay, setCurrentTimeDisplay] = useState(0);
-  const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
   const [activeTrack, setActiveTrack] = useState<TrackType>("Lead");
 
   const [trimmingStem, setTrimmingStem] = useState<any | null>(null);
@@ -258,7 +178,6 @@ export default function Room04_Booth() {
   const actualBeatBars = audioData?.totalBars || Math.round((trackDuration / 60) * (audioData?.bpm || 120) / 4);
   const preciseBpm = trackDuration > 0 ? ((actualBeatBars * 4) / trackDuration) * 60 : (audioData?.bpm || 120);
   const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / preciseBpm) * 4;
-  const secondsPerSlot = secondsPerBar / 16; 
 
   const trimWaveformRef = useRef<HTMLDivElement>(null);
   const trimWavesurferRef = useRef<WaveSurfer | null>(null);
@@ -284,7 +203,7 @@ export default function Room04_Booth() {
   const isFreeLoader = (userSession?.tier as string)?.includes("Free Loader");
   const hasEngToken = (userSession as any)?.has_engineering_token === true;
 
-  // --- 1. THE SNAKING DRAG & DROP LOGIC ---
+  // --- 1. THE SNAKING DRAG & DROP LOGIC (NOW CALLS STORE) ---
   const handleDragStart = (e: React.DragEvent, lineId: string, syllableId: string, originalSlot: number) => {
     e.dataTransfer.setData("application/json", JSON.stringify({ lineId, syllableId, originalSlot }));
   };
@@ -300,33 +219,12 @@ export default function Room04_Booth() {
     const delta = targetSlot - originalSlot;
     if (delta === 0) return;
 
-    // 🚨 FIX 3: Route Drag & Drop update to local lyricLines so the Grid mathematically updates
-    setLyricLines(prev => prev.map(line => {
-      if (line.id === targetLineId && !line.isHeader && line.words) {
-        const targetIndex = line.words.findIndex(w => w.id === syllableId);
-        if (targetIndex === -1) return line;
-
-        const newWords = [...line.words];
-
-        for (let i = targetIndex; i < newWords.length; i++) {
-           let newSlot = newWords[i].slot + delta;
-           newSlot = Math.max(0, Math.min(15, newSlot)); 
-           
-           newWords[i] = {
-             ...newWords[i],
-             slot: newSlot,
-             startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot)
-           };
-        }
-
-        return { ...line, words: newWords };
-      }
-      return line;
-    }));
+    // 🚨 ALL MATH DELEGATED TO THE STORE
+    shiftWord(targetLineId, syllableId, delta);
   };
 
   const handleGenerateGuide = async () => {
-    if (!lyricLines || lyricLines.length === 0) {
+    if (!quantizedLines || quantizedLines.length === 0) {
       if (addToast) addToast("No valid lyrics found to generate guide.", "error");
       return;
     }
@@ -335,7 +233,7 @@ export default function Room04_Booth() {
     setGuideProgress(0);
     
     try {
-      const parsedLines = lyricLines.filter(l => !l.isHeader && l.text.trim().length > 0);
+      const parsedLines = quantizedLines.filter(l => !l.isHeader && l.text.trim().length > 0);
       if (parsedLines.length === 0) throw new Error("Lyrics matrix is empty after sanitization.");
 
       const renderDuration = trackDuration > 0 ? trackDuration + 10 : (parsedLines[parsedLines.length - 1].startTime + 10);
@@ -344,15 +242,12 @@ export default function Room04_Booth() {
       const OfflineCtxClass = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
       const offlineCtx = new OfflineCtxClass(1, Math.ceil(sampleRate * renderDuration), sampleRate);
 
-      // 🚨 ECHO FIX: Build a BPM-synced "Vocal Throw" Delay Bus
       const delayNode = offlineCtx.createDelay(2.0);
-      delayNode.delayTime.value = 60 / preciseBpm; // Quarter-note trap echo
-      
+      delayNode.delayTime.value = 60 / preciseBpm; 
       const feedbackGain = offlineCtx.createGain();
-      feedbackGain.gain.value = 0.333; // How many times it repeats
-      
+      feedbackGain.gain.value = 0.333; 
       const wetGain = offlineCtx.createGain();
-      wetGain.gain.value = 0.15; // How LOUD the echo is in the background
+      wetGain.gain.value = 0.15; 
       
       delayNode.connect(feedbackGain);
       feedbackGain.connect(delayNode);
@@ -361,39 +256,22 @@ export default function Room04_Booth() {
 
       for (let i = 0; i < parsedLines.length; i++) {
         const line = parsedLines[i];
-        
         setGuideProgress(Math.round(((i + 1) / parsedLines.length) * 100));
 
         try {
-          // 🚨 THE PUNCTUATION SANITIZER
-          // Strip the visual pipe '|' and ellipses
           let rawText = line.text.replace(/\|/g, '').replace(/\.\.\./g, ', ');
-          
-          // 🚨 FIX: Nuke weird punctuation clusters like ",." or ".." that choke the TTS
-          // If it sees multiple commas/periods grouped together, it flattens them into a single comma.
           rawText = rawText.replace(/[,.]{2,}/g, ',');
-          
           rawText = rawText.replace(/\s+/g, ' ').trim();
-          
           let safeText = rawText.toLowerCase();
           
-          // 🚨 THE UPGRADED PHONETIC SMUGGLER
-          // DO NOT use spaces to break words (e.g. "f ck"). It causes TTS to stutter and mumble.
-          // Use phonetic homophones so the AI pronounces the explicit word naturally.
           const flaggedWords: { [key: string]: string } = {
             'kill': 'keel', 'murder': 'merder', 'shoot': 'shewt', 'gun': 'guhn',
-            'bitch': 'bich', 'fuck': 'fuhk', 
-            'shit': 'shiht', // <-- Removed the space here so it doesn't stutter!
-            'blood': 'bluhd',
-            'dead': 'dehd', // <-- Changed from 'ded' to beat the slang filter
-            'die': 'dahy', 'drugs': 'drahgs', 'pills': 'pilz',
+            'bitch': 'bich', 'fuck': 'fuhk', 'shit': 'shiht', 'blood': 'bluhd',
+            'dead': 'dehd', 'die': 'dahy', 'drugs': 'drahgs', 'pills': 'pilz',
             'crack': 'krak', 'dope': 'dohp', 'thug': 'thuhg', 'prison': 'prizin',
             'threats': 'threts', 'thugger': 'thuhger', 'nigga': 'nihgah', 'niggaz': 'nihgahz',
             'ass': 'ahs', 'hoes': 'hoez', 'hoe': 'hoh', 'brick': 'brik', 'hustle': 'huzzle', 'counting': 'countin',
-            
-            // 🚨 PHRASE BYPASSES (For highly contextual safety triggers)
-            "when i'm dead": "wen aym dehd",
-            "im dead": "aym dehd"
+            "when i'm dead": "wen aym dehd", "im dead": "aym dehd"
           };
           
           Object.keys(flaggedWords).forEach(bad => {
@@ -401,7 +279,6 @@ export default function Room04_Booth() {
             safeText = safeText.replace(regex, flaggedWords[bad]);
           });
 
-          // End with a single period so it finishes the thought cleanly
           const aggressiveText = safeText + "."; 
 
           const res = await fetch('/api/audio/generate-guide', {
@@ -432,11 +309,8 @@ export default function Room04_Booth() {
           mappedWords.forEach((wObj, wIdx) => {
             if (!wObj.word.trim()) return;
 
-            // 🚨 EXACT SYNC & BLEED RESTORED
             const isLastWord = wIdx === mappedWords.length - 1;
             const isEveryOtherLine = i % 2 !== 0; 
-            
-            // Middle words get 0.35s. The LAST word of every line ALWAYS gets 1.0s so it doesn't get chopped.
             const tailBleed = isLastWord ? 1.0 : 0.35; 
 
             const relativeWordStart = (wObj.startTime - line.startTime) - firstWordOffset;
@@ -457,21 +331,18 @@ export default function Room04_Booth() {
 
             source.connect(gainNode);
             
-            // 🚨 THE ECHO FIX: Route only the final word of alternating lines to the Delay Bus
             if (isLastWord && isEveryOtherLine) {
                 gainNode.connect(delayNode);
             }
             
-            // ALWAYS route the dry vocal to the master so it never mutes
             gainNode.connect(offlineCtx.destination);
-            
             source.start(wObj.startTime, ttsOffset, safeExtractDuration);
           });
 
         } catch (lineErr) {
           console.warn(`Soft-fail quantizing line ${i}:`, lineErr);
         }
-      } // <--- THIS WAS THE BRACKET YOU WERE MISSING!
+      } 
 
       const renderedBuffer = await offlineCtx.startRendering();
       const blob = audioBufferToWavBlob(renderedBuffer);
@@ -558,24 +429,23 @@ export default function Room04_Booth() {
     
     const time = wavesurferRef.current.getCurrentTime();
     
-    // 🚨 SURGICAL FIX: Prevent 60FPS React state churn by updating DOM directly
     if (timeDisplayRef.current) {
         const mins = Math.floor(time / 60).toString().padStart(2, '0');
         const secs = Math.floor(time % 60).toString().padStart(2, '0');
         timeDisplayRef.current.innerText = `${mins}:${secs}`;
     }
 
-    const visualTime = time; // 🚨 SURGICAL FIX: 0 offset to perfectly match the vocal guide audio time.
+    const visualTime = time;
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
       let currentLineIndex = -1;
 
-      for (let i = 0; i < lyricLines.length; i++) {
-        const line = lyricLines[i];
+      for (let i = 0; i < quantizedLines.length; i++) {
+        const line = quantizedLines[i];
         if (line.isHeader) continue;
 
-        const nextLine = lyricLines.slice(i + 1).find(l => !l.isHeader);
+        const nextLine = quantizedLines.slice(i + 1).find(l => !l.isHeader);
         const endTime = nextLine ? nextLine.startTime : (line.startTime + (line.lineDuration || 2));
 
         const lineNode = lineNodes[i] as HTMLElement;
@@ -597,13 +467,10 @@ export default function Room04_Booth() {
               chunkNode.classList.remove('text-[#444]', 'text-[#888]');
               if (ballNode) {
                 ballNode.classList.remove('hidden');
-                
                 let progress = (visualTime - wObj.startTime) / wObj.duration;
                 progress = Math.max(0, Math.min(1, progress)); 
-                
                 const maxBounce = Math.min(16, wObj.duration * 50); 
                 const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
-                
                 ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
               }
             } else if (visualTime >= wObj.startTime + wObj.duration) {
@@ -693,7 +560,7 @@ export default function Room04_Booth() {
       activeSourcesRef.current = [];
 
       vocalStems.forEach(stem => {
-        if (stem.isMuted) return; // <-- SURGICAL FIX
+        if (stem.isMuted) return; 
         const buffer = stemBuffersRef.current.get(stem.id);
         if (buffer) {
           const source = audioCtxRef.current!.createBufferSource();
@@ -912,162 +779,6 @@ export default function Room04_Booth() {
     return () => { wavesurferRef.current?.destroy(); wavesurferRef.current = null; };
   }, [audioData]);
 
-  const lastParsedLyricsRef = useRef<string>("");
-
-  useEffect(() => {
-    if (!generatedLyrics || !audioData || !blueprint) return;
-    if (lastParsedLyricsRef.current === generatedLyrics) return; 
-    lastParsedLyricsRef.current = generatedLyrics;
-
-    // 1. DECONSTRUCT LLM OUTPUT INTO CATEGORIZED POOLS
-    const rawLines = generatedLyrics.split('\n');
-    const llmPools: Record<string, string[]> = { HOOK: [], VERSE: [], INTRO: [], OUTRO: [] };
-    let activePoolHeader = "";
-
-    rawLines.forEach(line => {
-      const trimmed = line.trim();
-      // Detect [HOOK], [VERSE], etc. and set the active pool
-      if (trimmed.startsWith('[') && trimmed.includes(']')) {
-        activePoolHeader = trimmed.split(' ')[0].replace(/[^A-Z]/g, '');
-        if (!llmPools[activePoolHeader]) llmPools[activePoolHeader] = [];
-      } else if (activePoolHeader && trimmed.length > 0) {
-        // 🚨 CRITICAL SHIELD: Strip the timestamp FIRST, so the regex can actually "see" the metadata
-        let cleanLine = trimmed.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
-        
-        // Assassinate Hallucinations
-        if (cleanLine.match(/^(Written:|Vocal:|Bars:|Total:|Vocal Cadence:)/i)) return;
-        
-        // Strip backend pipe tags and clean spacing
-        cleanLine = cleanLine.replace(/^(?:[A-Z][,:\)]|\s*\[[A-Z]\]\s*|(?:Verse|Hook|Chorus)[^:]*:)\s*/i, '');
-        
-        // 🚨 THE GLOBAL FRONTEND UI SCRUBBER 
-        // This targets ANY clustered punctuation (like ",." or "..") and crushes it down to just the first character.
-        // E.g., "THING,." becomes "THING,". 
-        // This cleans the Teleprompter/Grid while safely preserving the math pauses!
-        cleanLine = cleanLine.replace(/\s+[A-Z][,;.]*$/i, '');
-        
-        if (cleanLine && cleanLine !== "[Instrumental Break]") {
-          llmPools[activePoolHeader].push(cleanLine);
-        }
-      }
-    });
-
-    // 2. MAP BLUEPRINT TO THE POOLS USING POINTERS
-    const parsed: LyricLine[] = [];
-    let lineIdCounter = 0;
-    const poolPointers: Record<string, number> = { HOOK: 0, VERSE: 0, INTRO: 0, OUTRO: 0 };
-
-    blueprint.forEach((bp, index) => {
-      const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : (index * 8);
-      const bars = bp.bars || 8;
-      const blockDurationSecs = bars * secondsPerBar;
-      const blockStartTime = blockStartBar * secondsPerBar;
-
-      // Add UI Header
-      parsed.push({ 
-        id: `hdr-${lineIdCounter++}`, 
-        barIndex: blockStartBar, 
-        text: `[${bp.type}]`, 
-        originalText: `[${bp.type}]`, 
-        startTime: blockStartTime, 
-        isHeader: true, 
-        words: [] 
-      });
-
-      let linesForThisBlock: string[] = [];
-
-      if (bp.type === "INSTRUMENTAL") {
-        linesForThisBlock = Array(bars).fill("Mmm. Mmm.");
-      } else {
-        const currentPool = llmPools[bp.type] || [];
-        const pointer = poolPointers[bp.type] || 0;
-        
-        // Pull exactly 'bp.bars' lines to maintain 1:1 sync.
-        const linesToTake = bp.bars;
-        linesForThisBlock = currentPool.slice(pointer, pointer + linesToTake);
-        
-        // Update pointer so the NEXT segment picks up exactly where this one left off
-        poolPointers[bp.type] = pointer + linesForThisBlock.length;
-        
-        // Safety Fallback
-        if (linesForThisBlock.length === 0) linesForThisBlock = ["(Empty Section Cache)"];
-      }
-
-      const timeForLine = blockDurationSecs / linesForThisBlock.length;
-      let currentFlowTime = blockStartTime;
-
-      // 🚨 VAULT UPGRADE FIX: Extract the .array from the new object DNA for the visual slicer
-      const activeVariations = FLOW_VAULT[gwStyle as string] || FLOW_VAULT["getnice_hybrid"];
-      const currentVaultObject = activeVariations[index % activeVariations.length];
-      
-      let activePattern = (bp as any).patternArray?.length > 0 
-          ? (bp as any).patternArray 
-          : currentVaultObject.array;
-
-      linesForThisBlock.forEach((textLine) => {
-        const rawWords = textLine.split(/\s+/).filter(w => w.length > 0);
-        const mappedWords: WordMapping[] = [];
-        let totalLineSteps = 0;
-        let tempPatternIndex = 0;
-
-        if (textLine.startsWith('...')) totalLineSteps += 4;
-        
-        const wordChunksArray = rawWords.map(w => {
-          const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
-          chunks.forEach(() => {
-            const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
-            totalLineSteps += isNaN(stepVal) ? 2 : stepVal;
-            tempPatternIndex++;
-          });
-          return chunks;
-        });
-
-        const cleanTextEnd = textLine.slice(-1);
-        if (cleanTextEnd === '.') totalLineSteps += 4;
-        else if (cleanTextEnd === ',') totalLineSteps += 1;
-
-        const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
-        let localWordTime = currentFlowTime;
-        if (textLine.startsWith('...')) localWordTime += (4 * timePerStep);
-
-        let patternIndex = 0;
-        wordChunksArray.forEach((chunks) => {
-          chunks.forEach((chunk, cIdx) => {
-            const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
-            patternIndex++;
-            const chunkDuration = stepsRequired * timePerStep;
-            const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - currentFlowTime) / timeForLine) * 16)));
-            
-            mappedWords.push({
-              id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-              word: chunk.replace(/\|/g, ''),
-              slot: mappedSlot,
-              startTime: localWordTime,
-              duration: chunkDuration,
-              isWordEnd: (cIdx === chunks.length - 1)
-            });
-            localWordTime += chunkDuration;
-          });
-        });
-
-        parsed.push({ 
-          id: `line-${lineIdCounter++}`,
-          barIndex: Math.floor(currentFlowTime / secondsPerBar),
-          text: textLine.replace(/\|/g, ''), 
-          originalText: textLine,
-          startTime: currentFlowTime, 
-          lineDuration: timeForLine, 
-          isHeader: false, 
-          timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
-          words: mappedWords 
-        });
-        currentFlowTime += timeForLine;
-      });
-    });
-
-    setLyricLines(parsed);
-  }, [generatedLyrics, audioData, blueprint, secondsPerBar, gwStyle]);
-
   useEffect(() => {
     if (trimmingStem && trimWaveformRef.current) {
       trimWavesurferRef.current = WaveSurfer.create({
@@ -1075,7 +786,6 @@ export default function Room04_Booth() {
       });
       trimWavesurferRef.current.on('error', (err) => console.warn("Trim WaveSurfer Soft-fail:", err));
       
-      // 🚨 FIX 4: Guaranteed WaveSurfer Slicer Load Fallback
       const safeUrl = trimmingStem.blob ? URL.createObjectURL(trimmingStem.blob) : trimmingStem.url;
       trimWavesurferRef.current.load(safeUrl).catch(e => console.warn("Trim Load Aborted:", e.message));
       
@@ -1150,8 +860,7 @@ export default function Room04_Booth() {
                 </div>
 
                 <div className="space-y-4 pb-20">
-                  {/* 🚨 FIX 3: Renders from lyricLines directly */}
-                  {lyricLines.filter(l => !l.isHeader).map((line) => (
+                  {quantizedLines.filter(l => !l.isHeader).map((line) => (
                     <div key={line.id} className="bg-black border border-[#222] rounded overflow-hidden">
                       <div className="text-[8px] font-mono text-[#555] p-1 bg-[#0a0a0a] border-b border-[#111] truncate">{line.text}</div>
                       <div className="flex h-10 relative bg-[#0a0a0a]">
@@ -1195,7 +904,7 @@ export default function Room04_Booth() {
               onTouchMove={() => setAutoScroll(false)} 
               className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12 text-gray-300 font-mono text-sm leading-loose relative"
             >
-              {lyricLines.map((line, i) => {
+              {quantizedLines.map((line, i) => {
                 if (line.isHeader) {
                     return <p key={i} className="lyric-line-container text-[#E60000] font-bold mt-8 mb-2 tracking-widest text-xs">{line.text}</p>;
                 }
@@ -1208,8 +917,8 @@ export default function Room04_Booth() {
                     
                     <span className="flex-1 leading-loose flex flex-wrap gap-y-2">
                       {(() => {
-                        const wordGroups: WordMapping[][] = [];
-                        let currentGroup: WordMapping[] = [];
+                        const wordGroups: QuantizedSyllable[][] = [];
+                        let currentGroup: QuantizedSyllable[] = [];
                         
                         line.words?.forEach(wObj => {
                           currentGroup.push(wObj);
@@ -1298,7 +1007,7 @@ export default function Room04_Booth() {
             <h4 className="text-[10px] uppercase font-bold text-[#888] tracking-widest mb-4 flex items-center gap-2"><ListMusic size={14} /> Timeline Layers</h4>
             <div className="space-y-3">
               {vocalStems.map(s => {
-                const isMuted = s.isMuted; // <-- SURGICAL FIX
+                const isMuted = s.isMuted; 
                 return (
                 <div key={s.id} className="bg-[#0a0a0a] border border-[#222] p-4 rounded group transition-all">
                   <div className="flex justify-between items-center mb-3">
