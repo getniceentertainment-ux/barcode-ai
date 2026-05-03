@@ -559,6 +559,7 @@ Output: ALL CAPS rewritten line ONLY.
         hook_type = job_input.get("hookType", "chant")
         flow_evolution = job_input.get("flowEvolution", "static")
         pocket = job_input.get("pocket", "standard")
+        strike_zone = job_input.get("strikeZone", "snare") # 🚨 GET STRIKE ZONE
         dynamic_array = job_input.get("dynamic_array", [2, 2, 2, 2, 2, 2, 2, 2])
         seconds_per_bar = (60.0 / bpm) * 4.0
 
@@ -579,8 +580,8 @@ Output: ALL CAPS rewritten line ONLY.
             start_bar = section.get("startBar", current_cumulative_bar)
             vault_max_syllables = section.get("maxSyllables", 10)
             vault_rhyme_scheme = section.get("rhymeScheme", "AABB")
+            pattern_array = section.get("patternArray", [2, 2, 2, 2])
             
-            # 🚨 THE CLEAN NOMENCLATURE: Determine current_energy right here
             base_energy = dynamic_array[index % len(dynamic_array)]
             current_energy = section.get("patternEnergy", base_energy)
             
@@ -604,7 +605,7 @@ Output: ALL CAPS rewritten line ONLY.
                     section_type=sec_type, bars=bars, 
                     max_syllables=vault_max_syllables, rhyme_scheme=vault_rhyme_scheme,
                     pattern_desc=section.get("patternDesc", "Std"), 
-                    pattern_array=section.get("patternArray", []), 
+                    pattern_array=pattern_array, 
                     pocket_instruction=pocket_instruction, prompt_topic=topic,
                     style=style, 
                     section_index=index, hook_type=hook_type, flow_evolution=flow_evolution,
@@ -613,15 +614,67 @@ Output: ALL CAPS rewritten line ONLY.
                 if "HOOK" in sec_type and saved_hook_payloads is None: saved_hook_payloads = section_payloads
                 if "VERSE" in sec_type: last_verse_context = "\n".join(section_payloads[-4:])
             
-            for i, line in enumerate(section_payloads):
-                line_time = (start_bar + i) * seconds_per_bar
-                final_lyrics += f"({int(line_time // 60)}:{int(line_time % 60):02d}) {line}\n"
-            
+            # --- 🚨 START THE SOVEREIGN PHYSICS ENGINE 🚨 ---
+            section_lines_with_math = []
+            for i, line_text in enumerate(section_payloads):
+                bar_start_time = (start_bar + i) * seconds_per_bar
+                final_lyrics += f"({int(bar_start_time // 60)}:{int(bar_start_time % 60):02d}) {line_text}\n"
+
+                # 1. Clean and tokenize
+                sanitized = line_text.replace('|', '').strip()
+                words = sanitized.split()
+                
+                # 2. Assign DNA steps and calculate total steps
+                line_steps = []
+                total_steps = 0
+                for w_idx, word in enumerate(words):
+                    # Use the anchor lock logic: last word gets last array element
+                    if w_idx == len(words) - 1:
+                        steps = pattern_array[-1] if pattern_array else 2
+                    else:
+                        steps = pattern_array[w_idx % (max(1, len(pattern_array)-1))] if pattern_array else 2
+                    line_steps.append(steps)
+                    total_steps += steps
+
+                # 3. Calculate Time-Per-Step and Raw Duration
+                time_per_step = seconds_per_bar / max(16, total_steps)
+                raw_duration = total_steps * time_per_step
+
+                # 4. Right-Align to Strike Zone
+                target_slot = 12 # Snare default
+                if strike_zone == "downbeat": target_slot = 16
+                elif strike_zone == "spillover" or pocket == "cascade": target_slot = 15
+                
+                target_time = (target_slot / 16) * seconds_per_bar
+                shift_offset = max(0, target_time - raw_duration)
+                
+                # 5. Map Words to Timeline
+                current_word_time = shift_offset
+                word_objects = []
+                for w_idx, word in enumerate(words):
+                    duration = line_steps[w_idx] * time_per_step
+                    # Calculate grid slot (0-15)
+                    slot = int((current_word_time / seconds_per_bar) * 16)
+                    
+                    word_objects.append({
+                        "word": word,
+                        "startTime": bar_start_time + current_word_time,
+                        "duration": duration,
+                        "slot": min(15, slot)
+                    })
+                    current_word_time += duration
+
+                section_lines_with_math.append({
+                    "text": line_text,
+                    "startTime": bar_start_time,
+                    "words": word_objects
+                })
+
             structured_blueprint_data.append({
                 "type": sec_type,
                 "bars": bars,
                 "startBar": start_bar,
-                "lines": section_payloads
+                "lines": section_lines_with_math # 🚨 NOW RETURNS OBJECTS, NOT STRINGS
             })
             current_cumulative_bar = start_bar + bars
 

@@ -339,7 +339,11 @@ export default function Room03_Ghostwriter() {
             clearInterval(pollInterval);
             setIsGenerating(false);
             
+            // 1. Extract the Raw Data from the AI Payload
             let rawLyrics = statusData.output.lyrics || "";
+            const rawMatrix = statusData.output.matrix || [];
+
+            // 2. Clean the lyrics for display (preserving timestamps if you want them visible)
             let cleanedLyrics = rawLyrics
               .replace(/\(pipe symbol.*?\)/gi, '') 
               .replace(/\|(?:\s*\|)+/g, '') 
@@ -348,9 +352,18 @@ export default function Room03_Ghostwriter() {
               .replace(/(\(\d+:\d{2}\)\s*)(?:\d+(?:st|nd|rd|th)? Line:|Line \d+:|Hook:|Verse:|Chorus:|Intro:|Outro:)\s*/gmi, '$1')
               .trim();
 
-            // 🚨 DIRECTLY UPDATE STORE ONLY! This immediately syncs the Booth timings!
+            // 3. 🚨 THE SOVEREIGN SYNC 🚨
+            // We update the Blueprint FIRST so the Store has the word-level math objects
+            if (rawMatrix.length > 0) {
+              setBlueprint(rawMatrix); 
+            }
+
+            // 4. Set the lyrics. Because we updated the Store, this will trigger 
+            // the new mapper and instantly populate Room 04.
             setGeneratedLyrics(cleanedLyrics);
-            if(addToast) addToast(`Lyrics Synthesized.`, "success");
+
+            if(addToast) addToast(`Neural Physics & Lyrics Synthesized.`, "success");
+
           } else if (statusData.status === 'FAILED') {
             clearInterval(pollInterval);
             setIsGenerating(false);
@@ -388,7 +401,9 @@ export default function Room03_Ghostwriter() {
           stageName: userSession?.stageName || "Unknown Artist",
           originalLine: selectedLine, 
           instruction: refineInstruction,
-          style: gwStyle 
+          style: gwStyle, // 🚨 FIXED: Added missing comma
+          strikeZone: gwStrikeZone,
+          pocket: gwPocket
         })
       });
 
@@ -396,14 +411,39 @@ export default function Room03_Ghostwriter() {
 
       const data = await res.json();
       
-      // 🚨 PUSH DIRECTLY TO STORE
+      // 1. Update the Raw String (for the text display)
       const updatedLyrics = generatedLyrics.replace(selectedLine, data.refinedLine);
-      setGeneratedLyrics(updatedLyrics);
       
+      // 2. 🚨 SOVEREIGN BLUEPRINT PATCH 🚨
+      const updatedBlueprint = blueprint.map((section: any) => {
+        if (!section.lines) return section;
+        
+        return {
+          ...section,
+          lines: section.lines.map((lineObj: any) => {
+            // Find the exact line we just refined
+            if (typeof lineObj === 'object' && lineObj.text.replace(/\|/g, '') === selectedLine.replace(/\|/g, '')) {
+              return {
+                ...lineObj,
+                text: data.refinedLine,
+                words: data.refinedWords || lineObj.words 
+              };
+            }
+            return lineObj;
+          })
+        };
+      });
+
+      // 3. Trigger the Store updates
+      setBlueprint(updatedBlueprint);
+      setGeneratedLyrics(updatedLyrics); 
+      
+      // 4. Reset UI States
       setRefineInstruction("");
       setSelectedLine("");
       if(addToast) addToast("Micro-refinement applied.", "success");
-      
+
+    // 🚨 FIXED: Restored the catch/finally blocks to close the function properly
     } catch (err: any) {
       if(addToast) addToast("Failed to refine line.", "error");
     } finally {
