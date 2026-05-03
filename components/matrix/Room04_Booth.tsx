@@ -248,7 +248,7 @@ export default function Room04_Booth() {
         }
       }
 
-      // 🚨 PASS 2: RENDER STRICTLY GATED BALLS
+      // 🚨 PASS 2: RENDER DECOUPLED BALLS & SPILLOVER
       for (let i = 0; i < quantizedLines.length; i++) {
         const line = quantizedLines[i];
         if (line.isHeader) continue;
@@ -258,6 +258,7 @@ export default function Room04_Booth() {
 
         const isActiveLine = i === activeScrollIndex;
 
+        // 1. The Red Line Background (Moves when the new line starts)
         if (isActiveLine) {
              lineNode.classList.add('bg-[#E60000]/10', 'border-[#E60000]');
              lineNode.classList.remove('border-transparent');
@@ -266,18 +267,23 @@ export default function Room04_Booth() {
              lineNode.classList.add('border-transparent');
         }
 
+        // 2. The Words & Balls (Completely decoupled from the line background)
         const chunks = lineNode.querySelectorAll('.syllable-chunk');
         line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             
-            const isWordInTimeRange = visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration;
+            // True lifespan of the word, including spillover!
+            const isWordInTimeRange = visualTime >= wObj.startTime && visualTime < (wObj.startTime + wObj.duration);
+            const isPastWord = visualTime >= (wObj.startTime + wObj.duration);
             
-            if (isActiveLine && isWordInTimeRange) {
+            if (isWordInTimeRange) {
+                // Ignite the word
                 chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
                 chunkNode.classList.remove('text-[#444]', 'text-[#888]');
                 
+                // Animate the single, massive bounce over the whole word
                 if (ballNode) {
                     ballNode.classList.remove('hidden');
                     let progress = Math.max(0, Math.min(1, (visualTime - wObj.startTime) / wObj.duration)); 
@@ -286,10 +292,11 @@ export default function Room04_Booth() {
                     ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
                 }
             } else {
-                if (visualTime >= wObj.startTime + wObj.duration) {
-                    chunkNode.classList.add('text-[#888]');
+                // Turn off the word
+                if (isPastWord) {
+                    chunkNode.classList.add('text-[#888]'); // Dimmed (Already sung)
                 } else {
-                    chunkNode.classList.add('text-[#444]');
+                    chunkNode.classList.add('text-[#444]'); // Standard (Upcoming)
                 }
                 chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
                 
@@ -933,32 +940,12 @@ export default function Room04_Booth() {
                     {line.timestamp && <span className="text-[9px] mt-1.5 shrink-0 text-[#555]">{line.timestamp}</span>}
                     
                     <span className="flex-1 leading-loose flex flex-wrap gap-y-2">
-                      {(() => {
-                        const wordGroups: QuantizedSyllable[][] = [];
-                        let currentGroup: QuantizedSyllable[] = [];
-                        
-                        line.words?.forEach(wObj => {
-                          currentGroup.push(wObj);
-                          if (wObj.isWordEnd) { 
-                            wordGroups.push(currentGroup); 
-                            currentGroup = []; 
-                          }
-                        });
-                        if (currentGroup.length > 0) wordGroups.push(currentGroup);
-
-                        return wordGroups.map((group, gIdx) => (
-                          <span key={gIdx} className="inline-flex whitespace-nowrap mr-2">
-                            {group.map((wObj, wIdx) => {
-                              return (
-                                <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100">
-                                  <span className="bouncing-ball hidden absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50"></span>
-                                  {wObj.word}
-                                </span>
-                              );
-                            })}
-                          </span>
-                        ));
-                      })()}
+                      {line.words?.map((wObj, wIdx) => (
+                        <span key={wIdx} className="syllable-chunk relative inline-block text-[#444] transition-colors duration-100 mr-2">
+                          <span className="bouncing-ball hidden absolute bottom-full mb-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E60000] rounded-full shadow-[0_0_8px_#E60000] z-50"></span>
+                          {wObj.word}
+                        </span>
+                      ))}
                     </span>
                   </div>
                 );
