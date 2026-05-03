@@ -438,77 +438,91 @@ export const useMatrixStore = create<MatrixState>()(
             else if (cleanTextEnd === ',') totalLineSteps += 1;
 
             const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
-            let localWordTime = currentFlowTime;
-            if (textLine.startsWith('...')) localWordTime += (4 * timePerStep);
+            // --- THE RIGHT-ALIGN PARADIGM ---
+                // 1. Calculate raw sequential timings (NO CLUMPING)
+                const rawWordsArray: { chunk: string, rawStartTime: number, duration: number, isWordEnd: boolean, isLastSyl: boolean }[] = [];
+                let rawTime = 0;
+                if (textLine.startsWith('...')) rawTime += (4 * timePerStep);
 
-            // 🚨 DEFINE THE GLOBAL STRIKE ZONE ANCHORS
-            const STRIKE_ZONES = {
-              SNARE_1: 4,  // Beat 2 (First Orange)
-              SNARE_2: 12, // Beat 4 (Second Orange/Rhyme Target)
-              DOWNBEAT: 0
-            };
+                let patternIndex = 0;
+                wordChunksArray.forEach((chunks, wordIdx) => {
+                  chunks.forEach((chunk, cIdx) => {
+                    const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
+                    patternIndex++;
+                    const chunkDuration = stepsRequired * timePerStep;
 
-            let patternIndex = 0;
-            wordChunksArray.forEach((chunks, wordIdx) => {
-              const isLastWord = wordIdx === wordChunksArray.length - 1;
+                    rawWordsArray.push({
+                      chunk,
+                      rawStartTime: rawTime,
+                      duration: chunkDuration,
+                      isWordEnd: (cIdx === chunks.length - 1),
+                      isLastSyl: (wordIdx === wordChunksArray.length - 1 && cIdx === chunks.length - 1)
+                    });
+                    rawTime += chunkDuration;
+                  });
+                });
 
-              chunks.forEach((chunk, cIdx) => {
-                const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
-                patternIndex++;
-                const chunkDuration = stepsRequired * timePerStep;
-                
-                // 2. Base Linear Slot (Visual Only)
-                let mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - currentFlowTime) / timeForLine) * 16)));
+                // 2. Determine the Target Strike Zone
+                let targetSlot = 12; // Snare (Beat 4)
+                if (state.gwStrikeZone === "downbeat") targetSlot = 16; // The 1-count of next bar
+                else if (state.gwStrikeZone === "spillover") targetSlot = 15; // The Drag
+                if (state.gwPocket === "cascade") targetSlot = 15; // Architect Synergy Override
 
-                // 3. STRIKE ZONE GRAVITY (For the Visual MIDI Grid Blocks Only)
-                if (isLastWord && (cIdx === chunks.length - 1)) {
-                    switch(state.gwStrikeZone) {
-                        case "snare": mappedSlot = 12; break;
-                        case "downbeat": mappedSlot = 0; break;
-                        case "spillover": mappedSlot = 15; break;
-                    }
+                const secondsPerSlot = timeForLine / 16;
+                const targetStartTime = targetSlot * secondsPerSlot;
+
+                // 3. Find the raw start time of the final rhyme syllable
+                const lastSyl = rawWordsArray.find(w => w.isLastSyl);
+                const lastWordRawStartTime = lastSyl ? lastSyl.rawStartTime : 0;
+
+                // 4. Calculate the phrase shift to Right-Align the rhyme to the Strike Zone
+                let shiftOffset = targetStartTime - lastWordRawStartTime;
+
+                // Protect against pushing the start of the line backwards into previous bars
+                if (shiftOffset < 0 && rawWordsArray.length > 0 && (rawWordsArray[0].rawStartTime + shiftOffset < 0)) {
+                    shiftOffset = -rawWordsArray[0].rawStartTime; 
                 }
 
-                if (state.gwPocket === "matrix_pivot" && mappedSlot > 2 && mappedSlot < 6) {
-                    mappedSlot = 4; 
-                }
+                // 5. Apply "The Drag" or "Chainlink" Pocket Offsets
+                if (state.gwPocket === "pickup") shiftOffset += 0.05; // Late Drag
+                if (state.gwPocket === "chainlink") shiftOffset -= 0.02; // Eager Push
 
-                // 🚨 4. RESTORE SEQUENTIAL TIMING (NO CLUMPING)
-                let finalStartTime = localWordTime;
+                // 6. Lock in the perfectly sequential, pocket-aligned times
+                rawWordsArray.forEach((w) => {
+                  const finalStartTime = currentFlowTime + w.rawStartTime + shiftOffset;
+                  
+                  // Visual MIDI grid slot mapping
+                  let mappedSlot = Math.min(15, Math.max(0, Math.floor(((finalStartTime - currentFlowTime) / timeForLine) * 16)));
+                  
+                  if (state.gwPocket === "matrix_pivot" && mappedSlot > 2 && mappedSlot < 6) {
+                      mappedSlot = 4;
+                  }
 
-                // Apply Pocket offset to the entire flow, preserving organic spacing
-                if (state.gwPocket === "pickup") {
-                    finalStartTime += 0.05; // Late Drag
-                } else if (state.gwPocket === "chainlink") {
-                    finalStartTime -= 0.02; // Eager Push
-                }
+                  mappedWords.push({
+                    id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+                    word: w.chunk.replace(/\|/g, ''),
+                    slot: mappedSlot,
+                    startTime: finalStartTime,
+                    duration: w.duration,
+                    isWordEnd: w.isWordEnd
+                  });
+                });
 
-                mappedWords.push({
-                  id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-                  word: chunk.replace(/\|/g, ''),
-                  slot: mappedSlot,
-                  startTime: finalStartTime, // Ball hits naturally
-                  duration: chunkDuration,   // Ball bounces organically
-                  isWordEnd: (cIdx === chunks.length - 1)
+                // 🚨 CRITICAL: Push the parsed line state BEFORE advancing the playhead
+                parsed.push({ 
+                  id: `line-${lineIdCounter++}`,
+                  barIndex: Math.floor(currentFlowTime / secondsPerBar),
+                  text: textLine.replace(/\|/g, ''), 
+                  originalText: textLine,
+                  startTime: currentFlowTime, 
+                  lineDuration: timeForLine, 
+                  isHeader: false, 
+                  timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
+                  words: mappedWords 
                 });
                 
-                // Advance the playhead sequentially so balls NEVER overlap
-                localWordTime += chunkDuration;
-              });
-            });
-
-            parsed.push({ 
-              id: `line-${lineIdCounter++}`,
-              barIndex: Math.floor(currentFlowTime / secondsPerBar),
-              text: textLine.replace(/\|/g, ''), 
-              originalText: textLine,
-              startTime: currentFlowTime, 
-              lineDuration: timeForLine, 
-              isHeader: false, 
-              timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
-              words: mappedWords 
-            });
-            currentFlowTime += timeForLine;
+                // Advance playhead cleanly for the next bar
+                currentFlowTime += timeForLine;
           });
         });
 

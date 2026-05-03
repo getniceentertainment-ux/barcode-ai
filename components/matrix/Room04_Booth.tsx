@@ -247,7 +247,7 @@ export default function Room04_Booth() {
 
         const highlightEnd = Math.max(realEndTime, nextRealStart === Infinity ? realEndTime + 2 : nextRealStart);
         if (visualTime >= realStartTime && visualTime < highlightEnd) {
-             activeScrollIndex = i; // The last overlapping line wins
+             activeScrollIndex = i; // The last overlapping line always wins the visual focus
         }
       }
 
@@ -261,7 +261,6 @@ export default function Room04_Booth() {
 
         const isActiveLine = i === activeScrollIndex;
 
-        // Line Highlight Gate
         if (isActiveLine) {
              lineNode.classList.add('bg-[#E60000]/10', 'border-[#E60000]');
              lineNode.classList.remove('border-transparent');
@@ -270,7 +269,6 @@ export default function Room04_Booth() {
              lineNode.classList.add('border-transparent');
         }
 
-        // Bouncing Ball Gate
         const chunks = lineNode.querySelectorAll('.syllable-chunk');
         line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
@@ -293,11 +291,10 @@ export default function Room04_Booth() {
             } else {
                 if (visualTime >= wObj.startTime + wObj.duration) {
                     chunkNode.classList.add('text-[#888]');
-                    chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
                 } else {
                     chunkNode.classList.add('text-[#444]');
-                    chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
                 }
+                chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
                 
                 if (ballNode) {
                     ballNode.classList.add('hidden');
