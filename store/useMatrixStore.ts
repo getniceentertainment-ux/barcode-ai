@@ -541,7 +541,25 @@ export const useMatrixStore = create<MatrixState>()(
           });
         });
 
+        // Save the math to the state
         set({ quantizedLines: parsed });
+
+        // --- 🟢 ENGINE MATH VERIFIER (Logs instantly regardless of Room) ---
+        if (parsed.length > 0) {
+          console.log("🟢 [BAR-CODE ENGINE] PHYSICS TIMELINE CALCULATED:");
+          const mathPayload = parsed
+            .filter(line => !line.isHeader)
+            .map(line => ({
+               Text: line.text,
+               Bar: line.barIndex,
+               Syllables: line.words?.map(w => ({
+                  Word: w.word,
+                  GridSlot: w.slot,
+                  StartTime: `${w.startTime.toFixed(3)}s`
+               }))
+            }));
+          console.log(JSON.stringify(mathPayload, null, 2));
+        }
       },
 
       // 🚨 SNAKING LOGIC GLOBAL SHIFT 🚨

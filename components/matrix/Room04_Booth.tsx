@@ -814,31 +814,6 @@ export default function Room04_Booth() {
     return () => { trimWavesurferRef.current?.destroy(); trimWavesurferRef.current = null; };
   }, [trimmingStem]);
 
-// --- THE MATH VERIFIER ---
-  useEffect(() => {
-    if (quantizedLines.length > 0) {
-      console.log("🟢 [BAR-CODE ENGINE] FINAL MATH PAYLOAD:");
-      
-      // Filter out headers to just see the raw syllable math
-      const mathPayload = quantizedLines
-        .filter(line => !line.isHeader)
-        .map(line => ({
-           Text: line.text,
-           BarIndex: line.barIndex,
-           LineDuration: `${line.lineDuration?.toFixed(3)}s`,
-           Syllables: line.words?.map(w => ({
-              Word: w.word,
-              GridSlot: w.slot,
-              StartTime: `${w.startTime.toFixed(3)}s`,
-              Duration: `${w.duration.toFixed(3)}s`
-           }))
-        }));
-        
-      console.table(mathPayload);
-      console.log(JSON.stringify(mathPayload, null, 2));
-    }
-  }, [quantizedLines]);
-
   if (!audioData) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-[#E60000] opacity-50">
