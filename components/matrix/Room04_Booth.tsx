@@ -261,39 +261,40 @@ export default function Room04_Booth() {
              lineNode.classList.add('border-transparent');
         }
 
-        // 🚨 2. INDEPENDENT WORD PROCESSING 🚨
-        // We process the balls and words REGARDLESS of the line background!
+        // 🚨 2. INDEPENDENT WORD PROCESSING (STRICT GATE) 🚨
+        // We strictly gate the ball rendering to the currently active line to prevent ghosting
+        const isActiveLine = i === activeScrollIndex;
         const chunks = lineNode.querySelectorAll('.syllable-chunk');
+        
         line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             
-            if (visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration) {
+            const isWordInTimeRange = visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration;
+            
+            if (isActiveLine && isWordInTimeRange) {
                 // Word is active!
                 chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
                 chunkNode.classList.remove('text-[#444]', 'text-[#888]');
                 
                 if (ballNode) {
                     ballNode.classList.remove('hidden');
-                    let progress = (visualTime - wObj.startTime) / wObj.duration;
-                    progress = Math.max(0, Math.min(1, progress)); 
+                    let progress = Math.max(0, Math.min(1, (visualTime - wObj.startTime) / wObj.duration)); 
                     const maxBounce = Math.min(16, wObj.duration * 50); 
                     const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
                     ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
                 }
-            } else if (visualTime >= wObj.startTime + wObj.duration) {
-                // Word is finished
-                chunkNode.classList.add('text-[#888]');
-                chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
-                if (ballNode) {
-                    ballNode.classList.add('hidden');
-                    ballNode.style.transform = `translateX(-50%) translateY(0px)`;
-                }
             } else {
-                // Word hasn't happened yet
-                chunkNode.classList.add('text-[#444]');
-                chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
+                // Word is either finished or hasn't happened yet
+                if (visualTime >= wObj.startTime + wObj.duration) {
+                    chunkNode.classList.add('text-[#888]');
+                    chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
+                } else {
+                    chunkNode.classList.add('text-[#444]');
+                    chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#888]');
+                }
+                
                 if (ballNode) {
                     ballNode.classList.add('hidden');
                     ballNode.style.transform = `translateX(-50%) translateY(0px)`;
