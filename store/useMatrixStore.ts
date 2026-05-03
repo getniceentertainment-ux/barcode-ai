@@ -451,44 +451,45 @@ export const useMatrixStore = create<MatrixState>()(
             let patternIndex = 0;
             wordChunksArray.forEach((chunks, wordIdx) => {
               const isLastWord = wordIdx === wordChunksArray.length - 1;
-              const isFirstWord = wordIdx === 0;
 
               chunks.forEach((chunk, cIdx) => {
                 const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
                 patternIndex++;
                 const chunkDuration = stepsRequired * timePerStep;
                 
-                // 1. Calculate the linear "natural" time-based slot (0-15)
+                // 1. Calculate linear slot
                 let mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - currentFlowTime) / timeForLine) * 16)));
 
                 // 2. VERSATILE STRIKE ZONE OVERRIDES
-                // We only override the "Rhyme Syllable" (last syllable of the line)
                 if (isLastWord && (cIdx === chunks.length - 1)) {
-                  if (state.gwStrikeZone === "snare") mappedSlot = 12; // Snap to Beat 4 Orange Cell
-                  else if (state.gwStrikeZone === "downbeat") mappedSlot = 0; // Snap to Beat 1 Kick
-                  else if (state.gwStrikeZone === "spillover") mappedSlot = 15; // Snap to the "16" count
+                  if (state.gwStrikeZone === "snare") mappedSlot = 12;
+                  else if (state.gwStrikeZone === "downbeat") mappedSlot = 0;
+                  else if (state.gwStrikeZone === "spillover") mappedSlot = 15;
                 }
 
-                // 3. VERSATILE POCKET PLACEMENT (SYNCOPATION)
-                // Matrix Pivot creates an internal hinge on the first Orange Cell (Beat 2)
                 if (state.gwPocket === "matrix_pivot" && mappedSlot > 2 && mappedSlot < 6) {
                     mappedSlot = 4; 
                 }
+
+                // 🚨 THE FIX: LOCK START TIME TO THE ACTUAL MIDI SLOT
+                // This ensures the ball peak matches the MIDI cell highlight exactly.
+                const secondsPerSlot = timeForLine / 16;
+                let finalStartTime = currentFlowTime + (mappedSlot * secondsPerSlot);
                 
-                // The Drag (Pickup) adds a slight mathematical offset to the trigger time
-                let finalStartTime = localWordTime;
+                // Apply "The Drag" offset only AFTER the slot-lock
                 if (state.gwPocket === "pickup" && (mappedSlot === 4 || mappedSlot === 12)) {
-                    finalStartTime += 0.05; // Physically push the audio 50ms behind the snare
+                    finalStartTime += 0.05; 
                 }
 
                 mappedWords.push({
                   id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
                   word: chunk.replace(/\|/g, ''),
                   slot: mappedSlot,
-                  startTime: finalStartTime,
+                  startTime: finalStartTime, // 🚨 Ball Peak is now Slot-Sync'd
                   duration: chunkDuration,
                   isWordEnd: (cIdx === chunks.length - 1)
                 });
+                
                 localWordTime += chunkDuration;
               });
             });
