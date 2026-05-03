@@ -258,7 +258,7 @@ export default function Room04_Booth() {
 
         const isActiveLine = i === activeScrollIndex;
 
-        // 1. The Red Line Background (Moves when the new line starts)
+        // 1. Line Background (Independent of word bleed)
         if (isActiveLine) {
              lineNode.classList.add('bg-[#E60000]/10', 'border-[#E60000]');
              lineNode.classList.remove('border-transparent');
@@ -267,37 +267,33 @@ export default function Room04_Booth() {
              lineNode.classList.add('border-transparent');
         }
 
-        // 2. The Words & Balls (Completely decoupled from the line background)
+        // 2. The Words & Balls (Decoupled from line background to allow spillover)
         const chunks = lineNode.querySelectorAll('.syllable-chunk');
         line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             
-            // True lifespan of the word, including spillover!
+            // True lifespan of the word, including spillover into the next bar!
             const isWordInTimeRange = visualTime >= wObj.startTime && visualTime < (wObj.startTime + wObj.duration);
             const isPastWord = visualTime >= (wObj.startTime + wObj.duration);
             
             if (isWordInTimeRange) {
-                // Ignite the word
                 chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
                 chunkNode.classList.remove('text-[#444]', 'text-[#888]');
                 
-                // Animate the single, massive bounce over the whole word
                 if (ballNode) {
                     ballNode.classList.remove('hidden');
+                    // Huge parabolic bounce over the entire word duration
                     let progress = Math.max(0, Math.min(1, (visualTime - wObj.startTime) / wObj.duration)); 
                     const maxBounce = Math.min(16, wObj.duration * 50); 
                     const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
                     ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
                 }
             } else {
-                // Turn off the word
-                if (isPastWord) {
-                    chunkNode.classList.add('text-[#888]'); // Dimmed (Already sung)
-                } else {
-                    chunkNode.classList.add('text-[#444]'); // Standard (Upcoming)
-                }
+                if (isPastWord) chunkNode.classList.add('text-[#888]'); // Already sung
+                else chunkNode.classList.add('text-[#444]'); // Upcoming
+                
                 chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
                 
                 if (ballNode) {

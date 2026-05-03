@@ -317,21 +317,20 @@ export const useMatrixStore = create<MatrixState>()(
 
       setQuantizedLines: (lines) => set({ quantizedLines: lines }), 
 
-      // 🚨 REACTIVE TIMING SETTERS 🚨
+      // 🚨 STREAMLINED TIMING SETTERS 🚨
       setAudioData: (data) => {
         set({ audioData: data });
         saveAudioToDisk('matrix_audio_data', data);
-        get().calculateQuantizedTimeline();
       },
 
       setGeneratedLyrics: (lyrics) => {
         set({ generatedLyrics: lyrics });
+        // The only trigger needed: maps the AI's math to the UI
         get().calculateQuantizedTimeline();
       },
 
       setBlueprint: (blueprint) => {
         set({ blueprint });
-        get().calculateQuantizedTimeline();
       },
 
       setGwStyle: (s) => {
@@ -353,195 +352,48 @@ export const useMatrixStore = create<MatrixState>()(
 
       // 🚨 THE SINGLE SOURCE OF TIMING MATH 🚨
       calculateQuantizedTimeline: () => {
-        const state = get();
-        const { generatedLyrics, audioData, blueprint, gwStyle } = state;
-        
-        if (!generatedLyrics || !audioData || !blueprint || blueprint.length === 0) return;
-
-        const trackDuration = (audioData as any).duration || 128;
-        const actualBeatBars = audioData.totalBars || Math.round((trackDuration / 60) * (audioData.bpm || 120) / 4);
-        const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / (audioData.bpm || 120)) * 4;
-
-        const rawLines = generatedLyrics.split('\n');
-        const llmPools: Record<string, string[]> = { HOOK: [], VERSE: [], INTRO: [], OUTRO: [] };
-        let activePoolHeader = "";
-
-        rawLines.forEach(line => {
-          const trimmed = line.trim();
-          if (trimmed.startsWith('[') && trimmed.includes(']')) {
-            activePoolHeader = trimmed.split(' ')[0].replace(/[^A-Z]/g, '');
-            if (!llmPools[activePoolHeader]) llmPools[activePoolHeader] = [];
-          } else if (activePoolHeader && trimmed.length > 0) {
-            let cleanLine = trimmed.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
-            if (cleanLine.match(/^(Written:|Vocal:|Bars:|Total:|Vocal Cadence:)/i)) return;
-            cleanLine = cleanLine.replace(/^(?:[A-Z][,:\)]|\s*\[[A-Z]\]\s*|(?:Verse|Hook|Chorus)[^:]*:)\s*/i, '');
-            cleanLine = cleanLine.replace(/\s+[A-Z][,;.]*$/i, ''); 
-            if (cleanLine && cleanLine !== "[Instrumental Break]") {
-              llmPools[activePoolHeader].push(cleanLine);
-            }
-          }
-        });
+        const { blueprint, audioData } = get();
+        if (!blueprint || blueprint.length === 0 || !audioData) return;
 
         const parsed: QuantizedLine[] = [];
         let lineIdCounter = 0;
-        const poolPointers: Record<string, number> = { HOOK: 0, VERSE: 0, INTRO: 0, OUTRO: 0 };
+        const secondsPerBar = (60 / audioData.bpm) * 4;
 
-        blueprint.forEach((bp, index) => {
-          const blockStartBar = (bp as any).startBar !== undefined ? (bp as any).startBar : (index * 8);
-          const bars = bp.bars || 8;
-          const blockDurationSecs = bars * secondsPerBar;
-          const blockStartTime = blockStartBar * secondsPerBar;
-
+        blueprint.forEach((section: any) => {
+          // Add Section Header
           parsed.push({ 
-            id: `hdr-${lineIdCounter++}`, barIndex: blockStartBar, text: `[${bp.type}]`, 
-            originalText: `[${bp.type}]`, startTime: blockStartTime, isHeader: true, words: [] 
+            id: `hdr-${lineIdCounter++}`, 
+            barIndex: section.startBar, 
+            text: `[${section.type}]`, 
+            originalText: `[${section.type}]`, 
+            startTime: section.startBar * secondsPerBar, 
+            isHeader: true, 
+            words: [] 
           });
 
-          let linesForThisBlock: string[] = [];
-          if (bp.type === "INSTRUMENTAL") {
-            linesForThisBlock = Array(bars).fill("Mmm. Mmm.");
-          } else {
-            const currentPool = llmPools[bp.type] || [];
-            const pointer = poolPointers[bp.type] || 0;
-            linesForThisBlock = currentPool.slice(pointer, pointer + bp.bars);
-            poolPointers[bp.type] = pointer + linesForThisBlock.length;
-            if (linesForThisBlock.length === 0) linesForThisBlock = ["(Empty Section Cache)"];
-          }
-
-          const timeForLine = blockDurationSecs / linesForThisBlock.length;
-          let currentFlowTime = blockStartTime;
-
-          const activeVariations = FLOW_VAULT[gwStyle] || FLOW_VAULT["getnice_hybrid"];
-          const currentVaultObject = activeVariations[index % activeVariations.length];
-          const activePattern = (bp as any).patternArray?.length > 0 ? (bp as any).patternArray : currentVaultObject.array;
-
-          linesForThisBlock.forEach((textLine) => {
-            const sanitizedLine = textLine.replace(/\s*\|\s*/g, ' ').trim();
-            const rawWords = sanitizedLine.split(/\s+/).filter(w => w.length > 0);
-            const mappedWords: QuantizedSyllable[] = [];
-            let totalLineSteps = 0;
-
-            if (sanitizedLine.startsWith('...')) totalLineSteps += 4;
-
-            const wordChunksArray = rawWords.map((w) => chunkWordForVisuals(w));
-
-            const cleanTextEnd = sanitizedLine.slice(-1);
-            if (cleanTextEnd === '.') totalLineSteps += 4;
-            else if (cleanTextEnd === ',') totalLineSteps += 1;
-
-            const rawWordsArray: { chunk: string, rawStartTime: number, duration: number, isWordEnd: boolean, isLastSyl: boolean }[] = [];
-            let rawTime = 0;
-
-            let patternIndex = 0;
-            wordChunksArray.forEach((chunks, wordIdx) => {
-              chunks.forEach((chunk, cIdx) => {
-                const isLastSyl = (wordIdx === wordChunksArray.length - 1) && (cIdx === chunks.length - 1);
-                let stepsRequired;
-                if (isLastSyl) {
-                    stepsRequired = Number(activePattern[activePattern.length - 1]) || 2;
-                } else {
-                    const loopableLength = Math.max(1, activePattern.length - 1);
-                    stepsRequired = Number(activePattern[patternIndex % loopableLength]) || 2;
-                    patternIndex++;
-                }
-                totalLineSteps += stepsRequired;
-              });
-            });
-
-            const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
-            if (sanitizedLine.startsWith('...')) rawTime += (4 * timePerStep);
-
-            patternIndex = 0; 
-            wordChunksArray.forEach((chunks, wordIdx) => {
-              chunks.forEach((chunk, cIdx) => {
-                const isLastSyl = (wordIdx === wordChunksArray.length - 1) && (cIdx === chunks.length - 1);
-                let stepsRequired;
-                if (isLastSyl) {
-                    stepsRequired = Number(activePattern[activePattern.length - 1]) || 2;
-                } else {
-                    const loopableLength = Math.max(1, activePattern.length - 1);
-                    stepsRequired = Number(activePattern[patternIndex % loopableLength]) || 2;
-                    patternIndex++;
-                }
-
-                const chunkDuration = stepsRequired * timePerStep;
-
-                rawWordsArray.push({
-                  chunk,
-                  rawStartTime: rawTime,
-                  duration: chunkDuration,
-                  isWordEnd: (cIdx === chunks.length - 1),
-                  isLastSyl: isLastSyl
+          if (section.lines && Array.isArray(section.lines)) {
+            section.lines.forEach((lineObj: any) => {
+              // AUTHORITY: Map pre-calculated word objects from Python
+              if (typeof lineObj === 'object' && lineObj.words) {
+                parsed.push({
+                  id: `line-${lineIdCounter++}`,
+                  barIndex: Math.floor(lineObj.startTime / secondsPerBar),
+                  text: lineObj.text.replace(/\|/g, ''), 
+                  originalText: lineObj.text,
+                  startTime: lineObj.startTime,
+                  lineDuration: secondsPerBar,
+                  isHeader: false,
+                  timestamp: `(${Math.floor(lineObj.startTime / 60)}:${Math.floor(lineObj.startTime % 60).toString().padStart(2, '0')})`,
+                  words: lineObj.words.map((w: any) => ({
+                    ...w,
+                    id: w.id || `syl-${Math.random().toString(36).substr(2, 9)}`
+                  }))
                 });
-                rawTime += chunkDuration;
-              });
-            });
-
-            let targetSlot = 12; 
-            if (state.gwStrikeZone === "downbeat") targetSlot = 16; 
-            else if (state.gwStrikeZone === "spillover") targetSlot = 15; 
-            if (state.gwPocket === "cascade") targetSlot = 15; 
-
-            const secondsPerSlot = timeForLine / 16;
-            const targetStartTime = targetSlot * secondsPerSlot;
-
-            const lastSyl = rawWordsArray.find(w => w.isLastSyl);
-            const lastWordRawStartTime = lastSyl ? lastSyl.rawStartTime : 0;
-
-            let shiftOffset = targetStartTime - lastWordRawStartTime;
-            let compressionScale = 1.0;
-
-            if (shiftOffset < 0 && rawWordsArray.length > 0 && (rawWordsArray[0].rawStartTime + shiftOffset < 0)) {
-                const requiredDuration = targetStartTime; 
-                const actualDuration = lastWordRawStartTime;
-                if (actualDuration > requiredDuration) {
-                    compressionScale = requiredDuration / actualDuration;
-                    shiftOffset = 0; 
-                } else {
-                    shiftOffset = -rawWordsArray[0].rawStartTime;
-                }
-            }
-
-            if (state.gwPocket === "pickup") shiftOffset += 0.05; 
-            if (state.gwPocket === "chainlink") shiftOffset -= 0.02; 
-
-            rawWordsArray.forEach((w) => {
-              const finalStartTime = currentFlowTime + (w.rawStartTime * compressionScale) + shiftOffset;
-              const scaledDuration = w.duration * compressionScale;
-              
-              let mappedSlot = Math.min(15, Math.max(0, Math.floor(((finalStartTime - currentFlowTime) / timeForLine) * 16)));
-              
-              if (state.gwPocket === "matrix_pivot" && mappedSlot > 2 && mappedSlot < 6) {
-                  mappedSlot = 4;
               }
-
-              mappedWords.push({
-                id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-                word: w.chunk.replace(/\|/g, ''),
-                slot: mappedSlot,
-                startTime: finalStartTime,
-                duration: scaledDuration,
-                isWordEnd: w.isWordEnd
-              });
             });
-
-            parsed.push({ 
-              id: `line-${lineIdCounter++}`,
-              barIndex: Math.floor(currentFlowTime / secondsPerBar),
-              text: textLine.replace(/\|/g, ''), 
-              originalText: textLine,
-              startTime: currentFlowTime, 
-              lineDuration: timeForLine, 
-              isHeader: false, 
-              timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
-              words: mappedWords 
-            });
-            
-            currentFlowTime += timeForLine;
-          });
+          }
         });
 
-        // Save the math to the state
         set({ quantizedLines: parsed });
 
         // --- 🟢 ENGINE MATH VERIFIER (Logs instantly regardless of Room) ---
@@ -565,9 +417,8 @@ export const useMatrixStore = create<MatrixState>()(
       // 🚨 SNAKING LOGIC GLOBAL SHIFT 🚨
       shiftWord: (lineId, syllableId, delta) => {
         set((state) => {
-          const trackDuration = (state.audioData as any)?.duration || 128;
-          const actualBeatBars = state.audioData?.totalBars || Math.round((trackDuration / 60) * (state.audioData?.bpm || 120) / 4);
-          const secondsPerBar = trackDuration > 0 ? (trackDuration / actualBeatBars) : (60 / (state.audioData?.bpm || 120)) * 4;
+          const bpm = state.audioData?.bpm || 120;
+          const secondsPerBar = (60 / bpm) * 4;
           const secondsPerSlot = secondsPerBar / 16;
 
           const newLines = state.quantizedLines.map(line => {
@@ -577,7 +428,6 @@ export const useMatrixStore = create<MatrixState>()(
 
               const newWords = [...line.words];
 
-              // Snake the target word and all words following it in the same line
               for (let i = targetIndex; i < newWords.length; i++) {
                 let newSlot = newWords[i].slot + delta;
                 newSlot = Math.max(0, Math.min(15, newSlot)); 
@@ -585,6 +435,7 @@ export const useMatrixStore = create<MatrixState>()(
                 newWords[i] = {
                   ...newWords[i],
                   slot: newSlot,
+                  // Physics Update: The Ball now hits the new manual slot
                   startTime: (line.barIndex * secondsPerBar) + (newSlot * secondsPerSlot)
                 };
               }
