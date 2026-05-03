@@ -482,27 +482,42 @@ export default function Room04_Booth() {
           if (!mappedWords || mappedWords.length === 0) continue;
 
           const ttsDuration = audioBuffer.duration;
-          const mathLineDuration = line.lineDuration || 2;
-          const firstWordOffset = mappedWords[0].startTime - line.startTime;
+          
+          // 🚨 TEXT-BASED AUDIO EXTRACTION 🚨
+          // We must decouple the Audio Slicing from the Musical Timing.
+          // TTS speaks linearly, so we extract based on character count, not the syncopated pocket.
+          const cleanWords = mappedWords.filter(w => w.word.trim().length > 0);
+          const totalChars = cleanWords.reduce((sum, w) => sum + w.word.length, 0);
+          let cumulativeChars = 0;
 
-          mappedWords.forEach((wObj, wIdx) => {
-            if (!wObj.word.trim()) return;
-
-            const isLastWord = wIdx === mappedWords.length - 1;
+          cleanWords.forEach((wObj, wIdx) => {
+            const isLastWord = wIdx === cleanWords.length - 1;
             const isEveryOtherLine = i % 2 !== 0; 
-            const tailBleed = isLastWord ? 1.0 : 0.35; 
+            const tailBleed = isLastWord ? 0.6 : 0.15; 
 
-            const relativeWordStart = (wObj.startTime - line.startTime) - firstWordOffset;
-            const ttsOffset = Math.max(0, (relativeWordStart / mathLineDuration) * ttsDuration);
-            const ttsWordDuration = (wObj.duration / mathLineDuration) * ttsDuration;
+            // 1. Find exactly where this word lives in the raw TTS audio file
+            const charStartRatio = cumulativeChars / totalChars;
+            const charEndRatio = (cumulativeChars + wObj.word.length) / totalChars;
+            
+            const ttsOffset = Math.max(0, charStartRatio * ttsDuration);
+            const ttsWordDuration = (charEndRatio - charStartRatio) * ttsDuration;
+
+            // Advance the character index for the next loop
+            cumulativeChars += wObj.word.length;
 
             const safeExtractDuration = Math.min(ttsWordDuration + tailBleed, ttsDuration - ttsOffset);
 
             const source = offlineCtx.createBufferSource();
             source.buffer = audioBuffer;
-            source.playbackRate.value = 1.0; 
+            
+            // 🚨 THE POCKET STRETCH 🚨
+            // Warp the TTS audio slice to fit the AI's exact musical duration
+            const idealRate = ttsWordDuration / Math.max(wObj.duration, 0.1);
+            source.playbackRate.value = Math.max(0.65, Math.min(idealRate, 1.6)); // Cap to prevent demon/chipmunk voices
 
             const gainNode = offlineCtx.createGain();
+            
+            // 2. Schedule the audio exactly on the mathematical zero-point
             gainNode.gain.setValueAtTime(0, wObj.startTime);
             gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.02); 
             gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
@@ -515,6 +530,7 @@ export default function Room04_Booth() {
             }
             
             gainNode.connect(offlineCtx.destination);
+            
             source.start(wObj.startTime, ttsOffset, safeExtractDuration);
           });
 
