@@ -406,10 +406,10 @@ Output ONLY the final {bars} lines now.
         allowed_words = []
         current_syls = 0
         
-        if current_style == "lazy": buffer_limit = max_syllables + 2  
-        elif current_style == "triplet": buffer_limit = max_syllables + 2  
-        elif current_style == "chopper": buffer_limit = max_syllables + 2  
-        else: buffer_limit = max_syllables + 2  
+        if current_style == "lazy": buffer_limit = max_syllables + 3  
+        elif current_style == "triplet": buffer_limit = max_syllables + 3  
+        elif current_style == "chopper": buffer_limit = max_syllables + 3  
+        else: buffer_limit = max_syllables + 3  
         
         for w in reversed(words_in_line):
             syls = count_syllables(w)
@@ -422,9 +422,8 @@ Output ONLY the final {bars} lines now.
         if len(allowed_words) == 0:
             continue
 
-        if "SYNCOPATION (PICKUP)" in pocket_instruction:
-            allowed_words[0] = "..." + allowed_words[0]
-        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
+       # 🚨 THE ... HACK IS DEAD. Absolute grid slots handle the UI padding now.
+        if "SYNCOPATION (CHAIN-LINK)" in pocket_instruction:
             allowed_words[-1] = allowed_words[-1] + ","
         elif "period" in pocket_instruction:
             allowed_words[-1] = allowed_words[-1] + "."
@@ -495,9 +494,8 @@ Output ONLY the final {bars} lines now.
             mid = max(1, len(fallback_words) // 2)
             safe_line = " ".join(fallback_words[:mid]) + " | " + " ".join(fallback_words[mid:])
 
-        if "SYNCOPATION (PICKUP)" in pocket_instruction and not safe_line.startswith("...|"):
-            safe_line = safe_line.replace("| ", "| ...")
-        elif "SYNCOPATION (CHAIN-LINK)" in pocket_instruction and not safe_line.endswith(", |"):
+        # 🚨 THE ... HACK IS DEAD.
+        if "SYNCOPATION (CHAIN-LINK)" in pocket_instruction and not safe_line.endswith(", |"):
             safe_line = safe_line.replace(" |", ", |")
         elif "period" in pocket_instruction and not safe_line.endswith(". |"):
             safe_line = safe_line.replace(" |", ". |")
