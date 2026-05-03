@@ -223,27 +223,34 @@ export default function Room04_Booth() {
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
       
-      // 🚨 PASS 1: FIND THE SINGLE ACTIVE LINE
+      // 🚨 PASS 1: FIND THE SINGLE ACTIVE LINE (ABSOLUTE GATING)
       let activeScrollIndex = -1;
       for (let i = 0; i < quantizedLines.length; i++) {
         const line = quantizedLines[i];
         if (line.isHeader) continue;
 
         let realStartTime = line.startTime;
-        let realEndTime = line.startTime + (line.lineDuration || 2);
         if (line.words && line.words.length > 0) {
             realStartTime = Math.min(...line.words.map(w => w.startTime));
-            realEndTime = Math.max(...line.words.map(w => w.startTime + w.duration));
         }
 
-        let nextRealStart = Infinity;
+        // --- FIX 4: ABSOLUTE GATING ---
+        // Find the precise start time of the NEXT line to create a hard boundary
+        let hardBoundary = Infinity;
         for (let j = i + 1; j < quantizedLines.length; j++) {
             const nLine = quantizedLines[j];
             if (!nLine.isHeader && nLine.words && nLine.words.length > 0) {
-                nextRealStart = Math.min(...nLine.words.map(w => w.startTime));
+                hardBoundary = Math.min(...nLine.words.map(w => w.startTime));
                 break;
             }
         }
+
+        // The line is ONLY active from its first word until the exact start of the next line
+        if (visualTime >= realStartTime && visualTime < hardBoundary) {
+             activeScrollIndex = i; // The last overlapping line rule is dead. First strict match wins.
+             break;
+        }
+      }
 
         const highlightEnd = Math.max(realEndTime, nextRealStart === Infinity ? realEndTime + 2 : nextRealStart);
         if (visualTime >= realStartTime && visualTime < highlightEnd) {

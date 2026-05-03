@@ -415,98 +415,130 @@ export const useMatrixStore = create<MatrixState>()(
           const currentVaultObject = activeVariations[index % activeVariations.length];
           const activePattern = (bp as any).patternArray?.length > 0 ? (bp as any).patternArray : currentVaultObject.array;
 
-          linesForThisBlock.forEach((textLine) => {
-            const rawWords = textLine.split(/\s+/).filter(w => w.length > 0);
-            const mappedWords: QuantizedSyllable[] = [];
-            let totalLineSteps = 0;
-            let tempPatternIndex = 0;
+          // --- FIX 1: THE PIPE ASSASSIN ---
+// Strip isolated pipes and their surrounding spaces BEFORE splitting into words
+const sanitizedLine = textLine.replace(/\s*\|\s*/g, ' ').trim();
+const rawWords = sanitizedLine.split(/\s+/).filter(w => w.length > 0);
+const mappedWords: QuantizedSyllable[] = [];
+let totalLineSteps = 0;
 
-            if (textLine.startsWith('...')) totalLineSteps += 4;
-            
-            const wordChunksArray = rawWords.map(w => {
-              const chunks = w.includes('|') ? w.split('|').filter(c => c.length > 0) : chunkWordForVisuals(w);
-              chunks.forEach(() => {
-                const stepVal = Number(activePattern[tempPatternIndex % activePattern.length]);
-                totalLineSteps += isNaN(stepVal) ? 2 : stepVal;
-                tempPatternIndex++;
-              });
-              return chunks;
-            });
+if (sanitizedLine.startsWith('...')) totalLineSteps += 4;
 
-            const cleanTextEnd = textLine.slice(-1);
-            if (cleanTextEnd === '.') totalLineSteps += 4;
-            else if (cleanTextEnd === ',') totalLineSteps += 1;
+const wordChunksArray = rawWords.map((w) => chunkWordForVisuals(w));
 
-            const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
-            // --- THE RIGHT-ALIGN PARADIGM ---
-                // 1. Calculate raw sequential timings (NO CLUMPING)
-                const rawWordsArray: { chunk: string, rawStartTime: number, duration: number, isWordEnd: boolean, isLastSyl: boolean }[] = [];
-                let rawTime = 0;
-                if (textLine.startsWith('...')) rawTime += (4 * timePerStep);
+const cleanTextEnd = sanitizedLine.slice(-1);
+if (cleanTextEnd === '.') totalLineSteps += 4;
+else if (cleanTextEnd === ',') totalLineSteps += 1;
 
-                let patternIndex = 0;
-                wordChunksArray.forEach((chunks, wordIdx) => {
-                  chunks.forEach((chunk, cIdx) => {
-                    const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
-                    patternIndex++;
-                    const chunkDuration = stepsRequired * timePerStep;
+// --- THE RIGHT-ALIGN PARADIGM ---
+// 1. Calculate raw sequential timings (NO CLUMPING)
+const rawWordsArray: { chunk: string, rawStartTime: number, duration: number, isWordEnd: boolean, isLastSyl: boolean }[] = [];
+let rawTime = 0;
 
-                    rawWordsArray.push({
-                      chunk,
-                      rawStartTime: rawTime,
-                      duration: chunkDuration,
-                      isWordEnd: (cIdx === chunks.length - 1),
-                      isLastSyl: (wordIdx === wordChunksArray.length - 1 && cIdx === chunks.length - 1)
-                    });
-                    rawTime += chunkDuration;
-                  });
-                });
+let patternIndex = 0;
+wordChunksArray.forEach((chunks, wordIdx) => {
+  chunks.forEach((chunk, cIdx) => {
+    const isLastSyl = (wordIdx === wordChunksArray.length - 1) && (cIdx === chunks.length - 1);
+    
+    // --- FIX 2: THE ANCHOR LOCK ---
+    let stepsRequired;
+    if (isLastSyl) {
+        // Force the Anchor: The final syllable ALWAYS gets the final DNA step
+        stepsRequired = Number(activePattern[activePattern.length - 1]) || 2;
+    } else {
+        // Loop the rest of the array, reserving the final step
+        const loopableLength = Math.max(1, activePattern.length - 1);
+        stepsRequired = Number(activePattern[patternIndex % loopableLength]) || 2;
+        patternIndex++;
+    }
+    
+    totalLineSteps += stepsRequired;
+  });
+});
 
-                // 2. Determine the Target Strike Zone
-                let targetSlot = 12; // Snare (Beat 4)
-                if (state.gwStrikeZone === "downbeat") targetSlot = 16; // The 1-count of next bar
-                else if (state.gwStrikeZone === "spillover") targetSlot = 15; // The Drag
-                if (state.gwPocket === "cascade") targetSlot = 15; // Architect Synergy Override
+const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
+if (sanitizedLine.startsWith('...')) rawTime += (4 * timePerStep);
 
-                const secondsPerSlot = timeForLine / 16;
-                const targetStartTime = targetSlot * secondsPerSlot;
+patternIndex = 0; // Reset for actual duration assignment
+wordChunksArray.forEach((chunks, wordIdx) => {
+  chunks.forEach((chunk, cIdx) => {
+    const isLastSyl = (wordIdx === wordChunksArray.length - 1) && (cIdx === chunks.length - 1);
+    let stepsRequired;
+    if (isLastSyl) {
+        stepsRequired = Number(activePattern[activePattern.length - 1]) || 2;
+    } else {
+        const loopableLength = Math.max(1, activePattern.length - 1);
+        stepsRequired = Number(activePattern[patternIndex % loopableLength]) || 2;
+        patternIndex++;
+    }
 
-                // 3. Find the raw start time of the final rhyme syllable
-                const lastSyl = rawWordsArray.find(w => w.isLastSyl);
-                const lastWordRawStartTime = lastSyl ? lastSyl.rawStartTime : 0;
+    const chunkDuration = stepsRequired * timePerStep;
 
-                // 4. Calculate the phrase shift to Right-Align the rhyme to the Strike Zone
-                let shiftOffset = targetStartTime - lastWordRawStartTime;
+    rawWordsArray.push({
+      chunk,
+      rawStartTime: rawTime,
+      duration: chunkDuration,
+      isWordEnd: (cIdx === chunks.length - 1),
+      isLastSyl: isLastSyl
+    });
+    rawTime += chunkDuration;
+  });
+});
 
-                // Protect against pushing the start of the line backwards into previous bars
-                if (shiftOffset < 0 && rawWordsArray.length > 0 && (rawWordsArray[0].rawStartTime + shiftOffset < 0)) {
-                    shiftOffset = -rawWordsArray[0].rawStartTime; 
-                }
+// 2. Determine the Target Strike Zone
+let targetSlot = 12; // Snare (Beat 4)
+if (state.gwStrikeZone === "downbeat") targetSlot = 16; 
+else if (state.gwStrikeZone === "spillover") targetSlot = 15; 
+if (state.gwPocket === "cascade") targetSlot = 15; 
 
-                // 5. Apply "The Drag" or "Chainlink" Pocket Offsets
-                if (state.gwPocket === "pickup") shiftOffset += 0.05; // Late Drag
-                if (state.gwPocket === "chainlink") shiftOffset -= 0.02; // Eager Push
+const secondsPerSlot = timeForLine / 16;
+const targetStartTime = targetSlot * secondsPerSlot;
 
-                // 6. Lock in the perfectly sequential, pocket-aligned times
-                rawWordsArray.forEach((w) => {
-                  const finalStartTime = currentFlowTime + w.rawStartTime + shiftOffset;
-                  
-                  // Visual MIDI grid slot mapping
-                  let mappedSlot = Math.min(15, Math.max(0, Math.floor(((finalStartTime - currentFlowTime) / timeForLine) * 16)));
-                  
-                  if (state.gwPocket === "matrix_pivot" && mappedSlot > 2 && mappedSlot < 6) {
-                      mappedSlot = 4;
-                  }
+// 3. Find the raw start time of the final rhyme syllable
+const lastSyl = rawWordsArray.find(w => w.isLastSyl);
+const lastWordRawStartTime = lastSyl ? lastSyl.rawStartTime : 0;
 
-                  mappedWords.push({
-                    id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-                    word: w.chunk.replace(/\|/g, ''),
-                    slot: mappedSlot,
-                    startTime: finalStartTime,
-                    duration: w.duration,
-                    isWordEnd: w.isWordEnd
-                  });
-                });
+// 4. Calculate the phrase shift to Right-Align the rhyme to the Strike Zone
+let shiftOffset = targetStartTime - lastWordRawStartTime;
+let compressionScale = 1.0;
+
+// --- FIX 3: TIME-WARP PROTECTION (COMPRESSION) ---
+if (shiftOffset < 0 && rawWordsArray.length > 0 && (rawWordsArray[0].rawStartTime + shiftOffset < 0)) {
+    // Instead of missing the snare, we compress the spacing of the words to make it fit
+    const requiredDuration = targetStartTime; 
+    const actualDuration = lastWordRawStartTime;
+    if (actualDuration > requiredDuration) {
+        compressionScale = requiredDuration / actualDuration;
+        shiftOffset = 0; // Reset offset because we are scaling instead
+    } else {
+        shiftOffset = -rawWordsArray[0].rawStartTime; // Fallback
+    }
+}
+
+// 5. Apply "The Drag" or "Chainlink" Pocket Offsets
+if (state.gwPocket === "pickup") shiftOffset += 0.05; 
+if (state.gwPocket === "chainlink") shiftOffset -= 0.02; 
+
+// 6. Lock in the perfectly sequential, pocket-aligned times WITH compression support
+rawWordsArray.forEach((w) => {
+  const finalStartTime = currentFlowTime + (w.rawStartTime * compressionScale) + shiftOffset;
+  const scaledDuration = w.duration * compressionScale;
+  
+  let mappedSlot = Math.min(15, Math.max(0, Math.floor(((finalStartTime - currentFlowTime) / timeForLine) * 16)));
+  
+  if (state.gwPocket === "matrix_pivot" && mappedSlot > 2 && mappedSlot < 6) {
+      mappedSlot = 4;
+  }
+
+  mappedWords.push({
+    id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+    word: w.chunk.replace(/\|/g, ''),
+    slot: mappedSlot,
+    startTime: finalStartTime,
+    duration: scaledDuration,
+    isWordEnd: w.isWordEnd
+  });
+});
 
                 // 🚨 CRITICAL: Push the parsed line state BEFORE advancing the playhead
                 parsed.push({ 
