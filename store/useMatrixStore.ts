@@ -375,7 +375,7 @@ export const useMatrixStore = create<MatrixState>()(
             let cleanLine = trimmed.replace(/\(?[0-9]{1,2}:[0-9]{2}\)?/g, '').trim();
             if (cleanLine.match(/^(Written:|Vocal:|Bars:|Total:|Vocal Cadence:)/i)) return;
             cleanLine = cleanLine.replace(/^(?:[A-Z][,:\)]|\s*\[[A-Z]\]\s*|(?:Verse|Hook|Chorus)[^:]*:)\s*/i, '');
-            cleanLine = cleanLine.replace(/\s+[A-Z][,;.]*$/i, ''); // UI Scrubber
+            cleanLine = cleanLine.replace(/\s+[A-Z][,;.]*$/i, ''); 
             if (cleanLine && cleanLine !== "[Instrumental Break]") {
               llmPools[activePoolHeader].push(cleanLine);
             }
@@ -415,146 +415,129 @@ export const useMatrixStore = create<MatrixState>()(
           const currentVaultObject = activeVariations[index % activeVariations.length];
           const activePattern = (bp as any).patternArray?.length > 0 ? (bp as any).patternArray : currentVaultObject.array;
 
-          // --- FIX 1: THE PIPE ASSASSIN ---
-// Strip isolated pipes and their surrounding spaces BEFORE splitting into words
-const sanitizedLine = textLine.replace(/\s*\|\s*/g, ' ').trim();
-const rawWords = sanitizedLine.split(/\s+/).filter(w => w.length > 0);
-const mappedWords: QuantizedSyllable[] = [];
-let totalLineSteps = 0;
+          linesForThisBlock.forEach((textLine) => {
+            const sanitizedLine = textLine.replace(/\s*\|\s*/g, ' ').trim();
+            const rawWords = sanitizedLine.split(/\s+/).filter(w => w.length > 0);
+            const mappedWords: QuantizedSyllable[] = [];
+            let totalLineSteps = 0;
 
-if (sanitizedLine.startsWith('...')) totalLineSteps += 4;
+            if (sanitizedLine.startsWith('...')) totalLineSteps += 4;
 
-const wordChunksArray = rawWords.map((w) => chunkWordForVisuals(w));
+            const wordChunksArray = rawWords.map((w) => chunkWordForVisuals(w));
 
-const cleanTextEnd = sanitizedLine.slice(-1);
-if (cleanTextEnd === '.') totalLineSteps += 4;
-else if (cleanTextEnd === ',') totalLineSteps += 1;
+            const cleanTextEnd = sanitizedLine.slice(-1);
+            if (cleanTextEnd === '.') totalLineSteps += 4;
+            else if (cleanTextEnd === ',') totalLineSteps += 1;
 
-// --- THE RIGHT-ALIGN PARADIGM ---
-// 1. Calculate raw sequential timings (NO CLUMPING)
-const rawWordsArray: { chunk: string, rawStartTime: number, duration: number, isWordEnd: boolean, isLastSyl: boolean }[] = [];
-let rawTime = 0;
+            const rawWordsArray: { chunk: string, rawStartTime: number, duration: number, isWordEnd: boolean, isLastSyl: boolean }[] = [];
+            let rawTime = 0;
 
-let patternIndex = 0;
-wordChunksArray.forEach((chunks, wordIdx) => {
-  chunks.forEach((chunk, cIdx) => {
-    const isLastSyl = (wordIdx === wordChunksArray.length - 1) && (cIdx === chunks.length - 1);
-    
-    // --- FIX 2: THE ANCHOR LOCK ---
-    let stepsRequired;
-    if (isLastSyl) {
-        // Force the Anchor: The final syllable ALWAYS gets the final DNA step
-        stepsRequired = Number(activePattern[activePattern.length - 1]) || 2;
-    } else {
-        // Loop the rest of the array, reserving the final step
-        const loopableLength = Math.max(1, activePattern.length - 1);
-        stepsRequired = Number(activePattern[patternIndex % loopableLength]) || 2;
-        patternIndex++;
-    }
-    
-    totalLineSteps += stepsRequired;
-  });
-});
+            let patternIndex = 0;
+            wordChunksArray.forEach((chunks, wordIdx) => {
+              chunks.forEach((chunk, cIdx) => {
+                const isLastSyl = (wordIdx === wordChunksArray.length - 1) && (cIdx === chunks.length - 1);
+                let stepsRequired;
+                if (isLastSyl) {
+                    stepsRequired = Number(activePattern[activePattern.length - 1]) || 2;
+                } else {
+                    const loopableLength = Math.max(1, activePattern.length - 1);
+                    stepsRequired = Number(activePattern[patternIndex % loopableLength]) || 2;
+                    patternIndex++;
+                }
+                totalLineSteps += stepsRequired;
+              });
+            });
 
-const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
-if (sanitizedLine.startsWith('...')) rawTime += (4 * timePerStep);
+            const timePerStep = totalLineSteps > 0 ? timeForLine / totalLineSteps : 0;
+            if (sanitizedLine.startsWith('...')) rawTime += (4 * timePerStep);
 
-patternIndex = 0; // Reset for actual duration assignment
-wordChunksArray.forEach((chunks, wordIdx) => {
-  chunks.forEach((chunk, cIdx) => {
-    const isLastSyl = (wordIdx === wordChunksArray.length - 1) && (cIdx === chunks.length - 1);
-    let stepsRequired;
-    if (isLastSyl) {
-        stepsRequired = Number(activePattern[activePattern.length - 1]) || 2;
-    } else {
-        const loopableLength = Math.max(1, activePattern.length - 1);
-        stepsRequired = Number(activePattern[patternIndex % loopableLength]) || 2;
-        patternIndex++;
-    }
+            patternIndex = 0; 
+            wordChunksArray.forEach((chunks, wordIdx) => {
+              chunks.forEach((chunk, cIdx) => {
+                const isLastSyl = (wordIdx === wordChunksArray.length - 1) && (cIdx === chunks.length - 1);
+                let stepsRequired;
+                if (isLastSyl) {
+                    stepsRequired = Number(activePattern[activePattern.length - 1]) || 2;
+                } else {
+                    const loopableLength = Math.max(1, activePattern.length - 1);
+                    stepsRequired = Number(activePattern[patternIndex % loopableLength]) || 2;
+                    patternIndex++;
+                }
 
-    const chunkDuration = stepsRequired * timePerStep;
+                const chunkDuration = stepsRequired * timePerStep;
 
-    rawWordsArray.push({
-      chunk,
-      rawStartTime: rawTime,
-      duration: chunkDuration,
-      isWordEnd: (cIdx === chunks.length - 1),
-      isLastSyl: isLastSyl
-    });
-    rawTime += chunkDuration;
-  });
-});
-
-// 2. Determine the Target Strike Zone
-let targetSlot = 12; // Snare (Beat 4)
-if (state.gwStrikeZone === "downbeat") targetSlot = 16; 
-else if (state.gwStrikeZone === "spillover") targetSlot = 15; 
-if (state.gwPocket === "cascade") targetSlot = 15; 
-
-const secondsPerSlot = timeForLine / 16;
-const targetStartTime = targetSlot * secondsPerSlot;
-
-// 3. Find the raw start time of the final rhyme syllable
-const lastSyl = rawWordsArray.find(w => w.isLastSyl);
-const lastWordRawStartTime = lastSyl ? lastSyl.rawStartTime : 0;
-
-// 4. Calculate the phrase shift to Right-Align the rhyme to the Strike Zone
-let shiftOffset = targetStartTime - lastWordRawStartTime;
-let compressionScale = 1.0;
-
-// --- FIX 3: TIME-WARP PROTECTION (COMPRESSION) ---
-if (shiftOffset < 0 && rawWordsArray.length > 0 && (rawWordsArray[0].rawStartTime + shiftOffset < 0)) {
-    // Instead of missing the snare, we compress the spacing of the words to make it fit
-    const requiredDuration = targetStartTime; 
-    const actualDuration = lastWordRawStartTime;
-    if (actualDuration > requiredDuration) {
-        compressionScale = requiredDuration / actualDuration;
-        shiftOffset = 0; // Reset offset because we are scaling instead
-    } else {
-        shiftOffset = -rawWordsArray[0].rawStartTime; // Fallback
-    }
-}
-
-// 5. Apply "The Drag" or "Chainlink" Pocket Offsets
-if (state.gwPocket === "pickup") shiftOffset += 0.05; 
-if (state.gwPocket === "chainlink") shiftOffset -= 0.02; 
-
-// 6. Lock in the perfectly sequential, pocket-aligned times WITH compression support
-rawWordsArray.forEach((w) => {
-  const finalStartTime = currentFlowTime + (w.rawStartTime * compressionScale) + shiftOffset;
-  const scaledDuration = w.duration * compressionScale;
-  
-  let mappedSlot = Math.min(15, Math.max(0, Math.floor(((finalStartTime - currentFlowTime) / timeForLine) * 16)));
-  
-  if (state.gwPocket === "matrix_pivot" && mappedSlot > 2 && mappedSlot < 6) {
-      mappedSlot = 4;
-  }
-
-  mappedWords.push({
-    id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
-    word: w.chunk.replace(/\|/g, ''),
-    slot: mappedSlot,
-    startTime: finalStartTime,
-    duration: scaledDuration,
-    isWordEnd: w.isWordEnd
-  });
-});
-
-                // 🚨 CRITICAL: Push the parsed line state BEFORE advancing the playhead
-                parsed.push({ 
-                  id: `line-${lineIdCounter++}`,
-                  barIndex: Math.floor(currentFlowTime / secondsPerBar),
-                  text: textLine.replace(/\|/g, ''), 
-                  originalText: textLine,
-                  startTime: currentFlowTime, 
-                  lineDuration: timeForLine, 
-                  isHeader: false, 
-                  timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
-                  words: mappedWords 
+                rawWordsArray.push({
+                  chunk,
+                  rawStartTime: rawTime,
+                  duration: chunkDuration,
+                  isWordEnd: (cIdx === chunks.length - 1),
+                  isLastSyl: isLastSyl
                 });
-                
-                // Advance playhead cleanly for the next bar
-                currentFlowTime += timeForLine;
+                rawTime += chunkDuration;
+              });
+            });
+
+            let targetSlot = 12; 
+            if (state.gwStrikeZone === "downbeat") targetSlot = 16; 
+            else if (state.gwStrikeZone === "spillover") targetSlot = 15; 
+            if (state.gwPocket === "cascade") targetSlot = 15; 
+
+            const secondsPerSlot = timeForLine / 16;
+            const targetStartTime = targetSlot * secondsPerSlot;
+
+            const lastSyl = rawWordsArray.find(w => w.isLastSyl);
+            const lastWordRawStartTime = lastSyl ? lastSyl.rawStartTime : 0;
+
+            let shiftOffset = targetStartTime - lastWordRawStartTime;
+            let compressionScale = 1.0;
+
+            if (shiftOffset < 0 && rawWordsArray.length > 0 && (rawWordsArray[0].rawStartTime + shiftOffset < 0)) {
+                const requiredDuration = targetStartTime; 
+                const actualDuration = lastWordRawStartTime;
+                if (actualDuration > requiredDuration) {
+                    compressionScale = requiredDuration / actualDuration;
+                    shiftOffset = 0; 
+                } else {
+                    shiftOffset = -rawWordsArray[0].rawStartTime;
+                }
+            }
+
+            if (state.gwPocket === "pickup") shiftOffset += 0.05; 
+            if (state.gwPocket === "chainlink") shiftOffset -= 0.02; 
+
+            rawWordsArray.forEach((w) => {
+              const finalStartTime = currentFlowTime + (w.rawStartTime * compressionScale) + shiftOffset;
+              const scaledDuration = w.duration * compressionScale;
+              
+              let mappedSlot = Math.min(15, Math.max(0, Math.floor(((finalStartTime - currentFlowTime) / timeForLine) * 16)));
+              
+              if (state.gwPocket === "matrix_pivot" && mappedSlot > 2 && mappedSlot < 6) {
+                  mappedSlot = 4;
+              }
+
+              mappedWords.push({
+                id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
+                word: w.chunk.replace(/\|/g, ''),
+                slot: mappedSlot,
+                startTime: finalStartTime,
+                duration: scaledDuration,
+                isWordEnd: w.isWordEnd
+              });
+            });
+
+            parsed.push({ 
+              id: `line-${lineIdCounter++}`,
+              barIndex: Math.floor(currentFlowTime / secondsPerBar),
+              text: textLine.replace(/\|/g, ''), 
+              originalText: textLine,
+              startTime: currentFlowTime, 
+              lineDuration: timeForLine, 
+              isHeader: false, 
+              timestamp: `(${Math.floor(currentFlowTime / 60)}:${Math.floor(currentFlowTime % 60).toString().padStart(2, '0')})`,
+              words: mappedWords 
+            });
+            
+            currentFlowTime += timeForLine;
           });
         });
 

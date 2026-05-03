@@ -217,7 +217,6 @@ export default function Room04_Booth() {
         timeDisplayRef.current.innerText = `${mins}:${secs}`;
     }
 
-    // The sweet spot clock (30ms monitor latency offset)
     const visualTime = time; 
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
@@ -234,8 +233,6 @@ export default function Room04_Booth() {
             realStartTime = Math.min(...line.words.map(w => w.startTime));
         }
 
-        // --- FIX 4: ABSOLUTE GATING ---
-        // Find the precise start time of the NEXT line to create a hard boundary
         let hardBoundary = Infinity;
         for (let j = i + 1; j < quantizedLines.length; j++) {
             const nLine = quantizedLines[j];
@@ -245,16 +242,9 @@ export default function Room04_Booth() {
             }
         }
 
-        // The line is ONLY active from its first word until the exact start of the next line
         if (visualTime >= realStartTime && visualTime < hardBoundary) {
-             activeScrollIndex = i; // The last overlapping line rule is dead. First strict match wins.
+             activeScrollIndex = i; 
              break;
-        }
-      }
-
-        const highlightEnd = Math.max(realEndTime, nextRealStart === Infinity ? realEndTime + 2 : nextRealStart);
-        if (visualTime >= realStartTime && visualTime < highlightEnd) {
-             activeScrollIndex = i; // The last overlapping line always wins the visual focus
         }
       }
 
