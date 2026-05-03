@@ -618,23 +618,31 @@ Output: ALL CAPS rewritten line ONLY.
                 bar_start_time = (start_bar + i) * seconds_per_bar
                 final_lyrics += f"({int(bar_start_time // 60)}:{int(bar_start_time % 60):02d}) {line_text}\n"
 
-                # 1. Clean and tokenize
+                # 1. Clean and tokenize into WHOLE WORDS
                 sanitized = line_text.replace('|', '').strip()
                 words = sanitized.split()
+                if not words: continue
                 
-                # 2. Assign DNA steps and calculate total steps
+                # 2. Assign DNA steps with Character Length Safety (Solves the SHIP... bug)
                 line_steps = []
                 total_steps = 0
                 for w_idx, word in enumerate(words):
-                    # Use the anchor lock logic: last word gets last array element
+                    # Use the array passed in from the UI
                     if w_idx == len(words) - 1:
-                        steps = pattern_array[-1] if pattern_array else 2
+                        dna_steps = pattern_array[-1] if pattern_array else 2
                     else:
-                        steps = pattern_array[w_idx % (max(1, len(pattern_array)-1))] if pattern_array else 2
-                    line_steps.append(steps)
-                    total_steps += steps
+                        dna_steps = pattern_array[w_idx % (max(1, len(pattern_array)-1))] if pattern_array else 2
+                    
+                    # 🚨 SAFETY: Force the box to be at least 1 slot per 3 characters
+                    # This prevents long words from being crushed in short DNA steps
+                    char_required_slots = max(1, len(word) // 3)
+                    actual_steps = max(dna_steps, char_required_slots)
+                    
+                    line_steps.append(actual_steps)
+                    total_steps += actual_steps
 
-                # 3. Calculate Time-Per-Step and Raw Duration
+                # 3. Calculate Timing (MPC Mode: Words as Beats)
+                # We normalize the bar based on the sum of the elastic steps
                 time_per_step = seconds_per_bar / max(16, total_steps)
                 raw_duration = total_steps * time_per_step
 
@@ -646,13 +654,12 @@ Output: ALL CAPS rewritten line ONLY.
                 target_time = (target_slot / 16) * seconds_per_bar
                 shift_offset = max(0, target_time - raw_duration)
                 
-                # 🚨 THE POCKET DELAY (Restoring the Drag without the text hack) 🚨
+                # 🚨 THE POCKET DELAY ( pickup override )
                 if pocket == "pickup":
-                    # Force at least a 1-slot (1/16th note) delay so it NEVER hits the 0-count downbeat
                     slot_duration = seconds_per_bar / 16
                     shift_offset = max(slot_duration, shift_offset)
                 
-                # 5. Map Words to Timeline
+                # 5. Map Word Objects (One Word = One Beat)
                 current_word_time = shift_offset
                 word_objects = []
                 for w_idx, word in enumerate(words):
