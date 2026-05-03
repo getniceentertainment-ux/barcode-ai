@@ -267,34 +267,81 @@ export default function Room04_Booth() {
              lineNode.classList.add('border-transparent');
         }
 
-        // 2. The Words & Balls (Decoupled from line background to allow spillover)
+        // 2. The Words & Balls (Look-Ahead Physics Engine)
         const chunks = lineNode.querySelectorAll('.syllable-chunk');
         line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
             const ballNode = chunkNode.querySelector('.bouncing-ball') as HTMLElement;
             
-            // True lifespan of the word, including spillover into the next bar!
-            const isWordInTimeRange = visualTime >= wObj.startTime && visualTime < (wObj.startTime + wObj.duration);
+            // --- PHYSICS ENGINE: LOOK-AHEAD ROUTING ---
+            let nextStartTime = wObj.startTime + wObj.duration; // Fallback
+            
+            if (wIdx < line.words!.length - 1) {
+                // Arc to the next word in the CURRENT line
+                nextStartTime = line.words![wIdx + 1].startTime;
+            } else {
+                // Arc to the first word of the NEXT line (Cross-line tracking)
+                for (let j = i + 1; j < quantizedLines.length; j++) {
+                    const nLine = quantizedLines[j];
+                    if (!nLine.isHeader && nLine.words && nLine.words.length > 0) {
+                        nextStartTime = nLine.words[0].startTime;
+                        break;
+                    }
+                }
+            }
+
+            // Cap the air-time to 1.5 seconds so long instrumental breaks don't have a slow-motion ball
+            const bounceDuration = Math.min(nextStartTime - wObj.startTime, 1.5);
+            const isBallActive = visualTime >= wObj.startTime && visualTime < (wObj.startTime + bounceDuration);
+            
+            // Text glow stays strictly tied to the word's actual duration
+            const isTextActive = visualTime >= wObj.startTime && visualTime < (wObj.startTime + wObj.duration);
             const isPastWord = visualTime >= (wObj.startTime + wObj.duration);
             
-            if (isWordInTimeRange) {
-                chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
+            if (isBallActive || isTextActive) {
                 chunkNode.classList.remove('text-[#444]', 'text-[#888]');
                 
-                if (ballNode) {
+                // --- THE BALL FLIGHT PATH ---
+                if (ballNode && isBallActive) {
                     ballNode.classList.remove('hidden');
-                    // Huge parabolic bounce over the entire word duration
-                    let progress = Math.max(0, Math.min(1, (visualTime - wObj.startTime) / wObj.duration)); 
-                    const maxBounce = Math.min(16, wObj.duration * 50); 
-                    const bounceHeight = Math.sin(progress * Math.PI) * maxBounce;
+                    // Progress is 0 at the exact StartTime, meaning the ball is at the BOTTOM of the arc
+                    let bounceProgress = Math.max(0, Math.min(1, (visualTime - wObj.startTime) / bounceDuration)); 
+                    const maxBounce = 14; // Fixed crisp jump height
+                    const bounceHeight = Math.sin(bounceProgress * Math.PI) * maxBounce;
                     ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
+                } else if (ballNode) {
+                    ballNode.classList.add('hidden');
+                }
+
+                // --- THE IMPACT ENGINE (Flash strictly on the drop) ---
+                if (isTextActive) {
+                    // Intense flash strictly at progress 0, decaying fast
+                    const hitProgress = Math.max(0, Math.min(1, (visualTime - wObj.startTime) / Math.min(wObj.duration, 0.4)));
+                    const hitIntensity = Math.max(0, 1 - (hitProgress * 1.5)); 
+
+                    const colorValue = Math.floor(150 + (hitIntensity * 105)); 
+                    chunkNode.style.color = `rgb(${colorValue}, ${colorValue}, ${colorValue})`;
+                    chunkNode.style.textShadow = `0 0 ${hitIntensity * 20}px rgba(230, 0, 0, ${hitIntensity})`;
+                    chunkNode.style.transform = `scale(${1 + (hitIntensity * 0.08)})`;
+                    chunkNode.style.fontWeight = hitIntensity > 0 ? '900' : '700';
+                } else {
+                    // Ball is still flying, but the word has been fully spoken
+                    chunkNode.style.color = '';
+                    chunkNode.style.textShadow = '';
+                    chunkNode.style.transform = '';
+                    chunkNode.style.fontWeight = '';
+                    chunkNode.classList.add('text-[#888]'); // Dimmed
                 }
             } else {
+                // Cleanup for words outside the active window
+                chunkNode.style.color = '';
+                chunkNode.style.textShadow = '';
+                chunkNode.style.transform = '';
+                chunkNode.style.fontWeight = '';
+
                 if (isPastWord) chunkNode.classList.add('text-[#888]'); // Already sung
                 else chunkNode.classList.add('text-[#444]'); // Upcoming
-                
-                chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
                 
                 if (ballNode) {
                     ballNode.classList.add('hidden');
