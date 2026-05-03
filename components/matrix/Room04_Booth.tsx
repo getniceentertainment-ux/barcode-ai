@@ -510,17 +510,24 @@ export default function Room04_Booth() {
             const source = offlineCtx.createBufferSource();
             source.buffer = audioBuffer;
             
-            // 🚨 THE POCKET STRETCH 🚨
-            // Warp the TTS audio slice to fit the AI's exact musical duration
-            const idealRate = ttsWordDuration / Math.max(wObj.duration, 0.1);
-            source.playbackRate.value = Math.max(0.65, Math.min(idealRate, 1.6)); // Cap to prevent demon/chipmunk voices
+            // 🚨 THE MPC VOCAL CHOPPER (Locked Pitch) 🚨
+            // Lock the playback rate to 1.0 to preserve the natural, deep TTS voice. 
+            // We do not stretch the audio. We trigger it like a drum pad, and let the 
+            // gain envelope handle the "sustain" and "release" mathematically.
+            source.playbackRate.value = 1.0; 
 
             const gainNode = offlineCtx.createGain();
             
             // 2. Schedule the audio exactly on the mathematical zero-point
             gainNode.gain.setValueAtTime(0, wObj.startTime);
+            
+            // Quick attack (20ms) to prevent clicks
             gainNode.gain.linearRampToValueAtTime(1, wObj.startTime + 0.02); 
+            
+            // Hold the volume open for the mathematical duration
             gainNode.gain.setValueAtTime(1, wObj.startTime + wObj.duration);
+            
+            // Smooth release using the tail bleed (acts as our MPC choke group)
             gainNode.gain.linearRampToValueAtTime(0, wObj.startTime + wObj.duration + tailBleed); 
 
             source.connect(gainNode);

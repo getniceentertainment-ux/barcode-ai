@@ -646,6 +646,12 @@ Output: ALL CAPS rewritten line ONLY.
                 target_time = (target_slot / 16) * seconds_per_bar
                 shift_offset = max(0, target_time - raw_duration)
                 
+                # 🚨 THE POCKET DELAY (Restoring the Drag without the text hack) 🚨
+                if pocket == "pickup":
+                    # Force at least a 1-slot (1/16th note) delay so it NEVER hits the 0-count downbeat
+                    slot_duration = seconds_per_bar / 16
+                    shift_offset = max(slot_duration, shift_offset)
+                
                 # 5. Map Words to Timeline
                 current_word_time = shift_offset
                 word_objects = []
