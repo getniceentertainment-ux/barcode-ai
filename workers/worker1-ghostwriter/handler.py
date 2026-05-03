@@ -619,8 +619,8 @@ Output: ALL CAPS rewritten line ONLY.
                 final_lyrics += f"({int(bar_start_time // 60)}:{int(bar_start_time % 60):02d}) {line_text}\n"
 
                 # 1. Clean and tokenize into WHOLE WORDS
-                sanitized = line_text.replace('|', '').strip()
-                words = sanitized.split()
+                sanitized = line_text.replace('|', '  ').strip()
+                words = [w for w in sanitized.split() if w.strip()]
                 if not words: continue
                 
                 # 2. Assign DNA steps with Character Length Safety (Solves the SHIP... bug)
