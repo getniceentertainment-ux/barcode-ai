@@ -288,7 +288,6 @@ export const useMatrixStore = create<MatrixState>()(
       
       setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
-      s// --- UNIFIED REACTIVE SETTERS ---
       setGwTitle: (t) => set({ gwTitle: t }),
       setGwPrompt: (p) => set({ gwPrompt: p }),
       setGwGender: (g) => set({ gwGender: g }),
