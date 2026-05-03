@@ -288,18 +288,33 @@ export const useMatrixStore = create<MatrixState>()(
       
       setActiveProject: (id, isFinalized) => set({ activeProjectId: id, isProjectFinalized: isFinalized }),
       setFlowDNA: (dna) => set({ flowDNA: dna }),
+      s// --- UNIFIED REACTIVE SETTERS ---
       setGwTitle: (t) => set({ gwTitle: t }),
       setGwPrompt: (p) => set({ gwPrompt: p }),
-      setGwPocket: (p) => set({ gwPocket: p }), 
       setGwGender: (g) => set({ gwGender: g }),
       setGwUseSlang: (b) => set({ gwUseSlang: b }),
       setGwUseIntel: (b) => set({ gwUseIntel: b }),
       setGwMotive: (m) => set({ gwMotive: m }),
       setGwStruggle: (s) => set({ gwStruggle: s }),
       setGwHustle: (h) => set({ gwHustle: h }),
-      setGwStrikeZone: (val) => set({ gwStrikeZone: val }),
-      setGwHookType: (val) => set({ gwHookType: val }),
-      setGwFlowEvolution: (val) => set({ gwFlowEvolution: val }),
+      
+      // 🚨 THESE ARE THE VERSATILE TRIGGERS 🚨
+      setGwPocket: (p) => {
+        set({ gwPocket: p });
+        get().calculateQuantizedTimeline(); // Updates the grid UI instantly
+      },
+      setGwStrikeZone: (val) => {
+        set({ gwStrikeZone: val });
+        get().calculateQuantizedTimeline(); // Re-snaps rhymes to Orange Cells (4/12)
+      },
+      setGwHookType: (val) => {
+        set({ gwHookType: val });
+        get().calculateQuantizedTimeline();
+      },
+      setGwFlowEvolution: (val) => {
+        set({ gwFlowEvolution: val });
+        get().calculateQuantizedTimeline();
+      },
 
       setQuantizedLines: (lines) => set({ quantizedLines: lines }), 
 
@@ -427,19 +442,51 @@ export const useMatrixStore = create<MatrixState>()(
             let localWordTime = currentFlowTime;
             if (textLine.startsWith('...')) localWordTime += (4 * timePerStep);
 
+            // 🚨 DEFINE THE GLOBAL STRIKE ZONE ANCHORS
+            const STRIKE_ZONES = {
+              SNARE_1: 4,  // Beat 2 (First Orange)
+              SNARE_2: 12, // Beat 4 (Second Orange/Rhyme Target)
+              DOWNBEAT: 0
+            };
+
             let patternIndex = 0;
-            wordChunksArray.forEach((chunks) => {
+            wordChunksArray.forEach((chunks, wordIdx) => {
+              const isLastWord = wordIdx === wordChunksArray.length - 1;
+              const isFirstWord = wordIdx === 0;
+
               chunks.forEach((chunk, cIdx) => {
                 const stepsRequired = Number(activePattern[patternIndex % activePattern.length]) || 2;
                 patternIndex++;
                 const chunkDuration = stepsRequired * timePerStep;
-                const mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - currentFlowTime) / timeForLine) * 16)));
                 
+                // 1. Calculate the linear "natural" time-based slot (0-15)
+                let mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - currentFlowTime) / timeForLine) * 16)));
+
+                // 2. VERSATILE STRIKE ZONE OVERRIDES
+                // We only override the "Rhyme Syllable" (last syllable of the line)
+                if (isLastWord && (cIdx === chunks.length - 1)) {
+                  if (state.gwStrikeZone === "snare") mappedSlot = 12; // Snap to Beat 4 Orange Cell
+                  else if (state.gwStrikeZone === "downbeat") mappedSlot = 0; // Snap to Beat 1 Kick
+                  else if (state.gwStrikeZone === "spillover") mappedSlot = 15; // Snap to the "16" count
+                }
+
+                // 3. VERSATILE POCKET PLACEMENT (SYNCOPATION)
+                // Matrix Pivot creates an internal hinge on the first Orange Cell (Beat 2)
+                if (state.gwPocket === "matrix_pivot" && mappedSlot > 2 && mappedSlot < 6) {
+                    mappedSlot = 4; 
+                }
+                
+                // The Drag (Pickup) adds a slight mathematical offset to the trigger time
+                let finalStartTime = localWordTime;
+                if (state.gwPocket === "pickup" && (mappedSlot === 4 || mappedSlot === 12)) {
+                    finalStartTime += 0.05; // Physically push the audio 50ms behind the snare
+                }
+
                 mappedWords.push({
                   id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
                   word: chunk.replace(/\|/g, ''),
                   slot: mappedSlot,
-                  startTime: localWordTime,
+                  startTime: finalStartTime,
                   duration: chunkDuration,
                   isWordEnd: (cIdx === chunks.length - 1)
                 });

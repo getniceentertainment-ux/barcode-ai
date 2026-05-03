@@ -157,24 +157,39 @@ export default function Room03_Ghostwriter() {
     }
   }, [gwStyle, gwHookType, gwFlowEvolution, gwPocket, layoutHash, blueprint, audioData, setBlueprint]);
 
-  // --- THE SMART LOCK BOUNCER (PREVENTS ENGINE CRASHES) ---
+// --- THE SMART LOCK BOUNCER (PREVENTS ENGINE CRASHES & MISALIGNMENT) ---
   useEffect(() => {
+    // 1. Density Check: Lazy flows can't handle Cascade's carry-over
     if (gwStyle === "lazy" && gwPocket === "cascade") {
       setGwPocket("standard");
       if (addToast) addToast("Cascade disabled: Lazy flow lacks syllable density.", "info");
     }
+    
+    // 2. Collision Check: Chopper is too dense for Spillover dragging
     if (gwStyle === "chopper" && gwStrikeZone === "spillover") {
       setGwStrikeZone("snare");
       if (addToast) addToast("Spillover disabled: Chopper grid is too dense.", "info");
     }
+    
+    // 3. Math Check: Prime syncopation clashes with base-3 Triplet math
     if (gwStyle === "triplet" && gwHookType === "prime") {
       setGwHookType("auto");
       if (addToast) addToast("Prime disabled: Clashes with Triplet math.", "info");
     }
+    
+    // 4. Logic Check: Pickup (The Drag) requires a silent 1st count
     if (gwPocket === "pickup" && gwStrikeZone === "downbeat") {
       setGwStrikeZone("snare");
       if (addToast) addToast("Downbeat disabled: Clashes with Pickup pocket.", "info");
     }
+
+    // 🚨 5. THE MATRIX PIVOT LOCK 🚨
+    // Forces the Strike Zone to the Snare (4/12) to align the hinge with the Orange Cells
+    if (gwPocket === "matrix_pivot" && gwStrikeZone !== "snare") {
+      setGwStrikeZone("snare");
+      if (addToast) addToast("Matrix Pivot active: Snare Strike Zone (2 & 4) prioritized.", "info");
+    }
+
   }, [gwStyle, gwPocket, gwStrikeZone, gwHookType, setGwPocket, setGwStrikeZone, setGwHookType, addToast]);
 
   const updateBlueprintStartBar = (index: number, newStart: number) => {
