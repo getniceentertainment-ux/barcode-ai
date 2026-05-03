@@ -457,39 +457,42 @@ export const useMatrixStore = create<MatrixState>()(
                 patternIndex++;
                 const chunkDuration = stepsRequired * timePerStep;
                 
-                // 1. Calculate linear slot
+                // 2. Base Linear Slot (Visual Only)
                 let mappedSlot = Math.min(15, Math.max(0, Math.floor(((localWordTime - currentFlowTime) / timeForLine) * 16)));
 
-                // 2. VERSATILE STRIKE ZONE OVERRIDES
+                // 3. STRIKE ZONE GRAVITY (For the Visual MIDI Grid Blocks Only)
                 if (isLastWord && (cIdx === chunks.length - 1)) {
-                  if (state.gwStrikeZone === "snare") mappedSlot = 12;
-                  else if (state.gwStrikeZone === "downbeat") mappedSlot = 0;
-                  else if (state.gwStrikeZone === "spillover") mappedSlot = 15;
+                    switch(state.gwStrikeZone) {
+                        case "snare": mappedSlot = 12; break;
+                        case "downbeat": mappedSlot = 0; break;
+                        case "spillover": mappedSlot = 15; break;
+                    }
                 }
 
                 if (state.gwPocket === "matrix_pivot" && mappedSlot > 2 && mappedSlot < 6) {
                     mappedSlot = 4; 
                 }
 
-                // 🚨 THE FIX: LOCK START TIME TO THE ACTUAL MIDI SLOT
-                // This ensures the ball peak matches the MIDI cell highlight exactly.
-                const secondsPerSlot = timeForLine / 16;
-                let finalStartTime = currentFlowTime + (mappedSlot * secondsPerSlot);
-                
-                // Apply "The Drag" offset only AFTER the slot-lock
-                if (state.gwPocket === "pickup" && (mappedSlot === 4 || mappedSlot === 12)) {
-                    finalStartTime += 0.05; 
+                // 🚨 4. RESTORE SEQUENTIAL TIMING (NO CLUMPING)
+                let finalStartTime = localWordTime;
+
+                // Apply Pocket offset to the entire flow, preserving organic spacing
+                if (state.gwPocket === "pickup") {
+                    finalStartTime += 0.05; // Late Drag
+                } else if (state.gwPocket === "chainlink") {
+                    finalStartTime -= 0.02; // Eager Push
                 }
 
                 mappedWords.push({
                   id: `syl-${lineIdCounter}-${Math.random().toString(36).substr(2, 5)}`,
                   word: chunk.replace(/\|/g, ''),
                   slot: mappedSlot,
-                  startTime: finalStartTime, // 🚨 Ball Peak is now Slot-Sync'd
-                  duration: chunkDuration,
+                  startTime: finalStartTime, // Ball hits naturally
+                  duration: chunkDuration,   // Ball bounces organically
                   isWordEnd: (cIdx === chunks.length - 1)
                 });
                 
+                // Advance the playhead sequentially so balls NEVER overlap
                 localWordTime += chunkDuration;
               });
             });

@@ -222,19 +222,15 @@ export default function Room04_Booth() {
 
     if (!isReviewMode && teleprompterEnabled && teleprompterRef.current) {
       const lineNodes = teleprompterRef.current.querySelectorAll('.lyric-line-container');
+      
+      // 🚨 PASS 1: FIND THE SINGLE ACTIVE LINE
       let activeScrollIndex = -1;
-
       for (let i = 0; i < quantizedLines.length; i++) {
         const line = quantizedLines[i];
         if (line.isHeader) continue;
 
-        const lineNode = lineNodes[i] as HTMLElement;
-        if (!lineNode) continue;
-
-        // 1. DYNAMIC LINE BACKGROUND
         let realStartTime = line.startTime;
         let realEndTime = line.startTime + (line.lineDuration || 2);
-
         if (line.words && line.words.length > 0) {
             realStartTime = Math.min(...line.words.map(w => w.startTime));
             realEndTime = Math.max(...line.words.map(w => w.startTime + w.duration));
@@ -249,11 +245,24 @@ export default function Room04_Booth() {
             }
         }
 
-        // Stretch the background highlight until the next line starts, OR until the last word finishes!
         const highlightEnd = Math.max(realEndTime, nextRealStart === Infinity ? realEndTime + 2 : nextRealStart);
-
         if (visualTime >= realStartTime && visualTime < highlightEnd) {
-             activeScrollIndex = i;
+             activeScrollIndex = i; // The last overlapping line wins
+        }
+      }
+
+      // 🚨 PASS 2: RENDER STRICTLY GATED BALLS
+      for (let i = 0; i < quantizedLines.length; i++) {
+        const line = quantizedLines[i];
+        if (line.isHeader) continue;
+
+        const lineNode = lineNodes[i] as HTMLElement;
+        if (!lineNode) continue;
+
+        const isActiveLine = i === activeScrollIndex;
+
+        // Line Highlight Gate
+        if (isActiveLine) {
              lineNode.classList.add('bg-[#E60000]/10', 'border-[#E60000]');
              lineNode.classList.remove('border-transparent');
         } else {
@@ -261,11 +270,8 @@ export default function Room04_Booth() {
              lineNode.classList.add('border-transparent');
         }
 
-        // 🚨 2. INDEPENDENT WORD PROCESSING (STRICT GATE) 🚨
-        // We strictly gate the ball rendering to the currently active line to prevent ghosting
-        const isActiveLine = i === activeScrollIndex;
+        // Bouncing Ball Gate
         const chunks = lineNode.querySelectorAll('.syllable-chunk');
-        
         line.words?.forEach((wObj, wIdx) => {
             const chunkNode = chunks[wIdx] as HTMLElement;
             if (!chunkNode) return;
@@ -274,7 +280,6 @@ export default function Room04_Booth() {
             const isWordInTimeRange = visualTime >= wObj.startTime && visualTime < wObj.startTime + wObj.duration;
             
             if (isActiveLine && isWordInTimeRange) {
-                // Word is active!
                 chunkNode.classList.add('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]');
                 chunkNode.classList.remove('text-[#444]', 'text-[#888]');
                 
@@ -286,7 +291,6 @@ export default function Room04_Booth() {
                     ballNode.style.transform = `translateX(-50%) translateY(-${bounceHeight}px)`;
                 }
             } else {
-                // Word is either finished or hasn't happened yet
                 if (visualTime >= wObj.startTime + wObj.duration) {
                     chunkNode.classList.add('text-[#888]');
                     chunkNode.classList.remove('text-white', 'font-bold', 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]', 'text-[#444]');
