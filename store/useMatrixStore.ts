@@ -6,45 +6,6 @@ import { supabase } from '../lib/supabase';
 
 let cloudSaveTimeout: number | undefined;
 
-// --- STORE HELPERS (Moved from Component) ---
-function chunkWordForVisuals(word: string): string[] {
-  const match = word.match(/^([^a-zA-Z]*)([a-zA-Z\']+)([^a-zA-Z]*)$/);
-  if (!match || match[2].length <= 3) return [word];
-  
-  const pre = match[1];
-  const alpha = match[2];
-  const post = match[3];
-  
-  const vowelClusters = alpha.match(/[aeiouy]+/gi);
-  if (!vowelClusters || vowelClusters.length <= 1) return [word];
-  
-  const chunks = [];
-  let currentChunk = "";
-  
-  for (let i = 0; i < alpha.length; i++) {
-    currentChunk += alpha[i];
-    const isVowel = /[aeiouy]/i.test(alpha[i]);
-    const nextIsVowel = i + 1 < alpha.length ? /[aeiouy]/i.test(alpha[i+1]) : false;
-    
-    if (isVowel && !nextIsVowel && i + 2 < alpha.length) {
-      const remaining = alpha.slice(i + 1);
-      if (/[aeiouy]/i.test(remaining)) {
-        currentChunk += alpha[i+1];
-        chunks.push(currentChunk);
-        currentChunk = "";
-        i++; 
-      }
-    }
-  }
-  if (currentChunk) chunks.push(currentChunk);
-  
-  if (chunks.length > 0) {
-    chunks[0] = pre + chunks[0];
-    chunks[chunks.length - 1] = chunks[chunks.length - 1] + post;
-  }
-  
-  return chunks.filter(c => c.length > 0);
-}
 
 export const FLOW_VAULT:Record<string, {array: number[], name: string, desc: string, maxSyllables: number, rhymeScheme: string, energy: number}[]>= {
   "getnice_hybrid": [
