@@ -623,58 +623,51 @@ Output: ALL CAPS rewritten line ONLY.
                 words = [w for w in sanitized.split() if w.strip()]
                 if not words: continue
                 
-                # 2. Assign DNA steps with Character Length Safety (Solves the SHIP... bug)
-                line_steps = []
-                total_steps = 0
-                for w_idx, word in enumerate(words):
-                    # Use the array passed in from the UI
-                    if w_idx == len(words) - 1:
-                        dna_steps = pattern_array[-1] if pattern_array else 2
-                    else:
-                        dna_steps = pattern_array[w_idx % (max(1, len(pattern_array)-1))] if pattern_array else 2
-                    
-                    # 🚨 SAFETY: Force the box to be at least 1 slot per 3 characters
-                    # This prevents long words from being crushed in short DNA steps
-                    char_required_slots = max(1, len(word) // 3)
-                    actual_steps = max(dna_steps, char_required_slots)
-                    
-                    line_steps.append(actual_steps)
-                    total_steps += actual_steps
-
-                # 3. Calculate Timing (MPC Mode: Words as Beats)
-                # We normalize the bar based on the sum of the elastic steps
-                time_per_step = seconds_per_bar / max(16, total_steps)
-                raw_duration = total_steps * time_per_step
-
-                # 4. Right-Align to Strike Zone
-                target_slot = 12 # Snare default
-                if strike_zone == "downbeat": target_slot = 16
-                elif strike_zone == "spillover" or pocket == "cascade": target_slot = 15
+                # 2. Calculate the total steps required for this line based strictly on the array
+                total_line_steps = 0
+                if line_text.strip().startswith('...'): 
+                    total_line_steps += 4
                 
-                target_time = (target_slot / 16) * seconds_per_bar
-                shift_offset = max(0, target_time - raw_duration)
+                # Safe fallback if pattern_array is empty
+                safe_pattern = pattern_array if (pattern_array and len(pattern_array) > 0) else [2]
                 
-                # 🚨 THE POCKET DELAY ( pickup override )
-                if pocket == "pickup":
-                    slot_duration = seconds_per_bar / 16
-                    shift_offset = max(slot_duration, shift_offset)
+                for w_idx in range(len(words)):
+                    step_val = safe_pattern[w_idx % len(safe_pattern)]
+                    total_line_steps += step_val
                 
-                # 5. Map Word Objects (One Word = One Beat)
-                current_word_time = shift_offset
+                clean_text_end = line_text.strip()[-1:]
+                if clean_text_end == '.': total_line_steps += 4
+                elif clean_text_end == ',': total_line_steps += 1
+                
+                # 3. Calculate Time Multipliers
+                time_per_step = seconds_per_bar / total_line_steps if total_line_steps > 0 else 0
+                local_word_time = 0.0
+                
+                if line_text.strip().startswith('...'): 
+                    local_word_time += (4 * time_per_step)
+                
+                # 4. Map words perfectly to the array math using modulo looping
                 word_objects = []
                 for w_idx, word in enumerate(words):
-                    duration = line_steps[w_idx] * time_per_step
-                    # Calculate grid slot (0-15)
-                    slot = int((current_word_time / seconds_per_bar) * 16)
+                    # Get the exact multiplier from the array (e.g., 6, 2, or 8)
+                    steps_required = safe_pattern[w_idx % len(safe_pattern)]
+                    word_duration = steps_required * time_per_step
+                    
+                    # Calculate exact MIDI slot (0-15) based on accumulated time
+                    mapped_slot = min(15, max(0, int((local_word_time / seconds_per_bar) * 16)))
                     
                     word_objects.append({
+                        "id": f"syl-{start_bar}-{i}-{w_idx}",
                         "word": word,
-                        "startTime": bar_start_time + current_word_time,
-                        "duration": duration,
-                        "slot": min(15, slot)
+                        "slot": mapped_slot,
+                        "startTime": bar_start_time + local_word_time,
+                        "duration": word_duration,
+                        "isWordEnd": True
                     })
-                    current_word_time += duration
-
+                    
+                    # 🚨 CRITICAL: Push the clock forward by the array's step value
+                    local_word_time += word_duration
+                    
                 section_lines_with_math.append({
                     "text": line_text,
                     "startTime": bar_start_time,
@@ -685,7 +678,7 @@ Output: ALL CAPS rewritten line ONLY.
                 "type": sec_type,
                 "bars": bars,
                 "startBar": start_bar,
-                "lines": section_lines_with_math # 🚨 NOW RETURNS OBJECTS, NOT STRINGS
+                "lines": section_lines_with_math # 🚨 NOW RETURNS PERFECT ARRAY MATH
             })
             current_cumulative_bar = start_bar + bars
 
